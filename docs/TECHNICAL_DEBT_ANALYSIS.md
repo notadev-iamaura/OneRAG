@@ -1,7 +1,7 @@
 # RAG_Standard 기술부채 분석 보고서
 
 > 분석일: 2026-01-09
-> 버전: v3.3.3
+> 버전: v1.0.3
 > 상태: 🟢 기술부채 Zero (Tier 2 개선 완료)
 
 ## 요약
@@ -47,7 +47,7 @@ app/lib/di_container.py
 | `MCPFactory` | `factories/mcp_factory.py` | MCP 클라이언트 생성 |
 | `IngestionFactory` | `factories/ingestion_factory.py` | 문서 수집기 생성 |
 
-### 1.3 개선 완료 영역 (v3.3.2)
+### 1.3 개선 완료 영역 (v1.0.2)
 
 #### 전역 상태 패턴 → DI Container 이전 ✅
 
@@ -74,7 +74,7 @@ query_router = providers.Singleton(
 
 ## 2. 레거시 코드 분석
 
-### 2.1 Deprecated 함수 (v3.3.3 정리 완료)
+### 2.1 Deprecated 함수 (v1.0.3 정리 완료)
 
 | 함수 | 위치 | 대체 방안 | 상태 |
 |------|------|----------|------|
@@ -83,19 +83,19 @@ query_router = providers.Singleton(
 | `get_circuit_breaker()` | `circuit_breaker.py` | `circuit_breaker_factory.get()` | ✅ DI 주입 완료 |
 | `get_mongodb_client()` | `mongodb_client.py` | DI Container 직접 사용 | ✅ 제거됨 |
 
-**v3.3.3 완료**: Tier 2 기술부채 개선으로 모든 deprecated 함수 정리 완료.
+**v1.0.3 완료**: Tier 2 기술부채 개선으로 모든 deprecated 함수 정리 완료.
 - `get_cost_tracker()`, `get_mongodb_client()` 제거 (외부 호출처 없음 확인)
 - `get_performance_metrics()`는 모듈 내부 `metrics` 변수 초기화용으로 유지
 
 ### 2.2 설정 파일 통합 ✅
 
-**완료된 마이그레이션 (v3.3.2)**
+**완료된 마이그레이션 (v1.0.2)**
 - ✅ `config/config.yaml` 제거 완료 → `config/base.yaml` 사용
 - `routing_rules_v2.yaml`: 향상된 라우팅 로직 지원
 
 - `base.yaml`: 환경별 설정 분리, Pydantic 검증 통합
 
-### 2.3 OpenAI 직접 호출 (✅ v3.3.3 완료)
+### 2.3 OpenAI 직접 호출 (✅ v1.0.3 완료)
 
 ```python
 # app/modules/core/retrieval/query_expansion/gpt5_engine.py
@@ -107,7 +107,7 @@ class GPT5QueryExpansionEngine:
             raise ValueError("llm_factory는 필수입니다.")
 ```
 
-**완료된 마이그레이션 (v3.3.3)**:
+**완료된 마이그레이션 (v1.0.3)**:
 1. ✅ `llm_factory` 필수 파라미터로 변경 (None이면 ValueError)
 2. ✅ `from openai import OpenAI` import 제거
 3. ✅ 레거시 OpenAI 클라이언트 초기화 코드 제거
@@ -157,7 +157,7 @@ raise GenerationError(ErrorCode.GENERATION_TIMEOUT, model="claude-sonnet-4-5")
 
 ## 5. 권장 개선 로드맵
 
-### ✅ 완료됨 (v3.3.3)
+### ✅ 완료됨 (v1.0.3)
 1. ~~전역 상태 패턴 DI Container 이전~~ → 완료
 2. ~~`config.yaml` → `base.yaml` 완전 전환~~ → 완료
 3. ~~`GPT5QueryExpansionEngine` OpenAI 직접 호출 제거~~ → 완료

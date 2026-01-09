@@ -39,6 +39,18 @@ _DEFAULT_PROVIDERS: dict[str, ProviderInfo] = {
         "class_path": "app.infrastructure.storage.vector.pinecone_store.PineconeVectorStore",
         "description": "Pinecone 서버리스 벡터 데이터베이스 - 하이브리드 검색 지원",
     },
+    "qdrant": {
+        "class_path": "app.infrastructure.storage.vector.qdrant_store.QdrantVectorStore",
+        "description": "Qdrant 셀프호스팅/클라우드 벡터 데이터베이스 - 하이브리드 검색 지원",
+    },
+    "pgvector": {
+        "class_path": "app.infrastructure.storage.vector.pgvector_store.PgVectorStore",
+        "description": "pgvector PostgreSQL 확장 - 기존 PostgreSQL 인프라 활용 벡터 검색",
+    },
+    "mongodb": {
+        "class_path": "app.infrastructure.storage.vector.mongodb_atlas_store.MongoDBAtlasStore",
+        "description": "MongoDB Atlas 벡터 검색 - 클라우드 관리형 벡터 데이터베이스",
+    },
 }
 
 

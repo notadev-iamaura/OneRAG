@@ -1,0 +1,76 @@
+# pgvector (PostgreSQL Vector Extension) 설정
+# 기능: PostgreSQL 기반 벡터 데이터베이스, Dense 벡터 검색, 기존 PostgreSQL 인프라 활용
+# 사용: 테이블 관리, 문서 저장 및 검색
+# 참고: 하이브리드 검색 미지원 (Dense 전용)
+
+pgvector:
+  # PostgreSQL 연결 설정
+  # 직접 연결: host + port + database + user + password 사용
+  # DSN 연결: dsn 사용 (다른 설정 무시)
+
+  # 직접 연결 설정
+  host: "${PGVECTOR_HOST:-localhost}"
+  port: "${PGVECTOR_PORT:-5432}"
+  database: "${PGVECTOR_DATABASE:-vectors}"
+  user: "${PGVECTOR_USER:-postgres}"
+  password: "${PGVECTOR_PASSWORD:}"
+
+  # DSN 연결 문자열 (선택적)
+  # 설정 시 host/port/database/user/password 무시
+  dsn: "${PGVECTOR_DSN:}"
+
+  # 기본 테이블 이름
+  table_name: "${PGVECTOR_TABLE:-documents}"
+
+  # 벡터 설정
+  vector:
+    # 벡터 차원 (Gemini embedding-001: 3072, OpenAI: 1536)
+    dimension: 3072
+
+  # 검색 설정
+  search:
+    # 기본 검색 결과 수
+    default_top_k: 10
+
+    # 하이브리드 검색 지원 여부
+    # pgvector는 Dense 검색만 지원
+    hybrid_support: false
+
+  # 성능 설정
+  performance:
+    # 배치 저장 시 청크 크기
+    batch_size: 100
+    # 쿼리 타임아웃 (초)
+    timeout: 30
+
+  # 인덱스 설정 가이드 (참고용)
+  index_guide:
+    # IVFFlat 인덱스 (권장)
+    type: "ivfflat"
+    # 리스트 수 (데이터 크기에 따라 조정)
+    # 권장: sqrt(행 수) ~ 행 수 / 1000
+    lists: 100
+    # 거리 함수
+    # vector_cosine_ops: 코사인 유사도 (권장)
+    # vector_l2_ops: 유클리드 거리
+    # vector_ip_ops: 내적
+    distance_ops: "vector_cosine_ops"
+
+  # PostgreSQL 확장 설치 가이드
+  setup_guide:
+    # pgvector 확장 설치 (PostgreSQL 내에서)
+    install_extension: "CREATE EXTENSION IF NOT EXISTS vector"
+    # 테이블 생성 예시
+    create_table: |
+      CREATE TABLE documents (
+        id TEXT PRIMARY KEY,
+        content TEXT,
+        embedding vector(3072),
+        metadata JSONB DEFAULT '{}',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    # 인덱스 생성 예시
+    create_index: |
+      CREATE INDEX ON documents
+      USING ivfflat (embedding vector_cosine_ops)
+      WITH (lists = 100)

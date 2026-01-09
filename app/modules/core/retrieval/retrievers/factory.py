@@ -80,6 +80,26 @@ _DEFAULT_PROVIDERS: dict[str, RetrieverProviderInfo] = {
         "hybrid_support": False,
         "description": "Chroma Dense 전용 Retriever - 벡터 검색만 지원 (하이브리드 미지원)",
     },
+    "pinecone": {
+        "class_path": "app.modules.core.retrieval.retrievers.pinecone_retriever.PineconeRetriever",
+        "hybrid_support": True,
+        "description": "Pinecone 하이브리드 Retriever - Dense + Sparse Vector 검색 지원",
+    },
+    "qdrant": {
+        "class_path": "app.modules.core.retrieval.retrievers.qdrant_retriever.QdrantRetriever",
+        "hybrid_support": True,
+        "description": "Qdrant 하이브리드 Retriever - Dense + Full-Text 검색 지원",
+    },
+    "pgvector": {
+        "class_path": "app.modules.core.retrieval.retrievers.pgvector_retriever.PgVectorRetriever",
+        "hybrid_support": False,
+        "description": "pgvector Dense Retriever - PostgreSQL 기반 벡터 검색 (하이브리드 미지원)",
+    },
+    "mongodb": {
+        "class_path": "app.modules.core.retrieval.retrievers.mongodb_atlas_retriever.MongoDBAtlasRetriever",
+        "hybrid_support": False,
+        "description": "MongoDB Atlas Dense Retriever - 클라우드 관리형 벡터 검색 (하이브리드 미지원)",
+    },
 }
 
 

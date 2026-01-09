@@ -20,6 +20,7 @@ class ChatRequest(BaseModel):
     stream: bool = Field(False, description="스트리밍 응답 여부")
     use_agent: bool = Field(False, description="Agent 모드 사용 여부 (Agentic RAG)")
     options: dict[str, Any] | None = Field(default_factory=dict, description="추가 옵션")
+    enable_debug_trace: bool = Field(False, description="디버깅 추적 활성화")
 
     @validator("message")
     def validate_message(cls, v):

@@ -164,6 +164,8 @@ async def chat(request: Request, chat_request: ChatRequest) -> ChatResponse:
         options = chat_request.options or {}
         if chat_request.use_agent:
             options["use_agent"] = True
+        if chat_request.enable_debug_trace:
+            options["enable_debug_trace"] = True
         rag_result = await chat_service.execute_rag_pipeline(
             chat_request.message, session_id, options
         )
@@ -180,6 +182,7 @@ async def chat(request: Request, chat_request: ChatRequest) -> ChatResponse:
                 "model_info": rag_result.get("model_info"),
                 "message_id": message_id,
                 "can_evaluate": True,
+                "debug_trace": rag_result.get("debug_trace"),  # E2E 테스트용 디버그 추적
             },
         )
         # Self-RAG 메타데이터는 model_info에 포함되어 있음

@@ -29,6 +29,7 @@ API_KEY = os.getenv("FASTAPI_AUTH_KEY", "REDACTED_API_KEY_REMOVED_FROM_HISTORY")
 
 @pytest.mark.integration
 @pytest.mark.e2e  # E2E 테스트 마커 추가
+@pytest.mark.skip(reason="E2E 테스트는 실제 서비스 연결 필요 (Weaviate, LLM 등)")
 class TestSelfRAGQualityGateE2E:
     """Self-RAG 품질 게이트 E2E 테스트"""
 
@@ -37,7 +38,6 @@ class TestSelfRAGQualityGateE2E:
         """FastAPI TestClient"""
         return TestClient(app)
 
-    @pytest.mark.skip(reason="E2E 테스트는 전체 앱 초기화 후 실행 필요 (Task 1-5 완료 후)")
     def test_high_quality_answer_with_debug_trace(self, client):
         """
         고품질 답변 E2E 플로우
@@ -97,7 +97,7 @@ class TestSelfRAGQualityGateE2E:
 
         # Step 2: 디버깅 추적 조회
         debug_response = client.get(
-            f"/admin/debug/session/{session_id}/messages/{message_id}",
+            f"/api/admin/debug/session/{session_id}/messages/{message_id}",
             headers={"X-API-Key": API_KEY},
         )
 
@@ -129,7 +129,6 @@ class TestSelfRAGQualityGateE2E:
                 f"detail: {debug_response.json()}"
             )
 
-    @pytest.mark.skip(reason="E2E 테스트는 전체 앱 초기화 후 실행 필요 (Task 1-5 완료 후)")
     def test_low_quality_answer_refused(self, client):
         """
         저품질 답변 거부 E2E 플로우
@@ -170,7 +169,6 @@ class TestSelfRAGQualityGateE2E:
                     ), "refusal_reason은 문자열이어야 합니다"
                     assert len(quality["refusal_reason"]) > 0, "거부 사유가 비어있습니다"
 
-    @pytest.mark.skip(reason="E2E 테스트는 전체 앱 초기화 후 실행 필요 (Task 1-5 완료 후)")
     def test_debug_trace_disabled_scenario(self, client):
         """
         디버깅 추적 비활성화 시나리오
@@ -199,7 +197,7 @@ class TestSelfRAGQualityGateE2E:
 
         # 디버깅 추적 조회 (없어야 정상)
         debug_response = client.get(
-            f"/admin/debug/session/{session_id}/messages/{message_id}",
+            f"/api/admin/debug/session/{session_id}/messages/{message_id}",
             headers={"X-API-Key": API_KEY},
         )
 

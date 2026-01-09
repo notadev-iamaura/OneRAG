@@ -1,0 +1,55 @@
+# Pinecone Vector Database 설정
+# 기능: 서버리스 벡터 검색, 하이브리드 검색 (Dense + Sparse Vector), 프로덕션 최적화
+# 사용: Index 관리, 문서 저장 및 검색
+# 참고: 하이브리드 검색(Sparse Vector) 지원
+
+pinecone:
+  # API 인증 정보
+  # Pinecone Console에서 API 키 발급: https://app.pinecone.io/
+  api_key: "${PINECONE_API_KEY:}"
+
+  # 인덱스 이름 (기본: rag-documents)
+  # Pinecone에서 인덱스를 미리 생성해야 합니다
+  index_name: "${PINECONE_INDEX:-rag-documents}"
+
+  # 환경 설정 (선택적)
+  # Serverless 인덱스의 경우 불필요
+  # Pod-based 인덱스의 경우: us-east-1-aws, us-west1-gcp 등
+  environment: "${PINECONE_ENVIRONMENT:}"
+
+  # 네임스페이스 (기본: default)
+  # 동일 인덱스 내 데이터 분리를 위한 논리적 파티션
+  namespace: "${PINECONE_NAMESPACE:-default}"
+
+  # 검색 설정
+  search:
+    # 기본 검색 결과 수
+    default_top_k: 10
+
+    # 하이브리드 검색 가중치 (alpha)
+    # 0.0 = Sparse만 (키워드)
+    # 1.0 = Dense만 (의미)
+    # 0.6 = 60% Dense + 40% Sparse (권장)
+    hybrid_alpha: 0.6
+
+    # 하이브리드 검색 지원 여부
+    hybrid_support: true
+
+  # 성능 설정
+  performance:
+    # 배치 저장 시 청크 크기
+    batch_size: 100
+    # API 요청 타임아웃 (초)
+    timeout: 30
+
+  # 인덱스 설정 가이드 (참고용)
+  # Pinecone Console에서 인덱스 생성 시 설정
+  index_guide:
+    # 벡터 차원 (Gemini embedding-001: 3072)
+    dimensions: 3072
+    # 유사도 메트릭 (cosine 권장)
+    metric: "cosine"
+    # Serverless 설정 (권장)
+    spec_type: "serverless"  # serverless | pod
+    cloud: "aws"  # aws | gcp | azure
+    region: "us-east-1"  # us-east-1, us-west-2 등

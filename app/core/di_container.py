@@ -28,8 +28,8 @@ from app.infrastructure.persistence.evaluation_manager import EvaluationDataMana
 from app.infrastructure.persistence.prompt_repository import PromptRepository
 from app.infrastructure.storage.metadata.postgres_store import PostgresMetadataStore
 
-# Phase 8: Storage & Ingestion (Refactored)
-from app.infrastructure.storage.vector.weaviate_store import WeaviateVectorStore
+# Phase 8: Storage & Ingestion (Factory 패턴 적용)
+from app.infrastructure.storage.vector.factory import VectorStoreFactory
 
 # Core modules
 from app.lib.auth import get_api_key_auth
@@ -101,8 +101,8 @@ from app.modules.core.retrieval.rerankers.reranker_chain import (
     RerankerChainConfig,
 )
 
-# Weaviate Retriever (프로덕션 기본값 - 2025-11-13)
-from app.modules.core.retrieval.retrievers.weaviate_retriever import WeaviateRetriever
+# Retriever Factory (다중 벡터 DB 지원 - Factory 패턴 적용)
+from app.modules.core.retrieval.retrievers.factory import RetrieverFactory
 from app.modules.core.routing.complexity_calculator import ComplexityCalculator
 from app.modules.core.routing.llm_query_router import LLMQueryRouter
 from app.modules.core.self_rag.evaluator import LLMQualityEvaluator
@@ -1072,6 +1072,222 @@ async def create_semantic_cache_instance(
         return None
 
 
+def create_vector_store_via_factory(config: dict) -> Any:
+    """
+    설정 기반 벡터 스토어 생성 (VectorStoreFactory 사용)
+
+    Provider별로 다른 설정 파라미터를 매핑하여 VectorStoreFactory를 통해
+    인스턴스를 생성합니다.
+
+    Args:
+        config: 설정 딕셔너리 (base.yaml + features/*.yaml 병합)
+
+    Returns:
+        IVectorStore 구현체 인스턴스
+
+    Raises:
+        ValueError: 지원하지 않는 provider인 경우
+        ImportError: 필요한 라이브러리가 미설치된 경우
+
+    지원 Provider:
+    - weaviate: Dense + BM25 하이브리드 검색 (기본값)
+    - chroma: 경량 로컬 벡터 DB
+    - pinecone: 서버리스 클라우드 벡터 DB
+    - qdrant: 셀프호스팅/클라우드 하이브리드 검색
+    - pgvector: PostgreSQL 기반 벡터 검색
+    - mongodb: MongoDB Atlas Vector Search
+    """
+    provider = config.get("vector_db", {}).get("provider", "weaviate")
+
+    # Provider별 설정 매핑
+    store_config: dict[str, Any] = {}
+
+    if provider == "weaviate":
+        # Weaviate: URL, API Key, gRPC 포트
+        store_config = {
+            "url": get_env_url("WEAVIATE_URL", default=os.getenv("WEAVIATE_URL")),
+            "api_key": os.getenv("WEAVIATE_API_KEY"),
+            "grpc_port": get_env_int(
+                "WEAVIATE_GRPC_PORT", default=50051, min_value=1, max_value=65535
+            ),
+        }
+    elif provider == "chroma":
+        # Chroma: 영속 디렉토리 (collection_name은 add_documents에서 지정)
+        chroma_config = config.get("chroma", {})
+        store_config = {
+            "persist_directory": chroma_config.get(
+                "persist_directory", os.getenv("CHROMA_PERSIST_DIR", "./chroma_data")
+            ),
+        }
+    elif provider == "pinecone":
+        # Pinecone: API Key, 인덱스명, namespace
+        pinecone_config = config.get("pinecone", {})
+        store_config = {
+            "api_key": os.getenv("PINECONE_API_KEY"),
+            "index_name": pinecone_config.get("index_name", "documents"),
+        }
+    elif provider == "qdrant":
+        # Qdrant: URL, API Key, 컬렉션명
+        qdrant_config = config.get("qdrant", {})
+        store_config = {
+            "url": os.getenv("QDRANT_URL", qdrant_config.get("url", "http://localhost:6333")),
+            "api_key": os.getenv("QDRANT_API_KEY"),
+            "collection_name": qdrant_config.get("collection_name", "documents"),
+        }
+    elif provider == "pgvector":
+        # pgvector: PostgreSQL DSN (연결 문자열), 테이블명
+        pgvector_config = config.get("pgvector", {})
+        store_config = {
+            "dsn": os.getenv(
+                "PGVECTOR_CONNECTION_STRING",
+                pgvector_config.get("dsn", os.getenv("DATABASE_URL"))
+            ),
+            "table_name": pgvector_config.get("table_name", "documents"),
+        }
+    elif provider == "mongodb":
+        # MongoDB Atlas: 연결 문자열, DB명, 컬렉션명, 인덱스명
+        mongodb_config = config.get("mongodb", {}).get("vector_search", {})
+        store_config = {
+            "connection_string": os.getenv("MONGODB_URI"),
+            "database_name": mongodb_config.get("database_name", "rag_vectors"),
+            "collection_name": mongodb_config.get("collection_name", "documents"),
+            "index_name": mongodb_config.get("index_name", "vector_index"),
+        }
+    else:
+        available = VectorStoreFactory.get_available_providers()
+        raise ValueError(
+            f"지원하지 않는 벡터 스토어 provider: '{provider}'. "
+            f"사용 가능한 provider: {', '.join(available)}"
+        )
+
+    logger.info(
+        "VectorStore 생성 시작",
+        extra={"provider": provider}
+    )
+
+    return VectorStoreFactory.create(provider, store_config)
+
+
+def create_retriever_via_factory(
+    config: dict,
+    embedder: Any,
+    vector_store: Any | None = None,
+    weaviate_client: Any | None = None,
+    synonym_manager: Any | None = None,
+    stopword_filter: Any | None = None,
+    user_dictionary: Any | None = None,
+) -> Any:
+    """
+    설정 기반 Retriever 생성 (RetrieverFactory 사용)
+
+    Provider별로 다른 설정 파라미터와 의존성을 매핑하여
+    RetrieverFactory를 통해 인스턴스를 생성합니다.
+
+    Args:
+        config: 설정 딕셔너리
+        embedder: 임베딩 모델 인스턴스
+        vector_store: VectorStore 인스턴스 (Weaviate 외 provider용)
+        weaviate_client: Weaviate 클라이언트 (Weaviate provider용)
+        synonym_manager: 동의어 관리자 (하이브리드 지원 provider용)
+        stopword_filter: 불용어 필터 (하이브리드 지원 provider용)
+        user_dictionary: 사용자 사전 (하이브리드 지원 provider용)
+
+    Returns:
+        IRetriever 구현체 인스턴스
+
+    지원 Provider:
+    - weaviate: Dense + BM25 하이브리드 (weaviate_client 필요)
+    - chroma: Dense 전용 (store 필요)
+    - pinecone: Dense + Sparse 하이브리드 (store 필요)
+    - qdrant: Dense + Full-Text 하이브리드 (store 필요)
+    - pgvector: Dense 전용 (store 필요)
+    - mongodb: Dense 전용 (store 필요)
+    """
+    provider = config.get("vector_db", {}).get("provider", "weaviate")
+
+    # Provider별 설정 매핑
+    retriever_config: dict[str, Any] = {}
+
+    # BM25 전처리 모듈 (하이브리드 지원 provider용)
+    bm25_preprocessors: dict[str, Any] | None = None
+    if RetrieverFactory.supports_hybrid(provider):
+        bm25_preprocessors = {
+            "synonym_manager": synonym_manager,
+            "stopword_filter": stopword_filter,
+            "user_dictionary": user_dictionary,
+        }
+
+    if provider == "weaviate":
+        # Weaviate: weaviate_client 사용 (store 대신)
+        weaviate_config = config.get("weaviate", {})
+        retriever_config = {
+            "weaviate_client": weaviate_client,
+            "collection_name": weaviate_config.get("collection_name", "Documents"),
+            "alpha": weaviate_config.get("hybrid_search", {}).get("default_alpha", 0.6),
+            "additional_collections": weaviate_config.get("additional_collections", []),
+            "collection_properties": config.get("domain", {}).get("retrieval", {}).get(
+                "collections", {}
+            ),
+        }
+    elif provider == "chroma":
+        # Chroma: Dense 전용
+        chroma_config = config.get("chroma", {})
+        retriever_config = {
+            "store": vector_store,
+            "collection_name": chroma_config.get("collection_name", "documents"),
+            "top_k": chroma_config.get("retrieval", {}).get("default_top_k", 10),
+        }
+    elif provider == "pinecone":
+        # Pinecone: 하이브리드 지원
+        pinecone_config = config.get("pinecone", {})
+        retriever_config = {
+            "store": vector_store,
+            "namespace": pinecone_config.get("namespace", "default"),
+            "top_k": pinecone_config.get("retrieval", {}).get("default_top_k", 10),
+            "hybrid_alpha": pinecone_config.get("hybrid", {}).get("default_alpha", 0.6),
+        }
+    elif provider == "qdrant":
+        # Qdrant: 하이브리드 지원
+        qdrant_config = config.get("qdrant", {})
+        retriever_config = {
+            "store": vector_store,
+            "collection_name": qdrant_config.get("collection_name", "documents"),
+            "top_k": qdrant_config.get("retrieval", {}).get("default_top_k", 10),
+            "hybrid_alpha": qdrant_config.get("hybrid_search", {}).get("default_alpha", 0.6),
+        }
+    elif provider == "pgvector":
+        # pgvector: Dense 전용
+        pgvector_config = config.get("pgvector", {})
+        retriever_config = {
+            "store": vector_store,
+            "table_name": pgvector_config.get("table_name", "documents"),
+            "top_k": pgvector_config.get("retrieval", {}).get("default_top_k", 10),
+        }
+    elif provider == "mongodb":
+        # MongoDB Atlas: Dense 전용
+        mongodb_config = config.get("mongodb", {}).get("vector_search", {})
+        retriever_config = {
+            "store": vector_store,
+            "collection_name": mongodb_config.get("collection_name", "documents"),
+            "top_k": mongodb_config.get("retrieval", {}).get("default_top_k", 10),
+        }
+
+    logger.info(
+        "Retriever 생성 시작",
+        extra={
+            "provider": provider,
+            "hybrid_support": RetrieverFactory.supports_hybrid(provider),
+        }
+    )
+
+    return RetrieverFactory.create(
+        provider=provider,
+        embedder=embedder,
+        config=retriever_config,
+        bm25_preprocessors=bm25_preprocessors,
+    )
+
+
 # ========================================
 # AppContainer
 # ========================================
@@ -1157,11 +1373,12 @@ class AppContainer(containers.DeclarativeContainer):
     # ========================================
     # 8. Storage & Ingestion Providers (New Architecture)
     # ========================================
+    # VectorStore: Factory 패턴으로 Provider 기반 동적 생성
+    # VECTOR_DB_PROVIDER 환경변수로 벡터 DB 선택 (기본값: weaviate)
+    # 지원: weaviate, chroma, pinecone, qdrant, pgvector, mongodb
     vector_store = providers.Singleton(
-        WeaviateVectorStore,
-        url=get_env_url("WEAVIATE_URL", default=os.getenv("WEAVIATE_URL")),
-        api_key=os.getenv("WEAVIATE_API_KEY"),
-        grpc_port=get_env_int("WEAVIATE_GRPC_PORT", default=50051, min_value=1, max_value=65535)
+        create_vector_store_via_factory,
+        config=config,
     )
 
     metadata_store = providers.Singleton(
@@ -1317,25 +1534,23 @@ class AppContainer(containers.DeclarativeContainer):
         enabled=config.bm25.user_dictionary.enabled,
     )
 
-    # Weaviate Retriever (프로덕션)
-    # Dense Vector (Gemini 3072d) + Sparse BM25 (kagome_kr) 하이브리드 검색
-    # Phase 2: BM25 고도화 모듈 주입
-    # Phase 3: 다중 컬렉션 검색 (Documents + NotionMetadata)
-    weaviate_retriever = providers.Singleton(
-        WeaviateRetriever,
+    # Retriever: Factory 패턴으로 Provider 기반 동적 생성
+    # VECTOR_DB_PROVIDER 환경변수로 Retriever 선택 (기본값: weaviate)
+    # 하이브리드 지원: weaviate, pinecone, qdrant
+    # Dense 전용: chroma, pgvector, mongodb
+    retriever = providers.Singleton(
+        create_retriever_via_factory,
+        config=config,
         embedder=document_processor.provided.embedder,
-        weaviate_client=weaviate_client,  # DI: Weaviate 클라이언트
-        collection_name=config.weaviate.collection_name,  # Weaviate 컬렉션 이름 (기본: Documents)
-        alpha=config.weaviate.hybrid_search.default_alpha,  # 하이브리드 검색 가중치 (기본: 0.6)
-        # Phase 2: BM25 고도화 모듈
-        synonym_manager=synonym_manager,
+        vector_store=vector_store,  # Weaviate 외 provider용
+        weaviate_client=weaviate_client,  # Weaviate provider용
+        synonym_manager=synonym_manager,  # 하이브리드 지원 provider용
         stopword_filter=stopword_filter,
         user_dictionary=user_dictionary,
-        # Phase 3: 추가 컬렉션 (NotionMetadata 등)
-        additional_collections=config.weaviate.additional_collections,
-        # 도메인 특화 프로퍼티 설정 (domain.yaml)
-        collection_properties=config.domain.retrieval.collections,
     )
+
+    # 하위 호환성: weaviate_retriever 별칭 유지
+    weaviate_retriever = retriever
 
     # ----------------------------------------
     # Phase 6: 고급 리랭킹 시스템

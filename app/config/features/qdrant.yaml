@@ -1,0 +1,64 @@
+# Qdrant Vector Database 설정
+# 기능: 셀프호스팅/클라우드 벡터 데이터베이스, 하이브리드 검색 (Dense + Full-Text), 유연한 배포
+# 사용: 컬렉션 관리, 문서 저장 및 검색
+# 참고: Docker 로컬 또는 Qdrant Cloud 배포 지원
+
+qdrant:
+  # 연결 설정
+  # 로컬 모드: host + port 사용
+  # 클라우드 모드: url + api_key 사용 (host/port 무시)
+
+  # 로컬 Qdrant 서버 설정
+  host: "${QDRANT_HOST:-localhost}"
+  port: "${QDRANT_PORT:-6333}"
+
+  # Qdrant Cloud 설정 (선택적)
+  # Cloud URL이 설정되면 host/port 무시
+  url: "${QDRANT_URL:}"
+  api_key: "${QDRANT_API_KEY:}"
+
+  # 기본 컬렉션 이름
+  collection_name: "${QDRANT_COLLECTION:-documents}"
+
+  # gRPC 설정 (선택적, 성능 최적화)
+  grpc_port: "${QDRANT_GRPC_PORT:}"
+  prefer_grpc: false
+
+  # 검색 설정
+  search:
+    # 기본 검색 결과 수
+    default_top_k: 10
+
+    # 하이브리드 검색 가중치 (alpha)
+    # 0.0 = Sparse만 (Full-Text 키워드)
+    # 1.0 = Dense만 (의미)
+    # 0.6 = 60% Dense + 40% Sparse (권장)
+    hybrid_alpha: 0.6
+
+    # 하이브리드 검색 지원 여부
+    # Qdrant는 Full-Text 인덱스를 통한 하이브리드 검색 지원
+    hybrid_support: true
+
+  # 성능 설정
+  performance:
+    # 배치 저장 시 청크 크기
+    batch_size: 100
+    # API 요청 타임아웃 (초)
+    timeout: 30
+
+  # 컬렉션 설정 가이드 (참고용)
+  # Qdrant에서 컬렉션 생성 시 설정
+  collection_guide:
+    # 벡터 차원 (Gemini embedding-001: 3072, OpenAI: 1536)
+    dimensions: 3072
+    # 거리 메트릭 (Cosine, Euclid, Dot)
+    distance: "Cosine"
+    # 최적화 설정
+    on_disk: false  # 메모리 기반 (빠른 검색)
+
+  # 배포 가이드
+  deployment:
+    # 로컬 Docker 실행
+    local: "docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant"
+    # 클라우드 서비스
+    cloud: "https://cloud.qdrant.io"

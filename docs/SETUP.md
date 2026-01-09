@@ -1,4 +1,4 @@
-# 설치 및 환경 설정 (Setup) - v3.3.0
+# 설치 및 환경 설정 (Setup) - v1.0.0
 
 이 문서는 Blank RAG 시스템을 로컬 환경에 설치하고 실행하는 방법을 안내합니다.
 
@@ -20,7 +20,7 @@ git clone <repository-url>
 cd RAG_Standard
 
 # uv를 사용하여 가상환경 생성 및 모든 의존성 설치
-# v3.3.0부터 spaCy 한국어 모델(ko_core_news_sm)도 자동으로 설치됩니다.
+# v1.0.0부터 spaCy 한국어 모델(ko_core_news_sm)도 자동으로 설치됩니다.
 uv sync
 ```
 

@@ -1,4 +1,4 @@
-# 시스템 아키텍처 (Architecture) - v3.3.0
+# 시스템 아키텍처 (Architecture) - v1.0.0
 
 Blank RAG 시스템은 고성능, 확장성, 프로덕션급 보안을 지향하는 **Advanced RAG 프레임워크**입니다.
 

@@ -25,3 +25,49 @@ mongodb:
   # Write settings
   retry_writes: true
   w: "majority"  # Write Concern: majority로 데이터 안정성 보장
+
+  # ============================================================
+  # Vector Search 설정 (MongoDB Atlas Vector Search)
+  # ============================================================
+  # MongoDB Atlas Vector Search를 사용한 Dense 벡터 검색 설정
+  # 하이브리드 검색 미지원 - Dense 검색 전용
+  #
+  # 사전 요구사항:
+  # 1. MongoDB Atlas 계정 및 클러스터 생성
+  # 2. Vector Search 인덱스 생성 (Atlas UI에서 설정)
+  # 3. pymongo 라이브러리 설치: pip install pymongo 또는 uv sync --extra mongodb
+  #
+  # Vector Search 인덱스 생성 예시 (Atlas UI):
+  # {
+  #   "mappings": {
+  #     "dynamic": true,
+  #     "fields": {
+  #       "embedding": {
+  #         "type": "knnVector",
+  #         "dimensions": 1024,
+  #         "similarity": "cosine"
+  #       }
+  #     }
+  #   }
+  # }
+  # 참고: https://www.mongodb.com/docs/atlas/atlas-search/field-types/knn-vector/
+
+  vector_search:
+    # Vector Search 전용 데이터베이스/컬렉션 (기본 설정과 다를 경우)
+    database_name: "${MONGODB_VECTOR_DATABASE:-rag_vectors}"
+    collection_name: "${MONGODB_VECTOR_COLLECTION:-documents}"
+
+    # Vector Search 인덱스 이름 (Atlas UI에서 미리 생성 필요)
+    index_name: "${MONGODB_VECTOR_INDEX:-vector_index}"
+
+    # 임베딩 필드 이름 (문서 내 벡터가 저장되는 필드)
+    embedding_field: "embedding"
+
+    # 검색 설정
+    retrieval:
+      # 기본 반환 결과 수
+      default_top_k: 10
+
+      # numCandidates 배수 (더 많은 후보 검토로 정확도 향상)
+      # 권장: top_k * 10 ~ top_k * 20
+      num_candidates_multiplier: 10
