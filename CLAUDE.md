@@ -1,13 +1,13 @@
-# CLAUDE.md (v1.0.5 - Multi Vector DB 6종 지원)
+# CLAUDE.md (v1.0.7 - 기술부채 Zero 완성)
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 프로젝트 개요
 도메인 범용화된 완벽한 오픈소스 RAG 시스템. 2026년 기준 가장 진보된 RAG 기술들을 하나의 표준 파이프라인으로 통합한 엔터프라이즈급 솔루션입니다.
 
-- **버전**: 1.0.5 (Multi Vector DB 6종 지원)
-- **상태**: ✅ **기술 부채 Zero**, ✅ **1288개 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**
-- **주요 개선**: 6종 벡터 DB Factory 패턴 (Weaviate, Chroma, Pinecone, Qdrant, pgvector, MongoDB Atlas)
+- **버전**: 1.0.7 (기술부채 Zero 완성)
+- **상태**: ✅ **기술 부채 Zero**, ✅ **1,295개 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**
+- **주요 개선**: 모든 deprecated 함수 제거/리팩토링 완료 (Phase 1, 2, 3)
 
 ## 개발 명령어
 
@@ -17,7 +17,7 @@ uv sync
 
 # 개발 서버 및 테스트
 make dev-reload         # 자동 리로드 (uvicorn --reload)
-make test               # 1288개 테스트 실행 (외부 로그 차단 격리 환경)
+make test               # 1,295개 테스트 실행 (외부 로그 차단 격리 환경)
 make test-cov           # 테스트 커버리지 리포트
 
 # 코드 품질 관리 (CI/CD 통과 필수)
@@ -55,8 +55,10 @@ raise GenerationError(ErrorCode.GENERATION_TIMEOUT, model="claude-sonnet-4-5")
 
 ### 5. DI 컨테이너 (Dependency Injection)
 - **80+ Provider**: Singleton(70개) + Factory(10개) 패턴 완비
-- **7개 명시적 팩토리**: Agent, Evaluator, GraphRAG, Cache, MCP, Ingestion, VectorStore
-- **Deprecated 함수 Zero**: `get_cost_tracker()`, `get_mongodb_client()` 완전 제거
+- **8개 명시적 팩토리**: Agent, Evaluator, GraphRAG, Cache, MCP, Ingestion, VectorStore, Retriever
+- **Deprecated 함수 Zero**: 모든 전역 헬퍼 함수 제거/리팩토링 완료 (v1.0.7)
+  - `get_cost_tracker()`, `get_mongodb_client()`, `get_prompt_manager()` 제거
+  - `get_circuit_breaker()` 제거, `get_performance_metrics()` → private 전환
 - **테스트 용이성**: 모든 의존성 주입 가능, Mock 교체 용이
 
 ### 6. Multi-LLM Factory (v1.0.3)
@@ -116,8 +118,8 @@ app/config/environments/
 
 | 항목 | 현황 | 비고 |
 |------|------|------|
-| **전체 테스트** | 1,288개 Pass | 단위/통합/안정성 테스트 완비 |
-| **기술 부채** | 0건 | Deprecated 함수 완전 제거, DI 패턴 완성 |
+| **전체 테스트** | 1,295개 Pass | 단위/통합/안정성 테스트 완비 |
+| **기술 부채** | 0건 | Phase 1,2,3 완료, 모든 deprecated 함수 제거/리팩토링 |
 | **보안 인증** | 완료 | 관리자 API 및 PII 보호 통합 |
 | **GraphRAG 지능** | 완료 | 벡터 검색 기반 엔티티 탐색 |
 | **설정 관리** | 완료 | 환경별 분리 및 검증 강화 |
