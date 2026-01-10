@@ -221,36 +221,16 @@ class PerformanceMetrics:
 _global_performance_metrics: PerformanceMetrics | None = None
 
 
-def get_performance_metrics() -> PerformanceMetrics:
+def _get_performance_metrics() -> PerformanceMetrics:
     """
-    전역 성능 메트릭 가져오기
+    전역 성능 메트릭 가져오기 (내부용)
 
-    .. deprecated:: 3.1.0
-        DI Container의 AppContainer.performance_metrics를 사용하세요.
-        이 함수는 하위 호환성을 위해 유지되며 v4.0.0에서 제거될 예정입니다.
+    이 함수는 모듈 내부에서만 사용됩니다.
+    외부에서는 DI Container의 AppContainer.performance_metrics를 사용하세요.
 
     Returns:
         PerformanceMetrics: 전역 성능 메트릭 인스턴스
-
-    Example (Deprecated):
-        metrics = get_performance_metrics()
-        metrics.record_latency('retrieval', 150.5)
-
-    Example (Recommended):
-        from app.core.di_container import AppContainer
-
-        container = AppContainer()
-        metrics = container.performance_metrics()
-        metrics.record_latency('retrieval', 150.5)
     """
-    import warnings
-
-    warnings.warn(
-        "get_performance_metrics()는 deprecated되었습니다. "
-        "DI Container의 AppContainer.performance_metrics를 사용하세요.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
     global _global_performance_metrics
     if _global_performance_metrics is None:
         _global_performance_metrics = PerformanceMetrics()
@@ -269,7 +249,7 @@ def track_function_performance(function_name: str) -> Any:
     def decorator(func: Any) -> Any:
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
-            metrics = get_performance_metrics()
+            metrics = _get_performance_metrics()
 
             try:
                 result = await func(*args, **kwargs)
@@ -290,4 +270,4 @@ def track_function_performance(function_name: str) -> Any:
 # ========================================
 
 # rag_pipeline.py 호환성을 위한 전역 metrics 객체
-metrics = get_performance_metrics()
+metrics = _get_performance_metrics()
