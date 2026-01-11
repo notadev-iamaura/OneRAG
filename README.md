@@ -1,5 +1,11 @@
 # RAG_Standard (v1.0.7 - 기술부채 Zero 완성)
 
+**한국어** | [English](README_EN.md)
+
+[![CI](https://github.com/youngouk/RAG_Standard/actions/workflows/ci.yml/badge.svg)](https://github.com/youngouk/RAG_Standard/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 범용 RAG(Retrieval-Augmented Generation) 챗봇 백엔드 시스템. FastAPI 기반의 고성능 비동기 웹 서비스로, 엔터프라이즈급 보안과 최신 GraphRAG 기술이 통합된 **2026년 기준 무결점(Clean Code) 표준 모델**입니다.
 
 ## 🏆 프로젝트 상태: "기술부채 Zero (v1.0.7)"
