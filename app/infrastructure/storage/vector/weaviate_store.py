@@ -37,11 +37,19 @@ class WeaviateVectorStore(IVectorStore):
 
         # Weaviate Client 초기화 (v4)
         auth_config = weaviate.auth.AuthApiKey(api_key=self.api_key) if self.api_key else None
-        host = self.url.replace("https://", "").replace("http://", "").split(":")[0]
+        # URL에서 호스트와 포트 파싱
+        url_without_scheme = self.url.replace("https://", "").replace("http://", "")
+        url_parts = url_without_scheme.split(":")
+        host = url_parts[0]
+        # URL에서 포트 추출, 없으면 기본값 사용
+        if len(url_parts) > 1:
+            http_port = int(url_parts[1].split("/")[0])  # 경로 제거
+        else:
+            http_port = 443 if self.url.startswith("https") else 80
         is_secure = self.url.startswith("https")
         self.client: WeaviateClient = weaviate.connect_to_custom(
             http_host=host,
-            http_port=443 if self.url.startswith("https") else 80,
+            http_port=http_port,
             http_secure=is_secure,
             grpc_host=host,
             grpc_port=self.grpc_port,

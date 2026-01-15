@@ -1,35 +1,52 @@
-.PHONY: help install install-dev sync update run dev test lint format clean docker-build docker-run neo4j-up neo4j-down neo4j-logs test-neo4j
+.PHONY: help install install-dev sync update run dev test lint format clean docker-build docker-run neo4j-up neo4j-down neo4j-logs test-neo4j quickstart quickstart-down quickstart-logs quickstart-load
 
 # 기본 타겟
 .DEFAULT_GOAL := help
 
 # 도움말
 help:
-	@echo "RAG Chatbot Python Backend - Makefile Commands"
-	@echo "=============================================="
-	@echo "install      - uv로 프로덕션 의존성 설치"
-	@echo "install-dev  - uv로 개발 의존성 포함 설치"
-	@echo "sync         - uv.lock 파일과 동기화"
-	@echo "update       - 의존성 업데이트"
-	@echo "run          - 프로덕션 서버 실행"
-	@echo "dev          - 개발 서버 실행 (자동 리로드)"
-	@echo "dev-fast     - 빠른 개발 서버 (로깅 최소화)"
-	@echo "test         - 테스트 실행"
-	@echo "test-eval    - 평가 테스트 실행 (CI/CD 품질 게이트)"
-	@echo "eval         - 배치 평가 실행 (Golden Dataset)"
-	@echo "eval-ragas   - Ragas 배치 평가 실행"
-	@echo "lint         - 코드 린팅 (ruff)"
-	@echo "lint-imports - 의존성 계층 검증 (import-linter)"
-	@echo "format       - 코드 포맷팅 (black + ruff)"
-	@echo "clean        - 캐시 및 임시 파일 정리"
-	@echo "docker-build - Docker 이미지 빌드"
-	@echo "docker-run   - Docker 컨테이너 실행"
+	@echo "RAG_Standard - Makefile Commands"
+	@echo "================================="
 	@echo ""
-	@echo "Neo4j 관련:"
-	@echo "neo4j-up     - Neo4j 로컬 컨테이너 시작"
-	@echo "neo4j-down   - Neo4j 로컬 컨테이너 중지"
-	@echo "neo4j-logs   - Neo4j 로그 확인"
-	@echo "test-neo4j   - Neo4j 통합 테스트 실행"
+	@echo "🚀 Quickstart (처음 시작하세요!):"
+	@echo "  quickstart      - 원클릭 실행 (Weaviate + API + 샘플데이터)"
+	@echo "  quickstart-down - Quickstart 서비스 종료"
+	@echo "  quickstart-logs - Quickstart 로그 확인"
+	@echo "  quickstart-load - 샘플 데이터만 로드"
+	@echo ""
+	@echo "📦 설치:"
+	@echo "  install         - uv로 프로덕션 의존성 설치"
+	@echo "  install-dev     - uv로 개발 의존성 포함 설치"
+	@echo "  sync            - uv.lock 파일과 동기화"
+	@echo "  update          - 의존성 업데이트"
+	@echo ""
+	@echo "🔧 개발:"
+	@echo "  run             - 프로덕션 서버 실행"
+	@echo "  dev             - 개발 서버 실행"
+	@echo "  dev-reload      - 개발 서버 (자동 리로드)"
+	@echo "  dev-fast        - 빠른 개발 서버 (로깅 최소화)"
+	@echo ""
+	@echo "🧪 테스트:"
+	@echo "  test            - 테스트 실행"
+	@echo "  test-cov        - 테스트 커버리지"
+	@echo "  test-eval       - 평가 테스트 (CI/CD 품질 게이트)"
+	@echo ""
+	@echo "✨ 코드 품질:"
+	@echo "  lint            - 코드 린팅 (ruff)"
+	@echo "  lint-fix        - 린팅 자동 수정"
+	@echo "  lint-imports    - 의존성 계층 검증"
+	@echo "  format          - 코드 포맷팅"
+	@echo "  type-check      - 타입 체크 (mypy)"
+	@echo ""
+	@echo "🐳 Docker:"
+	@echo "  docker-build    - Docker 이미지 빌드"
+	@echo "  docker-run      - Docker 컨테이너 실행"
+	@echo ""
+	@echo "📊 Neo4j (GraphRAG):"
+	@echo "  neo4j-up        - Neo4j 컨테이너 시작"
+	@echo "  neo4j-down      - Neo4j 컨테이너 종료"
+	@echo "  neo4j-logs      - Neo4j 로그 확인"
+	@echo "  test-neo4j      - Neo4j 통합 테스트"
 
 # uv 설치 확인
 check-uv:
@@ -220,3 +237,58 @@ test-neo4j:
 	NEO4J_USER=neo4j \
 	NEO4J_PASSWORD=testpassword123 \
 	uv run pytest tests/integration/test_neo4j_integration.py -v -m integration
+
+# =============================================================================
+# Quickstart 명령 (원클릭 실행)
+# =============================================================================
+
+# .env 파일 확인
+check-env:
+	@if [ ! -f .env ]; then \
+		echo "❌ .env 파일이 없습니다."; \
+		echo ""; \
+		echo "다음 명령어로 .env 파일을 생성하세요:"; \
+		echo "  cp quickstart/.env.quickstart .env"; \
+		echo ""; \
+		echo "그 후 .env 파일을 열어 API 키를 설정하세요:"; \
+		echo "  - Google AI Studio (무료): https://aistudio.google.com/apikey"; \
+		echo "  - OpenAI: https://platform.openai.com/api-keys"; \
+		exit 1; \
+	fi
+
+# Quickstart 원클릭 실행
+quickstart: check-env
+	@echo "🚀 RAG_Standard Quickstart 시작..."
+	@echo ""
+	@echo "1️⃣  Docker 서비스 시작 중..."
+	docker compose up -d
+	@echo ""
+	@echo "2️⃣  서비스 준비 대기 중..."
+	@sleep 5
+	@echo ""
+	@echo "3️⃣  샘플 데이터 로드 중..."
+	uv run python quickstart/load_sample_data.py
+	@echo ""
+	@echo "=============================================="
+	@echo "🎉 Quickstart 완료!"
+	@echo ""
+	@echo "📖 API 문서: http://localhost:8000/docs"
+	@echo "❤️  Health:   http://localhost:8000/health"
+	@echo ""
+	@echo "종료: make quickstart-down"
+	@echo "=============================================="
+
+# Quickstart 서비스 종료
+quickstart-down:
+	@echo "🛑 Quickstart 서비스 종료 중..."
+	docker compose down
+	@echo "✅ 종료 완료"
+
+# Quickstart 로그 확인
+quickstart-logs:
+	docker compose logs -f
+
+# 샘플 데이터만 로드
+quickstart-load:
+	@echo "📥 샘플 데이터 로드 중..."
+	uv run python quickstart/load_sample_data.py

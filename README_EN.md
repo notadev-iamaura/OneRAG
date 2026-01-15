@@ -35,77 +35,75 @@ This project has achieved **production-grade quality**:
 - **Clean Architecture**: DI pattern with `dependency-injector` for vendor-agnostic flexibility
 - **Multi-LLM Support**: Google Gemini, OpenAI GPT, Anthropic Claude, OpenRouter with automatic fallback
 
-## 🏃 Quick Start (5 minutes)
+## 🚀 Quickstart (3 Steps)
+
+**First time?** Just follow 3 steps to experience the RAG system.
 
 ### Prerequisites
 
 ```bash
-# Python 3.11+
-python --version  # Requires Python 3.11.x or higher
-
-# Docker & Docker Compose
+# Check required tools
 docker --version          # Docker 20.10+
 docker compose version    # Docker Compose v2+
-
-# UV package manager
-uv --version || pip install uv
+uv --version || curl -LsSf https://astral.sh/uv/install.sh | sh  # UV package manager
 ```
 
-### Step 1: Clone & Install (2 min)
+### Step 1: Clone & Install
 
 ```bash
 git clone https://github.com/youngouk/RAG_Standard.git
 cd RAG_Standard
-
-# Install all dependencies (including spaCy Korean model)
 uv sync
 ```
 
-### Step 2: Environment Setup (1 min)
+### Step 2: Configure
 
 ```bash
-cp .env.example .env
+# Copy quickstart environment file
+cp quickstart/.env.quickstart .env
+
+# Edit .env and set just ONE API key
+# GOOGLE_API_KEY=your-key  (Free: https://aistudio.google.com/apikey)
 ```
 
-Edit `.env` with **minimum 2 settings**:
+### Step 3: Run
 
 ```bash
-# Required 1: API authentication key (any string, 32+ chars)
-FASTAPI_AUTH_KEY=your_secure_random_key_here_at_least_32_chars
-
-# Required 2: LLM API key (choose one)
-GOOGLE_API_KEY=AIza...    # Recommended - free tier: https://makersuite.google.com/app/apikey
-# or OPENAI_API_KEY=sk-...
-# or ANTHROPIC_API_KEY=sk-ant-...
+make quickstart
 ```
 
-### Step 3: Start Infrastructure (1 min)
+Done! 🎉 Test the API at http://localhost:8000/docs
 
 ```bash
-# Start Weaviate vector database
+# Stop
+make quickstart-down
+```
+
+---
+
+## 📖 Detailed Setup Guide
+
+For more granular configuration, see [docs/SETUP.md](docs/SETUP.md).
+
+### Development Environment (Local)
+
+```bash
+# 1. Run only Weaviate with Docker
 docker compose -f docker-compose.weaviate.yml up -d
 
-# Verify (wait ~30s for healthy status)
-docker compose -f docker-compose.weaviate.yml ps
-```
+# 2. Configure detailed environment
+cp .env.example .env
+# Edit .env (API keys, auth keys, etc.)
 
-### Step 4: Run Server
-
-```bash
+# 3. Run dev server (with hot reload)
 make dev-reload
 ```
 
-### Step 5: Verify
-
-| Endpoint | URL | Description |
-|----------|-----|-------------|
-| **API Docs** | http://localhost:8000/docs | Swagger UI - test all APIs |
-| **Health** | http://localhost:8000/health | Server status |
-
-### Run Tests (Optional)
+### Run Tests
 
 ```bash
-ENVIRONMENT=test make test
+# Run 1,295 tests
+make test
 ```
 
 ## 📂 Project Structure

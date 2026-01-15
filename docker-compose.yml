@@ -1,0 +1,70 @@
+# RAG_Standard 통합 Docker Compose
+# Quickstart: make quickstart 명령어로 실행
+#
+# 포함 서비스:
+# - weaviate: 벡터 데이터베이스 (하이브리드 검색 지원)
+# - api: RAG API 서버 (FastAPI)
+
+services:
+  # Weaviate 벡터 데이터베이스
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.27.8
+    container_name: rag-weaviate
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # HTTP API
+      - "50051:50051" # gRPC (Python client v4)
+    environment:
+      # 단일 노드 클러스터 설정 (필수)
+      CLUSTER_HOSTNAME: 'node1'
+      RAFT_BOOTSTRAP_EXPECT: 1
+      # 한국어 토크나이저 활성화
+      ENABLE_TOKENIZER_KAGOME_KR: 'true'
+      # 데이터 영속화
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      # 인증 (로컬 개발 - 비활성화)
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      # 기본 설정
+      QUERY_DEFAULTS_LIMIT: 25
+      LOG_LEVEL: 'info'
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # RAG API 서버
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Weaviate 연결 (컨테이너 네트워크 사용)
+      WEAVIATE_URL: "http://weaviate:8080"
+      WEAVIATE_GRPC_HOST: "weaviate"
+      WEAVIATE_GRPC_PORT: "50051"
+      # 개발 환경
+      ENVIRONMENT: "development"
+    depends_on:
+      weaviate:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  weaviate_data:
+    name: rag_standard_weaviate_data

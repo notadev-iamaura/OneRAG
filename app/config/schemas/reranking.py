@@ -119,8 +119,8 @@ class RerankingConfig(BaseConfig):
 
     default_provider: str = Field(
         default="gemini_flash",
-        pattern="^(gemini_flash|llm|gpt5_nano|jina|cohere)$",
-        description="기본 리랭커 제공자 (gemini_flash, llm, gpt5_nano, jina, cohere)",
+        pattern="^(gemini_flash|llm|gpt5_nano|jina|cohere|openrouter_gemini)$",
+        description="기본 리랭커 제공자 (gemini_flash, llm, gpt5_nano, jina, cohere, openrouter_gemini)",
     )
 
     min_score: float = Field(

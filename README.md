@@ -34,87 +34,76 @@
 - **YAML Dynamic Config**: 서비스 키워드, 라우팅 규칙 등을 실시간 수정 가능.
 - **Clean Architecture**: `dependency-injector` 기반의 DI 패턴으로 특정 DB나 모델에 종속되지 않는 유연한 구조를 제공합니다.
 
-## 🏃 빠른 시작 (5분)
+## 🚀 Quickstart (3단계)
+
+**처음 사용하시나요?** 3단계만 따라하면 RAG 시스템을 바로 체험할 수 있습니다.
 
 ### 사전 요구사항
 
-시작하기 전에 다음 도구들이 설치되어 있는지 확인하세요.
-
 ```bash
-# Python 3.11 이상
-python --version  # Python 3.11.x 이상 필요
-
-# Docker & Docker Compose
-docker --version          # Docker 20.10 이상
-docker compose version    # Docker Compose v2 이상
-
-# UV 패키지 매니저 (없으면 설치)
-uv --version || pip install uv
+# 필수 도구 확인
+docker --version          # Docker 20.10+
+docker compose version    # Docker Compose v2+
+uv --version || curl -LsSf https://astral.sh/uv/install.sh | sh  # UV 패키지 매니저
 ```
 
-### Step 1: 프로젝트 클론 및 의존성 설치 (2분)
+### Step 1: 클론 및 설치
 
 ```bash
 git clone https://github.com/youngouk/RAG_Standard.git
 cd RAG_Standard
-
-# 모든 의존성 자동 설치 (spaCy 한국어 모델 포함)
 uv sync
 ```
 
-### Step 2: 환경 변수 설정 (1분)
+### Step 2: 환경 설정
 
 ```bash
-# 환경 변수 템플릿 복사
-cp .env.example .env
+# Quickstart 환경 파일 복사
+cp quickstart/.env.quickstart .env
+
+# .env 파일 열어서 API 키 하나만 설정
+# GOOGLE_API_KEY=your-key  (무료: https://aistudio.google.com/apikey)
 ```
 
-`.env` 파일을 열어 **최소 2개 항목**을 설정하세요.
+### Step 3: 실행
 
 ```bash
-# 필수 1: API 인증 키 (아무 문자열이나 32자 이상)
-FASTAPI_AUTH_KEY=your_secure_random_key_here_at_least_32_chars
-
-# 필수 2: LLM API 키 (아래 중 1개 선택)
-GOOGLE_API_KEY=AIza...    # 권장 - 무료 티어 제공: https://makersuite.google.com/app/apikey
-# 또는 OPENAI_API_KEY=sk-...
-# 또는 ANTHROPIC_API_KEY=sk-ant-...
+make quickstart
 ```
 
-### Step 3: 인프라 실행 (1분)
+완료! 🎉 http://localhost:8000/docs 에서 API를 테스트하세요.
 
 ```bash
-# Weaviate 벡터 데이터베이스 실행
+# 종료
+make quickstart-down
+```
+
+---
+
+## 📖 상세 설정 가이드
+
+Quickstart보다 세밀한 설정이 필요하다면 [docs/SETUP.md](docs/SETUP.md)를 참조하세요.
+
+### 개발 환경 (로컬 실행)
+
+```bash
+# 1. Weaviate만 Docker로 실행
 docker compose -f docker-compose.weaviate.yml up -d
 
-# 실행 확인 (healthy 상태까지 약 30초 소요)
-docker compose -f docker-compose.weaviate.yml ps
-```
+# 2. 상세 환경 변수 설정
+cp .env.example .env
+# .env 파일 편집 (API 키, 인증 키 등)
 
-### Step 4: 서버 실행
-
-```bash
-# 개발 서버 (자동 리로드)
+# 3. 개발 서버 실행 (자동 리로드)
 make dev-reload
 ```
 
-### Step 5: 동작 검증
-
-서버가 정상 실행되면 아래 URL로 접속하세요.
-
-| 항목 | URL | 설명 |
-|------|-----|------|
-| **API 문서** | http://localhost:8000/docs | Swagger UI - 모든 API 테스트 가능 |
-| **헬스 체크** | http://localhost:8000/health | 서버 상태 확인 |
-
-### 테스트 실행 (선택)
+### 테스트 실행
 
 ```bash
-# 1,295개 테스트 실행 (격리 환경에서 실행)
-ENVIRONMENT=test make test
+# 1,295개 테스트 실행
+make test
 ```
-
-> 📖 **상세 설정 가이드**: [docs/SETUP.md](docs/SETUP.md) 참조
 
 ## 📂 프로젝트 구조
 - `app/api/`: REST API 및 인증 레이어 (v3.3 보안 강화)

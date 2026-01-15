@@ -1915,8 +1915,9 @@ async def initialize_async_resources(container: AppContainer) -> None:
             }
         )
 
-        # Phase 1 MVP: Generation과 Evaluation은 선택사항 (API 키/DB 없이도 실행 가능)
-        optional_modules = {"Generation", "Evaluation"}
+        # Phase 1 MVP: Generation, Evaluation, DB 관련 모듈은 선택사항 (API 키/DB 없이도 실행 가능)
+        # Quickstart 환경에서는 PostgreSQL 없이도 동작해야 함
+        optional_modules = {"Generation", "Evaluation", "Prompt Repository", "Database Manager"}
         critical_failures = [name for name, _ in failed_modules if name not in optional_modules]
 
         if critical_failures:
