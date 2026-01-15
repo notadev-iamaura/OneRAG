@@ -53,7 +53,7 @@ def wait_for_weaviate(url: str, max_retries: int = 30, delay: float = 2.0) -> bo
     return False
 
 
-def load_sample_data():
+def load_sample_data() -> None:
     """
     샘플 FAQ 데이터를 Weaviate에 적재
     """
