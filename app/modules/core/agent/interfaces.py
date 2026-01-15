@@ -35,6 +35,9 @@ class AgentConfig:
         timeout_seconds: 전체 작업 타임아웃 (초, QA-003)
         tool_timeout: 개별 도구 실행 타임아웃 (초)
         parallel_execution: 병렬 도구 실행 여부
+        enable_reflection: Self-Reflection 활성화 여부 (기본: True)
+        reflection_threshold: Reflection 품질 임계값 (기본: 7.0)
+        max_reflection_iterations: 최대 Reflection 반복 횟수 (기본: 2)
     """
 
     # 도구 선택 방식: "llm" | "rule_based" | "hybrid"
@@ -61,6 +64,17 @@ class AgentConfig:
 
     # 최대 동시 실행 도구 수 (병렬 실행 시 동시성 제어)
     max_concurrent_tools: int = 3
+
+    # === Self-Reflection 설정 ===
+
+    # Reflection 활성화 여부
+    enable_reflection: bool = True
+
+    # Reflection 품질 threshold (이 점수 미만이면 개선 필요)
+    reflection_threshold: float = 7.0
+
+    # 최대 Reflection 반복 횟수
+    max_reflection_iterations: int = 2
 
 
 @dataclass

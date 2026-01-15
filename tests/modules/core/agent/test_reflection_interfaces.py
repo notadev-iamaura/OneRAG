@@ -1,11 +1,11 @@
 """
-ReflectionResult 데이터 클래스 테스트
+Reflection 관련 인터페이스 테스트
 
-Self-Reflection 기능의 핵심 데이터 구조인 ReflectionResult의 생성,
-기본값 처리, 경계값 동작을 검증합니다.
+Self-Reflection 기능의 핵심 데이터 구조 테스트:
+- ReflectionResult: Reflection 결과 데이터 클래스
+- AgentConfig: Reflection 설정 필드
 """
-import pytest
-from app.modules.core.agent.interfaces import ReflectionResult
+from app.modules.core.agent.interfaces import AgentConfig, ReflectionResult
 
 
 class TestReflectionResult:
@@ -101,3 +101,66 @@ class TestReflectionResult:
         assert result2.issues == []
         assert result1.suggestions == ["테스트 제안"]
         assert result2.suggestions == []
+
+
+class TestAgentConfigReflection:
+    """AgentConfig Reflection 설정 테스트"""
+
+    def test_agent_config_reflection_defaults(self):
+        """Reflection 기본 설정 테스트"""
+        # Given: 기본값으로 AgentConfig 생성
+        # When: AgentConfig 인스턴스 생성
+        config = AgentConfig()
+
+        # Then: Reflection 기본값이 올바르게 설정됨
+        assert config.enable_reflection is True
+        assert config.reflection_threshold == 7.0
+        assert config.max_reflection_iterations == 2
+
+    def test_agent_config_reflection_custom(self):
+        """Reflection 커스텀 설정 테스트"""
+        # Given: 커스텀 Reflection 설정값
+        # When: AgentConfig 생성
+        config = AgentConfig(
+            enable_reflection=False,
+            reflection_threshold=8.0,
+            max_reflection_iterations=3
+        )
+
+        # Then: 커스텀 값이 정확히 설정됨
+        assert config.enable_reflection is False
+        assert config.reflection_threshold == 8.0
+        assert config.max_reflection_iterations == 3
+
+    def test_agent_config_reflection_disabled(self):
+        """Reflection 비활성화 테스트"""
+        # Given: Reflection 비활성화 설정
+        # When: enable_reflection=False로 생성
+        config = AgentConfig(enable_reflection=False)
+
+        # Then: Reflection이 비활성화됨
+        assert config.enable_reflection is False
+
+    def test_agent_config_reflection_threshold_boundary_low(self):
+        """Reflection threshold 최저값 테스트"""
+        # Given/When: threshold를 0으로 설정
+        config = AgentConfig(reflection_threshold=0.0)
+
+        # Then: 0.0이 정확히 저장됨 (모든 답변이 개선 필요로 판단)
+        assert config.reflection_threshold == 0.0
+
+    def test_agent_config_reflection_threshold_boundary_high(self):
+        """Reflection threshold 최고값 테스트"""
+        # Given/When: threshold를 10으로 설정
+        config = AgentConfig(reflection_threshold=10.0)
+
+        # Then: 10.0이 정확히 저장됨 (모든 답변이 통과)
+        assert config.reflection_threshold == 10.0
+
+    def test_agent_config_reflection_iterations_boundary(self):
+        """Reflection 반복 횟수 경계값 테스트"""
+        # Given/When: 반복 횟수를 1로 설정 (최소 유효값)
+        config = AgentConfig(max_reflection_iterations=1)
+
+        # Then: 1회 반복이 설정됨
+        assert config.max_reflection_iterations == 1
