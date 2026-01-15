@@ -1,30 +1,33 @@
+# app/modules/core/tools/server.py
 """
-MCPServer - FastMCP 래퍼 클래스
+ToolServer - 도구 서버 래퍼 클래스
 
 기존 팩토리 패턴과 통합하면서 FastMCP 기능을 제공.
 DI Container에서 Singleton으로 관리.
 
 사용 예시:
-    # MCPToolFactory를 통해 생성 (권장)
-    mcp = MCPToolFactory.create(config)
+    # ToolFactory를 통해 생성 (권장)
+    server = ToolFactory.create(config)
 
     # 도구 실행
-    result = await mcp.execute_tool("search_weaviate", {"query": "강남"})
-"""
+    result = await server.execute_tool("search_weaviate", {"query": "검색어"})
 
+하위 호환성:
+    MCPServer는 ToolServer의 alias입니다.
+"""
 import asyncio
 import time
 from typing import Any
 
 from ....lib.logger import get_logger
-from .interfaces import MCPServerConfig, MCPToolConfig, MCPToolResult
+from .interfaces import ToolConfig, ToolResult, ToolServerConfig
 
 logger = get_logger(__name__)
 
 
-class MCPServer:
+class ToolServer:
     """
-    MCP 서버 래퍼 클래스
+    도구 서버 래퍼 클래스
 
     FastMCP를 내부적으로 사용하면서 기존 아키텍처와 호환되는
     인터페이스를 제공합니다.
@@ -37,14 +40,14 @@ class MCPServer:
 
     def __init__(
         self,
-        config: MCPServerConfig,
+        config: ToolServerConfig,
         global_config: dict[str, Any],
     ):
         """
-        MCPServer 초기화
+        ToolServer 초기화
 
         Args:
-            config: MCP 서버 설정
+            config: 도구 서버 설정
             global_config: 전체 앱 설정 (retriever, generation 등 접근용)
         """
         self._config = config
@@ -61,7 +64,7 @@ class MCPServer:
             "calls_by_tool": {},
         }
 
-        logger.info(f"MCPServer 생성: {config.server_name}")
+        logger.info(f"ToolServer 생성: {config.server_name}")
 
     @property
     def server_name(self) -> str:
@@ -81,7 +84,7 @@ class MCPServer:
             if config.enabled
         ]
 
-    def get_tool_config(self, tool_name: str) -> MCPToolConfig | None:
+    def get_tool_config(self, tool_name: str) -> ToolConfig | None:
         """특정 도구 설정 조회"""
         return self._config.tools.get(tool_name)
 
@@ -113,7 +116,7 @@ class MCPServer:
 
         return schemas
 
-    def _build_parameter_schema(self, tool_config: MCPToolConfig) -> dict[str, Any]:
+    def _build_parameter_schema(self, tool_config: ToolConfig) -> dict[str, Any]:
         """도구 파라미터 JSON Schema 생성"""
         # 기본 파라미터 스키마 (도구별로 다름)
         base_schemas: dict[str, dict[str, Any]] = {
@@ -160,6 +163,14 @@ class MCPServer:
                     "default": 1,
                 },
             },
+            "web_search": {
+                "query": {"type": "string", "description": "검색 쿼리"},
+                "max_results": {
+                    "type": "integer",
+                    "description": "반환할 최대 결과 수",
+                    "default": 5,
+                },
+            },
         }
 
         return base_schemas.get(tool_config.name, {})
@@ -174,6 +185,7 @@ class MCPServer:
             "get_table_schema": ["table_name"],
             "search_graph": ["query"],
             "get_neighbors": ["entity_id"],
+            "web_search": ["query"],
         }
 
         return required_params.get(tool_name, [])
@@ -187,7 +199,7 @@ class MCPServer:
         if self._initialized:
             return
 
-        logger.info(f"MCPServer 초기화 시작: {self.server_name}")
+        logger.info(f"ToolServer 초기화 시작: {self.server_name}")
 
         # FastMCP 인스턴스 생성 (lazy) - 선택적
         try:
@@ -195,7 +207,7 @@ class MCPServer:
 
             self._fastmcp = FastMCP(
                 name=self.server_name,
-                description="RAG Chatbot MCP Server",
+                description="RAG Chatbot Tool Server",
             )
             logger.debug("FastMCP 인스턴스 생성됨")
         except ImportError:
@@ -206,7 +218,7 @@ class MCPServer:
         await self._load_tool_functions()
 
         self._initialized = True
-        logger.info(f"✅ MCPServer 초기화 완료: {len(self._tool_functions)}개 도구")
+        logger.info(f"✅ ToolServer 초기화 완료: {len(self._tool_functions)}개 도구")
 
     async def _load_tool_functions(self) -> None:
         """도구 함수 동적 로딩"""
@@ -242,7 +254,7 @@ class MCPServer:
         self,
         tool_name: str,
         arguments: dict[str, Any],
-    ) -> MCPToolResult:
+    ) -> ToolResult:
         """
         도구 실행
 
@@ -251,7 +263,7 @@ class MCPServer:
             arguments: 도구 인자
 
         Returns:
-            MCPToolResult: 실행 결과
+            ToolResult: 실행 결과
         """
         start_time = time.time()
         self._stats["total_calls"] += 1
@@ -263,7 +275,7 @@ class MCPServer:
         tool_config = self.get_tool_config(tool_name)
         if not tool_config or not tool_config.enabled:
             self._stats["failed_calls"] += 1
-            return MCPToolResult(
+            return ToolResult(
                 success=False,
                 data=None,
                 error=f"비활성화된 도구: {tool_name}",
@@ -274,7 +286,7 @@ class MCPServer:
         func = self._tool_functions.get(tool_name)
         if not func:
             self._stats["failed_calls"] += 1
-            return MCPToolResult(
+            return ToolResult(
                 success=False,
                 data=None,
                 error=f"도구 함수 미등록: {tool_name}",
@@ -295,7 +307,7 @@ class MCPServer:
 
             logger.info(f"✅ 도구 실행 성공: {tool_name} ({execution_time:.2f}s)")
 
-            return MCPToolResult(
+            return ToolResult(
                 success=True,
                 data=result,
                 tool_name=tool_name,
@@ -304,7 +316,7 @@ class MCPServer:
 
         except TimeoutError:
             self._stats["failed_calls"] += 1
-            return MCPToolResult(
+            return ToolResult(
                 success=False,
                 data=None,
                 error=f"타임아웃: {tool_config.timeout}초 초과",
@@ -316,7 +328,7 @@ class MCPServer:
             self._stats["failed_calls"] += 1
             logger.error(f"❌ 도구 실행 실패: {tool_name} - {e}")
 
-            return MCPToolResult(
+            return ToolResult(
                 success=False,
                 data=None,
                 error=str(e),
@@ -336,5 +348,10 @@ class MCPServer:
         """서버 종료"""
         self._tool_functions.clear()
         self._initialized = False
-        logger.info(f"MCPServer 종료: {self.server_name}")
+        logger.info(f"ToolServer 종료: {self.server_name}")
 
+
+# ========================================
+# 하위 호환성 alias
+# ========================================
+MCPServer = ToolServer

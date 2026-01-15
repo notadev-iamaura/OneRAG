@@ -1,20 +1,20 @@
-"""MCP 인터페이스 테스트"""
+"""Tool 인터페이스 테스트 (MCP 하위 호환성)"""
 
 from dataclasses import is_dataclass
 
 
-def test_mcp_tool_result_is_dataclass():
-    """MCPToolResult가 dataclass인지 확인"""
-    from app.modules.core.mcp.interfaces import MCPToolResult
+def test_tool_result_is_dataclass():
+    """ToolResult가 dataclass인지 확인"""
+    from app.modules.core.tools import ToolResult
 
-    assert is_dataclass(MCPToolResult)
+    assert is_dataclass(ToolResult)
 
 
-def test_mcp_tool_result_fields():
-    """MCPToolResult 필드 확인"""
-    from app.modules.core.mcp.interfaces import MCPToolResult
+def test_tool_result_fields():
+    """ToolResult 필드 확인"""
+    from app.modules.core.tools import ToolResult
 
-    result = MCPToolResult(
+    result = ToolResult(
         success=True,
         data={"key": "value"},
         error=None,
@@ -29,11 +29,11 @@ def test_mcp_tool_result_fields():
     assert result.execution_time == 0.5
 
 
-def test_mcp_tool_result_default_values():
-    """MCPToolResult 기본값 확인"""
-    from app.modules.core.mcp.interfaces import MCPToolResult
+def test_tool_result_default_values():
+    """ToolResult 기본값 확인"""
+    from app.modules.core.tools import ToolResult
 
-    result = MCPToolResult(
+    result = ToolResult(
         success=False,
         data=None,
     )
@@ -45,11 +45,11 @@ def test_mcp_tool_result_default_values():
     assert result.execution_time == 0.0
 
 
-def test_mcp_tool_config_fields():
-    """MCPToolConfig 필드 확인"""
-    from app.modules.core.mcp.interfaces import MCPToolConfig
+def test_tool_config_fields():
+    """ToolConfig 필드 확인"""
+    from app.modules.core.tools import ToolConfig
 
-    config = MCPToolConfig(
+    config = ToolConfig(
         name="search_weaviate",
         description="Weaviate 검색",
         enabled=True,
@@ -62,11 +62,11 @@ def test_mcp_tool_config_fields():
     assert config.timeout == 30.0
 
 
-def test_mcp_tool_config_default_values():
-    """MCPToolConfig 기본값 확인"""
-    from app.modules.core.mcp.interfaces import MCPToolConfig
+def test_tool_config_default_values():
+    """ToolConfig 기본값 확인"""
+    from app.modules.core.tools import ToolConfig
 
-    config = MCPToolConfig(
+    config = ToolConfig(
         name="test_tool",
         description="테스트 도구",
     )
@@ -76,11 +76,11 @@ def test_mcp_tool_config_default_values():
     assert config.retry_count == 1  # 기본값 1회
 
 
-def test_mcp_server_config_fields():
-    """MCPServerConfig 필드 확인"""
-    from app.modules.core.mcp.interfaces import MCPServerConfig
+def test_tool_server_config_fields():
+    """ToolServerConfig 필드 확인"""
+    from app.modules.core.tools import ToolServerConfig
 
-    config = MCPServerConfig(
+    config = ToolServerConfig(
         enabled=True,
         server_name="test-server",
         default_timeout=60.0,
@@ -93,16 +93,33 @@ def test_mcp_server_config_fields():
     assert config.max_concurrent_tools == 5
 
 
-def test_mcp_server_config_default_values():
-    """MCPServerConfig 기본값 확인"""
-    from app.modules.core.mcp.interfaces import MCPServerConfig
+def test_tool_server_config_default_values():
+    """ToolServerConfig 기본값 확인"""
+    from app.modules.core.tools import ToolServerConfig
 
-    config = MCPServerConfig()
+    config = ToolServerConfig()
 
     assert config.enabled is True
     # 범용화: 도메인 특화 이름에서 일반 이름으로 변경됨
     assert config.server_name == "blank-rag-system"
     assert config.default_timeout == 30.0
     assert config.max_concurrent_tools == 3
+
+
+def test_mcp_alias_compatibility():
+    """MCP* 하위 호환성 alias 테스트"""
+    from app.modules.core.tools import (
+        MCPServerConfig,
+        MCPToolConfig,
+        MCPToolResult,
+        ToolConfig,
+        ToolResult,
+        ToolServerConfig,
+    )
+
+    # alias 확인
+    assert MCPToolResult is ToolResult
+    assert MCPToolConfig is ToolConfig
+    assert MCPServerConfig is ToolServerConfig
 
 

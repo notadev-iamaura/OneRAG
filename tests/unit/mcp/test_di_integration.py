@@ -1,4 +1,4 @@
-"""MCP DI Container 통합 테스트"""
+"""Tool Server DI Container 통합 테스트 (MCP 하위 호환성)"""
 
 from unittest.mock import AsyncMock
 
@@ -21,7 +21,7 @@ def test_create_mcp_server_helper_exists():
 
 @pytest.mark.asyncio
 async def test_create_mcp_server_disabled():
-    """MCP 비활성화 시 None 반환"""
+    """MCP/Tools 비활성화 시 None 반환"""
     from app.core.di_container import create_mcp_server_instance
 
     config = {
@@ -37,9 +37,9 @@ async def test_create_mcp_server_disabled():
 
 @pytest.mark.asyncio
 async def test_create_mcp_server_enabled():
-    """MCP 활성화 시 MCPServer 인스턴스 반환"""
+    """MCP/Tools 활성화 시 ToolServer(MCPServer alias) 인스턴스 반환"""
     from app.core.di_container import create_mcp_server_instance
-    from app.modules.core.mcp import MCPServer
+    from app.modules.core.tools import ToolServer
 
     mock_retriever = AsyncMock()
 
@@ -62,13 +62,13 @@ async def test_create_mcp_server_enabled():
     result = await create_mcp_server_instance(config, retriever=mock_retriever)
 
     assert result is not None
-    assert isinstance(result, MCPServer)
+    assert isinstance(result, ToolServer)
     assert result.server_name == "test-server"
 
 
 @pytest.mark.asyncio
 async def test_create_mcp_server_injects_retriever():
-    """MCP 서버에 retriever가 주입되는지 확인"""
+    """Tool 서버에 retriever가 주입되는지 확인"""
     from app.core.di_container import create_mcp_server_instance
 
     mock_retriever = AsyncMock()

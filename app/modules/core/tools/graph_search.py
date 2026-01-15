@@ -1,21 +1,19 @@
-# app/modules/core/mcp/tools/graph_tools.py
+# app/modules/core/tools/graph_search.py
 """
-GraphRAG MCP 도구
+그래프 검색 도구
 
 그래프 검색, 이웃 조회 등의 도구를 제공합니다.
-MCPServer에 등록되어 Agent가 사용할 수 있습니다.
+Agent가 사용할 수 있습니다.
 
 도구 목록:
 - search_graph: 그래프에서 엔티티 검색
 - get_neighbors: 엔티티의 이웃 조회
-
-생성일: 2026-01-05
 """
 from __future__ import annotations
 
 from typing import Any
 
-from .....lib.logger import get_logger
+from ....lib.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -70,7 +68,7 @@ async def search_graph(
     top_k = arguments.get("top_k", default_top_k)
 
     logger.info(
-        f"🔍 MCP search_graph: query='{query}', entity_types={entity_types}, top_k={top_k}"
+        f"🔍 search_graph: query='{query}', entity_types={entity_types}, top_k={top_k}"
     )
 
     try:
@@ -168,7 +166,7 @@ async def get_neighbors(
     max_depth = arguments.get("max_depth", default_max_depth)
 
     logger.info(
-        f"📄 MCP get_neighbors: entity_id='{entity_id}', "
+        f"📄 get_neighbors: entity_id='{entity_id}', "
         f"relation_types={relation_types}, max_depth={max_depth}"
     )
 

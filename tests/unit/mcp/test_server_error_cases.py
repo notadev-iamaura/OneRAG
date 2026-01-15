@@ -1,5 +1,5 @@
 """
-MCP Server 에러 케이스 테스트
+Tool Server 에러 케이스 테스트 (MCP 하위 호환성)
 
 현재 커버리지: 62.50%
 목표 커버리지: 85-90%
@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
-class TestMCPServerInitialization:
-    """MCP Server 초기화 테스트"""
+class TestToolServerInitialization:
+    """Tool Server 초기화 테스트"""
 
     @pytest.mark.asyncio
     async def test_fastmcp_import_error_fallback(self) -> None:
@@ -25,18 +25,17 @@ class TestMCPServerInitialization:
         FastMCP 임포트 에러 시 폴백 테스트
 
         Given: FastMCP 라이브러리가 설치되지 않음
-        When: MCPServer 초기화
+        When: ToolServer 초기화
         Then: 경고 로그, 기본 모드로 동작
         """
-        from app.modules.core.mcp.interfaces import MCPServerConfig, MCPToolConfig
-        from app.modules.core.mcp.server import MCPServer
+        from app.modules.core.tools import ToolConfig, ToolServer, ToolServerConfig
 
-        # MCPServerConfig 객체 생성
-        config = MCPServerConfig(
+        # ToolServerConfig 객체 생성
+        config = ToolServerConfig(
             enabled=True,
             server_name="test-server",
             tools={
-                "search_weaviate": MCPToolConfig(
+                "search_weaviate": ToolConfig(
                     name="search_weaviate",
                     description="Test tool",
                     enabled=True,
@@ -46,8 +45,8 @@ class TestMCPServerInitialization:
         )
 
         with patch.dict("sys.modules", {"fastmcp": None}):
-            with patch("app.modules.core.mcp.server.logger") as mock_logger:
-                server = MCPServer(config=config, global_config={})
+            with patch("app.modules.core.tools.server.logger") as mock_logger:
+                server = ToolServer(config=config, global_config={})
                 await server.initialize()
 
                 # 검증: FastMCP 없이도 초기화 성공
@@ -64,15 +63,14 @@ class TestMCPServerInitialization:
         When: 도구 함수 로딩 시도
         Then: 경고 로그, 스킵
         """
-        from app.modules.core.mcp.interfaces import MCPServerConfig, MCPToolConfig
-        from app.modules.core.mcp.server import MCPServer
+        from app.modules.core.tools import ToolConfig, ToolServer, ToolServerConfig
 
         # 존재하지 않는 도구 추가
-        config = MCPServerConfig(
+        config = ToolServerConfig(
             enabled=True,
             server_name="test-server",
             tools={
-                "nonexistent_tool": MCPToolConfig(
+                "nonexistent_tool": ToolConfig(
                     name="nonexistent_tool",
                     description="Nonexistent tool",
                     enabled=True,
@@ -81,27 +79,26 @@ class TestMCPServerInitialization:
             },
         )
 
-        server = MCPServer(config=config, global_config={})
+        server = ToolServer(config=config, global_config={})
         await server.initialize()
 
         # 검증: 존재하는 도구만 로딩됨
         assert "nonexistent_tool" not in server._tool_functions
 
 
-class TestMCPServerToolExecution:
-    """MCP Server 도구 실행 테스트"""
+class TestToolServerToolExecution:
+    """Tool Server 도구 실행 테스트"""
 
     @pytest.fixture
     def initialized_server(self) -> Any:
-        """초기화된 MCP Server (수동 설정)"""
-        from app.modules.core.mcp.interfaces import MCPServerConfig, MCPToolConfig
-        from app.modules.core.mcp.server import MCPServer
+        """초기화된 Tool Server (수동 설정)"""
+        from app.modules.core.tools import ToolConfig, ToolServer, ToolServerConfig
 
-        config = MCPServerConfig(
+        config = ToolServerConfig(
             enabled=True,
             server_name="test-server",
             tools={
-                "search_weaviate": MCPToolConfig(
+                "search_weaviate": ToolConfig(
                     name="search_weaviate",
                     description="Test tool",
                     enabled=True,
@@ -110,7 +107,7 @@ class TestMCPServerToolExecution:
             },
         )
 
-        server = MCPServer(config=config, global_config={})
+        server = ToolServer(config=config, global_config={})
         # 도구 함수 직접 추가 (초기화 없이)
         server._initialized = True
         server._tool_functions = {
@@ -129,15 +126,14 @@ class TestMCPServerToolExecution:
         When: 도구 실행 시도
         Then: 실패 결과 반환
         """
-        from app.modules.core.mcp.interfaces import MCPServerConfig, MCPToolConfig
-        from app.modules.core.mcp.server import MCPServer
+        from app.modules.core.tools import ToolConfig, ToolServer, ToolServerConfig
 
         # 도구 비활성화
-        config = MCPServerConfig(
+        config = ToolServerConfig(
             enabled=True,
             server_name="test-server",
             tools={
-                "search_weaviate": MCPToolConfig(
+                "search_weaviate": ToolConfig(
                     name="search_weaviate",
                     description="Test tool",
                     enabled=False,  # 비활성화
@@ -146,7 +142,7 @@ class TestMCPServerToolExecution:
             },
         )
 
-        server = MCPServer(config=config, global_config={})
+        server = ToolServer(config=config, global_config={})
         await server.initialize()
 
         result = await server.execute_tool(
@@ -167,14 +163,13 @@ class TestMCPServerToolExecution:
         When: 도구 실행 시도
         Then: 실패 결과 반환
         """
-        from app.modules.core.mcp.interfaces import MCPServerConfig, MCPToolConfig
-        from app.modules.core.mcp.server import MCPServer
+        from app.modules.core.tools import ToolConfig, ToolServer, ToolServerConfig
 
-        config = MCPServerConfig(
+        config = ToolServerConfig(
             enabled=True,
             server_name="test-server",
             tools={
-                "unknown_tool": MCPToolConfig(
+                "unknown_tool": ToolConfig(
                     name="unknown_tool",
                     description="Unknown tool",
                     enabled=True,
@@ -183,7 +178,7 @@ class TestMCPServerToolExecution:
             },
         )
 
-        server = MCPServer(config=config, global_config={})
+        server = ToolServer(config=config, global_config={})
         server._initialized = True
         server._tool_functions = {}  # 도구 함수 미등록
 
@@ -207,19 +202,18 @@ class TestMCPServerToolExecution:
         """
         import asyncio
 
-        from app.modules.core.mcp.interfaces import MCPServerConfig, MCPToolConfig
-        from app.modules.core.mcp.server import MCPServer
+        from app.modules.core.tools import ToolConfig, ToolServer, ToolServerConfig
 
         # 타임아웃 발생하는 도구 함수
         async def slow_function(args, config):
             await asyncio.sleep(100)  # 매우 느림
             return {"result": "success"}
 
-        config = MCPServerConfig(
+        config = ToolServerConfig(
             enabled=True,
             server_name="test-server",
             tools={
-                "slow_tool": MCPToolConfig(
+                "slow_tool": ToolConfig(
                     name="slow_tool",
                     description="Slow tool",
                     enabled=True,
@@ -228,7 +222,7 @@ class TestMCPServerToolExecution:
             },
         )
 
-        server = MCPServer(config=config, global_config={})
+        server = ToolServer(config=config, global_config={})
         server._initialized = True
 
         # 도구 함수 직접 추가
@@ -252,18 +246,17 @@ class TestMCPServerToolExecution:
         When: 도구 실행
         Then: 실패 결과 반환
         """
-        from app.modules.core.mcp.interfaces import MCPServerConfig, MCPToolConfig
-        from app.modules.core.mcp.server import MCPServer
+        from app.modules.core.tools import ToolConfig, ToolServer, ToolServerConfig
 
         # 예외 발생하는 도구 함수
         async def error_function(args, config):
             raise ValueError("Invalid argument")
 
-        config = MCPServerConfig(
+        config = ToolServerConfig(
             enabled=True,
             server_name="test-server",
             tools={
-                "error_tool": MCPToolConfig(
+                "error_tool": ToolConfig(
                     name="error_tool",
                     description="Error tool",
                     enabled=True,
@@ -272,7 +265,7 @@ class TestMCPServerToolExecution:
             },
         )
 
-        server = MCPServer(config=config, global_config={})
+        server = ToolServer(config=config, global_config={})
         server._initialized = True
 
         # 도구 함수 직접 추가
@@ -296,17 +289,16 @@ class TestMCPServerToolExecution:
         When: 도구 함수 로딩
         Then: 경고 로그, 스킵 (에러 없음)
         """
-        from app.modules.core.mcp.interfaces import MCPServerConfig, MCPToolConfig
-        from app.modules.core.mcp.server import MCPServer
+        from app.modules.core.tools import ToolConfig, ToolServer, ToolServerConfig
 
         with patch("importlib.import_module") as mock_import:
             mock_import.side_effect = ModuleNotFoundError("No module")
 
-            config = MCPServerConfig(
+            config = ToolServerConfig(
                 enabled=True,
                 server_name="test-server",
                 tools={
-                    "search_weaviate": MCPToolConfig(
+                    "search_weaviate": ToolConfig(
                         name="search_weaviate",
                         description="Test tool",
                         enabled=True,
@@ -315,7 +307,7 @@ class TestMCPServerToolExecution:
                 },
             )
 
-            server = MCPServer(config=config, global_config={})
+            server = ToolServer(config=config, global_config={})
             await server.initialize()
 
             # 검증: 초기화 성공 (에러 없음)

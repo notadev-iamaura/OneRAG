@@ -59,9 +59,6 @@ from app.modules.core.graph import (
     LLMRelationExtractor,
 )
 
-# Phase 4: MCP 모듈 (Model Context Protocol)
-from app.modules.core.mcp import MCPServer, MCPToolFactory
-
 # Phase 2: 개인정보 보호 모듈 (통합 PII 처리)
 from app.modules.core.privacy import (
     PIIProcessor,
@@ -110,6 +107,10 @@ from app.modules.core.self_rag.orchestrator import SelfRAGOrchestrator
 from app.modules.core.session.facade import EnhancedSessionModule
 from app.modules.core.session.services.memory_service import MemoryService
 from app.modules.core.sql_search import SQLSearchService
+
+# Phase 4: Tools 모듈 (Tool Use / Function Calling)
+# MCPServer, MCPToolFactory는 ToolServer, ToolFactory의 하위 호환성 alias
+from app.modules.core.tools import MCPServer, MCPToolFactory
 from app.modules.core.tools.external_api_caller import ExternalAPICaller
 from app.modules.core.tools.tool_executor import ToolExecutor
 from app.modules.core.tools.tool_loader import ToolLoader

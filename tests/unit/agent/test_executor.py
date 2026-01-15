@@ -21,7 +21,7 @@ import pytest
 
 from app.modules.core.agent.executor import AgentExecutor
 from app.modules.core.agent.interfaces import AgentConfig, ToolCall
-from app.modules.core.mcp.interfaces import MCPToolResult
+from app.modules.core.tools import MCPToolResult
 
 
 class TestAgentExecutorSingleTool:

@@ -1,17 +1,17 @@
+# app/modules/core/tools/vector_search.py
 """
-Weaviate MCP 도구
+벡터 검색 도구
 
-벡터 DB(Weaviate)에서 정보를 검색하는 도구들.
+벡터 DB(Weaviate 등)에서 정보를 검색하는 도구들.
 기존 WeaviateRetriever를 활용합니다.
 
 도구 목록:
 - search_weaviate: 하이브리드 검색
 - get_document_by_id: UUID로 문서 조회
 """
-
 from typing import Any
 
-from .....lib.logger import get_logger
+from ....lib.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -64,7 +64,7 @@ async def search_weaviate(
     top_k = arguments.get("top_k", default_top_k)
     alpha = arguments.get("alpha", default_alpha)
 
-    logger.info(f"🔍 MCP search_weaviate: query='{query}', top_k={top_k}, alpha={alpha}")
+    logger.info(f"🔍 search_weaviate: query='{query}', top_k={top_k}, alpha={alpha}")
 
     try:
         # 기존 WeaviateRetriever 사용
@@ -74,7 +74,7 @@ async def search_weaviate(
             alpha=alpha,
         )
 
-        # MCP 응답 형식으로 변환
+        # 응답 형식으로 변환
         results = []
         for doc in search_results:
             result = {
@@ -128,7 +128,7 @@ async def get_document_by_id(
     if retriever is None:
         raise ValueError("retriever가 설정되지 않았습니다")
 
-    logger.info(f"📄 MCP get_document_by_id: id={document_id}")
+    logger.info(f"📄 get_document_by_id: id={document_id}")
 
     try:
         # get_by_id 메서드 호출
@@ -153,4 +153,3 @@ async def get_document_by_id(
     except Exception as e:
         logger.error(f"❌ get_document_by_id 실패: {e}")
         raise
-

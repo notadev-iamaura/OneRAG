@@ -1,4 +1,4 @@
-"""MCP Weaviate 도구 테스트"""
+"""벡터 검색 도구 테스트 (tools 모듈)"""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -42,23 +42,23 @@ def mock_global_config(mock_retriever):
     }
 
 
-def test_weaviate_tool_module_exists():
-    """Weaviate 도구 모듈 존재 확인"""
-    from app.modules.core.mcp.tools import weaviate as weaviate_tools
+def test_vector_search_module_exists():
+    """벡터 검색 도구 모듈 존재 확인"""
+    from app.modules.core.tools import vector_search
 
-    assert weaviate_tools is not None
+    assert vector_search is not None
 
 
 def test_search_weaviate_function_exists():
     """search_weaviate 함수 존재 확인"""
-    from app.modules.core.mcp.tools.weaviate import search_weaviate
+    from app.modules.core.tools.vector_search import search_weaviate
 
     assert callable(search_weaviate)
 
 
 def test_get_document_by_id_function_exists():
     """get_document_by_id 함수 존재 확인"""
-    from app.modules.core.mcp.tools.weaviate import get_document_by_id
+    from app.modules.core.tools.vector_search import get_document_by_id
 
     assert callable(get_document_by_id)
 
@@ -66,7 +66,7 @@ def test_get_document_by_id_function_exists():
 @pytest.mark.asyncio
 async def test_search_weaviate_basic(mock_global_config):
     """search_weaviate 기본 동작 테스트"""
-    from app.modules.core.mcp.tools.weaviate import search_weaviate
+    from app.modules.core.tools.vector_search import search_weaviate
 
     arguments = {"query": "강남 맛집", "top_k": 5}
 
@@ -81,7 +81,7 @@ async def test_search_weaviate_basic(mock_global_config):
 @pytest.mark.asyncio
 async def test_search_weaviate_uses_default_top_k(mock_global_config):
     """top_k 미지정 시 기본값 사용"""
-    from app.modules.core.mcp.tools.weaviate import search_weaviate
+    from app.modules.core.tools.vector_search import search_weaviate
 
     arguments = {"query": "레스토랑"}
 
@@ -96,7 +96,7 @@ async def test_search_weaviate_uses_default_top_k(mock_global_config):
 @pytest.mark.asyncio
 async def test_search_weaviate_no_retriever():
     """retriever 미설정 시 에러 처리"""
-    from app.modules.core.mcp.tools.weaviate import search_weaviate
+    from app.modules.core.tools.vector_search import search_weaviate
 
     arguments = {"query": "테스트"}
     config_without_retriever = {"mcp": {"tools": {"search_weaviate": {}}}}
@@ -108,7 +108,7 @@ async def test_search_weaviate_no_retriever():
 @pytest.mark.asyncio
 async def test_search_weaviate_empty_query():
     """빈 쿼리 시 에러 처리"""
-    from app.modules.core.mcp.tools.weaviate import search_weaviate
+    from app.modules.core.tools.vector_search import search_weaviate
 
     arguments = {"query": ""}
 
@@ -119,7 +119,7 @@ async def test_search_weaviate_empty_query():
 @pytest.mark.asyncio
 async def test_get_document_by_id_basic(mock_global_config):
     """get_document_by_id 기본 동작 테스트"""
-    from app.modules.core.mcp.tools.weaviate import get_document_by_id
+    from app.modules.core.tools.vector_search import get_document_by_id
 
     # get_by_id 목킹
     mock_global_config["retriever"].get_by_id = AsyncMock(

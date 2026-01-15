@@ -29,8 +29,8 @@ def wait_for_weaviate(url: str, max_retries: int = 30, delay: float = 2.0) -> bo
     Returns:
         준비 완료 여부
     """
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     ready_url = f"{url}/v1/.well-known/ready"
     print(f"⏳ Weaviate 준비 대기 중... ({url})")
@@ -83,7 +83,7 @@ def load_sample_data():
     # Weaviate 클라이언트 연결
     try:
         import weaviate
-        from weaviate.classes.config import Configure, Property, DataType
+        from weaviate.classes.config import Configure, DataType, Property
         from weaviate.classes.data import DataObject
     except ImportError:
         print("❌ weaviate 패키지가 설치되지 않았습니다.")

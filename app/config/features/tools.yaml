@@ -1,0 +1,72 @@
+# Agent 도구 설정 (Tool Use / Function Calling)
+# 기능: LLM Agent가 사용할 도구(함수) 정의
+# 패턴: EmbedderFactory, RerankerFactory와 동일한 설정 구조
+#
+# 사용 방법:
+#   - enabled: true/false로 각 도구를 On/Off
+#   - 새 도구 추가: 이 파일에 설정 추가 + tools/ 폴더에 구현
+#
+# 참고: 기존 mcp.yaml과 호환되며, 점진적으로 이 파일로 마이그레이션 권장
+
+tools:
+  # ========================================
+  # 전역 설정
+  # ========================================
+  enabled: true                       # 도구 기능 전체 On/Off
+  server_name: "rag-tools"            # 서버 이름 (로깅용)
+  default_timeout: 30                 # 도구 실행 기본 타임아웃 (초)
+  max_concurrent_tools: 3             # 동시 실행 가능한 도구 수
+
+  # ========================================
+  # 검색 도구
+  # ========================================
+  tools:
+    # ------ 벡터 검색 도구 ------
+    search_vector:
+      enabled: true
+      description: "벡터 DB에서 정보를 하이브리드 검색합니다 (Dense + BM25)"
+      timeout: 15
+      parameters:
+        default_top_k: 10
+        alpha: 0.6                    # Dense:BM25 비율 (1.0=Dense only, 0.0=BM25 only)
+
+    get_document_by_id:
+      enabled: true
+      description: "문서 ID로 벡터 DB에서 직접 조회합니다"
+      timeout: 5
+
+    # ------ 그래프 검색 도구 ------
+    search_graph:
+      enabled: true
+      description: "지식 그래프에서 엔티티와 관계를 검색합니다"
+      timeout: 10
+      parameters:
+        default_top_k: 10
+
+    get_neighbors:
+      enabled: true
+      description: "엔티티의 이웃 엔티티와 관계를 조회합니다"
+      timeout: 10
+      parameters:
+        default_max_depth: 1
+
+    # ------ 웹 검색 도구 ------
+    web_search:
+      enabled: true
+      description: "인터넷에서 실시간 정보를 검색합니다 (Fallback: Tavily -> Brave -> DuckDuckGo)"
+      timeout: 15
+      parameters:
+        max_results: 5
+        providers:
+          - tavily
+          - brave
+          - duckduckgo
+
+  # ========================================
+  # 에이전트 설정 (Agentic RAG용)
+  # ========================================
+  agent:
+    tool_selection: "llm"             # "llm" | "rule_based"
+    selector_model: "google/gemini-2.5-flash-lite"
+    max_tool_calls: 5                 # 무한 루프 방지
+    fallback_tool: "search_vector"    # 기본 폴백 도구
