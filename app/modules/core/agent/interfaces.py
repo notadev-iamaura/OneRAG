@@ -294,3 +294,35 @@ class AgentResult:
 
     # 디버그 정보 (선택적)
     debug_info: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ReflectionResult:
+    """
+    Self-Reflection 결과
+
+    AgentReflector가 답변 품질을 평가한 결과를 담는 데이터 클래스.
+    점수가 threshold 미만이면 needs_improvement=True로 설정됩니다.
+
+    Attributes:
+        score: 품질 점수 (0-10, 높을수록 좋음)
+        issues: 발견된 문제점 리스트
+        suggestions: 개선 제안 리스트
+        needs_improvement: 추가 개선 필요 여부
+        reasoning: 평가 근거
+    """
+
+    # 품질 점수 (0-10)
+    score: float
+
+    # 추가 개선 필요 여부
+    needs_improvement: bool
+
+    # 발견된 문제점
+    issues: list[str] = field(default_factory=list)
+
+    # 개선 제안
+    suggestions: list[str] = field(default_factory=list)
+
+    # 평가 근거
+    reasoning: str = ""
