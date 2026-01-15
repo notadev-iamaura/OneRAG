@@ -31,6 +31,7 @@ from .executor import AgentExecutor
 from .interfaces import AgentConfig
 from .orchestrator import AgentOrchestrator
 from .planner import AgentPlanner
+from .reflector import AgentReflector
 from .synthesizer import AgentSynthesizer
 
 logger = get_logger(__name__)
@@ -47,6 +48,10 @@ DEFAULT_AGENT_CONFIG = {
     "tool_timeout": 15.0,
     "parallel_execution": True,
     "max_concurrent_tools": 3,
+    # Self-Reflection 설정
+    "enable_reflection": True,
+    "reflection_threshold": 7.0,
+    "max_reflection_iterations": 2,
 }
 
 
@@ -123,18 +128,29 @@ class AgentFactory:
             config=agent_config,
         )
 
+        # Reflector 생성 (Reflection 활성화 시에만)
+        reflector: AgentReflector | None = None
+        if agent_config.enable_reflection:
+            reflector = AgentReflector(
+                llm_client=llm_client,
+                config=agent_config,
+            )
+            logger.debug("🔍 AgentReflector 생성 완료")
+
         # Orchestrator 생성
         orchestrator = AgentOrchestrator(
             planner=planner,
             executor=executor,
             synthesizer=synthesizer,
             config=agent_config,
+            reflector=reflector,
         )
 
         logger.info(
             f"🤖 AgentFactory: Orchestrator 생성 완료 "
             f"(max_iterations={agent_config.max_iterations}, "
-            f"fallback={agent_config.fallback_tool})"
+            f"fallback={agent_config.fallback_tool}, "
+            f"reflection={'enabled' if reflector else 'disabled'})"
         )
 
         return orchestrator
@@ -203,6 +219,23 @@ class AgentFactory:
                 agent_yaml.get(
                     "max_concurrent_tools",
                     defaults["max_concurrent_tools"],
+                )
+            ),
+            # Self-Reflection 설정
+            enable_reflection=agent_yaml.get(
+                "enable_reflection",
+                defaults["enable_reflection"],
+            ),
+            reflection_threshold=float(
+                agent_yaml.get(
+                    "reflection_threshold",
+                    defaults["reflection_threshold"],
+                )
+            ),
+            max_reflection_iterations=int(
+                agent_yaml.get(
+                    "max_reflection_iterations",
+                    defaults["max_reflection_iterations"],
                 )
             ),
         )
