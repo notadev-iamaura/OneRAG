@@ -509,7 +509,7 @@ class ChatService:
                     yield {
                         "event": "error",
                         "error_code": ErrorCode.GENERATION_REQUEST_FAILED.value,
-                        "message": f"답변 생성 중 오류가 발생했습니다: {str(e)}",
+                        "message": "답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
                     }
                     return
             else:
@@ -545,6 +545,6 @@ class ChatService:
             logger.error(f"스트리밍 파이프라인 에러: {e}", exc_info=True)
             yield {
                 "event": "error",
-                "error_code": ErrorCode.INTERNAL_ERROR.value if hasattr(ErrorCode, "INTERNAL_ERROR") else "GEN-999",
-                "message": f"스트리밍 처리 중 오류가 발생했습니다: {str(e)}",
+                "error_code": ErrorCode.GENERAL_004.value,
+                "message": "스트리밍 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
             }
