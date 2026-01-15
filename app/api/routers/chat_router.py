@@ -12,12 +12,14 @@ Phase 3.3: chat.py에서 추출한 검증된 라우팅 로직
 - Rate limiting, 요청 검증, 에러 핸들링
 """
 
+import json
 import time
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -33,6 +35,7 @@ from ..schemas.chat_schemas import (
     StatsResponse,
 )
 from ..schemas.feedback import FeedbackRequest, FeedbackResponse
+from ..schemas.streaming import StreamChatRequest, StreamErrorEvent
 from ..services.chat_service import ChatService
 
 logger = get_logger(__name__)
@@ -660,3 +663,76 @@ async def process_feedback(feedback_request: FeedbackRequest) -> FeedbackRespons
             message="피드백 저장에 실패했습니다",
             golden_candidate=False,
         )
+
+
+@router.post("/chat/stream")
+@limiter.limit("100/15minutes")
+async def chat_stream(request: Request, chat_request: StreamChatRequest) -> StreamingResponse:
+    """
+    스트리밍 채팅 엔드포인트 (SSE)
+
+    Server-Sent Events 형식으로 실시간 채팅 응답을 스트리밍합니다.
+    검색, 리랭킹은 비스트리밍으로 처리하고, 답변 생성만 스트리밍합니다.
+
+    SSE 이벤트 형식:
+    - metadata: 검색 결과 메타데이터 (세션 ID, 문서 수 등)
+    - chunk: LLM 응답 텍스트 청크
+    - done: 스트리밍 완료 이벤트
+    - error: 에러 이벤트
+
+    Args:
+        request: FastAPI 요청 객체
+        chat_request: 스트리밍 채팅 요청
+            - message: 사용자 메시지 (필수)
+            - session_id: 세션 ID (선택, 없으면 새로 생성)
+            - options: 추가 옵션 (temperature, max_tokens 등)
+
+    Returns:
+        StreamingResponse: text/event-stream 형식의 SSE 응답
+    """
+    _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
+
+    async def event_generator():
+        """
+        SSE 이벤트 생성기
+
+        ChatService.stream_rag_pipeline()에서 반환하는 이벤트를
+        SSE 형식(event: {type}\ndata: {json}\n\n)으로 변환합니다.
+        """
+        try:
+            async for event in chat_service.stream_rag_pipeline(
+                message=chat_request.message,
+                session_id=chat_request.session_id,
+                options=chat_request.options,
+            ):
+                # 이벤트 타입 추출 (기본값: chunk)
+                event_type = event.get("event", "chunk")
+
+                # JSON으로 직렬화 (한글 유니코드 유지)
+                event_data = json.dumps(event, ensure_ascii=False)
+
+                # SSE 형식으로 yield
+                yield f"event: {event_type}\ndata: {event_data}\n\n"
+
+        except Exception as e:
+            # 스트리밍 중 에러 발생 시 에러 이벤트 전송
+            logger.error("스트리밍 에러", exc_info=True, error=str(e))
+
+            error_event = StreamErrorEvent(
+                error_code="STREAM_ERROR",
+                message="스트리밍 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+                suggestion="문제가 지속되면 관리자에게 문의하세요.",
+            )
+
+            # 에러 이벤트를 SSE 형식으로 전송
+            yield f"event: error\ndata: {error_event.model_dump_json()}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
