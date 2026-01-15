@@ -63,6 +63,7 @@ from app.api.routers import (
     set_session_module,  # ✅ Task 5: 세션 모듈 주입
     tools_router,  # Tool Use API 라우터
     weaviate_admin_router,  # Weaviate 관리 API 라우터
+    websocket_router,  # ✅ Task 4: WebSocket 채팅 라우터
 )
 
 # from app.batch.scheduler import BatchScheduler  # Moved to legacy
@@ -335,6 +336,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         tools_router.set_tool_executor(tool_executor)
         logger.info("✅ ToolExecutor 초기화 및 주입 완료 (DI Container)")
 
+        # ✅ Task 4: WebSocket 라우터에 ChatService 주입
+        from app.api.services.chat_service import ChatService
+
+        chat_service_instance = ChatService(modules_dict, rag_app.config)
+        websocket_router.set_chat_service(chat_service_instance)
+        logger.info("✅ WebSocket 라우터에 ChatService 주입 완료")
+
         # Rate Limiter cleanup task 시작 (24시간 주기 메모리 정리)
         rate_limiter.start_cleanup_task()
         logger.info("✅ Rate Limiter cleanup task started")
@@ -591,6 +599,7 @@ app.include_router(monitoring.router, prefix="/api")
 app.include_router(tools_router.router, prefix="/api", tags=["Tools"])
 app.include_router(weaviate_admin_router.router, tags=["Weaviate Admin"])
 app.include_router(admin_eval_router, prefix="/api", tags=["Admin Evaluation"])
+app.include_router(websocket_router.router, tags=["WebSocket"])  # ✅ Task 4: WebSocket 채팅
 
 
 @app.get("/")

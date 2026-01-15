@@ -20,6 +20,14 @@ from .streaming import (
     StreamDoneEvent,
     StreamErrorEvent,
 )
+from .websocket import (
+    ClientMessage,
+    StreamEndEvent,
+    StreamSourcesEvent,
+    StreamStartEvent,
+    StreamTokenEvent,
+    WSStreamErrorEvent,
+)
 
 __all__ = [
     # 채팅 스키마
@@ -31,9 +39,16 @@ __all__ = [
     "ChatHistoryResponse",
     "SessionInfoResponse",
     "StatsResponse",
-    # 스트리밍 스키마
+    # 스트리밍 스키마 (SSE)
     "StreamChatRequest",
     "StreamChunkEvent",
     "StreamDoneEvent",
     "StreamErrorEvent",
+    # WebSocket 스키마
+    "ClientMessage",
+    "StreamStartEvent",
+    "StreamTokenEvent",
+    "StreamSourcesEvent",
+    "StreamEndEvent",
+    "WSStreamErrorEvent",
 ]
