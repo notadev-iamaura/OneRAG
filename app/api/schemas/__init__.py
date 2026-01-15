@@ -14,8 +14,15 @@ from .chat_schemas import (
     Source,
     StatsResponse,
 )
+from .streaming import (
+    StreamChatRequest,
+    StreamChunkEvent,
+    StreamDoneEvent,
+    StreamErrorEvent,
+)
 
 __all__ = [
+    # 채팅 스키마
     "ChatRequest",
     "ChatResponse",
     "Source",
@@ -24,4 +31,9 @@ __all__ = [
     "ChatHistoryResponse",
     "SessionInfoResponse",
     "StatsResponse",
+    # 스트리밍 스키마
+    "StreamChatRequest",
+    "StreamChunkEvent",
+    "StreamDoneEvent",
+    "StreamErrorEvent",
 ]
