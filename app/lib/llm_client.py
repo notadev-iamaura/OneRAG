@@ -383,14 +383,25 @@ class OpenAILLMClient(BaseLLMClient):
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
+            # Reasoning 모델 분기 처리 (generate_text와 일관성 유지)
+            # Reasoning 모델 (o1, GPT-5)은 max_completion_tokens 사용, temperature 미지원
+            # 일반 GPT 모델은 max_tokens와 temperature 사용
+            is_reasoning_model = self.model.startswith("o1") or self.model.startswith("gpt-5")
+
+            api_params: dict[str, Any] = {
+                "model": self.model,
+                "messages": messages,
+                "stream": True,
+            }
+
+            if is_reasoning_model:
+                api_params["max_completion_tokens"] = self.max_tokens
+            else:
+                api_params["max_tokens"] = self.max_tokens
+                api_params["temperature"] = self.temperature
+
             # stream=True로 스트리밍 응답 요청
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,  # type: ignore[arg-type]
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                stream=True,
-            )
+            response = self.client.chat.completions.create(**api_params)  # type: ignore[arg-type]
 
             # 청크 단위로 yield (빈 콘텐츠는 건너뜀)
             for chunk in response:  # type: ignore[union-attr]
@@ -465,6 +476,7 @@ class AnthropicLLMClient(BaseLLMClient):
             with self.client.messages.stream(
                 model=self.model,
                 max_tokens=self.max_tokens,
+                temperature=self.temperature,  # generate_text와 일관성 유지
                 system=system_prompt if system_prompt else "",
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
