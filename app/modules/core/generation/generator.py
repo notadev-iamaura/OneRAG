@@ -19,6 +19,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass
+from collections.abc import AsyncGenerator
 from typing import Any, TypedDict, cast
 
 import httpx
@@ -573,6 +574,119 @@ class GenerationModule:
         self.stats["average_generation_time"] = (
             current_avg * (total_gens - 1) + generation_time
         ) / total_gens
+
+    # ========================================
+    # 스트리밍 메서드
+    # ========================================
+
+    async def stream_answer(
+        self,
+        query: str,
+        context_documents: list[Any],
+        options: dict[str, Any] | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """
+        스트리밍 답변 생성
+
+        LLM 응답을 청크 단위로 yield하여 실시간 스트리밍을 지원합니다.
+        generate_answer()와 동일한 프롬프트 구성을 사용하지만,
+        전체 응답을 기다리지 않고 청크가 생성될 때마다 즉시 반환합니다.
+
+        Args:
+            query: 사용자 질문
+            context_documents: RAG 검색 결과 문서들
+            options: 생성 옵션
+                - model: 사용할 모델 (OpenRouter 형식, 예: "anthropic/claude-sonnet-4")
+                - max_tokens: 최대 토큰 수
+                - temperature: 창의성 (0.0~1.0)
+                - style: 응답 스타일
+
+        Yields:
+            str: 생성된 텍스트 청크
+
+        Raises:
+            RuntimeError: 클라이언트가 초기화되지 않은 경우
+            ValueError: 컨텍스트가 비어있는 경우
+
+        Example:
+            async for chunk in generator.stream_answer(query, docs):
+                print(chunk, end="", flush=True)
+        """
+        options = options or {}
+
+        # 클라이언트 초기화 확인
+        if not self.client:
+            raise RuntimeError(
+                "OpenRouter 클라이언트가 초기화되지 않았습니다. "
+                "해결 방법: GenerationModule.initialize() 메서드를 먼저 호출하세요. "
+                "일반적으로 앱 시작 시 app/core/di_container.py에서 자동으로 초기화됩니다."
+            )
+
+        # 컨텍스트 구성
+        context_text = self._build_context(context_documents)
+
+        # 빈 컨텍스트 검증
+        if not context_text:
+            raise ValueError(
+                "검색된 문서가 없습니다. "
+                "해결 방법: 1) 검색어를 변경하거나, 2) 문서가 올바르게 인덱싱되었는지 확인하세요."
+            )
+
+        # 프롬프트 구성
+        system_content, user_content = await self._build_prompt(query, context_text, options)
+
+        # 모델 결정
+        model = options.get("model", self.default_model)
+
+        # 모델별 설정 로드
+        model_settings = self._get_model_settings(model, options)
+
+        # API 파라미터 구성
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ]
+
+        api_params = {
+            "model": model,
+            "messages": messages,
+            "stream": True,  # 스트리밍 활성화
+        }
+
+        # Reasoning 모델 (o1, gpt-5) 여부 확인
+        is_reasoning_model = "o1" in model.lower() or "gpt-5" in model.lower()
+
+        if is_reasoning_model:
+            api_params["max_completion_tokens"] = model_settings.get("max_tokens", 20000)
+        else:
+            api_params["max_tokens"] = model_settings.get("max_tokens", 20000)
+            api_params["temperature"] = model_settings.get("temperature", 0.3)
+
+        logger.debug(
+            "🌐 OpenRouter 스트리밍 API 호출",
+            model=model,
+            prompt_length=len(user_content),
+        )
+
+        # 스트리밍 API 호출
+        stream = self.client.chat.completions.create(**api_params)
+
+        # 청크 단위로 yield
+        async for chunk in stream:
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, "content") and delta.content:
+                    content = delta.content
+
+                    # Phase 2: 개인정보 마스킹 적용 (청크 단위)
+                    if self._privacy_enabled and self.privacy_masker is not None:
+                        try:
+                            content = self.privacy_masker.mask_text(content)
+                        except Exception as e:
+                            # 마스킹 실패 시 원본 반환 (Graceful Degradation)
+                            logger.warning(f"스트리밍 마스킹 실패: {e}")
+
+                    yield content
 
     # ========================================
     # 유틸리티 메서드
