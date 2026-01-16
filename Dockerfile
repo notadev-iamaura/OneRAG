@@ -52,6 +52,14 @@ RUN chown -R app:app /app && \
 # Switch to non-root user
 USER app
 
+# 로컬 임베딩 모델 사전 다운로드 (Qwen3-Embedding-0.6B)
+# app 사용자로 다운로드하여 런타임에 캐시 접근 가능
+# 약 1.2GB, HuggingFace Hub에서 다운로드
+RUN python -c "from sentence_transformers import SentenceTransformer; \
+    print('📥 로컬 임베딩 모델 다운로드 중 (Qwen3-Embedding-0.6B)...'); \
+    model = SentenceTransformer('Qwen/Qwen3-Embedding-0.6B', trust_remote_code=True); \
+    print('✅ 임베딩 모델 다운로드 완료!')"
+
 # Install Playwright browsers as app user (in /home/app/.cache/ms-playwright/)
 RUN playwright install chromium
 

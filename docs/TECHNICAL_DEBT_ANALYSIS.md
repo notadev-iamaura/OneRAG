@@ -205,6 +205,49 @@ vector_store = container.vector_store()  # PineconeStore 반환
 5. ~~`routing_rules.yaml` → `routing_rules_v2.yaml` 완전 이관~~ → 완료
 6. ~~Multi Vector DB 지원 (6종)~~ → 완료
 
+### 중기 (권장)
+
+#### 1. 리랭커 설정 구조 리팩토링
+
+**현황**: `reranking.yaml`의 `default_provider` 허용값이 층위가 혼재되어 있음
+
+```yaml
+# 현재 허용값 (문제점)
+default_provider: "gemini_flash|llm|gpt5_nano|jina|cohere"
+```
+
+| 값 | 실제 의미 | 층위 |
+|-----|----------|------|
+| `gemini_flash` | Google Gemini Flash 모델 | 모델명 |
+| `gpt5_nano` | OpenAI GPT-5 Nano 모델 | 모델명 |
+| `llm` | LLM 기반 리랭커 | 카테고리 (상위 개념) |
+| `jina` | Jina AI 리랭커 서비스 | 프로바이더명 |
+| `cohere` | Cohere 리랭커 서비스 | 프로바이더명 |
+
+**문제점**:
+- 모델명, 카테고리, 프로바이더가 동일 레벨에 혼재
+- 새 리랭커 추가 시 일관성 없는 네이밍 발생
+- 설정 검증 스키마(`reranking.py`)와의 동기화 어려움
+
+**권장 리팩토링**:
+```yaml
+# 권장 구조 (계층적)
+reranking:
+  type: "llm"  # llm | vector
+
+  # LLM 기반 리랭커 설정
+  llm:
+    provider: "openrouter"  # openrouter | openai | anthropic
+    model: "gemini-flash-lite"
+
+  # 벡터 기반 리랭커 설정
+  vector:
+    provider: "jina"  # jina | cohere
+    model: "jina-colbert-v2"
+```
+
+**임시 조치**: `default_provider: "jina"`로 설정하여 동작 보장 (v1.0.7)
+
 ### 장기 (선택적)
 1. Admin 인증 시스템 구현
 2. E2E 디버그 플로우 테스트 활성화 (실제 서비스 연결 시)

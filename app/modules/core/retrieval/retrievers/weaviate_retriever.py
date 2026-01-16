@@ -384,18 +384,14 @@ class WeaviateRetriever:
         """
         logger.debug(f"단일 컬렉션 검색: {collection_name}, top_k={top_k}")
 
-        # 설정된 프로퍼티 가져오기 (없으면 기본 content만)
-        return_properties = self.collection_properties.get(
-            collection_name, ["content", "source", "source_file", "file_type"]
-        )
-
+        # weaviate-client v4.19+ 호환성: return_properties를 사용하지 않음
+        # 모든 프로퍼티를 반환하고 결과 처리 시 필요한 것만 사용
         response = collection.query.hybrid(
             query=processed_query,
             vector=query_embedding,
             alpha=self.alpha,
             limit=top_k,
             return_metadata=MetadataQuery(score=True),
-            return_properties=return_properties,
         )
 
         results = []

@@ -115,3 +115,11 @@ tmp/
 .claude/
 CLAUDE.md
 GEMINI.md
+
+# ===================================
+# Frontend (React/Vite)
+# ===================================
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.turbo/

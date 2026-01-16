@@ -243,6 +243,11 @@ class ConfigLoader:
             "MONGODB_DATABASE": ("mongodb", "database"),
             "MONGODB_DB_NAME": ("mongodb", "database"),  # 별칭 지원
             "MONGODB_TIMEOUT_MS": ("mongodb", "timeout_ms"),
+            # Quickstart 지원: 임베딩/LLM 환경 변수 오버라이드
+            # YAML 설정보다 환경 변수가 우선 적용됨
+            "EMBEDDINGS_PROVIDER": ("embeddings", "provider"),
+            "LLM_PROVIDER": ("llm", "provider"),
+            "LLM_MODEL": ("llm", "model"),
         }
         for env_var, config_path in env_mappings.items():
             value = os.getenv(env_var)

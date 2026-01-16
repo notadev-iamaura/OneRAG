@@ -1,4 +1,4 @@
-.PHONY: help install install-dev sync update run dev test lint format clean docker-build docker-run neo4j-up neo4j-down neo4j-logs test-neo4j quickstart quickstart-down quickstart-logs quickstart-load
+.PHONY: help install install-dev sync update run dev test lint format clean docker-build docker-run neo4j-up neo4j-down neo4j-logs test-neo4j quickstart quickstart-down quickstart-logs quickstart-load frontend-install frontend-dev frontend-build frontend-lint frontend-test fullstack fullstack-down fullstack-logs fullstack-build
 
 # 기본 타겟
 .DEFAULT_GOAL := help
@@ -47,6 +47,19 @@ help:
 	@echo "  neo4j-down      - Neo4j 컨테이너 종료"
 	@echo "  neo4j-logs      - Neo4j 로그 확인"
 	@echo "  test-neo4j      - Neo4j 통합 테스트"
+	@echo ""
+	@echo "🎨 Frontend (React):"
+	@echo "  frontend-install - 프론트엔드 의존성 설치"
+	@echo "  frontend-dev     - 프론트엔드 개발 서버 (localhost:5173)"
+	@echo "  frontend-build   - 프론트엔드 프로덕션 빌드"
+	@echo "  frontend-lint    - 프론트엔드 린트 검사"
+	@echo "  frontend-test    - 프론트엔드 테스트"
+	@echo ""
+	@echo "🔗 Fullstack (Frontend + Backend + Weaviate):"
+	@echo "  fullstack       - 전체 스택 Docker Compose 실행"
+	@echo "  fullstack-down  - Fullstack 서비스 종료"
+	@echo "  fullstack-logs  - Fullstack 로그 확인"
+	@echo "  fullstack-build - Fullstack Docker 이미지 빌드"
 
 # uv 설치 확인
 check-uv:
@@ -292,3 +305,88 @@ quickstart-logs:
 quickstart-load:
 	@echo "📥 샘플 데이터 로드 중..."
 	uv run python quickstart/load_sample_data.py
+
+# =============================================================================
+# Frontend 명령 (React 프론트엔드)
+# =============================================================================
+
+# 프론트엔드 의존성 설치
+frontend-install:
+	@echo "📦 프론트엔드 의존성 설치 중..."
+	cd frontend && npm install
+	@echo "✅ 프론트엔드 의존성 설치 완료"
+
+# 프론트엔드 개발 서버
+frontend-dev: frontend-install
+	@echo "🎨 프론트엔드 개발 서버 시작..."
+	@echo "URL: http://localhost:5173"
+	cd frontend && npm run dev
+
+# 프론트엔드 프로덕션 빌드
+frontend-build: frontend-install
+	@echo "🔨 프론트엔드 프로덕션 빌드 중..."
+	cd frontend && npm run build
+	@echo "✅ 프론트엔드 빌드 완료 (frontend/dist/)"
+
+# 프론트엔드 린트
+frontend-lint: frontend-install
+	@echo "🔍 프론트엔드 린트 검사 중..."
+	cd frontend && npm run lint
+
+# 프론트엔드 테스트
+frontend-test: frontend-install
+	@echo "🧪 프론트엔드 테스트 실행..."
+	cd frontend && npm run test:run
+
+# =============================================================================
+# Fullstack 명령 (Frontend + Backend + Weaviate)
+# =============================================================================
+
+# Fullstack Docker Compose 실행 (Frontend + Backend + DB + 가이드 챗봇 데이터)
+fullstack: check-env
+	@echo "🚀 Fullstack 서비스 시작 중..."
+	@echo ""
+	@echo "서비스 목록:"
+	@echo "  - Weaviate (벡터 DB): http://localhost:8080"
+	@echo "  - Backend (API):      http://localhost:8000"
+	@echo "  - Frontend (React):   http://localhost:5173"
+	@echo ""
+	@echo "1️⃣  Docker 서비스 시작 중..."
+	docker compose --profile fullstack up -d
+	@echo ""
+	@echo "2️⃣  서비스 준비 대기 중..."
+	@sleep 10
+	@echo ""
+	@echo "3️⃣  가이드 챗봇 데이터 로드 중..."
+	uv run python quickstart/load_sample_data.py
+	@echo ""
+	@echo "=============================================="
+	@echo "🎉 Fullstack 서비스 준비 완료!"
+	@echo ""
+	@echo "🎨 Frontend: http://localhost:5173"
+	@echo "📖 API Docs: http://localhost:8000/docs"
+	@echo "❤️  Health:   http://localhost:8000/health"
+	@echo ""
+	@echo "💬 가이드 챗봇 테스트 질문:"
+	@echo "   - RAG_Standard 어떻게 설치해?"
+	@echo "   - 채팅 API 사용법 알려줘"
+	@echo "   - 환경변수 뭐 설정해야 돼?"
+	@echo ""
+	@echo "종료: make fullstack-down"
+	@echo "=============================================="
+
+# Fullstack 서비스 종료
+fullstack-down:
+	@echo "🛑 Fullstack 서비스 종료 중..."
+	docker compose --profile fullstack down
+	@echo "✅ 종료 완료"
+
+# Fullstack 로그 확인
+fullstack-logs:
+	docker compose --profile fullstack logs -f
+
+# Fullstack Docker 이미지 빌드
+fullstack-build:
+	@echo "🔨 Fullstack Docker 이미지 빌드 중..."
+	docker compose --profile fullstack build
+	@echo "✅ 이미지 빌드 완료"

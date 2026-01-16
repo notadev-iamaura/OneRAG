@@ -45,9 +45,9 @@ reranking:
   # 레거시 설정 (하위 호환성)
   # ========================================
   # 기본 리랭커 선택 (레거시)
-  # "openrouter_gemini" - OpenRouter 경유 Gemini Flash (권장)
-  # "jina" - Jina 전문 리랭커 (폴백)
-  default_provider: "openrouter_gemini"
+  # TODO: 리랭커 설정 구조 리팩토링 필요 (기술부채 - TECHNICAL_DEBT_ANALYSIS.md 참조)
+  # 허용값: gemini_flash, llm, gpt5_nano, jina, cohere
+  default_provider: "jina"
   # min_score 비활성화 - RRF 점수 범위 (0.01~0.04)에서 0.05면 모든 문서 필터링됨
   min_score: 0.0
 

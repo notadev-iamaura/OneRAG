@@ -55,6 +55,8 @@ services:
       WEAVIATE_GRPC_PORT: "50051"
       # 개발 환경
       ENVIRONMENT: "development"
+      # 로컬 임베딩 (API 키 불필요 - Quickstart용)
+      EMBEDDINGS_PROVIDER: "local"
     depends_on:
       weaviate:
         condition: service_healthy
@@ -64,6 +66,32 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  # React 프론트엔드 (프로필 선택 실행)
+  # 실행: docker compose --profile fullstack up
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.local
+    container_name: rag-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    environment:
+      # API 서버 연결 (컨테이너 네트워크 사용)
+      VITE_API_BASE_URL: "http://api:8000"
+      VITE_WS_BASE_URL: "ws://api:8000"
+    depends_on:
+      api:
+        condition: service_healthy
+    profiles:
+      - fullstack
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   weaviate_data:
