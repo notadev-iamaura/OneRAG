@@ -33,3 +33,11 @@ __all__ = [
     "RerankerFactory",
     "SUPPORTED_RERANKERS",
 ]
+
+# 조건부 import (선택적 의존성)
+try:
+    from .local_reranker import LocalReranker
+
+    __all__.append("LocalReranker")
+except ImportError:
+    pass  # local-reranker 의존성 미설치
