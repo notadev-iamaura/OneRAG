@@ -303,6 +303,61 @@ async def create_reranker_instance(
     return None
 
 
+async def create_reranker_instance_v2(
+    config: dict, llm_factory: LLMClientFactory | None = None
+) -> GeminiFlashReranker | JinaReranker | JinaColBERTReranker | None:
+    """
+    Reranker 인스턴스 생성 (v2 - 새로운 설정 구조)
+
+    approach/provider/model 3단계 구조 지원.
+    API 키 누락 시 None 반환 (graceful degradation).
+
+    Args:
+        config: 설정 딕셔너리
+        llm_factory: LLM Factory (optional, 향후 확장용)
+
+    Returns:
+        Reranker 인스턴스 또는 None
+    """
+    from app.modules.core.retrieval.rerankers.factory_v2 import RerankerFactoryV2
+
+    reranking_config = config.get("reranking", {})
+
+    # enabled 체크
+    if not reranking_config.get("enabled", True):
+        logger.info("Reranker 비활성화 (enabled=false)")
+        return None
+
+    approach = reranking_config.get("approach", "cross-encoder")
+    provider = reranking_config.get("provider", "jina")
+
+    logger.info(
+        "Reranker v2 초기화",
+        extra={"approach": approach, "provider": provider}
+    )
+
+    try:
+        reranker = RerankerFactoryV2.create(config)
+        logger.info(
+            f"{reranker.__class__.__name__} 초기화 성공",
+            extra={"approach": approach, "provider": provider}
+        )
+        return reranker
+    except ValueError as e:
+        # API 키 누락 등 설정 오류
+        logger.warning(
+            "Reranker v2 초기화 실패",
+            extra={"error": str(e), "status": "proceeding_without_reranker"}
+        )
+        return None
+    except Exception as e:
+        logger.error(
+            "Reranker v2 초기화 중 예외 발생",
+            extra={"error": str(e), "error_type": type(e).__name__}
+        )
+        return None
+
+
 async def create_cache_instance(config: dict) -> MemoryCacheManager | None:
     """
     Cache 인스턴스 생성 헬퍼 함수
