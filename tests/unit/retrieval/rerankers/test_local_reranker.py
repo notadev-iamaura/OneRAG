@@ -10,12 +10,10 @@ TDD RED 단계:
 - 목표 커버리지: 75-85%
 """
 
-from typing import Any
 
 import pytest
 
 from app.modules.core.retrieval.interfaces import SearchResult
-
 
 # 선택적 의존성 체크 (sentence-transformers가 설치되어 있는지 확인)
 try:

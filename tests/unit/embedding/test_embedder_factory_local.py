@@ -4,8 +4,7 @@ EmbedderFactory 로컬 provider 테스트
 local provider가 올바르게 LocalEmbedder를 생성하는지 검증합니다.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestEmbedderFactoryLocalProvider:

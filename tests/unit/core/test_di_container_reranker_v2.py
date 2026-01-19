@@ -65,6 +65,7 @@ class TestDIContainerRerankerV2:
     async def test_create_reranker_without_api_key_returns_none(self):
         """API 키 없으면 None 반환 (graceful degradation)"""
         import os
+
         from app.core.di_container import create_reranker_instance_v2
 
         # 환경변수 전부 제거 후 테스트

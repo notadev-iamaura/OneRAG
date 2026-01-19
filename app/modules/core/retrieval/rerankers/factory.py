@@ -211,6 +211,7 @@ class RerankerFactoryV2:
         provider_config = config.get(provider, {})
         defaults = provider_info["default_config"]
 
+        reranker: IReranker
         if provider == "google":
             reranker = GeminiFlashReranker(
                 api_key=api_key,
@@ -258,6 +259,7 @@ class RerankerFactoryV2:
         provider_config = config.get(provider, {})
         defaults = provider_info["default_config"]
 
+        reranker: IReranker
         if provider == "jina":
             reranker = JinaReranker(
                 api_key=api_key,
@@ -355,14 +357,16 @@ class RerankerFactoryV2:
         """특정 approach에서 사용 가능한 provider 목록 반환"""
         if approach not in APPROACH_REGISTRY:
             return []
-        return APPROACH_REGISTRY[approach]["providers"]
+        providers: list[str] = APPROACH_REGISTRY[approach]["providers"]
+        return providers
 
     @staticmethod
     def get_approach_description(approach: str) -> str:
         """approach 설명 반환"""
         if approach not in APPROACH_REGISTRY:
             return "알 수 없는 approach"
-        return APPROACH_REGISTRY[approach]["description"]
+        description: str = APPROACH_REGISTRY[approach]["description"]
+        return description
 
     @staticmethod
     def get_all_providers() -> list[str]:

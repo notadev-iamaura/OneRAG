@@ -19,7 +19,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from app.modules.core.embedding.interfaces import BaseEmbedder
@@ -143,7 +142,7 @@ class LocalEmbedder(BaseEmbedder):
             )
 
             # numpy array → list[list[float]] 변환
-            result = embeddings.tolist()
+            result: list[list[float]] = embeddings.tolist()
 
             logger.debug(f"📊 문서 {len(texts)}개 임베딩 완료 (dim={len(result[0])})")
             return result
@@ -176,7 +175,7 @@ class LocalEmbedder(BaseEmbedder):
             )
 
             # numpy array → list[float] 변환
-            result = embedding.tolist()
+            result: list[float] = embedding.tolist()
 
             logger.debug(f"📊 쿼리 임베딩 완료 (dim={len(result)})")
             return result

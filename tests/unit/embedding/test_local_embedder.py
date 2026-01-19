@@ -5,9 +5,10 @@ Qwen3-Embedding-0.6B 기반 로컬 임베더의 동작을 검증합니다.
 sentence-transformers 라이브러리를 사용하여 로컬에서 임베딩을 생성합니다.
 """
 
-import pytest
+from unittest.mock import MagicMock, patch
+
 import numpy as np
-from unittest.mock import patch, MagicMock
+import pytest
 
 
 class TestLocalEmbedderInterface:
@@ -15,8 +16,8 @@ class TestLocalEmbedderInterface:
 
     def test_local_embedder_implements_iembedder(self):
         """LocalEmbedder가 IEmbedder 인터페이스를 구현하는지 확인"""
-        from app.modules.core.embedding.local_embedder import LocalEmbedder
         from app.modules.core.embedding.interfaces import IEmbedder
+        from app.modules.core.embedding.local_embedder import LocalEmbedder
 
         # Mock SentenceTransformer to avoid actual model loading
         with patch('app.modules.core.embedding.local_embedder.SentenceTransformer'):

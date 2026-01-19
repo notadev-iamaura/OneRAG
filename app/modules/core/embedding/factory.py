@@ -38,8 +38,8 @@ from typing import Any
 from ....lib.logger import get_logger
 from .gemini_embedder import GeminiEmbedder
 from .interfaces import IEmbedder
+from .local_embedder import DEFAULT_LOCAL_MODEL, LocalEmbedder
 from .openai_embedder import OpenAIEmbedder, OpenRouterEmbedder
-from .local_embedder import LocalEmbedder, DEFAULT_LOCAL_MODEL
 
 logger = get_logger(__name__)
 

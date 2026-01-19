@@ -21,7 +21,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-
 # =============================================================================
 # Mock 기반 WebSocket E2E 테스트
 # =============================================================================
@@ -535,7 +534,9 @@ class TestWebSocketConnectionManagement:
         """
         client, _ = client_and_manager
 
-        with pytest.raises(Exception):
+        # WebSocket 연결 시 session_id 없으면 실패해야 함
+        # TestClient는 WebSocketDisconnect 또는 ValueError를 발생시킴
+        with pytest.raises((ValueError, Exception)):
             with client.websocket_connect("/chat-ws"):  # session_id 없음
                 pass
 

@@ -38,8 +38,8 @@ Embedding Module - 임베딩 생성 모듈
 from .factory import SUPPORTED_MODELS, EmbedderFactory
 from .gemini_embedder import GeminiEmbedder
 from .interfaces import BaseEmbedder, IEmbedder
+from .local_embedder import DEFAULT_LOCAL_MODEL, SUPPORTED_LOCAL_MODELS, LocalEmbedder
 from .openai_embedder import OpenAIEmbedder, OpenRouterEmbedder
-from .local_embedder import LocalEmbedder, SUPPORTED_LOCAL_MODELS, DEFAULT_LOCAL_MODEL
 
 # 하위 호환성을 위한 별칭 (기존 코드가 GeminiEmbeddings를 사용하는 경우)
 GeminiEmbeddings = GeminiEmbedder

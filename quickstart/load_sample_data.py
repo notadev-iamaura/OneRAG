@@ -57,7 +57,7 @@ def wait_for_weaviate(url: str, max_retries: int = 30, delay: float = 2.0) -> bo
     return False
 
 
-def initialize_embedder():
+def initialize_embedder() -> "LocalEmbedder | None":  # type: ignore[name-defined]
     """
     로컬 임베딩 모델 초기화
 
@@ -200,7 +200,7 @@ def load_sample_data() -> None:
         # 데이터 삽입 (벡터 포함)
         print("📥 문서 삽입 중...")
         with collection.batch.dynamic() as batch:
-            for props, vector in zip(properties_list, embeddings):
+            for props, vector in zip(properties_list, embeddings, strict=True):
                 batch.add_object(
                     properties=props,
                     vector=vector,
