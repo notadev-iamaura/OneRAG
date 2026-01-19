@@ -1,13 +1,13 @@
-# CLAUDE.md (v1.1.0)
+# CLAUDE.md (v1.2.0)
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 프로젝트 개요
 도메인 범용화된 완벽한 오픈소스 RAG 시스템. 2026년 기준 가장 진보된 RAG 기술들을 하나의 표준 파이프라인으로 통합한 엔터프라이즈급 솔루션입니다.
 
-- **버전**: 1.1.0
+- **버전**: 1.2.0
 - **상태**: ✅ **1,637+개 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**, ✅ **Streaming API**, ✅ **WebSocket**
-- **주요 개선**: Reranker 설정 3단계 계층 구조 리팩토링 (v1.1.0)
+- **주요 개선**: Reranker 설정 3단계 계층 구조 리팩토링 (v1.2.0)
 
 ## 🚀 Quickstart (3단계)
 
