@@ -19,12 +19,13 @@
 
 reranking:
   enabled: true
+  min_score: 0.0  # 🔧 테스트용: 모든 결과 포함 (프로덕션에서는 0.05 권장)
 
   # ========================================
   # 기본 설정
   # ========================================
   approach: "late-interaction"  # llm | cross-encoder | late-interaction | local
-  provider: "jina"              # approach에 따라 유효한 provider 선택
+  default_provider: "jina"      # approach에 따라 유효한 provider 선택
 
   # ========================================
   # Provider별 설정

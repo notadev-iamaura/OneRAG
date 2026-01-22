@@ -19,8 +19,8 @@ class GenerationConfig(BaseConfig):
     # 기본 LLM 설정
     default_provider: str = Field(
         default="google",
-        pattern="^(google|openai|anthropic)$",
-        description="기본 LLM 제공자 (google, openai, anthropic)",
+        pattern="^(google|openai|anthropic|openrouter)$",
+        description="기본 LLM 제공자 (google, openai, anthropic, openrouter)",
     )
 
     default_model: str = Field(
@@ -80,7 +80,7 @@ class GenerationConfig(BaseConfig):
         """
         Failover 제공자가 유효한지 검증
         """
-        valid_providers = {"google", "openai", "anthropic"}
+        valid_providers = {"google", "openai", "anthropic", "openrouter"}
         for provider in v:
             if provider not in valid_providers:
                 raise ValueError(

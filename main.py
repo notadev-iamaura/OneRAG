@@ -564,7 +564,9 @@ app.add_middleware(
     excluded_paths=[
         "/health",
         "/api/health",
+        "/api/chat",  # 🔧 채팅 API도 제외 (body 읽기로 인한 타임아웃 방지)
         "/api/chat/session",  # 세션 생성은 Rate Limit 제외 (body 읽기로 인한 14초 타임아웃 방지)
+        "/api/chat/stream",  # 🔧 스트리밍 API도 제외
         "/docs",
         "/redoc",
         "/openapi.json",

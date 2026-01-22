@@ -138,7 +138,6 @@ def _get_confidence_level(score: float) -> str:
 
 
 @router.post("/chat", response_model=ChatResponse)
-@limiter.limit("100/15minutes")
 async def chat(request: Request, chat_request: ChatRequest) -> ChatResponse:
     """
     채팅 처리 엔드포인트

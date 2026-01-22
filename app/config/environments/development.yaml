@@ -26,6 +26,7 @@ generation:
 retrieval:
   max_sources: 10  # 빠른 개발을 위해 소스 제한
   top_k: 10
+  min_score: 0.0  # 개발 환경에서는 모든 결과 포함 (테스트용)
 
 # 캐시 설정 (개발 환경)
 cache:
