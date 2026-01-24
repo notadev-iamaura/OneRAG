@@ -18,8 +18,8 @@
 | **보안** | 98/100 | ✅ 패치 완료 |
 | **설정 관리** | 95/100 | ✅ 양호 |
 | **안정성** | 85/100 | ⚠️ 개선 가능 |
-| **코드 위생** | 90/100 | ⚠️ 개선 가능 |
-| **종합** | 94/100 | ✅ **안정적** |
+| **코드 위생** | 95/100 | ✅ 양호 |
+| **종합** | 95/100 | ✅ **안정적** |
 
 ---
 
@@ -51,31 +51,22 @@
 
 ### 3.1 P2 (Medium) - 코드 위생
 
-#### 3.1.1 디버그용 print 문 (16개)
+#### 3.1.1 디버그용 print 문 ✅ (대부분 해결됨)
 
-**현황**: 배치 처리 스크립트에 print 문이 남아있음
+**현황**: 핵심 모듈의 print 문은 logger로 교체 완료. CLI 스크립트용 print 문만 남아있음.
 
-| 파일 | 라인 | 용도 |
-|------|------|------|
-| `app/config/schemas/root.py` | 178, 180, 191 | 설정 검증 디버깅 |
-| `app/config/schemas.py` | 369 | API 키 경고 |
-| `app/batch/notion_batch.py` | 818-831 | 배치 결과 요약 |
-| `app/batch/external_crawler.py` | 657-663 | 크롤링 결과 요약 |
-| `app/batch/metadata_chunker.py` | 504-509 | 테스트 결과 |
-| `app/lib/config_loader.py` | 57, 89, 92, 118 | 환경/설정 감지 |
+| 파일 | 라인 | 상태 | 비고 |
+|------|------|------|------|
+| ~~`app/config/schemas/root.py`~~ | - | ✅ 해결 | logger.warning/debug로 교체 |
+| ~~`app/config/schemas.py`~~ | - | ✅ 해결 | logger.warning로 교체 |
+| ~~`app/lib/config_loader.py`~~ | - | ✅ 해결 | logger.info/debug/warning로 교체 |
+| `app/batch/notion_batch.py` | 818-831 | 🟢 의도적 | CLI 결과 출력용 |
+| `app/batch/external_crawler.py` | 657-663 | 🟢 의도적 | CLI 결과 출력용 |
+| `app/batch/metadata_chunker.py` | 504-509 | 🟢 의도적 | CLI 테스트 결과용 |
 
-**권장 조치**:
-```python
-# print() → logger.info() 또는 logger.debug()로 교체
-# 예시:
-# 현재
-print("⚠️ 설정 검증 실패 - 원본 딕셔너리 사용")
+**결론**: CLI 스크립트(`if __name__ == "__main__":`)의 print 문은 사용자 대화형 출력으로 의도적인 사용입니다.
 
-# 개선
-logger.warning("설정 검증 실패 - 원본 딕셔너리 사용 (Graceful Degradation)")
-```
-
-**우선순위**: P2 (배치 스크립트 및 초기화 코드로 런타임 영향 없음)
+**우선순위**: ✅ 완료 (추가 작업 불필요)
 
 ---
 
@@ -270,13 +261,13 @@ ResourceWarning: The connection to Weaviate was not closed properly.
 
 ### 5.2 P2 개선 권장 (1개월 내)
 
-| 항목 | 예상 소요 | 영향도 |
-|------|-----------|--------|
-| Self-RAG 활성화 | 2일 | 답변 품질 향상 |
-| LLM Router 활성화 | 1일 | 라우팅 정확도 향상 |
-| print → logger 교체 | 0.5일 | 로깅 일관성 |
-| 설정 환경 분리 | 1일 | 배포 안정성 |
-| Chat Rate Limit | 2일 | 보안 강화 |
+| 항목 | 예상 소요 | 영향도 | 상태 |
+|------|-----------|--------|------|
+| Self-RAG 활성화 | 2일 | 답변 품질 향상 | ⏳ 대기 |
+| LLM Router 활성화 | 1일 | 라우팅 정확도 향상 | ⏳ 대기 |
+| ~~print → logger 교체~~ | - | 로깅 일관성 | ✅ 완료 |
+| 설정 환경 분리 | 1일 | 배포 안정성 | ⏳ 대기 |
+| Chat Rate Limit | 2일 | 보안 강화 | ⏳ 대기 |
 
 ### 5.3 P3 개선 선택적 (분기별)
 
@@ -320,9 +311,9 @@ uv run safety check    # 의존성 취약점 검사
 │  ✅ 테스트: 1,672개 통과                                    │
 │  ✅ 보안: P0 4개, P1 6개 모두 해결                          │
 │  ✅ DI 패턴: 80+ Provider, 9개 팩토리 완비                   │
+│  ✅ 코드 위생: print → logger 교체 완료                     │
 │                                                             │
 │  ⚠️ 개선 가능: Self-RAG, LLM Router 활성화 (P2)            │
-│  ⚠️ 개선 가능: print → logger 교체 (P2)                    │
 │  ⚠️ 개선 가능: 대형 파일 분리 (P3)                          │
 │                                                             │
 │  결론: 현재 상태로 프로덕션 배포 가능                        │
@@ -335,7 +326,7 @@ uv run safety check    # 의존성 취약점 검사
 
 1. **즉시**: 현재 상태 유지 (안정적)
 2. **1주일 내**: Self-RAG, LLM Router 활성화 테스트
-3. **1개월 내**: print 문 정리, 설정 환경 분리
+3. **1개월 내**: 설정 환경 분리, Chat Rate Limit 구현
 4. **분기별**: 코드 구조 개선 (대형 파일 분리)
 
 ---

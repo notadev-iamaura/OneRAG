@@ -18,8 +18,8 @@
 | **보안** | 98/100 | ✅ **패치 완료** |
 | **설정 관리** | 95/100 | ✅ 양호 |
 | **안정성** | 85/100 | ⚠️ 개선 가능 |
-| **코드 위생** | 90/100 | ⚠️ 개선 가능 |
-| **종합** | 94/100 | ✅ **승인** |
+| **코드 위생** | 95/100 | ✅ 양호 |
+| **종합** | 95/100 | ✅ **승인** |
 
 ### ✅ 보안 패치 완료 (2026-01-23): P0 4개, P1 6개 모두 해결
 ### ✅ 시스템 전체 분석 완료 (2026-01-24): 추가 개선 항목 문서화
@@ -96,7 +96,7 @@ SKIPPED (15개, 선택적 의존성):
 | ✅ H1 | `GET /api/monitoring/*` | 인증 없음 | **라우터 레벨 인증 추가** |
 | ✅ H2 | `POST /api/prompts/*` | CUD 작업 인증 없음 | **개별 엔드포인트 인증 추가 (GET은 공개)** |
 | ✅ H3 | `POST /api/tools/{name}/execute` | 인증 없음 | **execute 엔드포인트 인증 추가** |
-| ✅ H4 | `POST /api/upload` | 인증 없음 | **기존 Rate Limit으로 충분** |
+| ✅ H4 | `POST /api/upload` | 인증 없음 | **라우터 레벨 인증 추가** |
 | ✅ H5 | `GET /api/langsmith/*` | 인증 없음 | **라우터 레벨 인증 추가** |
 | ✅ H6 | CORS `allow_methods=["*"]` | 모든 메서드 허용 | **명시적 메서드 지정** |
 
@@ -213,7 +213,7 @@ circuit_breaker:
 - [x] **H1**: `GET /api/monitoring/*`에 인증 추가
 - [x] **H2**: `POST /api/prompts/*` CUD 작업에 인증 추가
 - [x] **H3**: `POST /api/tools/{name}/execute`에 인증 추가
-- [x] **H4**: `POST /api/upload` - 기존 Rate Limit 적용됨 (추가 작업 불필요)
+- [x] **H4**: `POST /api/upload` - 라우터 레벨 인증 추가 완료
 - [x] **H5**: `GET /api/langsmith/*`에 인증 추가
 - [x] **H6**: CORS `allow_methods`를 명시적으로 제한
 
