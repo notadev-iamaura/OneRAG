@@ -9,7 +9,7 @@ query_routing:
   # 정형 데이터 질문 (비용 비교, 최대/최소 등)을 SQL 우선 처리
   enabled: true
   llm_router:
-    enabled: false  # 🔧 테스트용 임시 비활성화 (OpenRouter 연결 문제)
+    enabled: true  # ✅ 활성화
     provider: "openrouter"
     model: "google/gemini-2.5-flash-lite"
     temperature: 0.0
@@ -63,7 +63,7 @@ routing:
   # 정확도 우선 - 낮은 temperature로 일관된 라우팅
 
   llm_router:
-    enabled: false  # 🔧 테스트용 임시 비활성화 (OpenRouter 연결 문제)
+    enabled: true  # ✅ 활성화
 
     # OpenRouter 게이트웨이 사용
     provider: "openrouter"
