@@ -117,6 +117,59 @@ class TestRerankerFactoryV2Create:
         reranker = RerankerFactoryV2.create(config)
         assert reranker.__class__.__name__ == "CohereReranker"
 
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    def test_create_llm_openrouter(self):
+        """LLM approach + OpenRouter provider 리랭커 생성"""
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+
+        config = {
+            "reranking": {
+                "approach": "llm",
+                "provider": "openrouter",
+                "openrouter": {
+                    "model": "google/gemini-2.5-flash-lite",
+                },
+            }
+        }
+        reranker = RerankerFactoryV2.create(config)
+        assert reranker.__class__.__name__ == "OpenRouterReranker"
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    def test_create_llm_openrouter_with_default_config(self):
+        """LLM approach + OpenRouter provider 기본 설정으로 리랭커 생성"""
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+
+        config = {
+            "reranking": {
+                "approach": "llm",
+                "provider": "openrouter",
+            }
+        }
+        reranker = RerankerFactoryV2.create(config)
+        assert reranker.__class__.__name__ == "OpenRouterReranker"
+
+    @patch.dict("os.environ", {"OPENROUTER_API_KEY": "test-key"})
+    def test_create_llm_openrouter_custom_model(self):
+        """LLM approach + OpenRouter provider 커스텀 모델로 리랭커 생성"""
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+
+        config = {
+            "reranking": {
+                "approach": "llm",
+                "provider": "openrouter",
+                "openrouter": {
+                    "model": "anthropic/claude-3-haiku",
+                    "max_documents": 30,
+                    "timeout": 20,
+                },
+            }
+        }
+        reranker = RerankerFactoryV2.create(config)
+        assert reranker.__class__.__name__ == "OpenRouterReranker"
+        assert reranker.model == "anthropic/claude-3-haiku"
+        assert reranker.max_documents == 30
+        assert reranker.timeout == 20
+
     def test_create_local_sentence_transformers(self):
         """Local approach + sentence-transformers provider 리랭커 생성"""
         from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2

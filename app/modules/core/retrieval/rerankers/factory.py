@@ -31,6 +31,7 @@ from .colbert_reranker import ColBERTRerankerConfig, JinaColBERTReranker
 from .gemini_reranker import GeminiFlashReranker
 from .jina_reranker import JinaReranker
 from .openai_llm_reranker import OpenAILLMReranker
+from .openrouter_reranker import OpenRouterReranker
 
 logger = get_logger(__name__)
 
@@ -106,7 +107,7 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "openrouter": {
-        "class": None,  # OpenRouterReranker 구현 시 추가
+        "class": OpenRouterReranker,
         "api_key_env": "OPENROUTER_API_KEY",
         "default_config": {
             "model": "google/gemini-2.5-flash-lite",
@@ -233,6 +234,15 @@ class RerankerFactoryV2:
                 reasoning_effort=provider_config.get(
                     "reasoning_effort", defaults["reasoning_effort"]
                 ),
+            )
+        elif provider == "openrouter":
+            reranker = OpenRouterReranker(
+                api_key=api_key,
+                model=provider_config.get("model", defaults["model"]),
+                max_documents=provider_config.get(
+                    "max_documents", defaults["max_documents"]
+                ),
+                timeout=provider_config.get("timeout", defaults["timeout"]),
             )
         else:
             raise ValueError(

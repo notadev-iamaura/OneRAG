@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **버전**: 1.2.1
 - **상태**: ✅ **1,700+개 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**, ✅ **Streaming API**, ✅ **WebSocket**
-- **주요 개선**: Reranker 확장 - Cohere, Local(sentence-transformers) 추가 (v1.2.1)
+- **주요 개선**: Reranker 확장 - Cohere, Local(sentence-transformers), OpenRouter 추가 (v1.2.1)
 
 ## 🚀 Quickstart (3단계)
 
@@ -84,7 +84,7 @@ make lint-imports       # 아키텍처 계층 검증 (Import Linter)
 - **Reranker v2.1**: 3단계 계층 구조 (approach → provider → model)로 명확한 설정
   - **approach**: `llm`, `cross-encoder`, `late-interaction`, `local` (4종)
   - **provider**: google, openai, jina, cohere, openrouter, sentence-transformers (6종)
-  - **v1.2.1 신규**: Cohere (100+ 언어), Local (API 키 불필요, 오프라인 사용 가능)
+  - **v1.2.1 신규**: Cohere (100+ 언어), Local (API 키 불필요), OpenRouter (다양한 LLM 모델 지원)
 
 ### 2. 완벽한 보안 (Unified Security)
 - **PII Facade**: `PIIProcessor`가 단순 마스킹과 고도화된 AI 리뷰(`PIIReviewProcessor`)를 통합 관리.
