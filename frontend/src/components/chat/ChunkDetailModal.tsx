@@ -27,7 +27,6 @@ interface ChunkDetailModalProps {
     onClose: () => void;
     selectedChunk: SourceType | null;
     documentInfoItems: DocumentInfoItem[];
-    shouldHideTxtContent: boolean;
 }
 
 export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
@@ -35,7 +34,6 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
     onClose,
     selectedChunk,
     documentInfoItems,
-    shouldHideTxtContent,
 }) => {
     return (
         <Dialog open={open} onOpenChange={onClose}>
@@ -106,9 +104,7 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
                                             "font-sans antialiased"
                                         )}>
                                             <div className="whitespace-pre-wrap leading-[1.8] font-medium text-foreground/90">
-                                                {(selectedChunk.file_type === 'TXT' && shouldHideTxtContent)
-                                                    ? <span className="italic text-muted-foreground opacity-60">대화내용은 제공되지 않습니다.</span>
-                                                    : formatFullContent(selectedChunk.content_preview)}
+                                                {formatFullContent(selectedChunk.content_preview)}
                                             </div>
                                         </div>
                                     </div>

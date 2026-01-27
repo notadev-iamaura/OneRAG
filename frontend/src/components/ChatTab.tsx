@@ -4,7 +4,6 @@ import {
   SourceAdditionalMetadata,
   ApiLog,
 } from '../types';
-import { useFeature } from '../core/useFeature';
 
 // Custom Hooks
 import { useChatSession } from '../hooks/chat/useChatSession';
@@ -28,10 +27,6 @@ interface ChatTabProps {
 }
 
 export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
-  // Privacy functionality
-  const privacyFeatures = useFeature('privacy');
-  const shouldHideTxtContent = privacyFeatures.hideTxtContent;
-
   // API Logs State
   const [apiLogs, setApiLogs] = React.useState<ApiLog[]>([]);
 
@@ -109,7 +104,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
 
     return [
       { label: '문서 ID', value: formatPrimitive(selectedChunk.id) },
-      { label: '문서 파일명', value: (selectedChunk.file_type === 'TXT' && shouldHideTxtContent) ? '카카오톡 대화 : *** 신부님' : formatPrimitive(selectedChunk.document) },
+      { label: '문서 파일명', value: formatPrimitive(selectedChunk.document) },
       { label: '표시 제목', value: formatPrimitive(meta.display_title ?? meta.law_name) },
       { label: '우선순위', value: formatPrimitive(meta.priority_level) },
       { label: '청크 번호', value: formatPrimitive(selectedChunk.chunk !== null && selectedChunk.chunk !== undefined ? `#${selectedChunk.chunk}` : null) },
@@ -120,7 +115,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
       { label: '재순위 방법', value: formatPrimitive(selectedChunk.rerank_method) },
       { label: '업로드 일시', value: formatPrimitive(meta.uploaded_at) },
     ];
-  }, [selectedChunk, shouldHideTxtContent]);
+  }, [selectedChunk]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -191,7 +186,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
         onClose={handleCloseModal}
         selectedChunk={selectedChunk}
         documentInfoItems={documentInfoItems}
-        shouldHideTxtContent={shouldHideTxtContent}
       />
     </div>
   );

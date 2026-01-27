@@ -22,7 +22,6 @@ describe('ChunkDetailModal', () => {
         onClose: mockOnClose,
         selectedChunk: mockChunk as Source,
         documentInfoItems: [],
-        shouldHideTxtContent: false,
     };
 
     it('should render modal content when open', () => {
@@ -51,13 +50,6 @@ describe('ChunkDetailModal', () => {
         render(<ChunkDetailModal {...defaultProps} documentInfoItems={[{ label: 'Type', value: 'PDF' }]} />);
         expect(screen.getByText('Type')).toBeInTheDocument();
         expect(screen.getByText('PDF')).toBeInTheDocument();
-    });
-
-    it('should hide text content for TXT files if shouldHideTxtContent is true', () => {
-        const txtChunk = { ...mockChunk, file_type: 'TXT' };
-        render(<ChunkDetailModal {...defaultProps} selectedChunk={txtChunk} shouldHideTxtContent={true} />);
-        expect(screen.getByText('대화내용은 제공되지 않습니다.')).toBeInTheDocument();
-        expect(screen.queryByText(/Formatted:/)).not.toBeInTheDocument();
     });
 
     it('should show fallback if no document info', () => {

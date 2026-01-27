@@ -61,7 +61,6 @@ Feature Flag 시스템은 다음과 같은 기능을 제공합니다:
   },
   privacy: {
     enabled: boolean,          // 프라이버시 기능 전체 활성화
-    hideTxtContent: boolean,   // TXT 파일 내용 숨김 (카카오톡 대화)
     maskPhoneNumbers: boolean, // 전화번호 자동 마스킹
   }
 }
@@ -172,32 +171,6 @@ function UploadTab() {
       {docFeatures.bulkDelete && (
         <BulkDeleteButton />
       )}
-    </Box>
-  );
-}
-```
-
-### 2-1. 프라이버시 기능 예시 (TXT 파일 숨김)
-
-```tsx
-import { useFeature } from '../core/useFeature';
-
-function ChatTab() {
-  const privacyFeatures = useFeature('privacy');
-  const shouldHideTxtContent = privacyFeatures.hideTxtContent;
-
-  return (
-    <Box>
-      {/* TXT 파일 참조 문서 표시 - 프라이버시 기능에 따라 조건부 마스킹 */}
-      <TextField
-        label="참조 문서"
-        value={
-          (chunk.file_type === 'TXT' && shouldHideTxtContent)
-            ? '카카오톡 대화 : *** 신부님'
-            : chunk.document
-        }
-        disabled
-      />
     </Box>
   );
 }
@@ -418,50 +391,7 @@ function UploadTab() {
 }
 ```
 
-### 예시 3: 프라이버시 기능 제어 (TXT 파일 숨김)
-
-**목표**: 관리자 페이지에서 TXT 파일(카카오톡 대화) 내용 숨김 기능 제어
-
-**설정**:
-
-```env
-# 프라이버시 모듈 활성화
-VITE_FEATURE_PRIVACY=true
-
-# TXT 파일 내용 숨김 활성화
-VITE_FEATURE_PRIVACY_HIDE_TXT=true
-
-# 전화번호 마스킹 활성화
-VITE_FEATURE_PRIVACY_MASK_PHONE=true
-```
-
-**결과**:
-- 관리자 페이지 설정에서 "프라이버시" 토글이 표시됨
-- "TXT 파일 내용 숨김" 옵션으로 카카오톡 대화 참조 문서 마스킹 제어 가능
-- 설정은 localStorage에 저장되어 페이지 새로고침 후에도 유지됨
-
-**컴포넌트 코드**:
-
-```tsx
-import { useFeature } from '../core/useFeature';
-
-function ChatTab() {
-  const privacyFeatures = useFeature('privacy');
-  const shouldHideTxtContent = privacyFeatures.hideTxtContent;
-
-  // TXT 파일 참조 문서 표시 시 프라이버시 기능 적용
-  const documentName = useMemo(() => {
-    if (chunk.file_type === 'TXT' && shouldHideTxtContent) {
-      return '카카오톡 대화 : *** 신부님';
-    }
-    return chunk.document;
-  }, [chunk, shouldHideTxtContent]);
-
-  return <TextField label="참조 문서" value={documentName} disabled />;
-}
-```
-
-### 예시 4: A/B 테스트용 설정
+### 예시 3: A/B 테스트용 설정
 
 **시나리오**: 두 가지 버전의 서비스를 다른 도메인에 배포
 

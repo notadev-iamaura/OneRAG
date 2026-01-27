@@ -64,7 +64,6 @@ export interface AnalysisFeatures {
  */
 export interface PrivacyFeatures {
   enabled: boolean;          // 프라이버시 기능 전체 활성화 여부
-  hideTxtContent: boolean;   // TXT 파일 내용 숨김 기능 (카카오톡 대화)
   maskPhoneNumbers: boolean; // 전화번호 자동 마스킹 기능
 }
 
@@ -121,7 +120,6 @@ export const DEFAULT_FEATURES: FeatureConfig = {
   },
   privacy: {
     enabled: true,
-    hideTxtContent: false, // 기본값 OFF - 관리자 설정에서 켜야 작동
     maskPhoneNumbers: true,
   },
 };
@@ -177,7 +175,6 @@ function loadFeaturesFromEnv(): Partial<FeatureConfig> {
     },
     privacy: {
       enabled: parseBooleanEnv(env.VITE_FEATURE_PRIVACY, true),
-      hideTxtContent: parseBooleanEnv(env.VITE_FEATURE_PRIVACY_HIDE_TXT, false), // 기본값 OFF
       maskPhoneNumbers: parseBooleanEnv(env.VITE_FEATURE_PRIVACY_MASK_PHONE, true),
     },
   };

@@ -69,7 +69,6 @@ export const SettingsPage: React.FC = () => {
         history: cfg.chatbot?.history ?? true,
         upload: cfg.documentManagement?.upload ?? true,
         search: cfg.documentManagement?.search ?? true,
-        hideTxtContent: cfg.privacy?.hideTxtContent ?? true,
         maskPhoneNumbers: cfg.privacy?.maskPhoneNumbers ?? true,
       },
       ui: {
@@ -130,7 +129,6 @@ export const SettingsPage: React.FC = () => {
         analysis: { enabled: features.modules.analysis },
         privacy: {
           enabled: features.modules.privacy,
-          hideTxtContent: features.features.hideTxtContent,
           maskPhoneNumbers: features.features.maskPhoneNumbers,
         },
       },
@@ -163,7 +161,6 @@ export const SettingsPage: React.FC = () => {
         history: cfg.chatbot?.history ?? true,
         upload: cfg.documentManagement?.upload ?? true,
         search: cfg.documentManagement?.search ?? true,
-        hideTxtContent: cfg.privacy?.hideTxtContent ?? true,
         maskPhoneNumbers: cfg.privacy?.maskPhoneNumbers ?? true,
       },
       ui: {
@@ -365,12 +362,6 @@ export const SettingsPage: React.FC = () => {
               <FeatureItem label="대용량 파일 배치 업로드" checked={features.features.upload} onChange={() => handleFeatureToggle('features.upload')} />
               <FeatureItem label="고급 시맨틱 문서 검색" checked={features.features.search} onChange={() => handleFeatureToggle('features.search')} />
               <Separator className="my-3 opacity-40" />
-              <FeatureItem
-                label="TXT 내용 마스킹 (Kakaotalk)"
-                checked={features.features.hideTxtContent}
-                disabled={!features.modules.privacy}
-                onChange={() => handleFeatureToggle('features.hideTxtContent')}
-              />
               <FeatureItem
                 label="연락처 정보 패턴 마스킹"
                 checked={features.features.maskPhoneNumbers}
