@@ -1,53 +1,185 @@
-# 시스템 아키텍처 (Architecture) - v1.0.0
+# OneRAG Architecture Diagrams
 
-Blank RAG 시스템은 고성능, 확장성, 프로덕션급 보안을 지향하는 **Advanced RAG 프레임워크**입니다.
-
----
-
-## 1. 기술 스택 (Tech Stack)
-
-- **Backend**: Python 3.11+, FastAPI (Async)
-- **DI Container**: `dependency-injector` (중앙 집중식 의존성 및 생명주기 관리)
-- **Vector DB**: **Weaviate** (Primary, `kagome_kr` 하이브리드 검색)
-- **Graph DB**: NetworkX (In-memory, **지능형 벡터 검색 지원**) / Neo4j (준비 중)
-- **Metadata Store**: PostgreSQL (프롬프트 관리 및 감사 로그 저장)
-- **LLM**: Google Gemini 2.5 Pro (Primary), GPT-4o, Claude 3.5 지원
-- **Reranking**: Jina ColBERT v2 (토큰 레벨 정밀 재정렬)
-- **Observability**: LangSmith & Langfuse (테스트 환경 완전 격리 지원)
+아래 다이어그램들을 README나 docs에 포함할 수 있습니다. GitHub에서 Mermaid를 자동으로 렌더링합니다.
 
 ---
 
-## 2. 핵심 아키텍처 레이어
+## 1. 전체 시스템 아키텍처
 
-### 2.1 지능형 검색 레이어 (Advanced Retrieval)
-- **Hybrid Search**: Weaviate를 통한 Dense + Sparse 하이브리드 검색.
-- **GraphRAG v3.3**: 단순 이름 매칭을 넘어 **엔티티 벡터 유사도 검색**을 통합. 오타나 의미적 유사어로도 지식 그래프 탐색 가능.
-- **Semantic Caching**: 쿼리 임베딩 유사도를 분석하여 캐시된 고품질 답변을 즉시 반환.
+```mermaid
+flowchart TB
+    subgraph Client["클라이언트"]
+        API[REST API]
+        WS[WebSocket]
+        Stream[Streaming]
+    end
 
-### 2.2 통합 보안 레이어 (Unified Security)
-- **PII Processor Facade**: 분산되어 있던 개인정보 마스킹 로직을 하나로 통합. AI 기반의 NER(개체명 인식)과 정책 엔진을 결합하여 중요 문서를 정밀 검토.
-- **Admin Defense-in-Depth**: 미들웨어와 라우터 수준의 이중 API Key 인증을 통해 모든 관리자 API를 완벽히 보호.
+    subgraph Core["OneRAG Core"]
+        Router[Query Router]
+        Expansion[Query Expansion]
+        Retriever[Retriever]
+        Cache[Cache Layer]
+        Reranker[Reranker]
+        Generator[Generator]
+        PII[PII Masking]
+    end
 
-### 2.3 자가 수정 레이어 (Self-Correction)
-- **Self-RAG**: 생성된 답변의 관련성(Relevance)과 근거(Groundedness)를 스스로 평가하고, 품질 미달 시 자동으로 재검색 및 재생성 수행.
+    subgraph VectorDB["Vector DB (택 1)"]
+        Weaviate
+        Chroma
+        Pinecone
+        Qdrant
+        pgvector
+        MongoDB
+    end
+
+    subgraph LLM["LLM Provider (택 1)"]
+        Gemini[Google Gemini]
+        OpenAI
+        Claude[Anthropic Claude]
+        OpenRouter
+    end
+
+    subgraph Features["Optional Features"]
+        GraphRAG[GraphRAG]
+        Agent[Agent Tools]
+        Korean[한국어 NLP]
+    end
+
+    Client --> Router
+    Router --> Expansion
+    Expansion --> Retriever
+    Retriever --> VectorDB
+    Retriever --> Cache
+    Cache --> Reranker
+    Reranker --> Generator
+    Generator --> LLM
+    Generator --> PII
+    PII --> Client
+
+    Features -.-> Core
+
+    style Core fill:#1f6feb,color:#fff
+    style VectorDB fill:#238636,color:#fff
+    style LLM fill:#8957e5,color:#fff
+    style Features fill:#db61a2,color:#fff
+```
 
 ---
 
-## 3. 데이터 흐름 (Data Flow)
+## 2. RAG 파이프라인 상세
 
-### 3.1 쿼리 처리 파이프라인
-1.  **Rule-Based Routing**: YAML 기반 동적 키워드 매칭을 통해 Direct Answer 또는 RAG 여부 결정.
-2.  **Semantic Search**: 벡터 + 그래프 하이브리드 검색 수행.
-3.  **Refinement**: RRF 병합 후 ColBERT로 최상위 결과 추출.
-4.  **Verification**: Self-RAG 품질 필터를 통과한 답변만 최종 반환.
+```mermaid
+flowchart LR
+    Q[Query] --> R[Router]
+    R -->|분류| E[Expansion]
+    E -->|동의어/불용어| S[Search]
+
+    subgraph Search["검색 단계"]
+        S --> V[Vector Search]
+        S --> H[Hybrid Search]
+        V --> M[Merge]
+        H --> M
+    end
+
+    M --> C{Cache?}
+    C -->|Hit| RES[Response]
+    C -->|Miss| RR[Reranker]
+    RR --> G[Generator]
+    G --> P[PII Mask]
+    P --> RES
+
+    style Search fill:#238636,color:#fff
+```
 
 ---
 
-## 4. 상세 모듈 구조
+## 3. 컴포넌트 교체 가능 구조
 
-- `app/api`: FastAPI 라우터 및 서비스 레이어
-- `app/core`: 인터페이스 정의 및 DI 컨테이너 (`AppContainer`)
-- `app/infrastructure`: 인프라 어댑터 (Vector/Graph/Metadata Storage)
-- `app/modules/core`: RAG 핵심 브레인 (Retrieval, Generation, Self-RAG, PII)
-- `app/modules/ingestion`: 데이터 적재 파이프라인
-- `app/lib`: 공통 유틸리티 (Auth, Logger, LLM Client)
+```mermaid
+graph TB
+    subgraph Config["설정 파일"]
+        ENV[".env"]
+        YAML["YAML configs"]
+    end
+
+    subgraph Providers["교체 가능한 Provider"]
+        VDB["Vector DB Provider"]
+        LLMP["LLM Provider"]
+        RRP["Reranker Provider"]
+        CP["Cache Provider"]
+    end
+
+    subgraph Implementations["구현체"]
+        VDB --> W[Weaviate]
+        VDB --> CH[Chroma]
+        VDB --> PI[Pinecone]
+        VDB --> QD[Qdrant]
+
+        LLMP --> GE[Gemini]
+        LLMP --> OA[OpenAI]
+        LLMP --> AN[Anthropic]
+
+        RRP --> JI[Jina]
+        RRP --> CO[Cohere]
+        RRP --> GO[Google]
+
+        CP --> ME[Memory]
+        CP --> RE[Redis]
+        CP --> SE[Semantic]
+    end
+
+    ENV -->|1줄 변경| VDB
+    ENV -->|1줄 변경| LLMP
+    YAML -->|2줄 변경| RRP
+    YAML -->|1줄 변경| CP
+
+    style Config fill:#d29922,color:#fff
+    style Providers fill:#1f6feb,color:#fff
+```
+
+---
+
+## 4. 단계별 확장 가이드
+
+```mermaid
+graph LR
+    subgraph Basic["Basic"]
+        B1[Vector Search]
+        B2[LLM]
+    end
+
+    subgraph Standard["Standard (권장)"]
+        S1[Hybrid Search]
+        S2[Reranker]
+        S3[Cache]
+    end
+
+    subgraph Advanced["Advanced"]
+        A1[GraphRAG]
+        A2[Agent]
+        A3[PII Masking]
+    end
+
+    Basic -->|필요시 추가| Standard
+    Standard -->|필요시 추가| Advanced
+
+    style Basic fill:#238636,color:#fff
+    style Standard fill:#1f6feb,color:#fff
+    style Advanced fill:#8957e5,color:#fff
+```
+
+---
+
+## 5. 한국어 처리 파이프라인 (Optional)
+
+```mermaid
+flowchart LR
+    Q[한국어 쿼리] --> T[형태소 분석]
+    T --> SY[동의어 확장]
+    SY --> SW[불용어 제거]
+    SW --> UD[사용자 사전]
+    UD --> S[검색]
+
+    style Q fill:#f778ba,color:#fff
+```
