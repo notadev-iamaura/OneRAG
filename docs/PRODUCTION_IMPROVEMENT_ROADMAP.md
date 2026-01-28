@@ -2,7 +2,7 @@
 
 > **문서 버전**: 1.2.0
 > **작성 일자**: 2026-01-23
-> **최종 업데이트**: 2026-01-27 (TXT 파일 제한 로직 제거)
+> **최종 업데이트**: 2026-01-28 (Phase 5.2 불필요 확인, OpenRouter 버그 수정)
 > **대상 버전**: OneRAG v1.2.1 → v1.4.0
 
 ---
@@ -615,63 +615,30 @@ async def stream_rag_pipeline(...) -> AsyncGenerator:
 
 ---
 
-### 5.2 점수 정규화 및 가중 합산
+### 5.2 점수 정규화 및 가중 합산 - ❌ 불필요 (2026-01-28 검증)
 
-**문제점**
+**초기 가정 (잘못됨)**
 - 벡터 점수(0~1)와 리랭크 점수(0~100) 범위가 다름
-- 리랭킹 후 순위가 불안정하게 변경됨
 
-**현재 코드**:
-```python
-# 벡터 점수: 0~1 범위
-search_results = await self.retriever.search(query, top_k)
-# result.metadata["score"] = 0.85
+**실제 코드 분석 결과**
+모든 리랭커가 이미 **0~1 범위**를 반환하고 있음:
 
-# 리랭크 점수: 0~100 범위 (정규화 없이 혼용)
-reranked = await self.reranker.rerank(query, search_results)
-# result.metadata["rerank_score"] = 78
-```
+| 리랭커 | 점수 범위 | 구현 방식 |
+|--------|----------|----------|
+| **Jina** | 0~1 | API `relevance_score` (스펙 보장) |
+| **Cohere** | 0~1 | API `relevance_score` (스펙 보장) |
+| **ColBERT** | 0~1 | Jina API `relevance_score` |
+| **Gemini** | 0~1 | `max(0.0, min(1.0, score))` 클램핑 |
+| **OpenAI** | 0~1 | `max(0.0, min(1.0, score))` 클램핑 |
+| **OpenRouter** | 0~1 | `max(0.0, min(1.0, score))` 클램핑 (v1.2.1 수정) |
+| **Local** | 0~1 | Sigmoid 정규화 `1/(1+exp(-x))` |
 
-**해결 방안**: 정규화 후 가중 합산
-```yaml
-# app/config/features/retrieval.yaml
-retrieval:
-  score_fusion:
-    enabled: true
-    vector_weight: 0.6      # 벡터 점수 가중치 60%
-    rerank_weight: 0.4      # 리랭크 점수 가중치 40%
-    normalize_rerank: true  # 리랭크 점수 0~1 정규화
-```
+**추가 발견**
+- 리랭킹은 점수를 **혼합하지 않고 대체**함 (RRF merge 후 rerank)
+- `min_score` 필터링은 orchestrator에서 **미구현** 상태
+- 따라서 점수 범위 불일치 문제 자체가 존재하지 않음
 
-```python
-def _fuse_scores(self, results: list) -> list:
-    """벡터 점수와 리랭크 점수의 가중 합산"""
-    config = self.config.get("score_fusion", {})
-
-    if not config.get("enabled", False):
-        return results
-
-    vector_w = config.get("vector_weight", 0.6)
-    rerank_w = config.get("rerank_weight", 0.4)
-
-    for result in results:
-        vector_score = result.metadata.get("score", 0)
-        rerank_score = result.metadata.get("rerank_score", 0)
-
-        # 리랭크 점수 정규화 (0~100 → 0~1)
-        if config.get("normalize_rerank", True):
-            rerank_score = rerank_score / 100.0
-
-        # 가중 합산
-        result.metadata["final_score"] = (
-            vector_score * vector_w + rerank_score * rerank_w
-        )
-
-    # final_score 기준 재정렬
-    return sorted(results, key=lambda x: x.metadata["final_score"], reverse=True)
-```
-
-**영향도**: 검색 안정성 ↑, 순위 예측 가능성 ↑
+**결론**: 이 개선 항목은 **불필요**. 문서 초기 작성 시 잘못된 가정에 기반함.
 
 ---
 
@@ -704,11 +671,10 @@ def _fuse_scores(self, results: list) -> list:
 - [x] 프로덕션 메트릭 대시보드 구성 (`/api/admin/realtime-metrics`)
 - [ ] API Key 로테이션 테스트 완료 (선택 사항)
 
-### Phase 5 완료 조건
+### Phase 5 상태 (선택 사항)
 
-- [ ] 스트리밍 에러 발생 시 체크포인트 이벤트 전송
-- [ ] 벡터/리랭크 점수 정규화 후 가중 합산 적용
-- [ ] 검색 결과 순위 안정성 테스트 통과
+- [ ] 5.1 스트리밍 에러 복구 - ⏭️ 패스 (사용자 결정)
+- [x] 5.2 점수 정규화 - ❌ 불필요 (2026-01-28 검증: 모든 리랭커가 이미 0~1 반환)
 
 ---
 
@@ -719,10 +685,10 @@ def _fuse_scores(self, results: list) -> list:
 | **v1.2.2** | Phase 1, 2 | 보안 패치 (Critical 4개 + High 6개) | ✅ 완료 |
 | **v1.3.0** | Phase 3 | 기능 정상화 + 설정 분리 | ✅ 완료 |
 | **v1.3.1** | Phase 4 | 운영 최적화 (Rate Limit, 실시간 메트릭) | ✅ 완료 |
-| **v1.4.0** | Phase 5 | 검색 품질 개선 (스트리밍 복구, 점수 정규화) | 선택 |
+| **v1.4.0** | Phase 5 | 검색 품질 개선 (5.1 패스, 5.2 불필요 확인) | ⏭️ 스킵 |
 
 ---
 
 **문서 작성자**: Claude Code (Automated Planning)
-**최종 업데이트**: 2026-01-27 (Phase 3, 4 완료 상태 반영)
+**최종 업데이트**: 2026-01-28 (Phase 5.2 불필요 확인 - 모든 리랭커 0~1 반환)
 **검토 필요**: Tech Lead, Security Team
