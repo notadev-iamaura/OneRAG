@@ -34,9 +34,9 @@ echo "  n: 기존 프로젝트 연결"
 read -p "선택: " CREATE_PROJECT
 
 if [ "$CREATE_PROJECT" = "y" ]; then
-    echo "프로젝트 이름을 입력하세요 (기본값: wed-rag-chatbot):"
+    echo "프로젝트 이름을 입력하세요 (기본값: onerag-chatbot):"
     read -p "프로젝트 이름: " PROJECT_NAME
-    PROJECT_NAME=${PROJECT_NAME:-wed-rag-chatbot}
+    PROJECT_NAME=${PROJECT_NAME:-onerag-chatbot}
 
     echo "프로젝트 생성 중: $PROJECT_NAME"
     railway init --name "$PROJECT_NAME"
@@ -59,7 +59,7 @@ if [ "$DEPLOY_FROM_GITHUB" = "y" ]; then
     echo "✅ GitHub Repository 배포는 Railway Dashboard에서 수동으로 설정하세요."
     echo "   1. Railway Dashboard → 프로젝트 열기"
     echo "   2. New Service → Deploy from GitHub repo"
-    echo "   3. Repository 선택: wed_rag-1112-"
+    echo "   3. Repository 선택: RAG_Standard"
     echo ""
 else
     echo "현재 디렉토리에서 Dockerfile을 사용하여 배포합니다."
@@ -148,9 +148,9 @@ echo ""
 echo "환경 변수를 설정합니다..."
 
 # Backend 서비스 선택 (첫 번째 서비스로 가정)
-echo "Backend 서비스 이름을 입력하세요 (기본값: wed-rag-chatbot):"
+echo "Backend 서비스 이름을 입력하세요 (기본값: onerag-chatbot):"
 read -p "서비스 이름: " BACKEND_SERVICE
-BACKEND_SERVICE=${BACKEND_SERVICE:-wed-rag-chatbot}
+BACKEND_SERVICE=${BACKEND_SERVICE:-onerag-chatbot}
 
 # 환경 변수 설정 (Railway CLI v4.x)
 railway variables --set "OPENAI_API_KEY=$OPENAI_API_KEY"

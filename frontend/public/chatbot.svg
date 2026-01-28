@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
-  <!-- 배경 그라디언트 -->
+  <!-- 배경 그라디언트 - 모노톤 -->
   <defs>
     <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#742DDD;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#6210CC;stop-opacity:1" />
+      <stop offset="0%" style="stop-color:#1a1a1a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#000000;stop-opacity:1" />
     </linearGradient>
-    
+
     <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#C2A9FA;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#742DDD;stop-opacity:1" />
+      <stop offset="0%" style="stop-color:#a0a0a0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#404040;stop-opacity:1" />
     </linearGradient>
-    
+
     <linearGradient id="tealGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#69C085;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#259C72;stop-opacity:1" />
+      <stop offset="0%" style="stop-color:#808080;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#505050;stop-opacity:1" />
     </linearGradient>
-    
+
     <!-- 빛나는 효과 -->
     <filter id="glow">
       <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
@@ -24,46 +24,46 @@
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
-    
+
     <!-- 부드러운 그림자 -->
     <filter id="shadow">
       <feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity="0.3"/>
     </filter>
   </defs>
-  
+
   <!-- 배경 원형 -->
   <circle cx="64" cy="64" r="60" fill="url(#bgGradient)"/>
-  
+
   <!-- 내부 원형 테두리 -->
   <circle cx="64" cy="64" r="52" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
-  
-  <!-- RAG Pipe 심볼 그룹 -->
+
+  <!-- OneRAG 심볼 그룹 -->
   <g filter="url(#glow)">
     <!-- 왼쪽 문서 아이콘 (RAG - Retrieval) -->
     <g transform="translate(28, 40)">
       <rect x="0" y="0" width="20" height="26" rx="2" fill="rgba(255,255,255,0.95)" filter="url(#shadow)"/>
-      <line x1="4" y1="6" x2="16" y2="6" stroke="#742DDD" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="4" y1="10" x2="16" y2="10" stroke="#742DDD" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="4" y1="14" x2="12" y2="14" stroke="#C2A9FA" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="4" y1="18" x2="14" y2="18" stroke="#C2A9FA" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="4" y1="6" x2="16" y2="6" stroke="#404040" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="4" y1="10" x2="16" y2="10" stroke="#404040" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="4" y1="14" x2="12" y2="14" stroke="#808080" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="4" y1="18" x2="14" y2="18" stroke="#808080" stroke-width="1.5" stroke-linecap="round"/>
     </g>
-    
+
     <!-- 중앙 파이프 연결선 (데이터 흐름) -->
     <g>
       <!-- 상단 파이프 -->
-      <path d="M48 48 L64 48 L64 42" 
-            stroke="url(#accentGradient)" 
-            stroke-width="4" 
-            stroke-linecap="round" 
+      <path d="M48 48 L64 48 L64 42"
+            stroke="url(#accentGradient)"
+            stroke-width="4"
+            stroke-linecap="round"
             fill="none"/>
-      
+
       <!-- 하단 파이프 -->
-      <path d="M48 62 L64 62 L64 68" 
-            stroke="url(#tealGradient)" 
-            stroke-width="4" 
-            stroke-linecap="round" 
+      <path d="M48 62 L64 62 L64 68"
+            stroke="url(#tealGradient)"
+            stroke-width="4"
+            stroke-linecap="round"
             fill="none"/>
-      
+
       <!-- 데이터 흐름 점들 -->
       <circle cx="52" cy="48" r="2" fill="#FFFFFF">
         <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/>
@@ -71,7 +71,7 @@
       <circle cx="58" cy="48" r="2" fill="#FFFFFF">
         <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.3s" repeatCount="indefinite"/>
       </circle>
-      
+
       <circle cx="52" cy="62" r="2" fill="#FFFFFF">
         <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.6s" repeatCount="indefinite"/>
       </circle>
@@ -79,35 +79,35 @@
         <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.9s" repeatCount="indefinite"/>
       </circle>
     </g>
-    
+
     <!-- 오른쪽 AI 두뇌 아이콘 (Generation) -->
     <g transform="translate(68, 36)">
       <!-- 두뇌 외곽선 -->
-      <path d="M16 8 C16 4 13 2 10 2 C7 2 4 4 4 8 C2 8 1 10 1 12 C1 14 2 16 4 16 L4 24 C4 28 7 30 10 30 C13 30 16 28 16 24 L16 16 C18 16 19 14 19 12 C19 10 18 8 16 8 Z" 
-            fill="rgba(255,255,255,0.95)" 
+      <path d="M16 8 C16 4 13 2 10 2 C7 2 4 4 4 8 C2 8 1 10 1 12 C1 14 2 16 4 16 L4 24 C4 28 7 30 10 30 C13 30 16 28 16 24 L16 16 C18 16 19 14 19 12 C19 10 18 8 16 8 Z"
+            fill="rgba(255,255,255,0.95)"
             filter="url(#shadow)"/>
-      
+
       <!-- 뉴럴 네트워크 패턴 -->
       <g opacity="0.7">
         <!-- 노드들 -->
-        <circle cx="7" cy="10" r="1.5" fill="#742DDD"/>
-        <circle cx="13" cy="10" r="1.5" fill="#742DDD"/>
-        <circle cx="10" cy="16" r="1.5" fill="#259C72"/>
-        <circle cx="7" cy="22" r="1.5" fill="#742DDD"/>
-        <circle cx="13" cy="22" r="1.5" fill="#742DDD"/>
-        
+        <circle cx="7" cy="10" r="1.5" fill="#404040"/>
+        <circle cx="13" cy="10" r="1.5" fill="#404040"/>
+        <circle cx="10" cy="16" r="1.5" fill="#505050"/>
+        <circle cx="7" cy="22" r="1.5" fill="#404040"/>
+        <circle cx="13" cy="22" r="1.5" fill="#404040"/>
+
         <!-- 연결선 -->
-        <line x1="7" y1="10" x2="10" y2="16" stroke="#C2A9FA" stroke-width="1" opacity="0.5"/>
-        <line x1="13" y1="10" x2="10" y2="16" stroke="#C2A9FA" stroke-width="1" opacity="0.5"/>
-        <line x1="10" y1="16" x2="7" y2="22" stroke="#69C085" stroke-width="1" opacity="0.5"/>
-        <line x1="10" y1="16" x2="13" y2="22" stroke="#69C085" stroke-width="1" opacity="0.5"/>
+        <line x1="7" y1="10" x2="10" y2="16" stroke="#808080" stroke-width="1" opacity="0.5"/>
+        <line x1="13" y1="10" x2="10" y2="16" stroke="#808080" stroke-width="1" opacity="0.5"/>
+        <line x1="10" y1="16" x2="7" y2="22" stroke="#606060" stroke-width="1" opacity="0.5"/>
+        <line x1="10" y1="16" x2="13" y2="22" stroke="#606060" stroke-width="1" opacity="0.5"/>
       </g>
     </g>
   </g>
-  
+
   <!-- 상단 장식 스파크 -->
   <g opacity="0.8">
-    <path d="M64 18 L65 22 L69 22 L66 25 L67 29 L64 26 L61 29 L62 25 L59 22 L63 22 Z" 
+    <path d="M64 18 L65 22 L69 22 L66 25 L67 29 L64 26 L61 29 L62 25 L59 22 L63 22 Z"
           fill="#FFFFFF">
       <animateTransform
         attributeName="transform"
@@ -119,7 +119,7 @@
         repeatCount="indefinite"/>
     </path>
   </g>
-  
+
   <!-- 하단 작은 스파크들 -->
   <circle cx="32" cy="96" r="2" fill="rgba(255,255,255,0.6)">
     <animate attributeName="opacity" values="0.3;0.8;0.3" dur="3s" repeatCount="indefinite"/>

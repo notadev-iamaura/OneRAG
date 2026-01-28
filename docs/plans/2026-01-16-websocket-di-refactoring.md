@@ -735,7 +735,7 @@ const getWSBaseURL = (): string => {
     }
     const devApiUrl =
       import.meta.env.VITE_DEV_API_BASE_URL ||
-      'https://wed-rag-backend-production.up.railway.app';
+      'https://your-backend.railway.app';
     return devApiUrl.replace('https://', 'wss://').replace('http://', 'ws://');
   }
 
@@ -764,7 +764,7 @@ const getWSBaseURL = (): string => {
   }
 
   // 기본값
-  return 'wss://wed-rag-backend-production.up.railway.app';
+  return 'wss://your-backend.railway.app';
 };
 
 /**
