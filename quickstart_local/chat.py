@@ -16,7 +16,6 @@ FastAPI 서버 없이 직접 검색 파이프라인을 호출합니다.
 """
 
 import asyncio
-import pickle
 import sys
 from pathlib import Path
 from typing import Any
@@ -125,8 +124,8 @@ def initialize_components() -> tuple[Any, Any | None, Any | None]:
     merger = None
     try:
         if Path(BM25_INDEX_PATH).exists():
-            with open(BM25_INDEX_PATH, "rb") as f:
-                bm25_index = pickle.load(f)  # noqa: S301
+            from quickstart_local.load_data import load_bm25_index
+            bm25_index = load_bm25_index(BM25_INDEX_PATH)
 
             from app.modules.core.retrieval.bm25_engine import HybridMerger
             merger = HybridMerger(alpha=0.6)

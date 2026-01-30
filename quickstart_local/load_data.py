@@ -142,16 +142,45 @@ async def load_to_chroma(
 
 
 def save_bm25_index(index: Any, path: str = BM25_INDEX_PATH) -> None:
-    """BM25 인덱스를 파일로 저장"""
+    """
+    BM25 인덱스 데이터를 파일로 저장
+
+    Kiwi(C 확장)는 pickle 불가이므로, 재구축에 필요한
+    문서와 토큰화 결과만 저장합니다.
+    """
     Path(path).parent.mkdir(parents=True, exist_ok=True)
+    serializable_data = {
+        "documents": index._documents,
+        "tokenized_corpus": index._tokenized_corpus,
+    }
     with open(path, "wb") as f:
-        pickle.dump(index, f)
+        pickle.dump(serializable_data, f)
 
 
 def load_bm25_index(path: str = BM25_INDEX_PATH) -> Any:
-    """저장된 BM25 인덱스 로드"""
+    """
+    저장된 BM25 인덱스 데이터로 BM25Index를 재구축
+
+    pickle에서 문서 + 토큰화 결과를 로드한 후
+    BM25Plus 인스턴스만 재생성합니다 (토큰화 과정 생략).
+    """
+    from rank_bm25 import BM25Plus
+
+    from app.modules.core.retrieval.bm25_engine import BM25Index, KoreanTokenizer
+
     with open(path, "rb") as f:
-        return pickle.load(f)  # noqa: S301
+        data = pickle.load(f)  # noqa: S301
+
+    # 토크나이저는 검색 시 쿼리 토큰화에만 사용
+    tokenizer = KoreanTokenizer()
+    index = BM25Index(tokenizer=tokenizer)
+
+    # 저장된 데이터로 내부 상태 복원 (재토큰화 없이)
+    index._documents = data["documents"]
+    index._tokenized_corpus = data["tokenized_corpus"]
+    index._bm25 = BM25Plus(data["tokenized_corpus"])
+
+    return index
 
 
 async def main() -> None:
