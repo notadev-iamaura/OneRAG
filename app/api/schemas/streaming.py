@@ -4,8 +4,9 @@
 SSE(Server-Sent Events) 기반 스트리밍 응답을 위한 Pydantic 모델.
 실시간 채팅 응답 스트리밍에 사용되며, 청크 단위로 응답을 전송합니다.
 
-주요 모델:
+주요 모델 (5개):
 - StreamChatRequest: 스트리밍 채팅 요청
+- StreamMetadataEvent: 세션/검색 메타데이터 이벤트
 - StreamChunkEvent: 텍스트 청크 이벤트
 - StreamDoneEvent: 스트리밍 완료 이벤트
 - StreamErrorEvent: 에러 이벤트
@@ -45,6 +46,33 @@ class StreamChatRequest(BaseModel):
         None,
         description="추가 옵션 (temperature, max_tokens 등)",
     )
+
+
+class StreamMetadataEvent(BaseModel):
+    """
+    SSE 메타데이터 이벤트
+
+    스트리밍 응답 시작 시 전송되는 세션/검색 메타정보.
+    chat_service에서 dict로 전송하는 메타데이터의 스키마 정의.
+
+    SSE 형식 예시:
+        data: {"event":"metadata","session_id":"...","search_results":5}
+
+    Attributes:
+        event: 이벤트 타입 (항상 "metadata")
+        session_id: 세션 식별자
+        search_results: 검색된 문서 수 (0 이상)
+        reranking_applied: 리랭킹 적용 여부
+        query_expansion: 쿼리 확장 결과 (선택적)
+        timestamp: 이벤트 생성 시간 ISO 8601 형식 (선택적)
+    """
+
+    event: Literal["metadata"] = "metadata"
+    session_id: str = Field(..., description="세션 ID")
+    search_results: int = Field(..., ge=0, description="검색된 문서 수")
+    reranking_applied: bool = Field(False, description="리랭킹 적용 여부")
+    query_expansion: str | None = Field(None, description="쿼리 확장 결과")
+    timestamp: str | None = Field(default=None, description="이벤트 생성 시간 (ISO 8601)")
 
 
 class StreamChunkEvent(BaseModel):

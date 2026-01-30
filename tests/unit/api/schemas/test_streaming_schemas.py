@@ -8,6 +8,8 @@ TDD 방식: 먼저 테스트 작성 후 구현
 import pytest
 from pydantic import ValidationError
 
+from app.api.schemas.streaming import StreamMetadataEvent
+
 
 class TestStreamChatRequest:
     """StreamChatRequest 스키마 테스트"""
@@ -212,6 +214,81 @@ class TestStreamErrorEvent:
             message="테스트 에러",
         )
         assert event.event == "error"
+
+
+class TestStreamMetadataEvent:
+    """StreamMetadataEvent 스키마 테스트"""
+
+    def test_valid_metadata_event(self):
+        """유효한 메타데이터 이벤트 생성"""
+        event = StreamMetadataEvent(
+            session_id="test-session-123",
+            search_results=5,
+        )
+        assert event.event == "metadata"
+        assert event.session_id == "test-session-123"
+        assert event.search_results == 5
+
+    def test_metadata_event_defaults(self):
+        """기본값 확인"""
+        event = StreamMetadataEvent(
+            session_id="s1",
+            search_results=0,
+        )
+        assert event.reranking_applied is False
+        assert event.query_expansion is None
+        assert event.timestamp is None
+
+    def test_metadata_event_all_fields(self):
+        """모든 필드 지정"""
+        event = StreamMetadataEvent(
+            session_id="s1",
+            search_results=10,
+            reranking_applied=True,
+            query_expansion="expanded query text",
+            timestamp="2026-01-30T12:00:00",
+        )
+        assert event.reranking_applied is True
+        assert event.query_expansion == "expanded query text"
+        assert event.timestamp == "2026-01-30T12:00:00"
+
+    def test_metadata_event_negative_search_results_rejected(self):
+        """search_results 음수 거부"""
+        with pytest.raises(ValidationError):
+            StreamMetadataEvent(
+                session_id="s1",
+                search_results=-1,
+            )
+
+    def test_metadata_event_type_is_literal(self):
+        """event 필드 리터럴 타입 확인"""
+        event = StreamMetadataEvent(
+            session_id="s1",
+            search_results=0,
+        )
+        assert event.event == "metadata"
+
+    def test_metadata_event_serialization(self):
+        """JSON 직렬화 정상 동작"""
+        event = StreamMetadataEvent(
+            session_id="s1",
+            search_results=3,
+            reranking_applied=True,
+        )
+        data = event.model_dump()
+        assert data["event"] == "metadata"
+        assert data["search_results"] == 3
+        assert data["reranking_applied"] is True
+
+    def test_metadata_event_to_dict(self):
+        """dict 변환 키 확인"""
+        event = StreamMetadataEvent(
+            session_id="s1",
+            search_results=0,
+        )
+        data = event.model_dump()
+        expected_keys = {"event", "session_id", "search_results", "reranking_applied", "query_expansion", "timestamp"}
+        assert set(data.keys()) == expected_keys
 
 
 class TestStreamEventSerialization:
