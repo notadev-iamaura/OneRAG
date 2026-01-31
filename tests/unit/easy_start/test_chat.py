@@ -156,6 +156,80 @@ class TestSearchDocuments:
         assert results[0]["metadata"] == {}
 
 
+class TestResolveLlmProviders:
+    """LLM provider 결정 로직 테스트"""
+
+    def test_both_keys_returns_gemini_first(self):
+        """
+        두 키 모두 있을 때 Gemini이 리스트 첫 번째
+
+        Given: GOOGLE_API_KEY와 OPENROUTER_API_KEY 모두 설정
+        When: _resolve_llm_providers() 호출
+        Then: Gemini이 첫 번째, OpenRouter가 두 번째
+        """
+        from easy_start.chat import _resolve_llm_providers
+
+        with patch.dict("os.environ", {
+            "GOOGLE_API_KEY": "google-key",
+            "OPENROUTER_API_KEY": "openrouter-key",
+        }):
+            result = _resolve_llm_providers()
+
+        assert len(result) == 2
+        assert result[0][3] == "Gemini"
+        assert result[0][1] == "google-key"
+        assert result[1][3] == "OpenRouter"
+        assert result[1][1] == "openrouter-key"
+
+    def test_openrouter_only(self):
+        """
+        OpenRouter 키만 있을 때 OpenRouter만 반환
+
+        Given: OPENROUTER_API_KEY만 설정
+        When: _resolve_llm_providers() 호출
+        Then: OpenRouter provider 1개 반환
+        """
+        from easy_start.chat import _resolve_llm_providers
+
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "or-key"}, clear=True):
+            result = _resolve_llm_providers()
+
+        assert len(result) == 1
+        assert result[0][3] == "OpenRouter"
+        assert "openrouter" in result[0][0]
+
+    def test_gemini_only(self):
+        """
+        Gemini 키만 있을 때 Gemini만 반환
+
+        Given: GOOGLE_API_KEY만 설정
+        When: _resolve_llm_providers() 호출
+        Then: Gemini provider 1개 반환
+        """
+        from easy_start.chat import _resolve_llm_providers
+
+        with patch.dict("os.environ", {"GOOGLE_API_KEY": "g-key"}, clear=True):
+            result = _resolve_llm_providers()
+
+        assert len(result) == 1
+        assert result[0][3] == "Gemini"
+
+    def test_no_keys(self):
+        """
+        키가 하나도 없을 때 빈 리스트 반환
+
+        Given: API 키 미설정
+        When: _resolve_llm_providers() 호출
+        Then: 빈 리스트
+        """
+        from easy_start.chat import _resolve_llm_providers
+
+        with patch.dict("os.environ", {}, clear=True):
+            result = _resolve_llm_providers()
+
+        assert result == []
+
+
 class TestGenerateAnswer:
     """LLM 답변 생성 테스트"""
 
@@ -164,7 +238,7 @@ class TestGenerateAnswer:
         """
         API 키 미설정 시 None 반환
 
-        Given: GOOGLE_API_KEY 미설정
+        Given: GOOGLE_API_KEY, OPENROUTER_API_KEY 모두 미설정
         When: generate_answer() 호출
         Then: None 반환
         """
@@ -198,24 +272,44 @@ class TestGenerateAnswer:
 class TestFormatLlmError:
     """LLM 에러 포맷 테스트"""
 
-    def test_quota_error(self):
-        """429 할당량 초과 에러 메시지"""
+    def test_quota_error_gemini(self):
+        """Gemini 429 할당량 초과 에러 메시지"""
         from easy_start.chat import _format_llm_error
 
         error = Exception("Error code: 429 - quota exceeded")
-        msg = _format_llm_error(error)
+        msg = _format_llm_error(error, "Gemini")
 
         assert "한도" in msg or "초과" in msg
         assert "aistudio" in msg
 
-    def test_auth_error(self):
-        """401 인증 실패 에러 메시지"""
+    def test_quota_error_openrouter(self):
+        """OpenRouter 429 할당량 초과 에러 메시지"""
+        from easy_start.chat import _format_llm_error
+
+        error = Exception("Error code: 429 - quota exceeded")
+        msg = _format_llm_error(error, "OpenRouter")
+
+        assert "한도" in msg or "초과" in msg
+        assert "openrouter.ai" in msg
+
+    def test_auth_error_gemini(self):
+        """Gemini 401 인증 실패 에러 메시지"""
         from easy_start.chat import _format_llm_error
 
         error = Exception("Error code: 401 - unauthorized")
-        msg = _format_llm_error(error)
+        msg = _format_llm_error(error, "Gemini")
 
         assert "인증" in msg or "API 키" in msg
+        assert "GOOGLE_API_KEY" in msg
+
+    def test_auth_error_openrouter(self):
+        """OpenRouter 인증 실패 에러 메시지"""
+        from easy_start.chat import _format_llm_error
+
+        error = Exception("Error code: 401 - unauthorized")
+        msg = _format_llm_error(error, "OpenRouter")
+
+        assert "OPENROUTER_API_KEY" in msg
 
     def test_timeout_error(self):
         """타임아웃 에러 메시지"""
@@ -235,20 +329,58 @@ class TestFormatLlmError:
 
         assert "ValueError" in msg
 
+    def test_default_provider_is_gemini(self):
+        """provider_name 미지정 시 기본값은 Gemini"""
+        from easy_start.chat import _format_llm_error
+
+        error = Exception("Error code: 401 - unauthorized")
+        msg = _format_llm_error(error)
+
+        assert "GOOGLE_API_KEY" in msg
+
 
 class TestCheckLlmAvailable:
     """LLM 가용성 확인 테스트"""
 
-    def test_available_with_key(self):
-        """API 키 설정 시 True"""
+    def test_available_with_google_key(self):
+        """Google API 키 설정 시 (True, "Gemini") 반환"""
         from easy_start.chat import _check_llm_available
 
-        with patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key"}):
-            assert _check_llm_available() is True
+        with patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key"}, clear=True):
+            available, name = _check_llm_available()
+
+        assert available is True
+        assert name == "Gemini"
+
+    def test_available_with_openrouter_key(self):
+        """OpenRouter API 키 설정 시 (True, "OpenRouter") 반환"""
+        from easy_start.chat import _check_llm_available
+
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "or-key"}, clear=True):
+            available, name = _check_llm_available()
+
+        assert available is True
+        assert name == "OpenRouter"
+
+    def test_available_with_both_keys(self):
+        """두 키 모두 설정 시 (True, "Gemini+OpenRouter") 반환"""
+        from easy_start.chat import _check_llm_available
+
+        with patch.dict("os.environ", {
+            "GOOGLE_API_KEY": "g-key",
+            "OPENROUTER_API_KEY": "or-key",
+        }, clear=True):
+            available, name = _check_llm_available()
+
+        assert available is True
+        assert name == "Gemini+OpenRouter"
 
     def test_unavailable_without_key(self):
-        """API 키 미설정 시 False"""
+        """API 키 미설정 시 (False, "") 반환"""
         from easy_start.chat import _check_llm_available
 
         with patch.dict("os.environ", {}, clear=True):
-            assert _check_llm_available() is False
+            available, name = _check_llm_available()
+
+        assert available is False
+        assert name == ""

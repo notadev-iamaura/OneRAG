@@ -118,8 +118,9 @@ def main() -> None:
             import shutil
             shutil.copy(str(local_env), ENV_FILE_PATH)
             print("  ✅ .env 파일 복사 완료")
-            print("  ⚠️  .env 파일을 열어 GOOGLE_API_KEY를 설정하세요!")
-            print("     발급: https://aistudio.google.com/apikey (무료)")
+            print("  ⚠️  .env 파일을 열어 API 키를 하나 설정하세요!")
+            print("     Option 1: GOOGLE_API_KEY - https://aistudio.google.com/apikey (무료)")
+            print("     Option 2: OPENROUTER_API_KEY - https://openrouter.ai/keys")
             print()
         else:
             print("  ❌ easy_start/.env.local 파일을 찾을 수 없습니다")
