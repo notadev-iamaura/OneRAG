@@ -157,13 +157,14 @@ class ChromaRetriever:
             dense_results = self._convert_to_search_results(raw_results)
 
             # Phase 1: 하이브리드 검색 (BM25 엔진이 주입된 경우)
-            if self._hybrid_enabled:
+            if self._hybrid_enabled and self._bm25_index is not None and self._hybrid_merger is not None:
                 bm25_results = self._bm25_index.search(query, top_k=top_k)
-                results = self._hybrid_merger.merge(
+                merged: list[SearchResult] = self._hybrid_merger.merge(
                     dense_results=dense_results,
                     bm25_results=bm25_results,
                     top_k=top_k,
                 )
+                results = merged
             else:
                 results = dense_results
 

@@ -72,14 +72,14 @@ class HybridMerger:
 
         # BM25 결과 RRF 점수
         bm25_weight = 1.0 - self._alpha
-        for rank, result in enumerate(bm25_results):
-            doc_id = result["id"]
+        for rank, bm25_item in enumerate(bm25_results):
+            doc_id = bm25_item["id"]
             rrf_score = bm25_weight * (1.0 / (_RRF_K + rank + 1))
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + rrf_score
             if doc_id not in doc_info:
                 doc_info[doc_id] = {
-                    "content": result["content"],
-                    "metadata": result.get("metadata", {}),
+                    "content": bm25_item["content"],
+                    "metadata": bm25_item.get("metadata", {}),
                 }
 
         # 정렬 + SearchResult 변환

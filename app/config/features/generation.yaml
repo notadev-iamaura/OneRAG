@@ -1,16 +1,16 @@
 # 답변 생성 설정
 # 기능: 사용자에게 제공하는 최종 답변 생성용 LLM 설정
-# 사용: OpenRouter 통합 게이트웨이로 모든 LLM 호출 통합
+# 사용: Google Gemini 기본, OpenRouter 사용 시 환경변수로 전환
 
 generation:
   # ========================================
-  # OpenRouter 통합 모드 (단일 게이트웨이)
+  # 기본 프로바이더 설정
   # ========================================
-  # 모든 LLM 호출을 OpenRouter로 통합하여 관리 단순화
-  # 장점: 단일 API 키, 통합 청구, 300+ 모델 접근
+  # Google Gemini를 기본값으로 사용 (Quickstart 호환, 무료 API 키)
+  # OpenRouter 사용 시: GENERATION_PROVIDER=openrouter 환경변수 설정
 
-  # 기본 프로바이더 (항상 openrouter)
-  default_provider: "openrouter"
+  # 기본 프로바이더 (모든 환경에서 google 사용)
+  default_provider: "google"
 
   # Fallback은 모델 레벨에서 처리
   auto_fallback: true
