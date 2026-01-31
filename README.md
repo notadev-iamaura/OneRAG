@@ -22,9 +22,16 @@
 ## TL;DR
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git && cd OneRAG
-cp quickstart/.env.quickstart .env  # GOOGLE_API_KEY만 설정
-make start                           # 5분 후 → http://localhost:8000/docs
+git clone https://github.com/youngouk/OneRAG.git && cd OneRAG && uv sync
+```
+
+```bash
+# 🐳 Docker 있으면 → Full API 서버 (Weaviate + FastAPI + Swagger UI)
+cp quickstart/.env.quickstart .env   # GOOGLE_API_KEY만 설정
+make start                            # → http://localhost:8000/docs
+
+# 💻 Docker 없으면 → 로컬 CLI 챗봇 (설치만으로 바로 실행)
+make easy-start                       # → 터미널에서 바로 대화
 ```
 
 **Vector DB 바꾸고 싶다면?** `.env`에서 `VECTOR_DB_PROVIDER=pinecone` 한 줄 변경.
@@ -63,35 +70,59 @@ make start                           # 5분 후 → http://localhost:8000/docs
 
 ---
 
-## 5분 시작 가이드
+## 시작하기
 
-### 1. 설치
+두 가지 방법 중 환경에 맞는 걸 선택하세요.
+
+|  | Full API 서버 (`make start`) | CLI 챗봇 (`make easy-start`) |
+|---|---|---|
+| **Docker** | 필요 | 불필요 |
+| **Vector DB** | Weaviate (하이브리드 검색) | ChromaDB (로컬 파일) |
+| **인터페이스** | REST API + Swagger UI | 터미널 CLI |
+| **LLM** | 4종 (Gemini, OpenAI, Claude, OpenRouter) | Gemini / OpenRouter |
+| **용도** | 프로덕션, API 통합, 팀 개발 | 학습, 체험, 빠른 PoC |
+
+### 방법 A: Full API 서버 (Docker)
 
 ```bash
 git clone https://github.com/youngouk/OneRAG.git
 cd OneRAG && uv sync
-```
 
-### 2. 환경 설정
-
-```bash
 cp quickstart/.env.quickstart .env
 # .env 파일에서 GOOGLE_API_KEY 설정
 # (무료: https://aistudio.google.com/apikey)
-```
 
-### 3. 실행
-
-```bash
 make start
 ```
 
 **끝!** [http://localhost:8000/docs](http://localhost:8000/docs)에서 바로 테스트할 수 있습니다.
 
 ```bash
-# 종료
-make start-down
+make start-down  # 종료
 ```
+
+### 방법 B: 로컬 CLI 챗봇 (Docker 불필요)
+
+Docker 설치 없이 터미널에서 바로 RAG 검색 + AI 답변을 체험할 수 있습니다.
+
+```bash
+git clone https://github.com/youngouk/OneRAG.git
+cd OneRAG && uv sync
+
+make easy-start
+```
+
+샘플 데이터 25개가 자동 적재되고, 하이브리드 검색(Dense + BM25)이 바로 작동합니다.
+AI 답변 생성을 사용하려면 API 키를 하나 설정하세요:
+
+```bash
+# 둘 중 하나만 설정하면 됩니다
+export GOOGLE_API_KEY="발급받은키"       # 무료: https://aistudio.google.com/apikey
+export OPENROUTER_API_KEY="발급받은키"   # https://openrouter.ai/keys
+```
+
+> **OneRAG가 처음이라면?** `make easy-start`로 시작해서 챗봇에게 직접 물어보세요.
+> "하이브리드 검색이 뭐야?", "RAG 파이프라인이 어떻게 돼?" — 샘플 데이터에 답이 있습니다.
 
 ---
 
