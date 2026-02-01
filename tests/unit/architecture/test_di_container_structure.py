@@ -5,6 +5,24 @@ Phase 3 R3.3: di_container.py Provider 구조 단순화 및 문서화
 TDD - DI Container의 구조적 일관성 검증
 """
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_weaviate_connection():
+    """테스트 종료 후 WeaviateClient 싱글톤 연결을 정리하여 ResourceWarning 방지.
+
+    WeaviateClient는 클래스 레벨 싱글톤(__new__)이므로,
+    DI 컨테이너와 무관하게 _instance를 직접 정리해야 합니다.
+    """
+    yield
+    try:
+        from app.lib.weaviate_client import WeaviateClient
+
+        if WeaviateClient._instance is not None:
+            WeaviateClient._instance.close()
+    except Exception:
+        pass
 
 
 class TestDIContainerStructure:

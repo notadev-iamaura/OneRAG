@@ -95,23 +95,30 @@ class RAGLogger:
             logging.getLogger(noisy_logger).setLevel(logging.WARNING)
 
         # Structlog 설정 (KST 타임스탬프 사용)
+        use_json = self._should_use_json()
+        processors: list[Any] = [
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            add_kst_timestamp,  # type: ignore[list-item]  # KST 타임스탬프 (UTC+9)
+            structlog.processors.StackInfoRenderer(),
+        ]
+        # ConsoleRenderer는 예외 정보를 자체 포맷팅하므로 format_exc_info 불필요
+        # JSONRenderer 사용 시에만 명시적 변환 필요
+        if use_json:
+            processors.append(structlog.processors.format_exc_info)
+        processors.extend([
+            structlog.processors.UnicodeDecoder(),
+            self._add_context,  # type: ignore[list-item]
+            (
+                structlog.processors.JSONRenderer()
+                if use_json
+                else structlog.dev.ConsoleRenderer()
+            ),
+        ])
         structlog.configure(
-            processors=[
-                structlog.stdlib.filter_by_level,
-                structlog.stdlib.add_logger_name,
-                structlog.stdlib.add_log_level,
-                structlog.stdlib.PositionalArgumentsFormatter(),
-                add_kst_timestamp,  # type: ignore[list-item]  # KST 타임스탬프 (UTC+9)
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
-                structlog.processors.UnicodeDecoder(),
-                self._add_context,  # type: ignore[list-item]
-                (
-                    structlog.processors.JSONRenderer()
-                    if self._should_use_json()
-                    else structlog.dev.ConsoleRenderer()
-                ),
-            ],
+            processors=processors,
             context_class=dict,
             logger_factory=LoggerFactory(),
             wrapper_class=structlog.stdlib.BoundLogger,

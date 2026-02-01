@@ -126,6 +126,12 @@ class WeaviateClient:
                     ),
                 },
             )
+            # SDK 클라이언트 연결을 명시적으로 닫아 ResourceWarning(Con004) 방지
+            if self._client is not None:
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
             self._client = None
 
         except Exception as e:
@@ -133,6 +139,12 @@ class WeaviateClient:
                 "Weaviate 초기화 중 예상치 못한 오류 발생",
                 extra={"error": str(e), "error_type": type(e).__name__},
             )
+            # SDK 클라이언트 연결을 명시적으로 닫아 ResourceWarning(Con004) 방지
+            if self._client is not None:
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
             self._client = None
 
     @property

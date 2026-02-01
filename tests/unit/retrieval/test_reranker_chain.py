@@ -52,36 +52,38 @@ def create_mock_reranker(
     mock.name = name
     mock.enabled = enabled
 
-    async def mock_rerank(
-        query: str,
-        results: list[SearchResult],
-        top_n: int | None = None,
-    ) -> list[SearchResult]:
-        if should_fail:
-            raise Exception(f"{name} failed")
-
-        # 점수 조정 및 정렬
-        adjusted_results = []
-        for r in results:
-            new_score = r.score * score_multiplier
-            adjusted_results.append(
-                SearchResult(
-                    id=r.id,
-                    content=r.content,
-                    score=new_score,
-                    metadata={**r.metadata, f"{name}_processed": True},
+    if should_fail:
+        # 실패 시뮬레이션: side_effect에 예외를 직접 지정하여
+        # AsyncMock 내부 코루틴 미소비 RuntimeWarning 방지
+        mock.rerank = AsyncMock(side_effect=Exception(f"{name} failed"))
+    else:
+        async def mock_rerank(
+            query: str,
+            results: list[SearchResult],
+            top_n: int | None = None,
+        ) -> list[SearchResult]:
+            # 점수 조정 및 정렬
+            adjusted_results = []
+            for r in results:
+                new_score = r.score * score_multiplier
+                adjusted_results.append(
+                    SearchResult(
+                        id=r.id,
+                        content=r.content,
+                        score=new_score,
+                        metadata={**r.metadata, f"{name}_processed": True},
+                    )
                 )
-            )
 
-        # 점수순 정렬
-        adjusted_results.sort(key=lambda x: x.score, reverse=True)
+            # 점수순 정렬
+            adjusted_results.sort(key=lambda x: x.score, reverse=True)
 
-        if top_n is not None:
-            adjusted_results = adjusted_results[:top_n]
+            if top_n is not None:
+                adjusted_results = adjusted_results[:top_n]
 
-        return adjusted_results
+            return adjusted_results
 
-    mock.rerank = AsyncMock(side_effect=mock_rerank)
+        mock.rerank = AsyncMock(side_effect=mock_rerank)
     mock.supports_caching = MagicMock(return_value=True)
 
     return mock
