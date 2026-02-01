@@ -346,6 +346,9 @@ filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",
     "ignore::UserWarning:pytest_asyncio.*",
+    # Python 3.11 AsyncMock 내부 버그: side_effect=Exception(...)으로도
+    # _execute_mock_call 코루틴이 GC 시 미소비 경고 발생 (CPython #100090)
+    "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
 ]
 
 # Asyncio configuration
