@@ -1265,7 +1265,7 @@ class ConnectionManager:
 
 | 버전 | 날짜 | 변경사항 |
 |------|------|----------|
-| v1.0.7 | 2026-01-16 | 초기 WebSocket API 릴리즈 |
+| v1.0.9 | 2026-01-16 | 초기 WebSocket API 릴리즈 |
 
 ---
 

@@ -115,14 +115,20 @@ graph TB
         VDB --> CH[Chroma]
         VDB --> PI[Pinecone]
         VDB --> QD[Qdrant]
+        VDB --> PG[pgvector]
+        VDB --> MO[MongoDB]
 
         LLMP --> GE[Gemini]
         LLMP --> OA[OpenAI]
         LLMP --> AN[Anthropic]
+        LLMP --> OR[OpenRouter]
 
         RRP --> JI[Jina]
         RRP --> CO[Cohere]
         RRP --> GO[Google]
+        RRP --> ROA[OpenAI]
+        RRP --> ROR[OpenRouter]
+        RRP --> LO[Local]
 
         CP --> ME[Memory]
         CP --> RE[Redis]

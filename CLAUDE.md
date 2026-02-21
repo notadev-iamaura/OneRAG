@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 도메인 범용화된 완벽한 오픈소스 RAG 시스템. 2026년 기준 가장 진보된 RAG 기술들을 하나의 표준 파이프라인으로 통합한 엔터프라이즈급 솔루션입니다.
 
 - **버전**: 1.0.7
-- **상태**: ✅ **1,707개 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**, ✅ **Streaming API**, ✅ **WebSocket**
+- **상태**: ✅ **1,926개 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**, ✅ **Streaming API**, ✅ **WebSocket**
 - **주요 개선**: Reranker 확장 - Cohere, Local(sentence-transformers), OpenRouter 추가 (v1.2.1)
 
 ## 🚀 시작하기
@@ -70,7 +70,7 @@ uv sync
 
 # 개발 서버 및 테스트
 make dev-reload         # 자동 리로드 (uvicorn --reload)
-make test               # 1,707개 테스트 실행 (외부 로그 차단 격리 환경)
+make test               # 1,926개 테스트 실행 (외부 로그 차단 격리 환경)
 make test-cov           # 테스트 커버리지 리포트
 
 # 코드 품질 관리 (CI/CD 통과 필수)
@@ -209,7 +209,7 @@ app/config/environments/
 
 | 항목 | 현황 | 비고 |
 |------|------|------|
-| **전체 테스트** | 1,707개 Pass | 단위/통합/안정성 테스트 완비 |
+| **전체 테스트** | 1,926개 Pass | 단위/통합/안정성 테스트 완비 |
 | **Deprecated 함수** | 0건 | Phase 1,2,3 완료, 모든 deprecated 함수 제거/리팩토링 |
 | **보안 인증** | 완료 | 관리자 API 및 PII 보호 통합 |
 | **GraphRAG 지능** | 완료 | 벡터 검색 기반 엔티티 탐색 |
