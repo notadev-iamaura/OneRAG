@@ -13,6 +13,7 @@ from ..infrastructure.persistence.evaluation_manager import (
     DuplicateEvaluationError,
     EvaluationDataManager,
 )
+from ..lib.auth import get_api_key
 from ..lib.logger import get_logger
 from ..models.evaluation import (
     EvaluationCreate,
@@ -23,7 +24,7 @@ from ..models.evaluation import (
 )
 
 logger = get_logger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_api_key)])
 _evaluation_module: EvaluationDataManager | None = None
 
 

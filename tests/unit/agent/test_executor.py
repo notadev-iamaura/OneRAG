@@ -288,7 +288,7 @@ class TestAgentExecutorFailureHandling:
         """타임아웃 처리 테스트"""
         # Given: MCP 서버가 타임아웃 발생
         async def slow_execute(*args, **kwargs):
-            await asyncio.sleep(100)  # 매우 긴 지연
+            await asyncio.sleep(2)  # 타임아웃 유발용 (0.1초 타임아웃 대비 충분)
             return MCPToolResult(success=True, data={}, tool_name="slow_tool")
 
         mock_mcp_server.execute_tool.side_effect = slow_execute

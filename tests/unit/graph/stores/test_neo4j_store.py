@@ -1065,7 +1065,7 @@ class TestNeo4jGraphStoreGracefulShutdown:
         """종료 타임아웃 시 예외 없이 종료"""
         # Given - 드라이버 close가 오래 걸림
         async def slow_close() -> None:
-            await asyncio.sleep(10)  # 10초 대기
+            await asyncio.sleep(2)  # 타임아웃 유발용 (0.01초 타임아웃 대비 충분)
 
         mock_neo4j_store._driver.close = slow_close
 

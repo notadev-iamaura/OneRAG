@@ -314,7 +314,7 @@ class TestTTLExpiration:
             enabled=True,
             similarity_threshold=0.95,
             max_entries=1000,
-            ttl_seconds=1,
+            ttl_seconds=0.3,
             embedding_dim=5,
         )
         cache = InMemorySemanticCache(
@@ -330,7 +330,7 @@ class TestTTLExpiration:
         assert result1 is not None
 
         # TTL 대기 후 조회 시 캐시 미스
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(0.5)
         result2 = await cache.get(query)
         assert result2 is None
 

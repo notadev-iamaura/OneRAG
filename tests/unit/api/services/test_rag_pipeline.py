@@ -1703,7 +1703,7 @@ class TestEdgeCases:
         mock_sql = AsyncMock()
 
         async def timeout_search(query):
-            await asyncio.sleep(10)  # 타임아웃 유발
+            await asyncio.sleep(2)  # 타임아웃 유발용 (0.1초 타임아웃 대비 충분)
             return MagicMock()
 
         mock_sql.search = timeout_search

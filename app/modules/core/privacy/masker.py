@@ -41,10 +41,18 @@ class MaskingResult:
     phone_count: int
     name_count: int
     ssn_count: int = 0
+    passport_count: int = 0
+    driver_license_count: int = 0
 
     @property
     def total_masked(self) -> int:
-        return self.phone_count + self.name_count + self.ssn_count
+        return (
+            self.phone_count
+            + self.name_count
+            + self.ssn_count
+            + self.passport_count
+            + self.driver_license_count
+        )
 
 
 class PrivacyMasker:
@@ -73,6 +81,14 @@ class PrivacyMasker:
     # 주민등록번호 패턴 (6자리 생년월일-성별코드+6자리)
     SSN_PATTERN = re.compile(r"\d{6}[-\s]?[1-4]\d{6}")
 
+    # 여권번호 패턴 (대문자 1자리 + 숫자 8자리)
+    # 한국 여권: M12345678, S87654321 등
+    PASSPORT_PATTERN = re.compile(r"(?<![a-zA-Z])[A-Z]\d{8}(?!\d)")
+
+    # 운전면허번호 패턴 (XX-XX-XXXXXX-XX)
+    # 한국 운전면허: 지역코드(2)-년도(2)-일련번호(6)-검증(2)
+    DRIVER_LICENSE_PATTERN = re.compile(r"\d{2}-\d{2}-\d{6}-\d{2}")
+
     # 이메일 패턴 (선택적 마스킹)
     EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
@@ -86,6 +102,8 @@ class PrivacyMasker:
         mask_name: bool = True,
         mask_email: bool = False,
         mask_ssn: bool = True,
+        mask_passport: bool = True,
+        mask_driver_license: bool = True,
         phone_mask_char: str = "*",
         name_mask_char: str = "*",
         whitelist: Sequence[str] | None = None,
@@ -97,6 +115,8 @@ class PrivacyMasker:
             mask_name: 이름 마스킹 여부
             mask_email: 이메일 마스킹 여부 (기본 비활성화)
             mask_ssn: 주민등록번호 마스킹 여부 (기본 활성화)
+            mask_passport: 여권번호 마스킹 여부 (기본 활성화)
+            mask_driver_license: 운전면허번호 마스킹 여부 (기본 활성화)
             phone_mask_char: 전화번호 마스킹 문자
             name_mask_char: 이름 마스킹 문자
             whitelist: 마스킹 예외 단어 목록 (None이면 기본값 사용)
@@ -106,6 +126,8 @@ class PrivacyMasker:
         self.mask_name = mask_name
         self.mask_email = mask_email
         self.mask_ssn = mask_ssn
+        self.mask_passport = mask_passport
+        self.mask_driver_license = mask_driver_license
         self.phone_mask_char = phone_mask_char
         self.name_mask_char = name_mask_char
 
@@ -127,8 +149,9 @@ class PrivacyMasker:
 
         logger.info(
             f"PrivacyMasker 초기화: phone={mask_phone}, name={mask_name}, "
-            f"email={mask_email}, ssn={mask_ssn}, whitelist_size={len(self._whitelist)}, "
-            f"suffixes={name_suffixes}"
+            f"email={mask_email}, ssn={mask_ssn}, passport={mask_passport}, "
+            f"driver_license={mask_driver_license}, "
+            f"whitelist_size={len(self._whitelist)}, suffixes={name_suffixes}"
         )
 
     @property
@@ -165,15 +188,23 @@ class PrivacyMasker:
         if self.mask_ssn:
             result = self._mask_ssn(result)
 
-        # 2. 개인 전화번호 마스킹 (업체 전화번호 제외)
+        # 2. 여권번호 마스킹
+        if self.mask_passport:
+            result = self._mask_passport(result)
+
+        # 3. 운전면허번호 마스킹
+        if self.mask_driver_license:
+            result = self._mask_driver_license(result)
+
+        # 4. 개인 전화번호 마스킹 (업체 전화번호 제외)
         if self.mask_phone:
             result = self._mask_personal_phone(result)
 
-        # 3. 이름 마스킹 (설정된 호칭 기반)
+        # 5. 이름 마스킹 (설정된 호칭 기반)
         if self.mask_name:
             result = self._mask_names(result)
 
-        # 4. 이메일 마스킹 (선택적)
+        # 6. 이메일 마스킹 (선택적)
         if self.mask_email:
             result = self._mask_email(result)
 
@@ -190,11 +221,16 @@ class PrivacyMasker:
             MaskingResult with counts
         """
         if not text:
-            return MaskingResult(original=text, masked=text, phone_count=0, name_count=0, ssn_count=0)
+            return MaskingResult(
+                original=text, masked=text, phone_count=0, name_count=0,
+                ssn_count=0, passport_count=0, driver_license_count=0,
+            )
 
         phone_count = 0
         name_count = 0
         ssn_count = 0
+        passport_count = 0
+        driver_license_count = 0
         result = text
 
         # 1. 주민등록번호 마스킹 (최우선)
@@ -202,7 +238,17 @@ class PrivacyMasker:
             ssn_count = len(self.SSN_PATTERN.findall(result))
             result = self._mask_ssn(result)
 
-        # 2. 개인 전화번호 마스킹
+        # 2. 여권번호 마스킹
+        if self.mask_passport:
+            passport_count = len(self.PASSPORT_PATTERN.findall(result))
+            result = self._mask_passport(result)
+
+        # 3. 운전면허번호 마스킹
+        if self.mask_driver_license:
+            driver_license_count = len(self.DRIVER_LICENSE_PATTERN.findall(result))
+            result = self._mask_driver_license(result)
+
+        # 4. 개인 전화번호 마스킹
         if self.mask_phone:
             matches = self.PERSONAL_PHONE_PATTERN.findall(result)
             # 업체 전화번호 제외
@@ -210,21 +256,23 @@ class PrivacyMasker:
             phone_count = len(personal_phones)
             result = self._mask_personal_phone(result)
 
-        # 3. 이름 마스킹
+        # 5. 이름 마스킹
         if self.mask_name:
             matches = self.KOREAN_NAME_PATTERN.findall(result)
             name_count = len(matches)
             result = self._mask_names(result)
 
-        if phone_count > 0 or name_count > 0 or ssn_count > 0:
+        total = phone_count + name_count + ssn_count + passport_count + driver_license_count
+        if total > 0:
             logger.info(
-                f"개인정보 마스킹 완료: 주민등록번호 {ssn_count}개, "
-                f"전화번호 {phone_count}개, 이름 {name_count}개"
+                f"개인정보 마스킹 완료: 주민등록번호 {ssn_count}개, 여권 {passport_count}개, "
+                f"면허 {driver_license_count}개, 전화번호 {phone_count}개, 이름 {name_count}개"
             )
 
         return MaskingResult(
             original=text, masked=result, phone_count=phone_count,
             name_count=name_count, ssn_count=ssn_count,
+            passport_count=passport_count, driver_license_count=driver_license_count,
         )
 
     def _mask_ssn(self, text: str) -> str:
@@ -246,6 +294,40 @@ class PrivacyMasker:
                 return ssn[:6] + self.phone_mask_char * 7
 
         return self.SSN_PATTERN.sub(replace, text)
+
+    def _mask_passport(self, text: str) -> str:
+        """
+        여권번호 마스킹
+
+        M12345678 → M********
+        영문자 유지, 숫자 8자리 마스킹
+        """
+
+        def replace(match: re.Match[str]) -> str:
+            passport: str = match.group()
+            # 앞 영문자 유지, 숫자 부분 마스킹
+            return passport[0] + self.phone_mask_char * 8
+
+        return self.PASSPORT_PATTERN.sub(replace, text)
+
+    def _mask_driver_license(self, text: str) -> str:
+        """
+        운전면허번호 마스킹
+
+        13-05-123456-78 → 13-**-******-**
+        지역코드(앞 2자리) 유지, 나머지 마스킹
+        """
+
+        def replace(match: re.Match[str]) -> str:
+            dl: str = match.group()
+            parts = dl.split("-")
+            # 지역코드 유지, 나머지 마스킹
+            return (
+                f"{parts[0]}-{self.phone_mask_char * 2}"
+                f"-{self.phone_mask_char * 6}-{self.phone_mask_char * 2}"
+            )
+
+        return self.DRIVER_LICENSE_PATTERN.sub(replace, text)
 
     def _mask_personal_phone(self, text: str) -> str:
         """
@@ -357,6 +439,14 @@ class PrivacyMasker:
 
         # 주민등록번호 확인 (최우선)
         if self.SSN_PATTERN.search(text):
+            return True
+
+        # 여권번호 확인
+        if self.mask_passport and self.PASSPORT_PATTERN.search(text):
+            return True
+
+        # 운전면허번호 확인
+        if self.mask_driver_license and self.DRIVER_LICENSE_PATTERN.search(text):
             return True
 
         # 개인 전화번호 확인

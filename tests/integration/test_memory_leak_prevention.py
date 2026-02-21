@@ -39,9 +39,9 @@ class TestMemoryLeakPrevention:
 
         # 테스트용 짧은 TTL 설정 (2초)
         config["session"] = {
-            "ttl": 2,  # 2초 (테스트용 짧은 TTL)
+            "ttl": 0.5,  # 0.5초 (테스트용 짧은 TTL)
             "max_exchanges": 10,
-            "cleanup_interval": 1,  # 1초마다 정리
+            "cleanup_interval": 0.3,  # 0.3초마다 정리
         }
 
         service = SessionService(config=config)
@@ -52,8 +52,8 @@ class TestMemoryLeakPrevention:
         """
         TTL 만료 세션 자동 삭제
 
-        Given: TTL 2초로 세션 생성
-        When: 3초 대기 후 조회
+        Given: TTL 0.5초로 세션 생성
+        When: 0.8초 대기 후 조회
         Then: 세션 만료로 자동 삭제됨
         """
         # 1. 세션 생성
@@ -65,8 +65,8 @@ class TestMemoryLeakPrevention:
         assert session_result["is_valid"] is True
         assert session_id in session_service.sessions
 
-        # 3. TTL 초과 대기 (2초 + 여유 1초)
-        await asyncio.sleep(3)
+        # 3. TTL 초과 대기 (0.5초 + 여유 0.3초)
+        await asyncio.sleep(0.8)
 
         # 4. 조회 시 자동 삭제됨
         expired_result = await session_service.get_session(session_id)
@@ -93,7 +93,7 @@ class TestMemoryLeakPrevention:
         assert len(session_service.sessions) == 10
 
         # 2. TTL 초과 대기
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.8)
 
         # 3. clear_cache() 수동 호출
         await session_service.clear_cache()
@@ -121,7 +121,7 @@ class TestMemoryLeakPrevention:
         assert len(session_service.sessions) == session_count
 
         # 2. TTL 초과 대기
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.8)
 
         # 3. clear_cache() 호출
         await session_service.clear_cache()
@@ -150,7 +150,7 @@ class TestMemoryLeakPrevention:
             expired_ids.append(result["session_id"])
 
         # 2. TTL 초과 대기
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.8)
 
         # 3. 다음 5개 세션 생성 (활성 상태 유지)
         active_ids = []
@@ -191,7 +191,7 @@ class TestMemoryLeakPrevention:
             session_ids.append(result["session_id"])
 
         # 2. TTL 초과 대기
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.8)
 
         # 3. 동시 작업: 세션 조회 + clear_cache()
         async def access_sessions():
@@ -228,7 +228,7 @@ class TestMemoryLeakPrevention:
 
         # 세션 생성 + TTL 대기
         await session_service.create_session(session_id=None)
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.8)
 
         # clear_cache() 호출
         await session_service.clear_cache()
@@ -258,9 +258,9 @@ class TestMemoryLeakPreventionEdgeCases:
 
         config = load_config()
         config["session"] = {
-            "ttl": 2,  # 2초
+            "ttl": 0.5,  # 0.5초
             "max_exchanges": 10,
-            "cleanup_interval": 1,
+            "cleanup_interval": 0.3,
         }
 
         service = SessionService(config=config)
@@ -300,14 +300,14 @@ class TestMemoryLeakPreventionEdgeCases:
         session_id = result["session_id"]
 
         # 2. 1초 대기 → 접근 (last_accessed 갱신)
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.3)
         await session_service.get_session(session_id)
 
         # 3. 다시 1초 대기 → 접근
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.3)
         await session_service.get_session(session_id)
 
-        # 4. clear_cache() 호출 (TTL 2초 미만이므로 삭제 안 됨)
+        # 4. clear_cache() 호출 (TTL 0.5초 미만이므로 삭제 안 됨)
         await session_service.clear_cache()
 
         # 5. 세션 유지 확인
@@ -333,7 +333,7 @@ class TestMemoryLeakPreventionEdgeCases:
         assert len(session_service.sessions) == 50
 
         # 3. TTL 대기 → 정리
-        await asyncio.sleep(3)
+        await asyncio.sleep(0.8)
         await session_service.clear_cache()
 
         # 4. 메모리 해제 확인 (세션 개수 0)

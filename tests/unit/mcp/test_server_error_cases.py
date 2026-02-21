@@ -206,7 +206,7 @@ class TestToolServerToolExecution:
 
         # 타임아웃 발생하는 도구 함수
         async def slow_function(args, config):
-            await asyncio.sleep(100)  # 매우 느림
+            await asyncio.sleep(2)  # 타임아웃 유발용 (0.1초 타임아웃 대비 충분)
             return {"result": "success"}
 
         config = ToolServerConfig(
