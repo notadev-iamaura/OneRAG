@@ -126,61 +126,62 @@ async def check_weaviate_status():
         )
         raise HTTPException(status_code=500, detail=error_msg)
 
-    @router.post("/index")
-    async def index_all_data():
-        """
-        전체 데이터 수동 인덱싱
 
-        Returns:
-            dict: {
-                "success": bool,
-                "count": int,
-                "duration": float,
-                "message": str
-            }
-        """
-        try:
-            logger.info("데이터 수동 인덱싱 시작")
+@router.post("/index")
+async def index_all_data():
+    """
+    전체 데이터 수동 인덱싱
 
-            # index_all_data 스크립트 실행
-            from scripts.index_all_data import index_all_data
+    Returns:
+        dict: {
+            "success": bool,
+            "count": int,
+            "duration": float,
+            "message": str
+        }
+    """
+    try:
+        logger.info("데이터 수동 인덱싱 시작")
 
-            result = await index_all_data()
+        # index_all_data 스크립트 실행
+        from scripts.index_all_data import index_all_data
 
-            if result["count"] > 0:
-                logger.info(
-                    "데이터 인덱싱 완료",
-                    extra={
-                        "document_count": result['count'],
-                        "duration_seconds": result['duration']
-                    }
-                )
-                return {
-                    "success": True,
-                    "count": result["count"],
-                    "duration": result["duration"],
-                    "message": f"Successfully indexed {result['count']} documents in {result['duration']:.2f}s",
-                }
-            else:
-                logger.warning(
-                    "데이터 인덱싱 실패",
-                    extra={"document_count": 0}
-                )
-                return JSONResponse(
-                    status_code=500,
-                    content={"success": False, "count": 0, "message": "Failed to index documents"},
-                )
+        result = await index_all_data()
 
-        except Exception as e:
-            logger.error(
-                "데이터 인덱싱 실패",
+        if result["count"] > 0:
+            logger.info(
+                "데이터 인덱싱 완료",
                 extra={
-                    "error": str(e),
-                    "error_type": type(e).__name__
-                },
-                exc_info=True
+                    "document_count": result['count'],
+                    "duration_seconds": result['duration']
+                }
             )
-            raise HTTPException(status_code=500, detail=f"Error indexing data: {str(e)}")
+            return {
+                "success": True,
+                "count": result["count"],
+                "duration": result["duration"],
+                "message": f"Successfully indexed {result['count']} documents in {result['duration']:.2f}s",
+            }
+        else:
+            logger.warning(
+                "데이터 인덱싱 실패",
+                extra={"document_count": 0}
+            )
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "count": 0, "message": "Failed to index documents"},
+            )
+
+    except Exception as e:
+        logger.error(
+            "데이터 인덱싱 실패",
+            extra={
+                "error": str(e),
+                "error_type": type(e).__name__
+            },
+            exc_info=True
+        )
+        raise HTTPException(status_code=500, detail=f"Error indexing data: {str(e)}")
 
 
 @router.post("/init")

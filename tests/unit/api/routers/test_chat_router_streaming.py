@@ -251,7 +251,7 @@ class TestStreamEndpointErrorHandling:
 
         content = response.text
         # 에러 이벤트 또는 에러 관련 내용이 포함되어야 함
-        assert "error" in content.lower() or "STREAM_ERROR" in content, (
+        assert "error" in content.lower() or "STREAM-001" in content, (
             "에러 발생 시 error 이벤트가 전송되어야 함"
         )
 

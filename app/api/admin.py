@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from ..lib.auth import get_api_key
+from ..lib.auth import get_api_key, get_api_key_auth
 from ..lib.logger import get_logger
 
 logger = get_logger(__name__)
@@ -1142,7 +1142,16 @@ async def broadcast_metrics():
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """관리자 WebSocket 엔드포인트"""
+    """관리자 WebSocket 엔드포인트 (API Key 인증 필수)"""
+    # WebSocket은 라우터 dependencies가 적용되지 않으므로 수동 인증
+    api_key = websocket.query_params.get("api_key") or websocket.headers.get("X-API-Key")
+    auth = get_api_key_auth()
+
+    if auth.api_key and (not api_key or not __import__("secrets").compare_digest(api_key, auth.api_key)):
+        await websocket.close(code=4001, reason="인증 실패: 유효한 API Key가 필요합니다")
+        logger.warning("Admin WebSocket 인증 실패: API Key 없음 또는 불일치")
+        return
+
     await websocket.accept()
     websocket_connections.append(websocket)
     logger.info("Admin WebSocket connected")

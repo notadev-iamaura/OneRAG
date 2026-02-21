@@ -55,18 +55,18 @@ class TestStreamChatRequest:
             StreamChatRequest(message="")
 
     def test_invalid_message_too_long(self):
-        """너무 긴 메시지는 거부됨 (10000자 초과)"""
+        """너무 긴 메시지는 거부됨 (1000자 초과, ChatRequest와 통일)"""
         from app.api.schemas.streaming import StreamChatRequest
 
         with pytest.raises(ValidationError):
-            StreamChatRequest(message="a" * 10001)
+            StreamChatRequest(message="a" * 1001)
 
     def test_valid_max_length_message(self):
-        """최대 길이 메시지는 허용됨 (10000자)"""
+        """최대 길이 메시지는 허용됨 (1000자, ChatRequest와 통일)"""
         from app.api.schemas.streaming import StreamChatRequest
 
-        request = StreamChatRequest(message="a" * 10000)
-        assert len(request.message) == 10000
+        request = StreamChatRequest(message="a" * 1000)
+        assert len(request.message) == 1000
 
 
 class TestStreamChunkEvent:

@@ -12,6 +12,7 @@ Query Executor 모듈
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -199,6 +200,11 @@ class QueryExecutor:
         tables = self.config.get("tables", [])
 
         for table in tables:
+            # SQL Injection 방어: 테이블명 화이트리스트 검증
+            if not re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table):
+                logger.warning(f"유효하지 않은 테이블명 차단: {table}")
+                stats[table] = -1
+                continue
             result = await self.execute(f"SELECT COUNT(*) AS count FROM {table}")
             if result.success and result.data:
                 stats[table] = result.data[0].get("count", 0)

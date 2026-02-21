@@ -538,7 +538,7 @@ app.add_middleware(
     allow_origins=default_allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key", "X-Session-ID", "Accept-Language"],
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)

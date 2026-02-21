@@ -35,8 +35,8 @@ class StreamChatRequest(BaseModel):
     message: str = Field(
         ...,
         min_length=1,
-        max_length=10000,
-        description="사용자 메시지 (1-10000자)",
+        max_length=1000,
+        description="사용자 메시지 (1-1000자)",
     )
     session_id: str | None = Field(
         None,

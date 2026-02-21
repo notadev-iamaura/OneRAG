@@ -718,7 +718,7 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest) -> Stre
             logger.error("스트리밍 에러", exc_info=True, error=str(e))
 
             error_event = StreamErrorEvent(
-                error_code="STREAM_ERROR",
+                error_code=ErrorCode.STREAM_001.value,
                 message="스트리밍 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
                 suggestion="문제가 지속되면 관리자에게 문의하세요.",
             )

@@ -40,10 +40,11 @@ class MaskingResult:
     masked: str
     phone_count: int
     name_count: int
+    ssn_count: int = 0
 
     @property
     def total_masked(self) -> int:
-        return self.phone_count + self.name_count
+        return self.phone_count + self.name_count + self.ssn_count
 
 
 class PrivacyMasker:
@@ -69,6 +70,9 @@ class PrivacyMasker:
     # 초기화 시 name_suffixes를 기반으로 동적 생성됨
     KOREAN_NAME_PATTERN = re.compile(r"([가-힣]{2,4})(?=\s*(고객님|관리자님?|담당자님?))")
 
+    # 주민등록번호 패턴 (6자리 생년월일-성별코드+6자리)
+    SSN_PATTERN = re.compile(r"\d{6}[-\s]?[1-4]\d{6}")
+
     # 이메일 패턴 (선택적 마스킹)
     EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
@@ -81,6 +85,7 @@ class PrivacyMasker:
         mask_phone: bool = True,
         mask_name: bool = True,
         mask_email: bool = False,
+        mask_ssn: bool = True,
         phone_mask_char: str = "*",
         name_mask_char: str = "*",
         whitelist: Sequence[str] | None = None,
@@ -91,6 +96,7 @@ class PrivacyMasker:
             mask_phone: 개인 전화번호 마스킹 여부
             mask_name: 이름 마스킹 여부
             mask_email: 이메일 마스킹 여부 (기본 비활성화)
+            mask_ssn: 주민등록번호 마스킹 여부 (기본 활성화)
             phone_mask_char: 전화번호 마스킹 문자
             name_mask_char: 이름 마스킹 문자
             whitelist: 마스킹 예외 단어 목록 (None이면 기본값 사용)
@@ -99,6 +105,7 @@ class PrivacyMasker:
         self.mask_phone = mask_phone
         self.mask_name = mask_name
         self.mask_email = mask_email
+        self.mask_ssn = mask_ssn
         self.phone_mask_char = phone_mask_char
         self.name_mask_char = name_mask_char
 
@@ -120,7 +127,7 @@ class PrivacyMasker:
 
         logger.info(
             f"PrivacyMasker 초기화: phone={mask_phone}, name={mask_name}, "
-            f"email={mask_email}, whitelist_size={len(self._whitelist)}, "
+            f"email={mask_email}, ssn={mask_ssn}, whitelist_size={len(self._whitelist)}, "
             f"suffixes={name_suffixes}"
         )
 
@@ -154,15 +161,19 @@ class PrivacyMasker:
 
         result = text
 
-        # 1. 개인 전화번호 마스킹 (업체 전화번호 제외)
+        # 1. 주민등록번호 마스킹 (최우선 - 가장 민감)
+        if self.mask_ssn:
+            result = self._mask_ssn(result)
+
+        # 2. 개인 전화번호 마스킹 (업체 전화번호 제외)
         if self.mask_phone:
             result = self._mask_personal_phone(result)
 
-        # 2. 이름 마스킹 (설정된 호칭 기반)
+        # 3. 이름 마스킹 (설정된 호칭 기반)
         if self.mask_name:
             result = self._mask_names(result)
 
-        # 3. 이메일 마스킹 (선택적)
+        # 4. 이메일 마스킹 (선택적)
         if self.mask_email:
             result = self._mask_email(result)
 
@@ -179,13 +190,19 @@ class PrivacyMasker:
             MaskingResult with counts
         """
         if not text:
-            return MaskingResult(original=text, masked=text, phone_count=0, name_count=0)
+            return MaskingResult(original=text, masked=text, phone_count=0, name_count=0, ssn_count=0)
 
         phone_count = 0
         name_count = 0
+        ssn_count = 0
         result = text
 
-        # 1. 개인 전화번호 마스킹
+        # 1. 주민등록번호 마스킹 (최우선)
+        if self.mask_ssn:
+            ssn_count = len(self.SSN_PATTERN.findall(result))
+            result = self._mask_ssn(result)
+
+        # 2. 개인 전화번호 마스킹
         if self.mask_phone:
             matches = self.PERSONAL_PHONE_PATTERN.findall(result)
             # 업체 전화번호 제외
@@ -193,18 +210,42 @@ class PrivacyMasker:
             phone_count = len(personal_phones)
             result = self._mask_personal_phone(result)
 
-        # 2. 이름 마스킹
+        # 3. 이름 마스킹
         if self.mask_name:
             matches = self.KOREAN_NAME_PATTERN.findall(result)
             name_count = len(matches)
             result = self._mask_names(result)
 
-        if phone_count > 0 or name_count > 0:
-            logger.info(f"개인정보 마스킹 완료: 전화번호 {phone_count}개, 이름 {name_count}개")
+        if phone_count > 0 or name_count > 0 or ssn_count > 0:
+            logger.info(
+                f"개인정보 마스킹 완료: 주민등록번호 {ssn_count}개, "
+                f"전화번호 {phone_count}개, 이름 {name_count}개"
+            )
 
         return MaskingResult(
-            original=text, masked=result, phone_count=phone_count, name_count=name_count
+            original=text, masked=result, phone_count=phone_count,
+            name_count=name_count, ssn_count=ssn_count,
         )
+
+    def _mask_ssn(self, text: str) -> str:
+        """
+        주민등록번호 마스킹
+
+        990101-1234567 → 990101-*******
+        9901011234567 → 990101*******
+        """
+
+        def replace(match: re.Match[str]) -> str:
+            ssn: str = match.group()
+            # 하이픈/공백 유무에 따라 앞 6자리 유지, 뒤 7자리 마스킹
+            if "-" in ssn:
+                return ssn[:7] + self.phone_mask_char * 7
+            elif " " in ssn:
+                return ssn[:7] + self.phone_mask_char * 7
+            else:
+                return ssn[:6] + self.phone_mask_char * 7
+
+        return self.SSN_PATTERN.sub(replace, text)
 
     def _mask_personal_phone(self, text: str) -> str:
         """
@@ -313,6 +354,10 @@ class PrivacyMasker:
         """
         if not text:
             return False
+
+        # 주민등록번호 확인 (최우선)
+        if self.SSN_PATTERN.search(text):
+            return True
 
         # 개인 전화번호 확인
         if self.PERSONAL_PHONE_PATTERN.search(text):

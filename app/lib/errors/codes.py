@@ -164,6 +164,9 @@ class ErrorCode(str, Enum):
     GENERAL_003 = "GENERAL-003"  # 미구현 기능
     GENERAL_004 = "GENERAL-004"  # 내부 오류
 
+    # STREAM (스트리밍) - 1개
+    STREAM_001 = "STREAM-001"  # 스트리밍 중 오류 발생
+
     # API (API 응답) - 1개
     API_001 = "API-001"  # 내부 오류
 
