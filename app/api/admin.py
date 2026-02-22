@@ -133,7 +133,7 @@ async def get_document_stats() -> dict[str, int]:
     try:
         retrieval_module = modules.get("retrieval")
         if retrieval_module:
-            stats = await retrieval_module.get_stats()
+            stats = await retrieval_module.get_document_stats()
             return {
                 "total_documents": stats.get("total_documents", 0),
                 "vector_count": stats.get("vector_count", 0),

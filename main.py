@@ -524,6 +524,7 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
 default_allowed_origins = [
     "http://localhost:3000",
     "http://localhost:3001",
+    "http://localhost:5000",
     "http://localhost:5173",
 ]
 env_allowed_origins = os.getenv("ALLOWED_ORIGINS", "")

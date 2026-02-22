@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..lib.auth import get_api_key
@@ -619,6 +620,90 @@ async def bulk_delete_documents(request: BulkDeleteRequest):
                 "suggestion": "네트워크 연결을 확인하고 다시 시도하거나 관리자에게 문의하세요",
                 "requested_count": len(request.ids) if request and hasattr(request, "ids") else 0,
                 "retry_after": 30,
+                "technical_error": str(error),
+            },
+        ) from error
+
+
+@router.get("/upload/documents/{document_id}/download")
+async def download_document(document_id: str):
+    """문서 다운로드 (벡터 DB에 저장된 청크 데이터를 텍스트로 재결합)
+
+    원본 파일은 업로드 처리 후 삭제되므로,
+    벡터 DB에 저장된 청크 내용을 결합하여 텍스트 파일로 제공합니다.
+    """
+    import io
+
+    try:
+        retrieval_module = modules.get("retrieval")
+        if not retrieval_module:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "시스템 모듈 사용 불가",
+                    "message": "문서 검색 모듈을 사용할 수 없습니다",
+                    "suggestion": "서버 상태를 확인하고 관리자에게 문의하세요",
+                },
+            )
+
+        # 문서의 모든 청크를 검색
+        chunks = await retrieval_module.get_document_chunks(document_id)
+
+        if not chunks:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "문서를 찾을 수 없음",
+                    "message": "요청하신 문서를 찾을 수 없습니다",
+                    "suggestion": "문서가 삭제되었거나 ID가 올바르지 않을 수 있습니다",
+                    "document_id": document_id,
+                },
+            )
+
+        # 청크 내용을 페이지/순서별로 정렬 후 결합
+        sorted_chunks = sorted(
+            chunks,
+            key=lambda c: (
+                c.get("metadata", {}).get("page", 0),
+                c.get("metadata", {}).get("chunk_index", 0),
+            ),
+        )
+        content = "\n\n".join(chunk.get("content", "") for chunk in sorted_chunks)
+
+        # 파일명 추출 (메타데이터에서)
+        first_chunk_meta = sorted_chunks[0].get("metadata", {})
+        filename = first_chunk_meta.get("source_file", first_chunk_meta.get("filename", "document"))
+
+        # 확장자가 없으면 .txt 추가
+        if "." not in Path(filename).name:
+            filename = f"{filename}.txt"
+        # 원본이 바이너리 형식이면 .txt로 변환
+        ext = Path(filename).suffix.lower()
+        if ext in (".pdf", ".docx", ".xlsx"):
+            filename = Path(filename).stem + ".txt"
+
+        logger.info(f"Document download: {document_id}, {len(sorted_chunks)} chunks, filename={filename}")
+
+        buffer = io.BytesIO(content.encode("utf-8"))
+        return StreamingResponse(
+            buffer,
+            media_type="text/plain; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(content.encode("utf-8"))),
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.error(f"Download document error: {error}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "문서 다운로드 실패",
+                "message": "문서를 다운로드하는 중 오류가 발생했습니다",
+                "suggestion": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
+                "document_id": document_id,
                 "technical_error": str(error),
             },
         ) from error

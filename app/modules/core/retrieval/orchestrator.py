@@ -796,6 +796,202 @@ class RetrievalOrchestrator:
 
         return result  # type: ignore[no-any-return]
 
+    # ========== 문서 관리 위임 메서드 ==========
+
+    async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
+        """
+        문서의 모든 청크를 조회 (Retriever 위임)
+
+        Args:
+            document_id: 조회할 문서 ID
+
+        Returns:
+            청크 리스트 (각 청크는 id, content, metadata를 포함하는 dict)
+        """
+        if not hasattr(self.retriever, "get_document_chunks"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"get_document_chunks를 지원하지 않습니다."
+            )
+
+        logger.debug(
+            "[Adapter] get_document_chunks() 호출",
+            extra={"document_id": document_id}
+        )
+        return await self.retriever.get_document_chunks(document_id)  # type: ignore[no-any-return]
+
+    async def delete_document(self, document_id: str) -> bool:
+        """
+        문서와 관련된 모든 청크를 삭제 (Retriever 위임)
+
+        Args:
+            document_id: 삭제할 문서 ID
+
+        Returns:
+            삭제 성공 여부
+        """
+        if not hasattr(self.retriever, "delete_document"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"delete_document를 지원하지 않습니다."
+            )
+
+        logger.debug(
+            "[Adapter] delete_document() 호출",
+            extra={"document_id": document_id}
+        )
+        result = await self.retriever.delete_document(document_id)
+
+        logger.info(
+            "[Adapter] delete_document() 완료",
+            extra={"document_id": document_id, "success": result}
+        )
+        return result  # type: ignore[no-any-return]
+
+    async def list_documents(
+        self, page: int = 1, page_size: int = 20
+    ) -> dict[str, Any]:
+        """
+        문서 목록 조회 (Retriever 위임)
+
+        Args:
+            page: 페이지 번호 (1부터 시작)
+            page_size: 페이지 당 문서 수
+
+        Returns:
+            {"documents": [...], "total_count": int} 형식의 딕셔너리
+        """
+        if not hasattr(self.retriever, "list_documents"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"list_documents를 지원하지 않습니다."
+            )
+
+        logger.debug(
+            "[Adapter] list_documents() 호출",
+            extra={"page": page, "page_size": page_size}
+        )
+        return await self.retriever.list_documents(page=page, page_size=page_size)  # type: ignore[no-any-return]
+
+    async def get_document_details(
+        self, document_id: str
+    ) -> dict[str, Any] | None:
+        """
+        문서 상세 정보 조회 (Retriever 위임)
+
+        Args:
+            document_id: 조회할 문서 ID
+
+        Returns:
+            문서 상세 정보 딕셔너리 또는 None (미존재 시)
+        """
+        if not hasattr(self.retriever, "get_document_details"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"get_document_details를 지원하지 않습니다."
+            )
+
+        logger.debug(
+            "[Adapter] get_document_details() 호출",
+            extra={"document_id": document_id}
+        )
+        return await self.retriever.get_document_details(document_id)  # type: ignore[no-any-return]
+
+    async def get_document_stats(self) -> dict[str, Any]:
+        """
+        문서 통계 조회 (Retriever 위임)
+
+        기존 get_stats()는 오케스트레이터 통계(캐시 히트율 등)를 반환합니다.
+        이 메서드는 벡터 DB의 문서/벡터 수량 통계를 반환합니다.
+
+        Returns:
+            {"total_documents": int, "vector_count": int, ...} 형식의 딕셔너리
+        """
+        if not hasattr(self.retriever, "get_document_stats"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"get_document_stats를 지원하지 않습니다."
+            )
+
+        logger.debug("[Adapter] get_document_stats() 호출")
+        return await self.retriever.get_document_stats()  # type: ignore[no-any-return]
+
+    async def get_collection_info(self) -> dict[str, Any]:
+        """
+        컬렉션 정보 조회 (Retriever 위임)
+
+        Returns:
+            {"size_mb": float, "oldest_document": str, "newest_document": str, ...}
+        """
+        if not hasattr(self.retriever, "get_collection_info"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"get_collection_info를 지원하지 않습니다."
+            )
+
+        logger.debug("[Adapter] get_collection_info() 호출")
+        return await self.retriever.get_collection_info()  # type: ignore[no-any-return]
+
+    async def delete_all_documents(self) -> bool:
+        """
+        전체 문서 삭제 (Retriever 위임)
+
+        Returns:
+            삭제 성공 여부
+        """
+        if not hasattr(self.retriever, "delete_all_documents"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"delete_all_documents를 지원하지 않습니다."
+            )
+
+        logger.warning("[Adapter] delete_all_documents() 호출 - 전체 문서 삭제 시작")
+        result = await self.retriever.delete_all_documents()
+
+        logger.warning(
+            "[Adapter] delete_all_documents() 완료",
+            extra={"success": result}
+        )
+        return result  # type: ignore[no-any-return]
+
+    async def recreate_collection(self) -> bool:
+        """
+        컬렉션 재생성 (Retriever 위임)
+
+        Returns:
+            재생성 성공 여부
+        """
+        if not hasattr(self.retriever, "recreate_collection"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"recreate_collection을 지원하지 않습니다."
+            )
+
+        logger.warning("[Adapter] recreate_collection() 호출 - 컬렉션 재생성 시작")
+        result = await self.retriever.recreate_collection()
+
+        logger.info(
+            "[Adapter] recreate_collection() 완료",
+            extra={"success": result}
+        )
+        return result  # type: ignore[no-any-return]
+
+    async def backup_metadata(self) -> list[dict[str, Any]]:
+        """
+        문서 메타데이터 백업 (Retriever 위임)
+
+        Returns:
+            메타데이터 리스트
+        """
+        if not hasattr(self.retriever, "backup_metadata"):
+            raise NotImplementedError(
+                f"Retriever {type(self.retriever).__name__}는 "
+                f"backup_metadata를 지원하지 않습니다."
+            )
+
+        logger.debug("[Adapter] backup_metadata() 호출")
+        return await self.retriever.backup_metadata()  # type: ignore[no-any-return]
+
     # ========== 내부 헬퍼 메서드 ==========
 
     async def _search_and_merge(

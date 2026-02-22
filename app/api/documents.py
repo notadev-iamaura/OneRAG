@@ -71,7 +71,7 @@ async def get_document_stats():
                     "support_email": "support@example.com",
                 },
             )
-        stats = await retrieval_module.get_stats()
+        stats = await retrieval_module.get_document_stats()
         collection_info = await retrieval_module.get_collection_info()
         return DocumentStats(
             total_documents=stats.get("total_documents", 0),
@@ -138,7 +138,7 @@ async def delete_all_documents(
                     "support_email": "support@example.com",
                 },
             )
-        stats_before = await retrieval_module.get_stats()
+        stats_before = await retrieval_module.get_document_stats()
         total_documents = stats_before.get("total_documents", 0)
         total_vectors = stats_before.get("vector_count", 0)
         if total_documents == 0:
@@ -169,7 +169,7 @@ async def delete_all_documents(
             operation_time = (datetime.now() - start_time).total_seconds()
             logger.error(f"Deletion process failed: {deletion_error}")
             try:
-                stats_after = await retrieval_module.get_stats()
+                stats_after = await retrieval_module.get_document_stats()
                 remaining_docs = stats_after.get("total_documents", 0)
                 if remaining_docs == 0:
                     logger.info(
@@ -211,7 +211,7 @@ async def delete_all_documents(
                     },
                 ) from verify_error
         try:
-            stats_after = await retrieval_module.get_stats()
+            stats_after = await retrieval_module.get_document_stats()
             remaining_docs = stats_after.get("total_documents", 0)
         except Exception:
             remaining_docs = 0

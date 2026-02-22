@@ -703,6 +703,311 @@ class WeaviateRetriever:
             logger.error(f"❌ WeaviateRetriever cleanup 중 오류: {str(e)}", exc_info=True)
 
     # ========================================
+    # 문서 관리 메서드 (Document Management)
+    # ========================================
+
+    async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
+        """
+        document_id에 해당하는 모든 청크를 조회
+
+        Args:
+            document_id: 조회할 문서 ID
+
+        Returns:
+            청크 리스트 (각 청크는 id, content, metadata를 포함)
+        """
+        if self.collection is None:
+            raise RuntimeError(
+                "Weaviate 'Documents' 컬렉션이 초기화되지 않았습니다. "
+                "initialize()를 먼저 호출하세요."
+            )
+
+        from weaviate.classes.query import Filter
+
+        response = self.collection.query.fetch_objects(
+            filters=Filter.by_property("document_id").equal(document_id),
+            limit=10000,  # 단일 문서의 청크 수 상한
+        )
+
+        chunks = []
+        for obj in response.objects:
+            props = dict(obj.properties)
+            chunks.append({
+                "id": str(obj.uuid),
+                "content": props.get("content", ""),
+                "metadata": props,
+            })
+
+        logger.debug(
+            f"get_document_chunks 완료: document_id={document_id}, "
+            f"chunks={len(chunks)}"
+        )
+        return chunks
+
+    async def delete_document(self, document_id: str) -> bool:
+        """
+        document_id의 모든 청크를 삭제
+
+        Args:
+            document_id: 삭제할 문서 ID
+
+        Returns:
+            삭제 성공 여부 (청크가 존재하여 삭제했으면 True)
+        """
+        chunks = await self.get_document_chunks(document_id)
+        if not chunks:
+            logger.warning(f"삭제할 문서가 없습니다: document_id={document_id}")
+            return False
+
+        for chunk in chunks:
+            self.collection.data.delete_by_id(chunk["id"])  # type: ignore[union-attr]
+
+        logger.info(
+            f"문서 삭제 완료: document_id={document_id}, "
+            f"삭제된 청크 수={len(chunks)}"
+        )
+        return True
+
+    async def list_documents(
+        self, page: int = 1, page_size: int = 20
+    ) -> dict[str, Any]:
+        """
+        고유 document_id별로 그룹화하여 문서 목록 반환
+
+        Args:
+            page: 페이지 번호 (1부터 시작)
+            page_size: 페이지 당 문서 수
+
+        Returns:
+            {"documents": [...], "total_count": int} 형식의 딕셔너리
+        """
+        if self.collection is None:
+            raise RuntimeError(
+                "Weaviate 'Documents' 컬렉션이 초기화되지 않았습니다."
+            )
+
+        # 모든 객체 조회 후 document_id별 그룹화
+        response = self.collection.query.fetch_objects(limit=10000)
+
+        # document_id별 그룹화
+        doc_groups: dict[str, list[dict[str, Any]]] = {}
+        for obj in response.objects:
+            props = dict(obj.properties)
+            doc_id = str(props.get("document_id", str(obj.uuid)))
+            if doc_id not in doc_groups:
+                doc_groups[doc_id] = []
+            doc_groups[doc_id].append(props)
+
+        # 문서 정보 구성
+        all_documents = []
+        for doc_id, chunks in doc_groups.items():
+            first_chunk = chunks[0]
+            # upload_date 추출 (created_at 필드에서)
+            created_at = first_chunk.get("created_at", "")
+            upload_date: float = 0.0
+            if isinstance(created_at, str) and created_at:
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                    upload_date = dt.timestamp()
+                except (ValueError, TypeError):
+                    upload_date = 0.0
+
+            all_documents.append({
+                "id": doc_id,
+                "filename": first_chunk.get("source_file", "unknown"),
+                "file_type": first_chunk.get("file_type", "unknown"),
+                "file_size": first_chunk.get("file_size", 0),
+                "upload_date": upload_date,
+                "chunk_count": len(chunks),
+            })
+
+        # 페이지네이션 적용
+        total_count = len(all_documents)
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated = all_documents[start_idx:end_idx]
+
+        return {
+            "documents": paginated,
+            "total_count": total_count,
+        }
+
+    async def get_document_details(
+        self, document_id: str
+    ) -> dict[str, Any] | None:
+        """
+        문서 상세 정보를 청크 메타데이터에서 집계하여 반환
+
+        Args:
+            document_id: 조회할 문서 ID
+
+        Returns:
+            문서 상세 정보 딕셔너리 또는 None (미존재 시)
+        """
+        chunks = await self.get_document_chunks(document_id)
+        if not chunks:
+            return None
+
+        first_meta = chunks[0].get("metadata", {})
+
+        # upload_date 추출
+        created_at = first_meta.get("created_at", "")
+        upload_date: float = 0.0
+        if isinstance(created_at, str) and created_at:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                upload_date = dt.timestamp()
+            except (ValueError, TypeError):
+                upload_date = 0.0
+
+        # 청크 미리보기 (각 청크의 앞 200자)
+        chunk_previews = [
+            chunk.get("content", "")[:200]
+            for chunk in chunks
+        ]
+
+        # 파일 크기 합산
+        file_size = sum(
+            len(chunk.get("content", "").encode("utf-8"))
+            for chunk in chunks
+        )
+
+        return {
+            "id": document_id,
+            "filename": first_meta.get("source_file", "unknown"),
+            "file_type": first_meta.get("file_type", "unknown"),
+            "file_size": file_size,
+            "upload_date": upload_date,
+            "actual_chunk_count": len(chunks),
+            "chunk_previews": chunk_previews,
+            "metadata": first_meta,
+        }
+
+    async def get_document_stats(self) -> dict[str, Any]:
+        """
+        문서/벡터 수량 통계 반환
+
+        Returns:
+            {"total_documents": int, "vector_count": int}
+        """
+        if self.collection is None:
+            raise RuntimeError(
+                "Weaviate 'Documents' 컬렉션이 초기화되지 않았습니다."
+            )
+
+        response = self.collection.query.fetch_objects(limit=10000)
+
+        doc_ids = set()
+        vector_count = 0
+        for obj in response.objects:
+            props = dict(obj.properties)
+            doc_id = props.get("document_id", str(obj.uuid))
+            doc_ids.add(doc_id)
+            vector_count += 1
+
+        return {
+            "total_documents": len(doc_ids),
+            "vector_count": vector_count,
+        }
+
+    async def get_collection_info(self) -> dict[str, Any]:
+        """
+        컬렉션 메타정보 반환
+
+        Returns:
+            컬렉션 이름, 최초/최근 문서 날짜 등
+        """
+        if self.collection is None:
+            raise RuntimeError(
+                "Weaviate 'Documents' 컬렉션이 초기화되지 않았습니다."
+            )
+
+        response = self.collection.query.fetch_objects(limit=10000)
+
+        dates = []
+        for obj in response.objects:
+            props = dict(obj.properties)
+            created_at = props.get("created_at", "")
+            if isinstance(created_at, str) and created_at:
+                dates.append(created_at)
+
+        oldest = min(dates) if dates else None
+        newest = max(dates) if dates else None
+
+        return {
+            "collection_name": self.collection_name,
+            "oldest_document": oldest,
+            "newest_document": newest,
+            "total_objects": len(response.objects),
+        }
+
+    async def delete_all_documents(self) -> bool:
+        """
+        컬렉션의 모든 문서를 삭제
+
+        Returns:
+            삭제 성공 여부
+        """
+        if self.collection is None:
+            raise RuntimeError(
+                "Weaviate 'Documents' 컬렉션이 초기화되지 않았습니다."
+            )
+
+        response = self.collection.query.fetch_objects(limit=10000)
+
+        for obj in response.objects:
+            self.collection.data.delete_by_id(str(obj.uuid))
+
+        logger.warning(
+            f"전체 문서 삭제 완료: {len(response.objects)}개 객체 삭제"
+        )
+        return True
+
+    async def recreate_collection(self) -> bool:
+        """
+        컬렉션 재생성 (전체 삭제 후 초기화)
+
+        Returns:
+            재생성 성공 여부
+        """
+        await self.delete_all_documents()
+        logger.info(f"컬렉션 재생성 완료: {self.collection_name}")
+        return True
+
+    async def backup_metadata(self) -> list[dict[str, Any]]:
+        """
+        모든 문서의 메타데이터를 백업
+
+        Returns:
+            고유 document_id별 메타데이터 리스트
+        """
+        if self.collection is None:
+            raise RuntimeError(
+                "Weaviate 'Documents' 컬렉션이 초기화되지 않았습니다."
+            )
+
+        response = self.collection.query.fetch_objects(limit=10000)
+
+        # document_id별 그룹화하여 메타데이터 수집
+        doc_metadata: dict[str, dict[str, Any]] = {}
+        for obj in response.objects:
+            props = dict(obj.properties)
+            doc_id = str(props.get("document_id", str(obj.uuid)))
+            if doc_id not in doc_metadata:
+                doc_metadata[doc_id] = {
+                    "id": doc_id,
+                    "filename": props.get("source_file", "unknown"),
+                    "file_type": props.get("file_type", "unknown"),
+                    "created_at": props.get("created_at", ""),
+                    "chunk_count": 0,
+                }
+            doc_metadata[doc_id]["chunk_count"] += 1
+
+        return list(doc_metadata.values())
+
+    # ========================================
     # Phase 2: BM25 전처리 파이프라인
     # ========================================
 

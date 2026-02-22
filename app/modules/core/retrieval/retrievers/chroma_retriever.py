@@ -272,6 +272,167 @@ class ChromaRetriever:
 
         return results
 
+    # ============================================================
+    # 문서 관리 메서드 (Store 위임, duck typing)
+    # ============================================================
+
+    async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
+        """document_id로 모든 청크 조회"""
+        if not hasattr(self.store, "fetch_objects"):
+            raise NotImplementedError(
+                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
+            )
+        raw_results = await self.store.fetch_objects(
+            collection=self.collection_name,
+            filters={"document_id": document_id},
+        )
+        return [
+            {
+                "id": str(r.get("_id", "")),
+                "content": r.get("content", ""),
+                "metadata": {k: v for k, v in r.items() if k not in ("_id", "content")},
+            }
+            for r in raw_results
+        ]
+
+    async def delete_document(self, document_id: str) -> bool:
+        """document_id의 모든 청크 삭제"""
+        chunks = await self.get_document_chunks(document_id)
+        if not chunks:
+            return False
+        object_ids = [c["id"] for c in chunks]
+        if not hasattr(self.store, "delete_objects"):
+            raise NotImplementedError(
+                f"{type(self).__name__}의 store는 delete_objects를 지원하지 않습니다."
+            )
+        await self.store.delete_objects(
+            collection=self.collection_name, object_ids=object_ids,
+        )
+        logger.info(f"문서 삭제 완료: document_id={document_id}, 청크 {len(object_ids)}개")
+        return True
+
+    async def list_documents(self, page: int = 1, page_size: int = 20) -> dict[str, Any]:
+        """고유 문서 목록 페이지네이션 조회"""
+        if not hasattr(self.store, "fetch_objects"):
+            raise NotImplementedError(
+                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
+            )
+        raw_results = await self.store.fetch_objects(
+            collection=self.collection_name,
+        )
+        # document_id 기준 그룹화
+        doc_map: dict[str, dict[str, Any]] = {}
+        for r in raw_results:
+            doc_id = r.get("document_id", r.get("_id", ""))
+            if doc_id not in doc_map:
+                doc_map[doc_id] = {
+                    "id": doc_id,
+                    "filename": r.get("source_file", ""),
+                    "file_type": r.get("file_type", ""),
+                    "created_at": r.get("created_at", ""),
+                    "chunk_count": 0,
+                }
+            doc_map[doc_id]["chunk_count"] += 1
+
+        all_docs = list(doc_map.values())
+        total = len(all_docs)
+        start = (page - 1) * page_size
+        end = start + page_size
+        return {"documents": all_docs[start:end], "total_count": total}
+
+    async def get_document_details(self, document_id: str) -> dict[str, Any] | None:
+        """문서 상세 정보 조회"""
+        chunks = await self.get_document_chunks(document_id)
+        if not chunks:
+            return None
+        first = chunks[0]["metadata"]
+        total_size = sum(len(c.get("content", "").encode("utf-8")) for c in chunks)
+        return {
+            "id": document_id,
+            "filename": first.get("source_file", ""),
+            "file_type": first.get("file_type", ""),
+            "file_size": total_size,
+            "created_at": first.get("created_at", ""),
+            "actual_chunk_count": len(chunks),
+            "chunk_previews": [c["content"][:200] for c in chunks],
+            "metadata": first,
+        }
+
+    async def get_document_stats(self) -> dict[str, Any]:
+        """문서/벡터 수량 통계"""
+        if not hasattr(self.store, "fetch_objects"):
+            raise NotImplementedError(
+                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
+            )
+        raw_results = await self.store.fetch_objects(
+            collection=self.collection_name,
+        )
+        doc_ids = {r.get("document_id", r.get("_id", "")) for r in raw_results}
+        return {"total_documents": len(doc_ids), "vector_count": len(raw_results)}
+
+    async def get_collection_info(self) -> dict[str, Any]:
+        """컬렉션 메타정보 반환"""
+        if not hasattr(self.store, "fetch_objects"):
+            raise NotImplementedError(
+                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
+            )
+        raw_results = await self.store.fetch_objects(
+            collection=self.collection_name,
+        )
+        dates = [r.get("created_at", "") for r in raw_results if r.get("created_at")]
+        return {
+            "collection_name": self.collection_name,
+            "total_objects": len(raw_results),
+            "oldest_document": min(dates) if dates else None,
+            "newest_document": max(dates) if dates else None,
+        }
+
+    async def delete_all_documents(self) -> bool:
+        """전체 문서 삭제"""
+        if not hasattr(self.store, "fetch_objects") or not hasattr(self.store, "delete_objects"):
+            raise NotImplementedError(
+                f"{type(self).__name__}의 store는 전체 삭제를 지원하지 않습니다."
+            )
+        raw_results = await self.store.fetch_objects(
+            collection=self.collection_name,
+        )
+        if not raw_results:
+            return True
+        object_ids = [str(r.get("_id", "")) for r in raw_results]
+        await self.store.delete_objects(
+            collection=self.collection_name, object_ids=object_ids,
+        )
+        logger.warning(f"전체 문서 삭제 완료: {len(object_ids)}개 객체")
+        return True
+
+    async def recreate_collection(self) -> bool:
+        """컬렉션 재생성 (삭제 후 재초기화)"""
+        await self.delete_all_documents()
+        return True
+
+    async def backup_metadata(self) -> list[dict[str, Any]]:
+        """모든 문서의 메타데이터를 백업"""
+        if not hasattr(self.store, "fetch_objects"):
+            raise NotImplementedError(
+                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
+            )
+        raw_results = await self.store.fetch_objects(
+            collection=self.collection_name,
+        )
+        doc_map: dict[str, dict[str, Any]] = {}
+        for r in raw_results:
+            doc_id = r.get("document_id", r.get("_id", ""))
+            if doc_id not in doc_map:
+                doc_map[doc_id] = {
+                    "id": doc_id,
+                    "filename": r.get("source_file", ""),
+                    "file_type": r.get("file_type", ""),
+                    "created_at": r.get("created_at", ""),
+                    "chunk_count": 0,
+                }
+            doc_map[doc_id]["chunk_count"] += 1
+        return list(doc_map.values())
+
     @property
     def stats(self) -> dict[str, int]:
         """검색 통계 반환"""
