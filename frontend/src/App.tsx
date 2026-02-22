@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
-import { Loader2, AlertCircle, MessageSquare, UploadCloud, BrainCircuit, BarChart3, Settings } from 'lucide-react';
+import { Loader2, AlertCircle, MessageSquare, UploadCloud, BrainCircuit, Settings } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AppLayout } from './components/AppLayout';
 import { BRAND_CONFIG } from './config/brand';
@@ -18,7 +18,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const UploadPage = lazy(() => import('./pages/UploadPage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
-const AnalysisPage = lazy(() => import('./pages/AnalysisPage'));
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
 
 // 로딩 폴백 컴포넌트
@@ -40,7 +39,6 @@ function LandingPageContent() {
   const isChatbotEnabled = useIsModuleEnabled('chatbot');
   const isDocumentsEnabled = useIsModuleEnabled('documentManagement');
   const isPromptsEnabled = useIsModuleEnabled('prompts');
-  const isAnalysisEnabled = useIsModuleEnabled('analysis');
   const isAdminEnabled = useIsModuleEnabled('admin');
 
   // 활성화된 첫 번째 모듈로 자동 리다이렉션 (챗봇 우선)
@@ -51,18 +49,15 @@ function LandingPageContent() {
       navigate('/upload');
     } else if (isPromptsEnabled) {
       navigate('/prompts');
-    } else if (isAnalysisEnabled) {
-      navigate('/analysis');
     } else if (isAdminEnabled) {
       navigate('/admin');
     }
-  }, [isChatbotEnabled, isDocumentsEnabled, isPromptsEnabled, isAnalysisEnabled, isAdminEnabled, navigate]);
+  }, [isChatbotEnabled, isDocumentsEnabled, isPromptsEnabled, isAdminEnabled, navigate]);
 
   const enabledModules = [
     { id: 'bot', enabled: isChatbotEnabled, label: '챗봇 사용하기', icon: MessageSquare, description: 'AI 어시스턴트와 대화하세요', path: '/bot', color: 'bg-blue-500/10 text-blue-500' },
     { id: 'upload', enabled: isDocumentsEnabled, label: '문서 관리', icon: UploadCloud, description: '지식 베이스 문서를 관리합니다', path: '/upload', color: 'bg-emerald-500/10 text-emerald-500' },
     { id: 'prompts', enabled: isPromptsEnabled, label: '프롬프트 관리', icon: BrainCircuit, description: 'AI 모델의 페르소나를 설정합니다', path: '/prompts', color: 'bg-amber-500/10 text-amber-500' },
-    { id: 'analysis', enabled: isAnalysisEnabled, label: '통계 분석', icon: BarChart3, description: '데이터 분석 결과를 확인합니다', path: '/analysis', color: 'bg-purple-500/10 text-purple-500' },
     { id: 'admin', enabled: isAdminEnabled, label: '관리자', icon: Settings, description: '시스템 설정을 관리합니다', path: '/admin', color: 'bg-slate-500/10 text-slate-500' },
   ].filter(m => m.enabled);
 
@@ -145,7 +140,7 @@ function LandingPageContent() {
  * 모듈이 비활성화되어 있으면 404 페이지로 리다이렉션
  */
 interface ProtectedRouteProps {
-  module: 'chatbot' | 'documentManagement' | 'prompts' | 'analysis' | 'admin';
+  module: 'chatbot' | 'documentManagement' | 'prompts' | 'admin';
   children: React.ReactNode;
 }
 
@@ -167,7 +162,6 @@ function AppRoutes() {
   const isChatbotEnabled = useIsModuleEnabled('chatbot');
   const isDocumentsEnabled = useIsModuleEnabled('documentManagement');
   const isPromptsEnabled = useIsModuleEnabled('prompts');
-  const isAnalysisEnabled = useIsModuleEnabled('analysis');
   const isAdminEnabled = useIsModuleEnabled('admin');
   const location = useLocation();
 
@@ -222,24 +216,6 @@ function AppRoutes() {
                 <ProtectedRoute module="prompts">
                   <Suspense fallback={<LoadingFallback />}>
                     <PromptsPage />
-                  </Suspense>
-                </ProtectedRoute>
-              </ErrorBoundary>
-            </AppLayout>
-          }
-        />
-      )}
-
-      {/* 분석 라우트 (조건부) */}
-      {isAnalysisEnabled && (
-        <Route
-          path="/analysis"
-          element={
-            <AppLayout>
-              <ErrorBoundary key={location.pathname}>
-                <ProtectedRoute module="analysis">
-                  <Suspense fallback={<LoadingFallback />}>
-                    <AnalysisPage />
                   </Suspense>
                 </ProtectedRoute>
               </ErrorBoundary>

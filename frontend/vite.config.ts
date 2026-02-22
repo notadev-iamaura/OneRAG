@@ -114,7 +114,7 @@ export default defineConfig({
         changeOrigin: true,
         secure: true,
       },
-      '/admin-ws': {
+      '/api/admin/ws': {
         target: process.env.VITE_WS_BASE_URL || 'ws://localhost:8000',
         ws: true,
         changeOrigin: true,

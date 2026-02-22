@@ -3,7 +3,6 @@ import {
   MessageSquare,
   UploadCloud,
   BrainCircuit,
-  BarChart3,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -39,7 +38,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
   const isChatbotEnabled = useIsModuleEnabled('chatbot');
   const isDocumentsEnabled = useIsModuleEnabled('documentManagement');
   const isPromptsEnabled = useIsModuleEnabled('prompts');
-  const isAnalysisEnabled = useIsModuleEnabled('analysis');
   const isAdminEnabled = useIsModuleEnabled('admin');
 
   const menuItems = [
@@ -60,12 +58,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
       path: '/prompts',
       icon: BrainCircuit,
       enabled: isPromptsEnabled
-    },
-    {
-      label: '통계',
-      path: '/analysis',
-      icon: BarChart3,
-      enabled: isAnalysisEnabled
     },
     {
       label: '관리자',

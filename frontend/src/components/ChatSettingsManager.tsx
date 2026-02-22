@@ -11,7 +11,6 @@ import {
   Plus,
   Trash2,
   Info,
-  CheckCircle2,
   AlertCircle
 } from 'lucide-react';
 import { chatSettingsService } from '../services/chatSettingsService';
@@ -205,15 +204,6 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
                 ))}
               </ul>
             </AlertDescription>
-          </Alert>
-        )}
-
-        {/* 성공 메시지 */}
-        {successMessage && (
-          <Alert className="bg-green-500/5 border-green-500/20 text-green-600 animate-in fade-in slide-in-from-top-2">
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-            <AlertTitle className="text-xs font-bold">성공</AlertTitle>
-            <AlertDescription className="text-xs">{successMessage}</AlertDescription>
           </Alert>
         )}
 

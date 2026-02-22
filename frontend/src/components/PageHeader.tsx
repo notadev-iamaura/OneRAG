@@ -5,7 +5,6 @@ import {
   UploadCloud,
   MessageSquare,
   BrainCircuit,
-  BarChart3,
   LogOut,
   CheckCircle,
   HelpCircle,
@@ -52,7 +51,6 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
     { label: '챗봇', path: '/bot', icon: MessageSquare },
     { label: '업로드', path: '/upload', icon: UploadCloud },
     { label: '프롬프트', path: '/prompts', icon: BrainCircuit },
-    { label: '통계', path: '/analysis', icon: BarChart3 },
   ];
 
   const items = navigationItems || defaultNavigationItems;

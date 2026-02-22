@@ -132,7 +132,7 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
     });
   }, [sortField, sortDirection]);
 
-  void handleSort;
+
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);

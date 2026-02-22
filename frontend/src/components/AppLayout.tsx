@@ -98,7 +98,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     if (path === '/bot') return '챗봇';
     if (path === '/upload') return '문서 관리';
     if (path === '/prompts') return '프롬프트';
-    if (path === '/analysis') return '통계 분석';
     if (path === '/admin') return '관리자 대시보드';
     return '';
   };

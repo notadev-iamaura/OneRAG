@@ -8,72 +8,72 @@ import { logger } from '../utils/logger';
 
 // API 기본 설정 - Railway 배포된 백엔드 서버 사용
 const getAPIBaseURL = (): string => {
-  // Railway 배포된 백엔드 URL 직접 사용
+  // 개발 모드: 로컬 백엔드 사용 (api.ts와 동일한 전략)
   if (import.meta.env.DEV) {
-    return 'https://simple-rag-production-bb72.up.railway.app';
+    return import.meta.env.VITE_DEV_API_BASE_URL || 'http://localhost:8000';
   }
-  
+
   // 런타임 설정이 있는 경우 우선 사용 (Railway 환경)
   if (typeof window !== 'undefined' && window.RUNTIME_CONFIG?.API_BASE_URL) {
     return window.RUNTIME_CONFIG.API_BASE_URL;
   }
-  
+
   // 빌드 타임 환경 변수가 설정된 경우 사용
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  
+
   // Railway 환경 자동 감지
   if (typeof window !== 'undefined') {
     const currentHost = window.location.host;
     const currentProtocol = window.location.protocol;
-    
+
     // Railway 도메인 패턴 감지
     if (currentHost.includes('railway.app')) {
       return `${currentProtocol}//${currentHost}`;
     }
-    
+
     // Railway public domain 패턴 감지
     if (currentHost.includes('-production') || currentHost.includes('-staging')) {
       return `${currentProtocol}//${currentHost}`;
     }
   }
-  
+
   // 기본값: Railway 프로덕션 URL
   return 'https://simple-rag-production-bb72.up.railway.app';
 };
 
 const getWSBaseURL = (): string => {
-  // Railway 배포된 백엔드 WebSocket URL 직접 사용
+  // 개발 모드: 로컬 백엔드 WebSocket 사용
   if (import.meta.env.DEV) {
-    return 'wss://simple-rag-production-bb72.up.railway.app';
+    return import.meta.env.VITE_DEV_WS_BASE_URL || 'ws://localhost:8000';
   }
-  
+
   // 런타임 설정이 있는 경우 우선 사용
   if (typeof window !== 'undefined' && window.RUNTIME_CONFIG?.WS_BASE_URL) {
     return window.RUNTIME_CONFIG.WS_BASE_URL;
   }
-  
+
   // 빌드 타임 환경 변수가 설정된 경우 사용
   if (import.meta.env.VITE_WS_BASE_URL) {
     return import.meta.env.VITE_WS_BASE_URL;
   }
-  
+
   // Railway 환경 자동 감지
   if (typeof window !== 'undefined') {
     const currentHost = window.location.host;
-    
+
     // Railway 도메인 패턴 감지 (WebSocket은 wss 사용)
     if (currentHost.includes('railway.app')) {
       return `wss://${currentHost}`;
     }
-    
+
     // Railway public domain 패턴 감지
     if (currentHost.includes('-production') || currentHost.includes('-staging')) {
       return `wss://${currentHost}`;
     }
   }
-  
+
   // 기본값: Railway 프로덕션 WebSocket URL
   return 'wss://simple-rag-production-bb72.up.railway.app';
 };
@@ -136,7 +136,7 @@ class AdminService {
 
     try {
       logger.log('🔗 WebSocket 연결 시도:', `${WS_BASE_URL}/admin-ws`);
-      this.wsConnection = new WebSocket(`${WS_BASE_URL}/admin-ws`);
+      this.wsConnection = new WebSocket(`${WS_BASE_URL}/api/admin/ws`);
 
       this.wsConnection.onopen = () => {
         logger.log('✅ Admin WebSocket 연결됨');
