@@ -10,8 +10,6 @@ import {
   CheckCircle2,
   AlertCircle,
   HelpCircle,
-  ChevronUp,
-  ChevronDown,
   List as ListIcon,
   LayoutGrid,
   AlertTriangle,
@@ -25,7 +23,7 @@ import {
 } from 'lucide-react';
 import { Document, ToastMessage } from '../types';
 import { documentAPI } from '../services/api';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -83,6 +81,7 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
   const [sortField, setSortField] = useState<'filename' | 'size' | 'uploadedAt' | 'type'>('uploadedAt');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [fetchError, setFetchError] = useState(false);
 
   const handleDeleteCancel = useCallback(() => {
     setDeleteConfirmOpen(false);
@@ -133,17 +132,11 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
     });
   }, [sortField, sortDirection]);
 
-  const handleSort = useCallback((field: typeof sortField) => {
-    if (field === sortField) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  }, [sortField]);
+  void handleSort;
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
+    setFetchError(false);
     try {
       const response = await documentAPI.getDocuments({
         page,
@@ -154,6 +147,7 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
       setDocuments(sortedDocuments);
       setTotalPages(Math.ceil(response.data.total / pageSize));
     } catch {
+      setFetchError(true);
       showToast({ type: 'error', message: '문서 목록 로드 실패' });
     } finally {
       setLoading(false);
@@ -198,9 +192,10 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
       await documentAPI.deleteDocument(documentToDelete);
       showToast({ type: 'success', message: '문서 삭제 완료' });
       await fetchDocuments();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
       logger.error('Document delete error:', error);
-      showToast({ type: 'error', message: error.response?.data?.message || '삭제 실패' });
+      showToast({ type: 'error', message: err.response?.data?.message || '삭제 실패' });
     } finally {
       setDeleteLoading(false);
       setDeleteConfirmOpen(false);
@@ -230,9 +225,10 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
       showToast({ type: 'success', message: `${documentIds.length}개 문서 삭제 완료` });
       setSelectedDocuments(new Set());
       await fetchDocuments();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
       logger.error('Bulk delete error:', error);
-      showToast({ type: 'error', message: error.response?.data?.message || '일괄 삭제 실패' });
+      showToast({ type: 'error', message: err.response?.data?.message || '일괄 삭제 실패' });
     } finally {
       setBulkDeleteLoading(false);
       setBulkDeleteConfirmOpen(false);
@@ -255,9 +251,10 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
       setSelectedDocuments(new Set());
       await fetchDocuments();
       handleDeleteAllCancel();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
       logger.error('Delete all documents error:', error);
-      showToast({ type: 'error', message: error.response?.data?.message || '실패' });
+      showToast({ type: 'error', message: err.response?.data?.message || '실패' });
     } finally {
       setDeleteAllLoading(false);
     }
@@ -313,7 +310,7 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
                 />
               </div>
               <div className="w-40 shrink-0">
-                <Select value={sortField} onValueChange={(v: any) => setSortField(v)}>
+                <Select value={sortField} onValueChange={(v: string) => setSortField(v as typeof sortField)}>
                   <SelectTrigger className="rounded-xl border-border/60 font-bold">
                     <SelectValue placeholder="정렬 기준" />
                   </SelectTrigger>
@@ -394,7 +391,25 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
       </Card>
 
       {/* 리스트/그리드 컨텐츠 */}
-      {loading ? (
+      {fetchError ? (
+        <Card className="border-destructive/30 bg-destructive/5 py-16 flex flex-col items-center justify-center text-center gap-4 px-6">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mb-2">
+            <AlertCircle className="w-8 h-8 text-destructive" />
+          </div>
+          <p className="text-lg font-black text-foreground">문서 목록을 불러올 수 없습니다</p>
+          <p className="text-sm text-muted-foreground max-w-xs">
+            백엔드 연결을 확인하거나 아래 버튼을 눌러 다시 시도해주세요.
+          </p>
+          <Button
+            onClick={fetchDocuments}
+            variant="default"
+            className="gap-2 font-bold px-6 rounded-xl shadow-lg shadow-primary/20"
+          >
+            <RotateCw className="w-4 h-4" />
+            다시 시도
+          </Button>
+        </Card>
+      ) : loading ? (
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <RotateCw className="w-10 h-10 text-primary animate-spin opacity-20" />
           <p className="text-sm font-bold text-muted-foreground animate-pulse">문서 목록을 불러오는 중...</p>
@@ -725,7 +740,7 @@ export const DocumentsTab: React.FC<DocumentsTabProps> = ({ showToast }) => {
   );
 };
 
-const DetailRow = ({ label, value, copyable }: { label: string, value: any, copyable?: boolean }) => (
+const DetailRow = ({ label, value, copyable }: { label: string, value: string | number | undefined | null, copyable?: boolean }) => (
   <div className="group/row">
     <p className="text-[10px] uppercase font-black text-muted-foreground/60 mb-1 tracking-wider">{label}</p>
     <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 border border-transparent group-hover/row:border-border/60 transition-all">

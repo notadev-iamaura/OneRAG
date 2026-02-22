@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { logger } from '../../utils/logger';
+import { COLORS } from '../../config/colors';
 import {
   RotateCw,
   Play,
@@ -22,10 +23,6 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  AlertTriangle,
-  Info,
-  CheckCircle2,
-  Terminal,
 } from 'lucide-react';
 import {
   LineChart,
@@ -38,7 +35,6 @@ import {
 } from 'recharts';
 import { adminService } from '../../services/adminService';
 import PromptManager from '../../components/PromptManager';
-import { BRAND_CONFIG } from '../../config/brand';
 import { useToast } from '@/hooks/use-toast';
 import {
   Card,
@@ -66,6 +62,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -76,7 +73,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import SettingsPage from './SettingsPage';
 
@@ -187,7 +183,7 @@ const AdminDashboard: React.FC = () => {
   // 다이얼로그 상태
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [testQuery, setTestQuery] = useState('');
-  const [testResult, setTestResult] = useState<Record<string, any> | null>(null);
+  const [testResult, setTestResult] = useState<Record<string, unknown> | null>(null);
   const [testLoading, setTestLoading] = useState(false);
 
   // 상세 다이얼로그 상태
@@ -457,21 +453,21 @@ const AdminDashboard: React.FC = () => {
               value={metrics?.totalSessions || 0}
               chartData={metrics?.timeSeries || []}
               dataKey="sessions"
-              color="#3b82f6"
+              color={COLORS.chart.blue}
             />
             <MetricCard
               label="처리된 총 쿼리"
               value={metrics?.totalQueries || 0}
               chartData={metrics?.timeSeries || []}
               dataKey="queries"
-              color="#10b981"
+              color={COLORS.chart.green}
             />
             <MetricCard
               label="평균 응답 지연"
               value={`${metrics?.avgResponseTime?.toFixed(1) || 0}s`}
               chartData={metrics?.timeSeries || []}
               dataKey="avgResponseTime"
-              color="#f59e0b"
+              color={COLORS.chart.orange}
             />
             <MetricCard
               label="실시간 연결"
@@ -725,11 +721,11 @@ const AdminDashboard: React.FC = () => {
                 <CardContent className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={metrics?.timeSeries || []}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.border.default.light} />
                       <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} dy={10} />
                       <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} dx={-10} />
-                      <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-                      <Line type="monotone" dataKey="avgResponseTime" stroke="#a855f7" strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6 }} />
+                      <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: COLORS.shadow.md.light }} />
+                      <Line type="monotone" dataKey="avgResponseTime" stroke={COLORS.chart.purple} strokeWidth={4} dot={{ r: 4, strokeWidth: 2, fill: COLORS.background.primary.light }} activeDot={{ r: 6 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -777,7 +773,7 @@ const AdminDashboard: React.FC = () => {
                   <div className="space-y-2 font-bold">
                     <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">인용된 소스 (Retrieved Chunks)</Label>
                     <ScrollArea className="h-32 rounded-2xl bg-muted/30 border border-border/40 p-4">
-                      {testResult.retrievedChunks?.map((chunk: any, i: number) => (
+                      {testResult.retrievedChunks?.map((chunk: Record<string, unknown>, i: number) => (
                         <div key={i} className="text-sm mb-3 last:mb-0 pb-3 border-b border-border/20 last:border-0">
                           <p className="opacity-80 leading-relaxed font-medium">"{chunk.content}"</p>
                           <Badge variant="secondary" className="mt-1 h-4 text-[8px] font-black">Score: {chunk.score?.toFixed(3)}</Badge>
@@ -900,7 +896,7 @@ const AdminDashboard: React.FC = () => {
   );
 };
 
-const MetricCard = ({ label, value, chartData, dataKey, color, isStatic }: { label: string, value: string | number, chartData?: any[], dataKey?: string, color?: string, isStatic?: boolean }) => (
+const MetricCard = ({ label, value, chartData, dataKey, color, isStatic }: { label: string, value: string | number, chartData?: Record<string, unknown>[], dataKey?: string, color?: string, isStatic?: boolean }) => (
   <Card className="rounded-[28px] border-border/60 overflow-hidden group hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
     <CardContent className="p-6 space-y-4">
       <div className="space-y-0.5">

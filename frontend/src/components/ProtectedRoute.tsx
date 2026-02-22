@@ -9,18 +9,15 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, title }: ProtectedRouteProps) {
-  const [isAccessGranted, setIsAccessGranted] = useState(false);
-  const [showAccessControl, setShowAccessControl] = useState(false);
+  const [isAccessGranted, setIsAccessGranted] = useState<boolean>(() => hasAdminAccess());
+  const [showAccessControl, setShowAccessControl] = useState<boolean>(() => !hasAdminAccess());
   const location = useLocation();
 
   useEffect(() => {
     // 접근 권한 확인
     const hasAccess = hasAdminAccess();
-    if (hasAccess) {
-      setIsAccessGranted(true);
-    } else {
-      setShowAccessControl(true);
-    }
+    setIsAccessGranted(hasAccess);
+    setShowAccessControl(!hasAccess);
   }, [location]);
 
   const handleAccessGranted = () => {

@@ -1,5 +1,4 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { logger } from '../utils/logger';
 import {
   UploadCloud,
   FileText,
@@ -10,7 +9,6 @@ import {
   ChevronDown,
   ChevronUp,
   RefreshCw,
-  Info,
   Clock,
   Layers,
   Database,
@@ -18,11 +16,11 @@ import {
 } from 'lucide-react';
 import { ToastMessage } from '../types';
 import { documentAPI } from '../services/api';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -33,7 +31,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import { Separator } from '@/components/ui/separator';
 
 interface UploadTabProps {
   showToast: (message: Omit<ToastMessage, 'id'>) => void;
@@ -178,6 +175,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
   const startAllUploads = () => {
     files.filter(f => f.status === 'ready').forEach(file => uploadSingleFile(file));
   };
+  void startAllUploads; // retained for future use
 
   const uploadSingleFile = async (uploadFile: UploadFile) => {
     try {
@@ -200,8 +198,8 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
       } else {
         throw new Error(responseData.message || responseData.error || '작업 ID 생성 실패');
       }
-    } catch (error: any) {
-      const errorMessage = error.message || '업로드 중 오류가 발생했습니다.';
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : '업로드 중 오류가 발생했습니다.';
       setFiles((prev) => prev.map((f) => f.id === uploadFile.id ? { ...f, status: 'failed', error: errorMessage } : f));
       showToast({ type: 'error', message: `${uploadFile.file.name} 실패: ${errorMessage}` });
     }
@@ -244,7 +242,8 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
           clearInterval(checkInterval);
           setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', error: '시간 초과' } : f));
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
+        void error;
         failureCount++;
         if (failureCount >= maxFailures) {
           clearInterval(checkInterval);
@@ -261,6 +260,12 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); addFiles(e.dataTransfer.files); };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      addFiles(e.target.files);
+    }
+  };
 
   const formatFileSize = useCallback((bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -283,7 +288,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
   };
 
   const selectedFilesCount = files.filter(f => f.status === 'selected').length;
-  const readyFilesCount = files.filter(f => f.status === 'ready').length;
   const processingFilesCount = files.filter(f => ['uploading', 'processing'].includes(f.status)).length;
 
   return (
@@ -303,7 +307,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                 <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">스플리터</Label>
                 <Select
                   value={globalSettings.splitterType}
-                  onValueChange={(value: any) => setGlobalSettings(prev => ({ ...prev, splitterType: value }))}
+                  onValueChange={(value: string) => setGlobalSettings(prev => ({ ...prev, splitterType: value as UploadSettings['splitterType'] }))}
                 >
                   <SelectTrigger className="h-9 rounded-xl border-border/60">
                     <SelectValue placeholder="스플리터 선택" />
@@ -362,7 +366,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
           "relative group cursor-pointer transition-all duration-300",
           "border-2 border-dashed rounded-[32px] p-12 text-center",
           isDragging
-            ? "border-primary bg-primary/5 shadow-[0_0_40px_-10px_rgba(0,0,0,0.1)] scale-[0.99]"
+            ? "border-primary bg-primary/5 shadow-xl shadow-primary/10 scale-[0.99]"
             : "border-border hover:border-primary/40 hover:bg-muted/30"
         )}
         onDragOver={handleDragOver}
@@ -525,7 +529,7 @@ const ProcessingDetails = ({ details }: { details: UploadFile['processingDetails
   );
 };
 
-const DetailItem = ({ icon: Icon, label, value }: { icon: any, label: string, value: string }) => (
+const DetailItem = ({ icon: Icon, label, value }: { icon: React.ElementType, label: string, value: string }) => (
   <div className="flex items-center gap-2">
     <Icon className="w-3 h-3 text-primary/60 shrink-0" />
     <div className="min-w-0">

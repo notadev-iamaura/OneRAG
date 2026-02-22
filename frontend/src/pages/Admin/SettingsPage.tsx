@@ -206,11 +206,11 @@ export const SettingsPage: React.FC = () => {
   const handleFeatureToggle = (path: string) => {
     const keys = path.split('.');
     setFeatures((prev) => {
-      const updated = JSON.parse(JSON.stringify(prev));
-      let current: any = updated;
+      const updated = JSON.parse(JSON.stringify(prev)) as typeof prev;
+      let current: Record<string, unknown> = updated as Record<string, unknown>;
 
       for (let i = 0; i < keys.length - 1; i++) {
-        current = current[keys[i]];
+        current = current[keys[i]] as Record<string, unknown>;
       }
 
       const lastKey = keys[keys.length - 1];

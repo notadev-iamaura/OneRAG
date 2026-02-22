@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Lock } from 'lucide-react';
 import { setAdminAccess } from '../utils/accessControl';
 import { logger } from '../utils/logger';
-import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,

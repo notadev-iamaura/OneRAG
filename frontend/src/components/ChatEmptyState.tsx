@@ -17,7 +17,7 @@ interface SuggestionCardProps {
   onClick: (text: string) => void;
 }
 
-const SuggestionCard: React.FC<SuggestionCardProps> = ({ text, onClick }) => {
+export const SuggestionCard: React.FC<SuggestionCardProps> = ({ text, onClick }) => {
   return (
     <Card
       onClick={() => onClick(text)}
@@ -146,10 +146,10 @@ export const ChatEmptyState: React.FC<ChatEmptyStateProps> = ({ onSuggestionClic
 
       {/* 추천 질문 섹션 - Glassmorphism UI */}
       <div className="w-full max-w-xl mt-4 animate-in slide-in-from-bottom-8 duration-1000 delay-500 fill-mode-both ease-out">
-        <div className="flex items-center gap-4 mb-6 px-2">
+        <div className="flex items-center gap-2 md:gap-4 mb-6 px-2">
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border/50 to-transparent" />
-          <span className="text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.3em] whitespace-nowrap">
-            Personalized Suggestions
+          <span className="text-[10px] md:text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] md:tracking-[0.3em] whitespace-normal md:whitespace-nowrap text-center">
+            맞춤형 추천 질문 (Personalized Suggestions)
           </span>
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border/50 to-transparent" />
         </div>
@@ -161,10 +161,11 @@ export const ChatEmptyState: React.FC<ChatEmptyStateProps> = ({ onSuggestionClic
               onClick={() => onSuggestionClick(suggestion)}
               className={cn(
                 "group relative px-5 py-4 cursor-pointer transition-all duration-500",
-                "glass-morphism hover:bg-primary/5 hover:border-primary/30 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98]"
+                "glass-morphism hover:bg-primary/5 hover:border-primary/30 hover:shadow-xl hover:-translate-y-1 active:scale-[0.98]",
+                "min-h-[90px] flex items-center justify-center"
               )}
             >
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-3 w-full">
                 <span className="text-sm font-semibold text-foreground/70 group-hover:text-primary transition-colors leading-snug">
                   {suggestion}
                 </span>

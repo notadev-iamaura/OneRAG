@@ -1,4 +1,6 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 
 interface MarkdownRendererProps {
@@ -7,103 +9,11 @@ interface MarkdownRendererProps {
   onCitationClick?: (index: number) => void;
 }
 
-// 마크다운 파싱 인터페이스
-interface MarkdownElement {
-  type: 'heading' | 'list' | 'paragraph' | 'bold' | 'text' | 'divider' | 'numbered_list';
-  level?: number;
-  content?: string;
-  children?: MarkdownElement[];
-  listType?: 'bullet' | 'numbered';
-}
-
-// 마크다운 텍스트를 파싱하는 함수 (기존 로직 유지)
-const parseMarkdown = (text: string): MarkdownElement[] => {
-  const lines = text.split('\n');
-  const elements: MarkdownElement[] = [];
-  let currentListItems: { content: string; type: 'bullet' | 'numbered' }[] = [];
-  let currentListType: 'bullet' | 'numbered' | null = null;
-
-  const flushList = () => {
-    if (currentListItems.length > 0 && currentListType) {
-      elements.push({
-        type: 'list',
-        listType: currentListType,
-        children: currentListItems.map(item => ({
-          type: 'text',
-          content: item.content
-        }))
-      });
-      currentListItems = [];
-      currentListType = null;
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    if (line === '') {
-      flushList();
-      continue;
-    }
-
-    if (line.startsWith('###')) {
-      flushList();
-      elements.push({
-        type: 'heading',
-        level: 3,
-        content: line.replace(/^###\s*/, '')
-      });
-    } else if (line.startsWith('##')) {
-      flushList();
-      elements.push({
-        type: 'heading',
-        level: 2,
-        content: line.replace(/^##\s*/, '')
-      });
-    }
-    else if (/^\d+\.\s/.test(line)) {
-      const listContent = line.replace(/^\d+\.\s*/, '');
-      if (currentListType !== 'numbered') {
-        flushList();
-        currentListType = 'numbered';
-      }
-      currentListItems.push({ content: listContent, type: 'numbered' });
-    }
-    else if (line.startsWith('- ') || line.startsWith('* ')) {
-      const listContent = line.replace(/^[-*]\s*/, '');
-      if (currentListType !== 'bullet') {
-        flushList();
-        currentListType = 'bullet';
-      }
-      currentListItems.push({ content: listContent, type: 'bullet' });
-    }
-    else {
-      flushList();
-      elements.push({
-        type: 'paragraph',
-        content: line
-      });
-    }
-  }
-
-  flushList();
-  return elements;
-};
-
-// 볼드 텍스트와 인용구 렌더링
-const renderTextWithContext = (text: string, onCitationClick?: (index: number) => void) => {
-  const parts = text.split(/(\*\*[^*]+\*\*|\[\d+\])/g);
+// 본문의 출처 [1], [2]를 감지하여 렌더링
+const processCitations = (text: string, onCitationClick?: (index: number) => void) => {
+  const parts = text.split(/(\[\d+\])/g);
 
   return parts.map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      const boldText = part.slice(2, -2);
-      return (
-        <strong key={index} className="font-bold text-primary italic px-0.5">
-          {boldText}
-        </strong>
-      );
-    }
-
     const citationMatch = part.match(/^\[(\d+)\]$/);
     if (citationMatch) {
       const citationIndex = parseInt(citationMatch[1], 10);
@@ -117,80 +27,54 @@ const renderTextWithContext = (text: string, onCitationClick?: (index: number) =
         </span>
       );
     }
-
     return <span key={index}>{part}</span>;
   });
 };
 
-// 요소별 렌더링
-const renderElement = (
-  element: MarkdownElement,
-  index: number,
-  onCitationClick?: (index: number) => void
-): React.ReactNode => {
-  switch (element.type) {
-    case 'heading': {
-      const levelClass = element.level === 2 ? "text-lg font-bold" : "text-base font-bold";
-      return (
-        <div key={index} className="mb-4">
-          <div className={cn(
-            levelClass,
-            "border-l-4 border-blue-500 pl-3 bg-blue-500/5 py-1 rounded-r-md"
-          )}>
-            {element.content}
-          </div>
-        </div>
-      );
-    }
-
-    case 'list': {
-      const isNumbered = element.listType === 'numbered';
-      const ListTag = isNumbered ? 'ol' : 'ul';
-      return (
-        <div key={index} className="mb-4">
-          <ListTag className={cn(
-            "py-2 px-3 space-y-2 rounded-lg border",
-            isNumbered ? "bg-blue-500/5 border-blue-500/20" : "bg-muted/30 border-border/50"
-          )}>
-            {element.children?.map((child, childIndex) => (
-              <li key={childIndex} className="flex items-start gap-2 text-sm leading-relaxed">
-                <span className="font-bold text-blue-500 min-w-[18px]">
-                  {isNumbered ? `${childIndex + 1}.` : '•'}
-                </span>
-                <div className="flex-1">
-                  {renderTextWithContext(child.content || '', onCitationClick)}
-                </div>
-              </li>
-            ))}
-          </ListTag>
-        </div>
-      );
-    }
-
-    case 'paragraph': {
-      const isWarning = element.content?.startsWith('**') && element.content?.includes('추측한 답변') && element.content?.endsWith('**');
-
-      return (
-        <p key={index} className={cn(
-          "mb-3 text-sm leading-relaxed",
-          isWarning && "bg-yellow-500/10 text-yellow-600 p-4 rounded-lg border border-yellow-500/20 italic"
-        )}>
-          {renderTextWithContext(element.content || '', onCitationClick)}
-        </p>
-      );
-    }
-
-    default:
-      return null;
-  }
-};
-
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className, onCitationClick }) => {
-  const elements = parseMarkdown(content);
-
   return (
-    <div className={cn("markdown-content", className)}>
-      {elements.map((element, index) => renderElement(element, index, onCitationClick))}
+    <div className={cn("markdown-content prose prose-slate dark:prose-invert max-w-none prose-sm overflow-hidden", className)}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          h2: ({ node: _node, ...props }) => <h2 className="text-lg font-bold border-l-4 border-blue-500 pl-3 bg-blue-500/5 py-1 rounded-r-md mt-6 mb-4" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          h3: ({ node: _node, ...props }) => <h3 className="text-base font-bold border-l-4 border-blue-500 pl-3 bg-blue-500/5 py-1 rounded-r-md mt-5 mb-3" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          p: ({ node: _node, children, ...props }) => {
+            void props;
+            return <p className="mb-3 leading-relaxed">{processCitations(String(children), onCitationClick)}</p>;
+          },
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          ul: ({ node: _node, ...props }) => <ul className="pl-5 space-y-1 my-3 bg-muted/30 border border-border/50 rounded-lg p-3 list-disc list-inside" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          ol: ({ node: _node, ...props }) => <ol className="pl-5 space-y-1 my-3 bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 list-decimal list-inside" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          li: ({ node: _node, children, ...props }) => {
+            void props;
+            return <li className="leading-relaxed marker:text-blue-500 marker:font-bold">{processCitations(String(children), onCitationClick)}</li>;
+          },
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          strong: ({ node: _node, ...props }) => <strong className="font-bold text-primary italic px-0.5" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          table: ({ node: _node, ...props }) => (
+            <div className="overflow-x-auto w-full my-4 rounded-lg border border-border/60 shadow-sm">
+              <table className="w-full text-left text-sm" {...props} />
+            </div>
+          ),
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          thead: ({ node: _node, ...props }) => <thead className="bg-muted text-foreground/80 font-bold uppercase text-xs" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          th: ({ node: _node, ...props }) => <th className="px-4 py-3 align-middle border-b border-border/60" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          td: ({ node: _node, ...props }) => <td className="px-4 py-3 align-middle border-b border-border/40 last:border-0" {...props} />,
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          tr: ({ node: _node, ...props }) => <tr className="hover:bg-muted/50 transition-colors" {...props} />
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   );
 };

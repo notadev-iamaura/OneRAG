@@ -1,10 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import PromptManager from '../components/PromptManager';
 import { ProtectedRoute } from '../components/ProtectedRoute';
-import { useToast } from '@/hooks/use-toast';
 
 export default function PromptsPage() {
-  const { toast } = useToast();
 
   return (
     <ProtectedRoute title="프롬프트 관리 접근">

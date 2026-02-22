@@ -30,18 +30,18 @@ import {
   TooltipTrigger
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 interface ChatSettingsManagerProps {
   onSave?: (settings: ChatEmptyStateSettings) => void;
 }
 
 export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave }) => {
+  const { toast } = useToast();
   const [settings, setSettings] = useState<ChatEmptyStateSettings>(
     chatSettingsService.getSettings()
   );
   const [errors, setErrors] = useState<string[]>([]);
-  const [successMessage, setSuccessMessage] = useState<string>('');
   const [hasChanges, setHasChanges] = useState(false);
 
   // 초기 설정 로드
@@ -122,8 +122,12 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       const savedSettings = chatSettingsService.updateSettings(settings);
       setSettings(savedSettings);
       setErrors([]);
-      setSuccessMessage('설정이 저장되었습니다');
       setHasChanges(false);
+
+      toast({
+        title: "설정 저장 완료",
+        description: "✅ 대화 시작 화면 설정이 저장되었습니다.",
+      });
 
       // 콜백 호출
       if (onSave) {
@@ -131,7 +135,12 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       }
     } catch (error) {
       setErrors([error instanceof Error ? error.message : '설정 저장 중 오류가 발생했습니다']);
-      setSuccessMessage('');
+
+      toast({
+        variant: "destructive",
+        title: "저장 실패",
+        description: error instanceof Error ? error.message : "설정 저장 중 오류가 발생했습니다.",
+      });
     }
   };
 
@@ -141,8 +150,12 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       const defaultSettings = chatSettingsService.resetToDefaults();
       setSettings(defaultSettings);
       setErrors([]);
-      setSuccessMessage('기본 설정으로 초기화되었습니다');
       setHasChanges(false);
+
+      toast({
+        title: "설정 초기화",
+        description: "✅ 기본 설정으로 복원되었습니다.",
+      });
 
       // 콜백 호출
       if (onSave) {

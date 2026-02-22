@@ -31,10 +31,14 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="hidden sm:flex gap-1.5 items-center px-3 py-1 font-medium border-border/50">
-                        <Code className="w-4 h-4 text-primary/70" />
-                        <span className="text-xs opacity-80">세션: {sessionId.slice(0, 8)}...</span>
-                    </Badge>
+                    {!sessionId.startsWith('id-12345') && (
+                        <Badge variant="secondary" className="hidden sm:flex gap-1.5 items-center px-3 py-1 font-medium border-border/50 shrink-0">
+                            <Code className="w-4 h-4 text-primary/70" />
+                            <span className="text-xs opacity-80">
+                                세션: {sessionId.replace('fallback-', '').slice(0, 8)}...
+                            </span>
+                        </Badge>
+                    )}
 
                     {!showDevTools && (
                         <TooltipProvider>
@@ -44,13 +48,15 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                                         variant="ghost"
                                         size="icon"
                                         onClick={() => setShowDevTools(true)}
-                                        className="rounded-xl hover:bg-muted transition-all duration-200"
+                                        className="rounded-xl hover:bg-muted transition-all duration-200 shrink-0"
                                         title="개발자 도구 보기"
                                     >
                                         <Eye className="w-5 h-5" />
                                     </Button>
                                 </TooltipTrigger>
-                                <TooltipContent>개발자 도구 보기</TooltipContent>
+                                <TooltipContent className="glass-morphism border-border/40 text-foreground font-bold text-xs rounded-xl px-3 py-1.5">
+                                    개발자 도구 보기
+                                </TooltipContent>
                             </Tooltip>
                         </TooltipProvider>
                     )}
@@ -62,13 +68,15 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                                     variant="ghost"
                                     size="icon"
                                     onClick={onNewSession}
-                                    className="rounded-xl hover:bg-destructive/10 hover:text-destructive transition-all duration-300"
+                                    className="rounded-xl hover:bg-destructive/10 hover:text-destructive transition-all duration-300 shrink-0"
                                     title="새 대화 시작"
                                 >
                                     <Trash2 className="w-5 h-5" />
                                 </Button>
                             </TooltipTrigger>
-                            <TooltipContent>새 대화 시작</TooltipContent>
+                            <TooltipContent className="glass-morphism border-border/40 text-foreground font-bold text-xs rounded-xl px-3 py-1.5">
+                                새 대화 시작
+                            </TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
                 </div>

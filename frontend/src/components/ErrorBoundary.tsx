@@ -4,7 +4,6 @@ import { RotateCcw, Bug, ArrowLeft, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { cn } from '@/lib/utils';
 
 interface Props {
   children: ReactNode;
@@ -64,7 +63,8 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   handleReset = () => {
-    this.setState({ hasError: false, error: undefined, errorInfo: undefined });
+    // 단순 상태 리셋보다는 전체 페이지 새로고침이 런타임 오류(상수 미정의 등) 복구에 더 효과적입니다.
+    window.location.reload();
   };
 
   handleGoBack = () => {
@@ -123,9 +123,10 @@ class ErrorBoundary extends Component<Props, State> {
               <Button
                 onClick={this.handleReset}
                 className="gap-2 font-bold min-w-[140px] rounded-xl shadow-md shadow-primary/20"
+                title="현재 화면을 초기화하고 다시 로드합니다"
               >
                 <RotateCcw className="h-4 w-4" />
-                다시 시도
+                화면 새로고침 (초기화)
               </Button>
               <Button
                 variant="outline"

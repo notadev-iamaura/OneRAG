@@ -40,15 +40,6 @@ export const VirtualizedDocumentList: React.FC<VirtualizedDocumentListProps> = (
   const Row = ({ index, style }: RowProps) => {
     const document = documents[index];
 
-    const getStatusVariant = (status: string) => {
-      switch (status) {
-        case 'completed': return 'success';
-        case 'processing': return 'warning';
-        case 'failed': return 'destructive';
-        default: return 'outline';
-      }
-    };
-
     const getStatusLabel = (status: string) => {
       switch (status) {
         case 'completed': return '완료';

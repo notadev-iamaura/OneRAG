@@ -14,17 +14,11 @@ import {
   X,
   BrainCircuit,
   Search,
-  CheckCircle2,
   Info,
-  MoreVertical,
 } from 'lucide-react';
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardFooter,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +44,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Tabs,
@@ -95,6 +88,7 @@ const PromptManager: React.FC = () => {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [currentTab, setCurrentTab] = useState('all');
 
   // Dialog 상태
@@ -121,7 +115,7 @@ const PromptManager: React.FC = () => {
   const loadPrompts = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { page_size: 100 };
+      const params: { page_size: number; category?: string; is_active?: boolean } = { page_size: 100 };
       if (categoryFilter !== 'all') params.category = categoryFilter;
       if (activeFilter === 'active') params.is_active = true;
       else if (activeFilter === 'inactive') params.is_active = false;
@@ -138,7 +132,7 @@ const PromptManager: React.FC = () => {
         if (systemPrompt) {
           await promptService.togglePrompt(systemPrompt.id, true);
           // 프롬프트 목록 다시 로드
-          const reloadParams: any = { page_size: 100 };
+          const reloadParams: { page_size: number; category?: string } = { page_size: 100 };
           if (categoryFilter !== 'all') reloadParams.category = categoryFilter;
           const updatedResponse = await promptService.getPrompts(reloadParams);
           setPrompts(updatedResponse.prompts);
@@ -155,7 +149,7 @@ const PromptManager: React.FC = () => {
         }
 
         // 프롬프트 목록 다시 로드
-        const reloadParams2: any = { page_size: 100 };
+        const reloadParams2: { page_size: number; category?: string } = { page_size: 100 };
         if (categoryFilter !== 'all') reloadParams2.category = categoryFilter;
         const updatedResponse = await promptService.getPrompts(reloadParams2);
         setPrompts(updatedResponse.prompts);
@@ -186,7 +180,7 @@ const PromptManager: React.FC = () => {
       // 클라이언트 검증
       const validationErrors = promptService.validatePrompt(editingPrompt);
       if (validationErrors.length > 0) {
-        setError(validationErrors.join(', '));
+        setModalError(validationErrors.join(', '));
         return;
       }
 
@@ -208,10 +202,11 @@ const PromptManager: React.FC = () => {
 
       setEditDialogOpen(false);
       setEditingPrompt(null);
+      setModalError(null);
       await loadPrompts();
     } catch (err: unknown) {
       logger.error('프롬프트 저장 실패:', err);
-      setError(getErrorMessage(err, '프롬프트 저장에 실패했습니다.'));
+      setModalError(getErrorMessage(err, '프롬프트 저장에 실패했습니다.'));
     }
   };
 
@@ -312,6 +307,15 @@ const PromptManager: React.FC = () => {
 
   // 프롬프트 내보내기
   const handleExportPrompts = async () => {
+    if (prompts.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "내보내기 실패",
+        description: "내보낼 프롬프트가 없습니다.",
+      });
+      return;
+    }
+
     try {
       const exportData = await promptService.exportPrompts();
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
@@ -366,6 +370,7 @@ const PromptManager: React.FC = () => {
       category: 'custom',
       is_active: true,
     });
+    setModalError(null);
     setIsEditMode(false);
     setEditDialogOpen(true);
   };
@@ -382,6 +387,7 @@ const PromptManager: React.FC = () => {
       ...(prompt.metadata ? { metadata: prompt.metadata } : {}),
     };
     setEditingPrompt(nextEditing);
+    setModalError(null);
     setIsEditMode(true);
     setEditDialogOpen(true);
   };
@@ -607,7 +613,10 @@ const PromptManager: React.FC = () => {
         </Tabs>
 
         {/* 편집/생성 다이얼로그 */}
-        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <Dialog open={editDialogOpen} onOpenChange={(open) => {
+          setEditDialogOpen(open);
+          if (!open) setModalError(null);
+        }}>
           <DialogContent className="sm:max-w-2xl overflow-hidden p-0 rounded-3xl border-none">
             <DialogHeader className="p-6 pb-0">
               <DialogTitle className="text-xl font-bold">{isEditMode ? '프롬프트 편집' : '새 프롬프트 생성'}</DialogTitle>
@@ -617,8 +626,15 @@ const PromptManager: React.FC = () => {
             </DialogHeader>
 
             <ScrollArea className="max-h-[60vh] p-6 pt-2">
+              {modalError && (
+                <Alert variant="destructive" className="mb-4 bg-destructive/10 text-destructive border-none rounded-2xl animate-in slide-in-from-top-2 duration-300">
+                  <Info className="h-4 w-4" />
+                  <AlertTitle className="font-bold">입력 오류</AlertTitle>
+                  <AlertDescription className="text-sm">{modalError}</AlertDescription>
+                </Alert>
+              )}
               {editingPrompt && (
-                <div className="space-y-6 pt-4">
+                <div className="space-y-6 pt-0">
                   <div className="space-y-2">
                     <Label htmlFor="prompt-name" className="text-sm font-bold">프롬프트 이름</Label>
                     <Input
@@ -651,7 +667,7 @@ const PromptManager: React.FC = () => {
                     <Label className="text-sm font-bold">카테고리</Label>
                     <Select
                       value={editingPrompt.category || 'custom'}
-                      onValueChange={(val) => setEditingPrompt({ ...editingPrompt, category: val as any })}
+                      onValueChange={(val) => setEditingPrompt({ ...editingPrompt, category: val as 'system' | 'assistant' | 'user' | 'custom' })}
                       disabled={isEditMode && selectedPrompt?.category === 'system'}
                     >
                       <SelectTrigger className="rounded-xl border-border/60">

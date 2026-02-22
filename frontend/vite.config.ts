@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
+import { COLORS } from './src/config/colors';
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -14,8 +16,8 @@ export default defineConfig({
         name: 'OneRAG',
         short_name: 'OneRAG',
         description: 'AI-powered document chat application with RAG',
-        theme_color: '#000000',
-        background_color: '#ffffff',
+        theme_color: COLORS.background.primary.dark,
+        background_color: COLORS.background.primary.light,
         display: 'standalone',
         scope: '/',
         start_url: '/',

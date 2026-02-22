@@ -17,7 +17,7 @@
  *   npx playwright test websocket-chat.spec.ts --debug   # 디버그 모드
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
 // 테스트 전역 설정
 test.describe('WebSocket 채팅 E2E 테스트', () => {

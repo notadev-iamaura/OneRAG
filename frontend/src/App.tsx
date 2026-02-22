@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { Loader2, AlertCircle, MessageSquare, UploadCloud, BrainCircuit, BarChart3, Settings } from 'lucide-react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { AppLayout } from './components/AppLayout';
@@ -11,7 +11,6 @@ import { WebSocketProvider } from './core/WebSocketProvider';
 import { ChatAPIProvider } from './core/ChatAPIProvider';
 import { createChatAPIService } from './services/chatAPIService';
 import { defaultChatAPIConfig } from './types/chatAPI';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
@@ -107,7 +106,7 @@ function LandingPageContent() {
               className={cn(
                 "group transition-all duration-500 cursor-pointer overflow-hidden",
                 "bg-card/40 backdrop-blur-md border border-border/40 hover:border-primary/40",
-                "hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] hover:-translate-y-2"
+                "hover:shadow-xl hover:shadow-black/10 hover:-translate-y-2"
               )}
               style={{ animationDelay: `${500 + (index * 100)}ms` }}
               onClick={() => navigate(module.path)}
@@ -141,29 +140,6 @@ function LandingPageContent() {
   );
 }
 
-// 404 페이지 컴포넌트
-function NotFoundPageContent() {
-  const navigate = useNavigate();
-
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center space-y-6 animate-in fade-in duration-500">
-      <div className="space-y-2">
-        <h2 className="text-6xl font-black text-muted-foreground/20 italic">404</h2>
-        <h3 className="text-2xl font-bold tracking-tight text-foreground">페이지를 찾을 수 없습니다</h3>
-        <p className="text-muted-foreground max-w-xs mx-auto">요청하신 페이지가 존재하지 않거나 이동되었을 수 있습니다.</p>
-      </div>
-      <Button
-        variant="default"
-        size="lg"
-        onClick={() => navigate('/bot')}
-        className="px-8 rounded-xl font-bold shadow-lg shadow-primary/20"
-      >
-        챗봇으로 돌아가기
-      </Button>
-    </div>
-  );
-}
-
 /**
  * ProtectedRoute - Feature Flag 기반 라우트 보호 컴포넌트
  * 모듈이 비활성화되어 있으면 404 페이지로 리다이렉션
@@ -193,6 +169,7 @@ function AppRoutes() {
   const isPromptsEnabled = useIsModuleEnabled('prompts');
   const isAnalysisEnabled = useIsModuleEnabled('analysis');
   const isAdminEnabled = useIsModuleEnabled('admin');
+  const location = useLocation();
 
   return (
     <Routes>
@@ -205,7 +182,7 @@ function AppRoutes() {
           path="/bot"
           element={
             <AppLayout>
-              <ErrorBoundary>
+              <ErrorBoundary key={location.pathname}>
                 <ProtectedRoute module="chatbot">
                   <Suspense fallback={<LoadingFallback />}>
                     <ChatPage />
@@ -223,7 +200,7 @@ function AppRoutes() {
           path="/upload"
           element={
             <AppLayout>
-              <ErrorBoundary>
+              <ErrorBoundary key={location.pathname}>
                 <ProtectedRoute module="documentManagement">
                   <Suspense fallback={<LoadingFallback />}>
                     <UploadPage />
@@ -241,7 +218,7 @@ function AppRoutes() {
           path="/prompts"
           element={
             <AppLayout>
-              <ErrorBoundary>
+              <ErrorBoundary key={location.pathname}>
                 <ProtectedRoute module="prompts">
                   <Suspense fallback={<LoadingFallback />}>
                     <PromptsPage />
@@ -259,7 +236,7 @@ function AppRoutes() {
           path="/analysis"
           element={
             <AppLayout>
-              <ErrorBoundary>
+              <ErrorBoundary key={location.pathname}>
                 <ProtectedRoute module="analysis">
                   <Suspense fallback={<LoadingFallback />}>
                     <AnalysisPage />
@@ -277,7 +254,7 @@ function AppRoutes() {
           path="/admin"
           element={
             <AppLayout>
-              <ErrorBoundary>
+              <ErrorBoundary key={location.pathname}>
                 <ProtectedRoute module="admin">
                   <Suspense fallback={<LoadingFallback />}>
                     <AdminDashboard />

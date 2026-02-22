@@ -1,5 +1,4 @@
 /* eslint-disable no-restricted-syntax */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * 모노톤 브랜드 설정 파일
  *
@@ -16,10 +15,10 @@ export const BRAND_CONFIG = {
 
   // 로고 설정
   logo: {
-    // 메인 로고 (라이트 모드용 - 투명 배경)
-    main: '/logo-light.png', // 헤더, 사이드바에 사용
+    // 메인 로고 (기본 OneRAG 텍스트로 대체하기 위해 빈 문자열 혹은 파비콘 할당)
+    main: '', // 텍스트 로고로 렌더링하도록 유도
     // 다크 모드용 로고
-    dark: '/logo-dark.png', // 다크 모드에서 사용
+    dark: '',
     // 파비콘
     favicon: '/chatbot.svg',
     // 다양한 크기의 아이콘
@@ -30,9 +29,9 @@ export const BRAND_CONFIG = {
     // 로고 대체 텍스트
     alt: 'OneRAG 로고',
     // 로고 사용 방식
-    type: 'image' as 'image' | 'svg-component', // 'image': 이미지 파일, 'svg-component': SVG 컴포넌트
+    type: 'text' as 'image' | 'svg-component' | 'text', // 'text': 텍스트 로고
     // SVG 컴포넌트를 사용할 경우 폴백 이미지
-    fallback: '/logo.png',
+    fallback: '/chatbot.svg',
   },
 
   // 그림자 설정 - 모노톤

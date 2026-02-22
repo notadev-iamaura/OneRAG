@@ -9,6 +9,7 @@ import {
 import { useChatSession } from '../hooks/chat/useChatSession';
 import { useChatMessages } from '../hooks/chat/useChatMessages';
 import { useChatInteraction } from '../hooks/chat/useChatInteraction';
+import { useOfflineDetection } from '../hooks/useOfflineDetection';
 
 // Components
 import { ChatDevTools } from './chat/ChatDevTools';
@@ -29,6 +30,7 @@ interface ChatTabProps {
 export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
   // API Logs State
   const [apiLogs, setApiLogs] = React.useState<ApiLog[]>([]);
+  const { isOnline } = useOfflineDetection();
 
   // 1. Session Logic Hook
   const {
@@ -177,6 +179,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
             handleSend={handleSend}
             handleStop={handleStop}
             handleKeyPress={handleKeyPress}
+            isOnline={isOnline}
           />
         </div>
       </div>

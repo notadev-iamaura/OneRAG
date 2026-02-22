@@ -1,10 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { StatsTab } from '../components/StatsTab';
 import { ProtectedRoute } from '../components/ProtectedRoute';
-import { useToast } from '@/hooks/use-toast';
 
 export default function AnalysisPage() {
-  const { toast } = useToast();
 
   return (
     <ProtectedRoute title="통계 분석 접근">

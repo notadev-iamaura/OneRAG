@@ -27,11 +27,10 @@ import {
   QdrantCollectionsResponse,
   QdrantCollectionSummary,
 } from '../types';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -78,15 +77,6 @@ const getStatusColorClass = (status?: string) => {
   if (['warning', 'degraded'].includes(normalized)) return 'text-amber-500';
   if (['unhealthy', 'error', 'offline', 'failed'].includes(normalized)) return 'text-destructive';
   return 'text-muted-foreground';
-};
-
-const getStatusBadgeVariant = (status?: string): "success" | "warning" | "destructive" | "secondary" | "outline" | "default" => {
-  const normalized = status?.toLowerCase();
-  if (!normalized) return 'outline';
-  if (['healthy', 'ready', 'ok', 'online', 'active', 'pass'].includes(normalized)) return 'outline'; // custom styling instead
-  if (['warning', 'degraded'].includes(normalized)) return 'secondary';
-  if (['unhealthy', 'error', 'offline', 'failed'].includes(normalized)) return 'destructive';
-  return 'outline';
 };
 
 interface FetchCollectionOptions {
@@ -542,7 +532,7 @@ export const StatsTab: React.FC = () => {
             </CardHeader>
             <CardContent className="pt-0">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {checksArray.map((check: any, idx: number) => (
+                {checksArray.map((check: { name: string; status: string; message: string; latency_ms?: number }, idx: number) => (
                   <div key={idx} className="flex items-center gap-3 p-4 rounded-2xl bg-white/60 dark:bg-black/20 border border-emerald-500/10 hover:shadow-md hover:shadow-emerald-500/5 transition-all group">
                     <div className={cn(
                       "w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-500",
@@ -606,9 +596,9 @@ const ResourceProgress = ({ label, icon, current, percent }: { label: string, ic
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-1000 ease-out",
-                percentage > 80 ? "bg-destructive shadow-[0_0_10px_rgba(239,68,68,0.5)]" :
-                  percentage > 60 ? "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]" :
-                    "bg-primary shadow-[0_0_10px_rgba(var(--primary),0.5)]"
+                percentage > 80 ? "bg-destructive shadow-lg shadow-destructive/50" :
+                  percentage > 60 ? "bg-amber-500 shadow-lg shadow-amber-500/50" :
+                    "bg-primary shadow-lg shadow-primary/50"
               )}
               style={{ width: `${percentage}%` }}
             />

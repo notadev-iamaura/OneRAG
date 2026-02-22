@@ -14,7 +14,6 @@ import {
     Avatar,
 } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from '@/lib/utils';
 
 interface ChatMessageListProps {
     messages: ChatMessage[];
