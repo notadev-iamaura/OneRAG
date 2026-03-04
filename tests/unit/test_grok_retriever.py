@@ -7,7 +7,6 @@ GrokRetriever의 초기화, 검색, 헬스 체크를 Mock 기반으로 검증합
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from app.lib.errors import ErrorCode

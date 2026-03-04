@@ -5,9 +5,7 @@ OllamaEmbedder의 초기화 및 기본 동작을 검증합니다.
 OpenRouterEmbedder 상속 관계와 Ollama 기본 설정을 확인합니다.
 """
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 
 class TestOllamaEmbedderInit:

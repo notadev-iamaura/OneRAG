@@ -711,8 +711,9 @@ class OllamaLLMClient(BaseLLMClient):
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
+            create_fn = client.chat.completions.create
             response = await asyncio.to_thread(
-                client.chat.completions.create,
+                create_fn,  # type: ignore[arg-type]
                 model=self.model,
                 messages=messages,
                 max_tokens=self.max_tokens,
@@ -755,7 +756,7 @@ class OllamaLLMClient(BaseLLMClient):
 
             response = client.chat.completions.create(
                 model=self.model,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
                 stream=True,
@@ -913,7 +914,7 @@ class LLMClientFactory:
         )
 
     def get_client(
-        self, provider: Literal["google", "openai", "anthropic", "openrouter"] | None = None
+        self, provider: Literal["google", "openai", "anthropic", "openrouter", "ollama"] | None = None
     ) -> BaseLLMClient:
         """
         LLM 클라이언트 가져오기

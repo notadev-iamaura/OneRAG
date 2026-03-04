@@ -63,6 +63,7 @@ chat:
     generation_error: "回答生成中にエラーが発生しました: {error_type}"
     rich_missing: "rich パッケージが必要です: uv pip install rich"
   prompt:
+    system_fallback: "あなたはOneRAGシステムのAIアシスタントです。\n提供された参考文書に基づいて、ユーザーの質問に正確かつ丁寧にお答えください。"
     doc_label: "[文書 {index}]"
     instruction: "上記の参考文書に基づいて質問に回答してください。"
 

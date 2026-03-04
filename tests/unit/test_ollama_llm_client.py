@@ -84,7 +84,7 @@ class TestOllamaLLMClientGenerate:
 
         client._client = mock_openai
 
-        result = await client.generate_text(
+        await client.generate_text(
             "질문", system_prompt="당신은 AI입니다.",
         )
 

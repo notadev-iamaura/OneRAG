@@ -58,11 +58,8 @@ def _get_system_prompt() -> str:
     if prompt:
         return prompt
 
-    # 폴백: 기본 한국어 프롬프트
-    return (
-        "당신은 OneRAG 시스템의 AI 어시스턴트입니다.\n"
-        "사용자의 질문에 대해 제공된 참고 문서를 기반으로 정확하고 친절하게 답변하세요."
-    )
+    # 폴백: 다국어 기본 프롬프트 (프롬프트 파일 누락 시)
+    return t("chat.prompt.system_fallback")
 
 
 def build_user_prompt(query: str, documents: list[dict[str, Any]]) -> str:
