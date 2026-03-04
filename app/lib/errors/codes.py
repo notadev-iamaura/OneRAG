@@ -164,6 +164,11 @@ class ErrorCode(str, Enum):
     GENERAL_003 = "GENERAL-003"  # 미구현 기능
     GENERAL_004 = "GENERAL-004"  # 내부 오류
 
+    # GROK (Grok Collections API) - 3개
+    GROK_001 = "GROK-001"  # xAI API 인증 실패
+    GROK_002 = "GROK-002"  # xAI API 속도 제한 초과
+    GROK_003 = "GROK-003"  # Grok Collections 검색 실패
+
     # STREAM (스트리밍) - 1개
     STREAM_001 = "STREAM-001"  # 스트리밍 중 오류 발생
 

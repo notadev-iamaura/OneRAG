@@ -122,6 +122,10 @@ class GenerationModule:
             self.default_model = self.provider_config.get(
                 "default_model", "gemini-2.0-flash"
             )
+        elif self.provider == "ollama":
+            self.default_model = self.provider_config.get(
+                "default_model", "llama3.2"
+            )
         else:
             self.default_model = self.openrouter_config.get(
                 "default_model", "anthropic/claude-sonnet-4-5"
@@ -174,6 +178,8 @@ class GenerationModule:
         # Provider별 클라이언트 초기화
         if self.provider == "google":
             self._initialize_google_client()
+        elif self.provider == "ollama":
+            self._initialize_ollama_client()
         else:
             self._initialize_openrouter_client()
 
@@ -209,6 +215,25 @@ class GenerationModule:
             http_client=httpx.Client(
                 timeout=httpx.Timeout(timeout, connect=10.0),
                 limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            ),
+        )
+
+    def _initialize_ollama_client(self) -> None:
+        """Ollama 로컬 LLM 클라이언트 초기화 (OpenAI 호환 API)"""
+        base_url = self.provider_config.get("base_url") or os.getenv(
+            "OLLAMA_BASE_URL", "http://localhost:11434"
+        )
+        timeout = self.provider_config.get("timeout", 300)
+
+        # Ollama OpenAI 호환 API 클라이언트 초기화
+        self.client = OpenAI(
+            base_url=f"{base_url}/v1",
+            api_key="not-needed",
+            timeout=timeout,
+            max_retries=0,
+            http_client=httpx.Client(
+                timeout=httpx.Timeout(timeout, connect=10.0),
+                limits=httpx.Limits(max_connections=5, max_keepalive_connections=3),
             ),
         )
 

@@ -1,0 +1,229 @@
+{
+  "documents": [
+    {
+      "id": "faq-001",
+      "title": "RAGシステムとは？",
+      "content": "RAG（Retrieval-Augmented Generation）は、検索拡張生成技術です。ユーザーの質問に対して、まず関連するドキュメントを検索し、そのドキュメントを基にLLMが回答を生成します。これにより、LLMのハルシネーション（hallucination）問題を軽減し、最新情報や企業内部のデータを活用した正確な回答が可能になります。",
+      "metadata": {
+        "category": "技術紹介",
+        "tags": ["RAG", "LLM", "検索"]
+      }
+    },
+    {
+      "id": "faq-002",
+      "title": "ハイブリッド検索の利点",
+      "content": "ハイブリッド検索は、Dense検索（意味ベース）とSparse検索（キーワードベース、BM25）を組み合わせた方式です。Dense検索は意味的に類似したドキュメントの検出に優れ、Sparse検索は正確なキーワードマッチングに優れています。両方式を組み合わせることで、「トヨタ 株価」のようにキーワードが重要な質問と、「最近注目されているIT企業」のように意味が重要な質問の両方に効果的に対応できます。",
+      "metadata": {
+        "category": "技術紹介",
+        "tags": ["ハイブリッド", "Dense", "Sparse", "BM25"]
+      }
+    },
+    {
+      "id": "faq-003",
+      "title": "Weaviate ベクトルデータベース",
+      "content": "Weaviateは、オープンソースのベクトルデータベースで、ハイブリッド検索をネイティブでサポートしています。Dockerで簡単にインストールでき、GraphQLとREST APIを提供します。RAG_StandardではWeaviateをデフォルトのベクトルDBとして使用し、日本語トークナイザー（Kagome）を有効化して日本語検索の品質を向上させています。",
+      "metadata": {
+        "category": "技術紹介",
+        "tags": ["Weaviate", "ベクトルDB", "Docker"]
+      }
+    },
+    {
+      "id": "faq-004",
+      "title": "LLM Fallback戦略",
+      "content": "RAG_Standardは、Multi-LLM Factoryを通じて複数のLLMプロバイダー（Google Gemini、OpenAI GPT、Anthropic Claude、OpenRouter）をサポートしています。メインのLLMに障害が発生した場合、設定された順序で自動的に別のLLMに切り替わります。例えば、Google Gemini → OpenAI GPT → Anthropic Claudeの順序でフォールバックが可能です。",
+      "metadata": {
+        "category": "技術紹介",
+        "tags": ["LLM", "Fallback", "高可用性"]
+      }
+    },
+    {
+      "id": "faq-005",
+      "title": "GraphRAG機能",
+      "content": "GraphRAGは、ドキュメント間の関係をグラフで表現し、検索品質を向上させる技術です。RAG_StandardのGraphRAGは、NetworkXベースのグラフストアにベクトル検索を統合し、「TOYOTA」という英語クエリで「トヨタ自動車」ノードを検出できます。これにより、関連するエンティティとその関係も合わせて検索し、より豊富なコンテキストを提供します。",
+      "metadata": {
+        "category": "技術紹介",
+        "tags": ["GraphRAG", "知識グラフ", "エンティティ"]
+      }
+    },
+    {
+      "id": "guide-start-001",
+      "title": "RAG_Standard インストール方法",
+      "content": "RAG_Standardをインストールする方法は3ステップです。\n\n**Step 1: クローンと依存パッケージのインストール**\n```bash\ngit clone https://github.com/youngouk/RAG_Standard.git\ncd RAG_Standard\nuv sync\n```\n\n**Step 2: 環境設定**\n```bash\ncp quickstart/.env.quickstart .env\n# .envファイルでGOOGLE_API_KEYを設定\n```\nGoogle AI Studioで無料APIキーを発行: https://aistudio.google.com/apikey\n\n**Step 3: 実行**\n```bash\nmake start\n```\n\n完了後、http://localhost:8000/docs でAPIテストが可能です。\n\n**必須要件:**\n- Docker 20.10+\n- Docker Compose v2+\n- uv パッケージマネージャー（自動インストール）",
+      "metadata": {
+        "category": "はじめに",
+        "tags": ["インストール", "quickstart", "docker", "uv"]
+      }
+    },
+    {
+      "id": "guide-start-002",
+      "title": "Start と Start Full の違い",
+      "content": "RAG_Standardは2つの実行モードを提供します。\n\n**Start（バックエンドのみ）**\n```bash\nmake start\n```\n- Weaviate（ベクトルDB）+ APIサーバーのみ実行\n- APIテスト、バックエンド開発に最適\n- http://localhost:8000/docs でSwagger UIを提供\n\n**Start Full（フロントエンド含む）**\n```bash\nmake start-full\n```\n- Weaviate + APIサーバー + Reactフロントエンド\n- 全体的なユーザー体験テストに最適\n- http://localhost:5173 でチャットボットUIを提供\n\n**コマンド比較:**\n| コマンド | サービス | ポート |\n|---------|---------|-------|\n| start | Weaviate, API | 8080, 8000 |\n| start-full | Weaviate, API, Frontend | 8080, 8000, 5173 |",
+      "metadata": {
+        "category": "はじめに",
+        "tags": ["start", "start-full", "比較"]
+      }
+    },
+    {
+      "id": "guide-start-003",
+      "title": "必須環境変数の設定",
+      "content": "RAG_Standardの実行に必要な環境変数です。\n\n**最小必須（Start）**\n```bash\n# LLM APIキー（1つのみ必須）\nGOOGLE_API_KEY=AIza...  # 推奨（無料枠あり）\n```\n\n**本番環境必須**\n```bash\n# セキュリティ\nFASTAPI_AUTH_KEY=your-secret-key-32chars  # 管理者API認証\nENVIRONMENT=production\n\n# LLM（最低1つ）\nGOOGLE_API_KEY=AIza...\nOPENAI_API_KEY=sk-...      # 任意\nANTHROPIC_API_KEY=sk-ant-...  # 任意\n```\n\n**ベクトルDB（デフォルト値は自動設定）**\n```bash\nWEAVIATE_URL=http://localhost:8080\nVECTOR_DB_PROVIDER=weaviate\n```\n\n**LLM選択**\n```bash\nLLM_PROVIDER=google          # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash   # モデル名\n```",
+      "metadata": {
+        "category": "はじめに",
+        "tags": ["環境変数", "設定", "APIキー"]
+      }
+    },
+    {
+      "id": "guide-start-004",
+      "title": "初回チャットテスト方法",
+      "content": "インストール後に初回チャットをテストする方法です。\n\n**方法1: Swagger UI（最も簡単）**\n1. http://localhost:8000/docs にアクセス\n2. POST /chat エンドポイントをクリック\n3. Try it outボタンをクリック\n4. Request bodyに入力:\n```json\n{\n  \"message\": \"RAGシステムとは何ですか？\",\n  \"stream\": false\n}\n```\n5. Executeボタンをクリック\n\n**方法2: curlコマンド**\n```bash\ncurl -X POST http://localhost:8000/chat \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"RAGシステムとは何ですか？\"}'\n```\n\n**方法3: Pythonコード**\n```python\nimport httpx\n\nresponse = httpx.post(\n    \"http://localhost:8000/chat\",\n    json={\"message\": \"RAGシステムとは何ですか？\"}\n)\nprint(response.json()[\"answer\"])\n```\n\n**期待される応答:**\nRAG（Retrieval-Augmented Generation）は、検索拡張生成技術です...",
+      "metadata": {
+        "category": "はじめに",
+        "tags": ["テスト", "チャット", "API"]
+      }
+    },
+    {
+      "id": "guide-api-001",
+      "title": "チャットAPI使用法 (POST /chat)",
+      "content": "RAGベースのチャットAPI使用法です。\n\n**エンドポイント:** POST /chat\n\n**リクエストボディ:**\n```json\n{\n  \"message\": \"質問内容\",\n  \"session_id\": \"optional-session-id\",\n  \"stream\": false,\n  \"use_agent\": false\n}\n```\n\n**パラメーター説明:**\n- `message`（必須）: ユーザーの質問\n- `session_id`（任意）: 会話履歴保持用セッションID\n- `stream`（任意）: trueの場合SSEストリーミング応答\n- `use_agent`（任意）: trueの場合Agentic RAGモード\n\n**レスポンス例:**\n```json\n{\n  \"answer\": \"RAGは検索拡張生成技術です...\",\n  \"sources\": [{\"title\": \"ドキュメント1\", \"score\": 0.95}],\n  \"metadata\": {\"tokens\": 150, \"latency_ms\": 1200}\n}\n```\n\n**レート制限:** 100回/15分",
+      "metadata": {
+        "category": "API使用法",
+        "tags": ["チャット", "API", "POST"]
+      }
+    },
+    {
+      "id": "guide-api-002",
+      "title": "ストリーミング応答の受信 (SSE)",
+      "content": "リアルタイムストリーミング応答を受信する方法です。\n\n**方法1: streamパラメーターを使用**\n```bash\ncurl -X POST http://localhost:8000/chat \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"質問\", \"stream\": true}'\n```\n\n**方法2: 専用ストリーミングエンドポイント**\n```bash\ncurl -X POST http://localhost:8000/chat/stream \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"質問\"}'\n```\n\n**SSEイベント形式:**\n```\nevent: chunk\ndata: {\"token\": \"RAG\"}\n\nevent: chunk\ndata: {\"token\": \"は \"}\n\nevent: sources\ndata: {\"sources\": [...]}\n\nevent: done\ndata: {\"total_tokens\": 150}\n```\n\n**JavaScriptの例:**\n```javascript\nconst eventSource = new EventSource('/chat/stream?message=質問');\neventSource.onmessage = (e) => {\n  const data = JSON.parse(e.data);\n  console.log(data.token);\n};\n```",
+      "metadata": {
+        "category": "API使用法",
+        "tags": ["ストリーミング", "SSE", "リアルタイム"]
+      }
+    },
+    {
+      "id": "guide-api-003",
+      "title": "WebSocket リアルタイムチャット",
+      "content": "WebSocketを利用した双方向リアルタイムチャットです。\n\n**エンドポイント:** ws://localhost:8000/chat-ws?session_id=xxx\n\n**接続とメッセージ送信:**\n```javascript\nconst ws = new WebSocket('ws://localhost:8000/chat-ws?session_id=user-123');\n\nws.onopen = () => {\n  ws.send(JSON.stringify({\n    type: 'message',\n    message_id: 'msg_001',\n    content: '質問です',\n    session_id: 'user-123'\n  }));\n};\n\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  switch(data.type) {\n    case 'stream_start':\n      console.log('応答開始');\n      break;\n    case 'stream_token':\n      console.log(data.token);\n      break;\n    case 'stream_sources':\n      console.log('出典:', data.sources);\n      break;\n    case 'stream_end':\n      console.log('完了');\n      break;\n  }\n};\n```\n\n**メッセージタイプ:**\n- `stream_start`: 応答開始\n- `stream_token`: トークン（index含む）\n- `stream_sources`: 参照ドキュメント\n- `stream_end`: 完了（トークン数、処理時間）\n- `stream_error`: エラー",
+      "metadata": {
+        "category": "API使用法",
+        "tags": ["WebSocket", "リアルタイム", "双方向"]
+      }
+    },
+    {
+      "id": "guide-api-004",
+      "title": "セッション管理API",
+      "content": "会話セッションを管理するAPIです。\n\n**セッション作成:**\n```bash\ncurl -X POST http://localhost:8000/chat/session\n```\n応答: `{\"session_id\": \"sess_abc123\"}`\n\n**チャット履歴の取得:**\n```bash\ncurl http://localhost:8000/chat/history/sess_abc123\n```\n応答: 該当セッションの全会話履歴\n\n**セッション情報の取得:**\n```bash\ncurl http://localhost:8000/chat/session/sess_abc123/info\n```\n応答: セッション作成時間、メッセージ数など\n\n**セッション削除:**\n```bash\ncurl -X DELETE http://localhost:8000/chat/session/sess_abc123\n```\n\n**Pythonの例:**\n```python\nimport httpx\n\nclient = httpx.Client(base_url=\"http://localhost:8000\")\n\n# セッション作成\nsession = client.post(\"/chat/session\").json()\nsession_id = session[\"session_id\"]\n\n# セッションでチャット\nresponse = client.post(\"/chat\", json={\n    \"message\": \"こんにちは\",\n    \"session_id\": session_id\n})\n```",
+      "metadata": {
+        "category": "API使用法",
+        "tags": ["セッション", "履歴", "管理"]
+      }
+    },
+    {
+      "id": "guide-api-005",
+      "title": "ドキュメントアップロードAPI",
+      "content": "RAG検索用のドキュメントをアップロードするAPIです。\n\n**単一ドキュメントのアップロード:**\n```bash\ncurl -X POST http://localhost:8000/upload/documents \\\n  -H \"Content-Type: multipart/form-data\" \\\n  -F \"file=@document.pdf\"\n```\n\n**対応ファイル形式:**\n- PDF (.pdf)\n- Word (.docx)\n- テキスト (.txt)\n- マークダウン (.md)\n- JSON (.json)\n\n**Pythonの例:**\n```python\nimport httpx\n\nwith open(\"document.pdf\", \"rb\") as f:\n    response = httpx.post(\n        \"http://localhost:8000/upload/documents\",\n        files={\"file\": f}\n    )\nprint(response.json())\n```\n\n**レート制限:** 20回/時間\n\n**注意事項:**\n- 最大ファイルサイズ: 10MB\n- アップロードされたドキュメントは自動的にチャンキングとベクトル化が行われます\n- 処理時間はドキュメントのサイズによって異なります",
+      "metadata": {
+        "category": "API使用法",
+        "tags": ["アップロード", "ドキュメント", "ファイル"]
+      }
+    },
+    {
+      "id": "guide-config-001",
+      "title": "LLMプロバイダーの選択と変更",
+      "content": "RAG_Standardは4種類のLLMプロバイダーをサポートしています。\n\n**対応プロバイダー:**\n| プロバイダー | 環境変数 | 特徴 |\n|------------|---------|------|\n| Google Gemini | GOOGLE_API_KEY | 推奨、無料枠あり |\n| OpenAI GPT | OPENAI_API_KEY | GPT-4, GPT-3.5 |\n| Anthropic Claude | ANTHROPIC_API_KEY | Claude 3 |\n| OpenRouter | OPENROUTER_API_KEY | 多様なモデル |\n\n**プロバイダーの変更:**\n```bash\n# .envファイルで\nLLM_PROVIDER=google       # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash\n```\n\n**自動フォールバック設定:**\napp/config/base.yamlファイルでfallback_orderを設定:\n```yaml\nllm:\n  fallback_order:\n    - google\n    - openai\n    - anthropic\n```\nメインのLLMが失敗した場合、順序通りに自動的に切り替わります。\n\n**モデル別推奨用途:**\n- gemini-2.0-flash: 高速応答、一般的な質問\n- gpt-4: 複雑な推論\n- claude-3-opus: 長文ドキュメントの分析",
+      "metadata": {
+        "category": "設定ガイド",
+        "tags": ["LLM", "設定", "プロバイダー"]
+      }
+    },
+    {
+      "id": "guide-config-002",
+      "title": "ベクトルDBの選択と設定",
+      "content": "RAG_Standardは6種類のベクトルDBをサポートしています。\n\n**対応DB:**\n| DB | ハイブリッド検索 | 特徴 |\n|----|---------------|------|\n| Weaviate（デフォルト） | Dense+BM25 | セルフホスティング、推奨 |\n| Chroma | Denseのみ | 軽量、開発用 |\n| Pinecone | Dense+Sparse | サーバーレス |\n| Qdrant | Dense+Full-Text | 高性能 |\n| pgvector | Denseのみ | PostgreSQL |\n| MongoDB | Denseのみ | Atlas |\n\n**DB変更:**\n```bash\n# .env\nVECTOR_DB_PROVIDER=weaviate  # weaviate, chroma, pinecone, qdrant, pgvector, mongodb\n```\n\n**Weaviate設定（推奨）:**\n```bash\nWEAVIATE_URL=http://localhost:8080\nWEAVIATE_GRPC_HOST=localhost\nWEAVIATE_GRPC_PORT=50051\n```\n\n**Pinecone設定:**\n```bash\nVECTOR_DB_PROVIDER=pinecone\nPINECONE_API_KEY=xxx\nPINECONE_ENVIRONMENT=us-east-1\nPINECONE_INDEX_NAME=rag-index\n```",
+      "metadata": {
+        "category": "設定ガイド",
+        "tags": ["ベクトルDB", "Weaviate", "設定"]
+      }
+    },
+    {
+      "id": "guide-config-003",
+      "title": "セキュリティ設定（本番環境）",
+      "content": "本番環境デプロイのためのセキュリティ設定です。\n\n**必須セキュリティ設定:**\n```bash\n# .env\nFASTAPI_AUTH_KEY=your-32-char-secret-key-here\nENVIRONMENT=production\n```\n\n**APIキー認証:**\nすべての管理者API（/api/admin/*）にはX-API-Keyヘッダーが必須:\n```bash\ncurl -H \"X-API-Key: your-key\" http://localhost:8000/api/admin/status\n```\n\n**PIIマスキング:**\n自動的に個人情報（電話番号、メールアドレスなど）をマスキング:\n- 入力: \"連絡先は090-1234-5678です\"\n- 出力: \"連絡先は090-****-5678です\"\n\n**CORS設定:**\napp/config/production.yamlでcors_originsを設定\n\n**レート制限:**\n- /chat: 100回/15分\n- /upload: 20回/時間\n- 管理者API: 無制限（認証済みリクエストのみ）",
+      "metadata": {
+        "category": "設定ガイド",
+        "tags": ["セキュリティ", "認証", "本番環境"]
+      }
+    },
+    {
+      "id": "guide-config-004",
+      "title": "YAML設定ファイルの構造",
+      "content": "RAG_StandardはYAMLベースの設定を使用します。\n\n**設定ファイルの場所:**\n```\napp/config/\n├── base.yaml            # 共通設定\n├── environments/\n│   ├── development.yaml # 開発環境\n│   ├── test.yaml       # テスト環境\n│   └── production.yaml  # 本番環境\n└── routing_rules_v2.yaml  # 動的ルーティング\n```\n\n**環境の自動検出:**\nENVIRONMENT環境変数に応じて該当する設定ファイルを自動ロード:\n- development: debug=true, reload=true\n- test: 短いタイムアウト\n- production: ワーカー4つ、キャッシュ有効化\n\n**主要設定の例（base.yaml）:**\n```yaml\nllm:\n  default_provider: google\n  temperature: 0.7\n  max_tokens: 2048\n\nretrieval:\n  enable_hybrid_search: true\n  enable_reranking: true\n  top_k: 5\n```\n\n**設定の優先順位:**\n環境変数 > environments/*.yaml > base.yaml",
+      "metadata": {
+        "category": "設定ガイド",
+        "tags": ["YAML", "設定", "環境"]
+      }
+    },
+    {
+      "id": "guide-arch-001",
+      "title": "プロジェクトディレクトリ構成",
+      "content": "RAG_Standardのコード構成です。\n\n**主要ディレクトリ:**\n```\napp/\n├── api/              # REST APIレイヤー\n│   ├── routers/      # エンドポイント（chat, admin, websocket）\n│   ├── services/     # ビジネスロジック\n│   └── schemas/      # Pydanticモデル\n│\n├── modules/core/     # RAGコアモジュール\n│   ├── retrieval/    # 検索（Weaviate, GraphRAG, リランキング）\n│   ├── generation/   # 回答生成（LLM, プロンプト）\n│   ├── privacy/      # PIIマスキング\n│   └── session/      # セッション管理\n│\n├── core/             # 中央依存関係\n│   └── di_container.py  # DIコンテナ\n│\n└── lib/              # 共通ユーティリティ\n    ├── llm_client.py # Multi-LLM Factory\n    └── auth.py       # 認証\n```\n\n**モジュール別の役割:**\n- api/: HTTPリクエスト/レスポンスの処理\n- modules/core/: RAGパイプラインロジック\n- core/: 依存性注入の管理\n- lib/: 共通ユーティリティ",
+      "metadata": {
+        "category": "アーキテクチャ",
+        "tags": ["構成", "ディレクトリ", "モジュール"]
+      }
+    },
+    {
+      "id": "guide-arch-002",
+      "title": "DIコンテナパターン",
+      "content": "RAG_StandardはDependency Injectionパターンを使用しています。\n\n**DIコンテナの場所:** app/core/di_container.py\n\n**主要プロバイダー（80+個）:**\n- Singleton: 70個（設定、DB接続など）\n- Factory: 10個（動的生成）\n\n**8つの主要Factory:**\n| Factory | 役割 |\n|---------|------|\n| LLMClientFactory | Multi-LLM管理 |\n| VectorStoreFactory | ベクトルDB選択 |\n| RetrieverFactory | 検索戦略 |\n| AgentFactory | エージェント生成 |\n| EvaluatorFactory | 評価システム |\n| GraphRAGFactory | グラフ検索 |\n\n**使用例:**\n```python\nfrom app.core.di_container import get_container\n\ncontainer = get_container()\n\n# LLMクライアントの取得\nllm = container.llm_factory()\n\n# ベクトルストアの取得\nvector_store = container.vector_store_factory()\n```\n\n**利点:**\n- テスト時にMockで簡単に置換可能\n- ランタイムに実装体を変更可能\n- 循環依存の防止",
+      "metadata": {
+        "category": "アーキテクチャ",
+        "tags": ["DI", "依存性注入", "コンテナ"]
+      }
+    },
+    {
+      "id": "guide-arch-003",
+      "title": "RAGパイプラインの流れ",
+      "content": "RAG_Standardの質問-回答の流れです。\n\n**パイプラインのステップ:**\n```\n1. ユーザーの質問入力\n       ↓\n2. RetrievalOrchestrator（検索）\n   ├─ Weaviate ベクトル検索\n   ├─ BM25 キーワード検索\n   ├─ GraphRAG 関係検索\n   └─ RRF スコア統合\n       ↓\n3. JinaColBERT リランキング\n       ↓\n4. GenerationModule（回答生成）\n   └─ LLMFactory → Gemini/GPT/Claude\n       ↓\n5. SelfRAGOrchestrator（品質評価）\n   └─ 品質未達の場合、再検索/再生成\n       ↓\n6. PIIProcessor（個人情報マスキング）\n       ↓\n7. レスポンス返却\n```\n\n**コアモジュール:**\n- RetrievalOrchestrator: 複数の検索方法を統合\n- GenerationModule: プロンプト管理 + LLM呼び出し\n- SelfRAGOrchestrator: 回答品質の自動評価\n- PIIProcessor: 個人情報の保護",
+      "metadata": {
+        "category": "アーキテクチャ",
+        "tags": ["パイプライン", "RAG", "フロー"]
+      }
+    },
+    {
+      "id": "guide-arch-004",
+      "title": "新機能の追加方法",
+      "content": "RAG_Standardに新機能を追加する方法です。\n\n**新しいAPIエンドポイントの追加:**\n1. app/api/schemas/にリクエスト/レスポンスモデルを定義\n2. app/api/routers/にルーターを作成\n3. main.pyにルーターを登録\n\n**新しいベクトルDBの追加:**\n1. app/infrastructure/storage/vector/にクラスを作成:\n```python\nclass MyVectorStore(VectorStore):\n    async def search(self, query, limit):\n        # 実装\n        pass\n```\n2. VectorStoreFactoryに登録\n3. 環境変数 VECTOR_DB_PROVIDER=mydb を設定\n\n**新しいLLMプロバイダーの追加:**\n1. app/lib/llm_client.pyのFactoryに追加\n2. 環境変数を設定\n3. llm.fallback_orderに追加\n\n**テストの作成:**\n```python\n# tests/unit/test_my_feature.py\ndef test_my_feature():\n    # Given\n    # When\n    # Then\n    assert result == expected\n```\n\n**ルール:**\n- 既存のインターフェース（Protocol）に準拠\n- DIコンテナを通じた依存性注入\n- ユニットテスト必須",
+      "metadata": {
+        "category": "アーキテクチャ",
+        "tags": ["拡張", "開発", "追加"]
+      }
+    },
+    {
+      "id": "guide-dev-001",
+      "title": "テストの実行方法",
+      "content": "RAG_Standardのテスト実行方法です。\n\n**全テスト（1,370+個）:**\n```bash\nmake test\n```\n\n**カバレッジレポート:**\n```bash\nmake test-cov\n# htmlcov/index.htmlで結果を確認\n```\n\n**特定のテストのみ実行:**\n```bash\n# ファイル単位\nuv run pytest tests/unit/api/test_chat.py -v\n\n# 関数単位\nuv run pytest tests/unit/api/test_chat.py::test_chat_endpoint -v\n\n# マーカー基準\nuv run pytest -m \"not slow\" -v  # slow を除外\n```\n\n**テスト構成:**\n```\ntests/\n├── unit/           # ユニットテスト\n├── integration/    # 統合テスト\n├── e2e/           # E2Eテスト\n└── fixtures/       # テストデータ\n```\n\n**テスト作成ルール:**\n- Given-When-Thenパターン\n- Mock使用時はunittest.mockまたはpytest-mock\n- 非同期テスト: @pytest.mark.asyncio",
+      "metadata": {
+        "category": "開発者ガイド",
+        "tags": ["テスト", "pytest", "カバレッジ"]
+      }
+    },
+    {
+      "id": "guide-dev-002",
+      "title": "コード品質管理",
+      "content": "RAG_Standardのコード品質管理ツールです。\n\n**リンティング（Ruff）:**\n```bash\nmake lint         # 検査のみ\nmake lint-fix     # 自動修正\n```\n\n**型チェック（Mypy）:**\n```bash\nmake type-check   # 厳格モード\n```\n\n**コードフォーマット（Black）:**\n```bash\nmake format\n```\n\n**依存関係のレイヤー検証:**\n```bash\nmake lint-imports  # Import Linter\n```\n\n**CI/CDチェックリスト:**\nすべてのPRは以下を通過する必要があります:\n1. make lint - リンティングエラーなし\n2. make type-check - 型エラーなし\n3. make test - テスト100%通過\n4. make lint-imports - レイヤー違反なし\n\n**pre-commit設定:**\n```bash\npre-commit install\n# コミット時に自動的にlint、formatが実行\n```",
+      "metadata": {
+        "category": "開発者ガイド",
+        "tags": ["品質", "リンティング", "型チェック"]
+      }
+    },
+    {
+      "id": "guide-dev-003",
+      "title": "コントリビュート方法",
+      "content": "RAG_Standardへのコントリビュート方法です。\n\n**コントリビュート手順:**\n1. Fork → Clone\n2. ブランチ作成: git checkout -b feature/my-feature\n3. コード作成 + テスト\n4. 品質検査: make lint && make test\n5. コミット: Udacityスタイル\n6. PR作成\n\n**コミットメッセージスタイル:**\n```\n機能: 新機能の追加\n修正: バグ修正\n文書: ドキュメント更新\nスタイル: コードフォーマット\nリファクタ: コードのリファクタリング\nテスト: テストの追加/修正\n```\n\n**コーディングルール:**\n- 型ヒント必須\n- 日本語docstring\n- ユニットテスト必須\n- TODOコメント禁止（発見次第すぐに解決）\n\n**PRチェックリスト:**\n- テストの追加/修正\n- ドキュメント更新\n- make lint 通過\n- make test 通過\n- コードレビュー反映\n\n**ライセンス:** MIT",
+      "metadata": {
+        "category": "開発者ガイド",
+        "tags": ["コントリビュート", "PR", "オープンソース"]
+      }
+    }
+  ]
+}

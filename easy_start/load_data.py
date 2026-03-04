@@ -4,9 +4,11 @@ ChromaDB 전용 샘플 데이터 로드 스크립트
 
 Docker 없이 ChromaDB에 샘플 FAQ 데이터를 적재합니다.
 BM25 인덱스도 함께 구축하여 하이브리드 검색을 준비합니다.
+다국어 지원: 선택된 언어에 맞는 샘플 데이터를 자동으로 로드합니다.
 
 사용법:
     uv run python easy_start/load_data.py
+    EASY_START_LANG=en uv run python easy_start/load_data.py
 
 의존성:
     - chromadb: 벡터 스토어
@@ -25,11 +27,31 @@ from typing import Any
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from easy_start.i18n import get_sample_data_path, t  # noqa: E402
+
 # 상수
 CHROMA_PERSIST_DIR = str(project_root / "easy_start" / ".chroma_data")
 BM25_INDEX_PATH = str(project_root / "easy_start" / ".bm25_index.pkl")
 COLLECTION_NAME = "documents"
-SAMPLE_DATA_PATH = project_root / "quickstart" / "sample_data.json"
+
+
+def _resolve_sample_data_path() -> Path:
+    """
+    언어별 샘플 데이터 파일 경로 반환
+
+    i18n 모듈의 get_sample_data_path() 사용.
+    없으면 기존 quickstart/sample_data.json으로 폴백.
+
+    Returns:
+        샘플 데이터 JSON 파일 경로
+    """
+    path = get_sample_data_path()
+    if path.exists():
+        return path
+
+    # 폴백: 기존 경로
+    fallback = project_root / "quickstart" / "sample_data.json"
+    return fallback
 
 
 def prepare_documents(raw_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -192,26 +214,27 @@ def load_bm25_index(path: str = BM25_INDEX_PATH) -> Any:
 
 async def main() -> None:
     """메인 실행 함수"""
-    print("🚀 Docker-Free 로컬 퀵스타트 - 데이터 로드")
+    print(f"🚀 {t('load.title')}")
     print()
 
     # 1. 샘플 데이터 로드
-    if not SAMPLE_DATA_PATH.exists():
-        print(f"❌ 샘플 데이터 파일을 찾을 수 없습니다: {SAMPLE_DATA_PATH}")
+    sample_data_path = _resolve_sample_data_path()
+    if not sample_data_path.exists():
+        print(f"❌ {t('load.sample_not_found', path=sample_data_path)}")
         sys.exit(1)
 
-    with open(SAMPLE_DATA_PATH, encoding="utf-8") as f:
+    with open(sample_data_path, encoding="utf-8") as f:
         data = json.load(f)
 
     raw_docs = data.get("documents", [])
-    print(f"📄 {len(raw_docs)}개 문서 로드")
+    print(f"📄 {t('load.docs_loaded', count=len(raw_docs))}")
 
     # 2. 문서 준비
     docs = prepare_documents(raw_docs)
 
     # 3. 로컬 임베딩 생성
-    print("🤖 로컬 임베딩 모델 초기화 중...")
-    print("   (첫 실행 시 모델 다운로드에 1-2분 소요)")
+    print(f"🤖 {t('load.embedding_init')}")
+    print(f"   {t('load.embedding_init_note')}")
 
     from app.modules.core.embedding.local_embedder import LocalEmbedder
 
@@ -221,30 +244,30 @@ async def main() -> None:
         batch_size=32,
         normalize=True,
     )
-    print("✅ 임베딩 모델 로드 완료!")
+    print(f"✅ {t('load.embedding_ready')}")
 
     texts = [doc["content"] for doc in docs]
-    print("🔢 임베딩 생성 중...")
+    print(f"🔢 {t('load.embedding_generating')}")
     embeddings = embedder.embed_documents(texts)
-    print(f"✅ {len(embeddings)}개 임베딩 생성 완료 (차원: {len(embeddings[0])})")
+    print(f"✅ {t('load.embedding_done', count=len(embeddings), dim=len(embeddings[0]))}")
 
     # 4. ChromaDB 적재
-    print("📥 ChromaDB에 문서 적재 중...")
+    print(f"📥 {t('load.chroma_loading')}")
     count = await load_to_chroma(docs, embeddings)
-    print(f"✅ {count}개 문서 ChromaDB 적재 완료 ({CHROMA_PERSIST_DIR})")
+    print(f"✅ {t('load.chroma_done', count=count, path=CHROMA_PERSIST_DIR)}")
 
     # 5. BM25 인덱스 구축
-    print("🔍 BM25 인덱스 구축 중...")
+    print(f"🔍 {t('load.bm25_building')}")
     try:
         bm25_index = build_bm25_index(docs)
         save_bm25_index(bm25_index)
-        print(f"✅ BM25 인덱스 구축 완료 ({BM25_INDEX_PATH})")
+        print(f"✅ {t('load.bm25_done', path=BM25_INDEX_PATH)}")
     except ImportError:
-        print("⚠️  BM25 의존성 미설치 - Dense 검색만 사용합니다")
-        print("   설치: uv sync --extra bm25")
+        print(f"⚠️  {t('load.bm25_missing')}")
+        print(f"   {t('load.bm25_install')}")
 
     print()
-    print("🎉 데이터 로드 완료!")
+    print(f"🎉 {t('load.complete')}")
 
 
 if __name__ == "__main__":

@@ -284,6 +284,7 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
         batch_size: int = 100,
         site_url: str = "",
         app_name: str = "RAG-Chatbot",
+        base_url: str | None = None,
     ):
         """
         OpenRouter Embedder 초기화
@@ -295,6 +296,7 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
             batch_size: 배치 임베딩 생성 시 배치 크기
             site_url: OpenRouter 권장 헤더 - 사이트 URL
             app_name: OpenRouter 권장 헤더 - 앱 이름
+            base_url: OpenAI 호환 API 엔드포인트 (기본: OpenRouter URL)
         """
         # BaseEmbedder 초기화
         super().__init__(
@@ -306,12 +308,15 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
         # OpenRouter API 키 확인
         resolved_api_key = api_key or os.getenv("OPENROUTER_API_KEY")
 
+        # API 엔드포인트 (기본: OpenRouter)
+        resolved_base_url = base_url or OPENROUTER_BASE_URL
+
         # OpenRouter 클라이언트 초기화
         self.client = None
         if resolved_api_key:
             try:
                 self.client = OpenAI(
-                    base_url=OPENROUTER_BASE_URL,
+                    base_url=resolved_base_url,
                     api_key=resolved_api_key,
                     default_headers={
                         "HTTP-Referer": site_url,

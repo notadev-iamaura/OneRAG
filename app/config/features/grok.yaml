@@ -1,0 +1,24 @@
+# Grok Collections API 설정
+# 기능: xAI의 관리형 하이브리드 검색 서비스
+# 사용: VECTOR_DB_PROVIDER=grok + XAI_API_KEY 설정
+# 참고: 문서 관리는 xAI 콘솔에서 수행 (https://console.x.ai)
+
+grok:
+  # xAI API 키
+  api_key: "${XAI_API_KEY:}"
+
+  # 검색 대상 Collection ID 리스트
+  # xAI 콘솔에서 Collection 생성 후 ID 입력
+  collection_ids: []
+
+  # Grok 모델 (검색 쿼리 처리용)
+  model: "grok-3"
+
+  # API 엔드포인트
+  api_url: "https://api.x.ai/v1/chat/completions"
+
+  # 타임아웃 (초)
+  timeout: 30
+
+  # 기본 검색 결과 수
+  top_k: 10

@@ -1,0 +1,229 @@
+{
+  "documents": [
+    {
+      "id": "faq-001",
+      "title": "What is a RAG System?",
+      "content": "RAG (Retrieval-Augmented Generation) is a technique that augments text generation with information retrieval. When a user asks a question, the system first retrieves relevant documents and then generates an answer based on those documents using an LLM. This reduces the hallucination problem of LLMs and enables accurate answers by leveraging up-to-date information or internal enterprise data.",
+      "metadata": {
+        "category": "Technology Overview",
+        "tags": ["RAG", "LLM", "retrieval"]
+      }
+    },
+    {
+      "id": "faq-002",
+      "title": "Advantages of Hybrid Search",
+      "content": "Hybrid search combines Dense search (semantic-based) and Sparse search (keyword-based, BM25). Dense search excels at finding semantically similar documents, while Sparse search excels at exact keyword matching. By combining both methods, hybrid search effectively handles both keyword-critical queries like 'Samsung stock price' and meaning-critical queries like 'trending IT companies' equally well.",
+      "metadata": {
+        "category": "Technology Overview",
+        "tags": ["hybrid", "Dense", "Sparse", "BM25"]
+      }
+    },
+    {
+      "id": "faq-003",
+      "title": "Weaviate Vector Database",
+      "content": "Weaviate is an open-source vector database that natively supports hybrid search. It can be easily installed with Docker and provides GraphQL and REST APIs. RAG_Standard uses Weaviate as the default vector DB, with the Kagome Korean tokenizer enabled to improve Korean search quality.",
+      "metadata": {
+        "category": "Technology Overview",
+        "tags": ["Weaviate", "vector DB", "Docker"]
+      }
+    },
+    {
+      "id": "faq-004",
+      "title": "LLM Fallback Strategy",
+      "content": "RAG_Standard supports multiple LLM providers through its Multi-LLM Factory (Google Gemini, OpenAI GPT, Anthropic Claude, OpenRouter). When the primary LLM fails, the system automatically switches to the next provider in the configured order. For example, fallback can occur from Google Gemini to OpenAI GPT to Anthropic Claude in sequence.",
+      "metadata": {
+        "category": "Technology Overview",
+        "tags": ["LLM", "Fallback", "high availability"]
+      }
+    },
+    {
+      "id": "faq-005",
+      "title": "GraphRAG Features",
+      "content": "GraphRAG is a technique that represents relationships between documents as a graph to improve search quality. RAG_Standard's GraphRAG integrates vector search with a NetworkX-based graph store, enabling you to find a 'Samsung Electronics' node using the English query 'SAMSUNG'. This allows searching for related entities and their relationships, providing richer context.",
+      "metadata": {
+        "category": "Technology Overview",
+        "tags": ["GraphRAG", "knowledge graph", "entity"]
+      }
+    },
+    {
+      "id": "guide-start-001",
+      "title": "How to Install RAG_Standard",
+      "content": "Installing RAG_Standard is a 3-step process.\n\n**Step 1: Clone and Install Dependencies**\n```bash\ngit clone https://github.com/youngouk/RAG_Standard.git\ncd RAG_Standard\nuv sync\n```\n\n**Step 2: Configure Environment**\n```bash\ncp quickstart/.env.quickstart .env\n# Set GOOGLE_API_KEY in the .env file\n```\nGet a free API key from Google AI Studio: https://aistudio.google.com/apikey\n\n**Step 3: Run**\n```bash\nmake start\n```\n\nAfter completion, test the API at http://localhost:8000/docs.\n\n**Requirements:**\n- Docker 20.10+\n- Docker Compose v2+\n- uv package manager (auto-installed)",
+      "metadata": {
+        "category": "Getting Started",
+        "tags": ["installation", "quickstart", "docker", "uv"]
+      }
+    },
+    {
+      "id": "guide-start-002",
+      "title": "Difference Between Start and Start Full",
+      "content": "RAG_Standard provides two execution modes.\n\n**Start (Backend Only)**\n```bash\nmake start\n```\n- Runs only Weaviate (vector DB) + API server\n- Suitable for API testing and backend development\n- Swagger UI available at http://localhost:8000/docs\n\n**Start Full (Including Frontend)**\n```bash\nmake start-full\n```\n- Weaviate + API server + React frontend\n- Suitable for full user experience testing\n- Chatbot UI available at http://localhost:5173\n\n**Command Comparison:**\n| Command | Services | Ports |\n|---------|----------|-------|\n| start | Weaviate, API | 8080, 8000 |\n| start-full | Weaviate, API, Frontend | 8080, 8000, 5173 |",
+      "metadata": {
+        "category": "Getting Started",
+        "tags": ["start", "start-full", "comparison"]
+      }
+    },
+    {
+      "id": "guide-start-003",
+      "title": "Required Environment Variables",
+      "content": "Environment variables required to run RAG_Standard.\n\n**Minimum Required (Start)**\n```bash\n# LLM API key (only one required)\nGOOGLE_API_KEY=AIza...  # Recommended (free tier)\n```\n\n**Production Required**\n```bash\n# Security\nFASTAPI_AUTH_KEY=your-secret-key-32chars  # Admin API authentication\nENVIRONMENT=production\n\n# LLM (at least 1)\nGOOGLE_API_KEY=AIza...\nOPENAI_API_KEY=sk-...      # Optional\nANTHROPIC_API_KEY=sk-ant-...  # Optional\n```\n\n**Vector DB (defaults auto-configured)**\n```bash\nWEAVIATE_URL=http://localhost:8080\nVECTOR_DB_PROVIDER=weaviate\n```\n\n**LLM Selection**\n```bash\nLLM_PROVIDER=google          # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash   # Model name\n```",
+      "metadata": {
+        "category": "Getting Started",
+        "tags": ["environment variables", "configuration", "API key"]
+      }
+    },
+    {
+      "id": "guide-start-004",
+      "title": "Testing Your First Chat",
+      "content": "How to test your first chat after installation.\n\n**Method 1: Swagger UI (Easiest)**\n1. Visit http://localhost:8000/docs\n2. Click the POST /chat endpoint\n3. Click the Try it out button\n4. Enter in Request body:\n```json\n{\n  \"message\": \"What is a RAG system?\",\n  \"stream\": false\n}\n```\n5. Click the Execute button\n\n**Method 2: curl Command**\n```bash\ncurl -X POST http://localhost:8000/chat \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"What is a RAG system?\"}'\n```\n\n**Method 3: Python Code**\n```python\nimport httpx\n\nresponse = httpx.post(\n    \"http://localhost:8000/chat\",\n    json={\"message\": \"What is a RAG system?\"}\n)\nprint(response.json()[\"answer\"])\n```\n\n**Expected Response:**\nRAG (Retrieval-Augmented Generation) is a technique that augments text generation with information retrieval...",
+      "metadata": {
+        "category": "Getting Started",
+        "tags": ["test", "chat", "API"]
+      }
+    },
+    {
+      "id": "guide-api-001",
+      "title": "Chat API Usage (POST /chat)",
+      "content": "How to use the RAG-based Chat API.\n\n**Endpoint:** POST /chat\n\n**Request Body:**\n```json\n{\n  \"message\": \"Your question\",\n  \"session_id\": \"optional-session-id\",\n  \"stream\": false,\n  \"use_agent\": false\n}\n```\n\n**Parameter Description:**\n- `message` (required): User question\n- `session_id` (optional): Session ID for conversation history\n- `stream` (optional): If true, SSE streaming response\n- `use_agent` (optional): If true, Agentic RAG mode\n\n**Response Example:**\n```json\n{\n  \"answer\": \"RAG is a retrieval-augmented generation technique...\",\n  \"sources\": [{\"title\": \"Document 1\", \"score\": 0.95}],\n  \"metadata\": {\"tokens\": 150, \"latency_ms\": 1200}\n}\n```\n\n**Rate Limit:** 100 requests / 15 minutes",
+      "metadata": {
+        "category": "API Usage",
+        "tags": ["chat", "API", "POST"]
+      }
+    },
+    {
+      "id": "guide-api-002",
+      "title": "Receiving Streaming Responses (SSE)",
+      "content": "How to receive real-time streaming responses.\n\n**Method 1: Using the stream parameter**\n```bash\ncurl -X POST http://localhost:8000/chat \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"Your question\", \"stream\": true}'\n```\n\n**Method 2: Dedicated streaming endpoint**\n```bash\ncurl -X POST http://localhost:8000/chat/stream \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"Your question\"}'\n```\n\n**SSE Event Format:**\n```\nevent: chunk\ndata: {\"token\": \"RAG\"}\n\nevent: chunk\ndata: {\"token\": \" is \"}\n\nevent: sources\ndata: {\"sources\": [...]}\n\nevent: done\ndata: {\"total_tokens\": 150}\n```\n\n**JavaScript Example:**\n```javascript\nconst eventSource = new EventSource('/chat/stream?message=question');\neventSource.onmessage = (e) => {\n  const data = JSON.parse(e.data);\n  console.log(data.token);\n};\n```",
+      "metadata": {
+        "category": "API Usage",
+        "tags": ["streaming", "SSE", "real-time"]
+      }
+    },
+    {
+      "id": "guide-api-003",
+      "title": "WebSocket Real-Time Chat",
+      "content": "Bidirectional real-time chat using WebSocket.\n\n**Endpoint:** ws://localhost:8000/chat-ws?session_id=xxx\n\n**Connection and Message Sending:**\n```javascript\nconst ws = new WebSocket('ws://localhost:8000/chat-ws?session_id=user-123');\n\nws.onopen = () => {\n  ws.send(JSON.stringify({\n    type: 'message',\n    message_id: 'msg_001',\n    content: 'This is a question',\n    session_id: 'user-123'\n  }));\n};\n\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  switch(data.type) {\n    case 'stream_start':\n      console.log('Response started');\n      break;\n    case 'stream_token':\n      console.log(data.token);\n      break;\n    case 'stream_sources':\n      console.log('Sources:', data.sources);\n      break;\n    case 'stream_end':\n      console.log('Complete');\n      break;\n  }\n};\n```\n\n**Message Types:**\n- `stream_start`: Response started\n- `stream_token`: Token (includes index)\n- `stream_sources`: Reference documents\n- `stream_end`: Complete (token count, processing time)\n- `stream_error`: Error",
+      "metadata": {
+        "category": "API Usage",
+        "tags": ["WebSocket", "real-time", "bidirectional"]
+      }
+    },
+    {
+      "id": "guide-api-004",
+      "title": "Session Management API",
+      "content": "APIs for managing conversation sessions.\n\n**Create Session:**\n```bash\ncurl -X POST http://localhost:8000/chat/session\n```\nResponse: `{\"session_id\": \"sess_abc123\"}`\n\n**Get Chat History:**\n```bash\ncurl http://localhost:8000/chat/history/sess_abc123\n```\nResponse: All conversation history for the session\n\n**Get Session Info:**\n```bash\ncurl http://localhost:8000/chat/session/sess_abc123/info\n```\nResponse: Session creation time, message count, etc.\n\n**Delete Session:**\n```bash\ncurl -X DELETE http://localhost:8000/chat/session/sess_abc123\n```\n\n**Python Example:**\n```python\nimport httpx\n\nclient = httpx.Client(base_url=\"http://localhost:8000\")\n\n# Create session\nsession = client.post(\"/chat/session\").json()\nsession_id = session[\"session_id\"]\n\n# Chat with session\nresponse = client.post(\"/chat\", json={\n    \"message\": \"Hello\",\n    \"session_id\": session_id\n})\n```",
+      "metadata": {
+        "category": "API Usage",
+        "tags": ["session", "history", "management"]
+      }
+    },
+    {
+      "id": "guide-api-005",
+      "title": "Document Upload API",
+      "content": "APIs for uploading documents for RAG search.\n\n**Single Document Upload:**\n```bash\ncurl -X POST http://localhost:8000/upload/documents \\\n  -H \"Content-Type: multipart/form-data\" \\\n  -F \"file=@document.pdf\"\n```\n\n**Supported File Formats:**\n- PDF (.pdf)\n- Word (.docx)\n- Text (.txt)\n- Markdown (.md)\n- JSON (.json)\n\n**Python Example:**\n```python\nimport httpx\n\nwith open(\"document.pdf\", \"rb\") as f:\n    response = httpx.post(\n        \"http://localhost:8000/upload/documents\",\n        files={\"file\": f}\n    )\nprint(response.json())\n```\n\n**Rate Limit:** 20 requests / hour\n\n**Notes:**\n- Maximum file size: 10MB\n- Uploaded documents are automatically chunked and vectorized\n- Processing time varies depending on document size",
+      "metadata": {
+        "category": "API Usage",
+        "tags": ["upload", "document", "file"]
+      }
+    },
+    {
+      "id": "guide-config-001",
+      "title": "Selecting and Changing LLM Provider",
+      "content": "RAG_Standard supports 4 LLM Providers.\n\n**Supported Providers:**\n| Provider | Environment Variable | Features |\n|----------|---------------------|----------|\n| Google Gemini | GOOGLE_API_KEY | Recommended, free tier |\n| OpenAI GPT | OPENAI_API_KEY | GPT-4, GPT-3.5 |\n| Anthropic Claude | ANTHROPIC_API_KEY | Claude 3 |\n| OpenRouter | OPENROUTER_API_KEY | Various models |\n\n**Changing Provider:**\n```bash\n# In .env file\nLLM_PROVIDER=google       # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash\n```\n\n**Auto Fallback Configuration:**\nSet fallback_order in app/config/base.yaml:\n```yaml\nllm:\n  fallback_order:\n    - google\n    - openai\n    - anthropic\n```\nAutomatically switches to the next provider when the primary LLM fails.\n\n**Recommended Use Cases by Model:**\n- gemini-2.0-flash: Fast response, general questions\n- gpt-4: Complex reasoning\n- claude-3-opus: Long document analysis",
+      "metadata": {
+        "category": "Configuration Guide",
+        "tags": ["LLM", "configuration", "Provider"]
+      }
+    },
+    {
+      "id": "guide-config-002",
+      "title": "Selecting and Configuring Vector DB",
+      "content": "RAG_Standard supports 6 vector databases.\n\n**Supported DBs:**\n| DB | Hybrid Search | Features |\n|----|--------------|----------|\n| Weaviate (default) | Dense+BM25 | Self-hosted, recommended |\n| Chroma | Dense only | Lightweight, for development |\n| Pinecone | Dense+Sparse | Serverless |\n| Qdrant | Dense+Full-Text | High performance |\n| pgvector | Dense only | PostgreSQL |\n| MongoDB | Dense only | Atlas |\n\n**Changing DB:**\n```bash\n# .env\nVECTOR_DB_PROVIDER=weaviate  # weaviate, chroma, pinecone, qdrant, pgvector, mongodb\n```\n\n**Weaviate Configuration (Recommended):**\n```bash\nWEAVIATE_URL=http://localhost:8080\nWEAVIATE_GRPC_HOST=localhost\nWEAVIATE_GRPC_PORT=50051\n```\n\n**Pinecone Configuration:**\n```bash\nVECTOR_DB_PROVIDER=pinecone\nPINECONE_API_KEY=xxx\nPINECONE_ENVIRONMENT=us-east-1\nPINECONE_INDEX_NAME=rag-index\n```",
+      "metadata": {
+        "category": "Configuration Guide",
+        "tags": ["vector DB", "Weaviate", "configuration"]
+      }
+    },
+    {
+      "id": "guide-config-003",
+      "title": "Security Configuration (Production)",
+      "content": "Security settings for production deployment.\n\n**Required Security Settings:**\n```bash\n# .env\nFASTAPI_AUTH_KEY=your-32-char-secret-key-here\nENVIRONMENT=production\n```\n\n**API Key Authentication:**\nAll admin APIs (/api/admin/*) require the X-API-Key header:\n```bash\ncurl -H \"X-API-Key: your-key\" http://localhost:8000/api/admin/status\n```\n\n**PII Masking:**\nAutomatically masks personal information (phone numbers, emails, etc.):\n- Input: \"My contact is 010-1234-5678\"\n- Output: \"My contact is 010-****-5678\"\n\n**CORS Configuration:**\nSet cors_origins in app/config/production.yaml\n\n**Rate Limiting:**\n- /chat: 100 requests / 15 minutes\n- /upload: 20 requests / hour\n- Admin APIs: Unlimited (authenticated requests only)",
+      "metadata": {
+        "category": "Configuration Guide",
+        "tags": ["security", "authentication", "production"]
+      }
+    },
+    {
+      "id": "guide-config-004",
+      "title": "YAML Configuration File Structure",
+      "content": "RAG_Standard uses YAML-based configuration.\n\n**Configuration File Locations:**\n```\napp/config/\n├── base.yaml            # Common settings\n├── environments/\n│   ├── development.yaml # Development environment\n│   ├── test.yaml       # Test environment\n│   └── production.yaml  # Production\n└── routing_rules_v2.yaml  # Dynamic routing\n```\n\n**Automatic Environment Detection:**\nAutomatically loads the corresponding config file based on the ENVIRONMENT variable:\n- development: debug=true, reload=true\n- test: Short timeouts\n- production: 4 workers, caching enabled\n\n**Key Configuration Example (base.yaml):**\n```yaml\nllm:\n  default_provider: google\n  temperature: 0.7\n  max_tokens: 2048\n\nretrieval:\n  enable_hybrid_search: true\n  enable_reranking: true\n  top_k: 5\n```\n\n**Configuration Priority:**\nEnvironment variables > environments/*.yaml > base.yaml",
+      "metadata": {
+        "category": "Configuration Guide",
+        "tags": ["YAML", "configuration", "environment"]
+      }
+    },
+    {
+      "id": "guide-arch-001",
+      "title": "Project Directory Structure",
+      "content": "The code structure of RAG_Standard.\n\n**Main Directories:**\n```\napp/\n├── api/              # REST API Layer\n│   ├── routers/      # Endpoints (chat, admin, websocket)\n│   ├── services/     # Business Logic\n│   └── schemas/      # Pydantic Models\n│\n├── modules/core/     # RAG Core Modules\n│   ├── retrieval/    # Search (Weaviate, GraphRAG, Reranking)\n│   ├── generation/   # Answer Generation (LLM, Prompts)\n│   ├── privacy/      # PII Masking\n│   └── session/      # Session Management\n│\n├── core/             # Central Dependencies\n│   └── di_container.py  # DI Container\n│\n└── lib/              # Common Utilities\n    ├── llm_client.py # Multi-LLM Factory\n    └── auth.py       # Authentication\n```\n\n**Module Roles:**\n- api/: HTTP request/response handling\n- modules/core/: RAG pipeline logic\n- core/: Dependency injection management\n- lib/: Common utilities",
+      "metadata": {
+        "category": "Architecture",
+        "tags": ["structure", "directory", "module"]
+      }
+    },
+    {
+      "id": "guide-arch-002",
+      "title": "DI Container Pattern",
+      "content": "RAG_Standard uses the Dependency Injection pattern.\n\n**DI Container Location:** app/core/di_container.py\n\n**Key Providers (80+):**\n- Singleton: 70 (configurations, DB connections, etc.)\n- Factory: 10 (dynamic creation)\n\n**8 Key Factories:**\n| Factory | Role |\n|---------|------|\n| LLMClientFactory | Multi-LLM Management |\n| VectorStoreFactory | Vector DB Selection |\n| RetrieverFactory | Search Strategy |\n| AgentFactory | Agent Creation |\n| EvaluatorFactory | Evaluation System |\n| GraphRAGFactory | Graph Search |\n\n**Usage Example:**\n```python\nfrom app.core.di_container import get_container\n\ncontainer = get_container()\n\n# Get LLM client\nllm = container.llm_factory()\n\n# Get vector store\nvector_store = container.vector_store_factory()\n```\n\n**Benefits:**\n- Easy replacement with Mocks during testing\n- Implementation swappable at runtime\n- Prevents circular dependencies",
+      "metadata": {
+        "category": "Architecture",
+        "tags": ["DI", "dependency injection", "Container"]
+      }
+    },
+    {
+      "id": "guide-arch-003",
+      "title": "RAG Pipeline Flow",
+      "content": "The question-answer flow in RAG_Standard.\n\n**Pipeline Steps:**\n```\n1. User question input\n       ↓\n2. RetrievalOrchestrator (Search)\n   ├─ Weaviate vector search\n   ├─ BM25 keyword search\n   ├─ GraphRAG relationship search\n   └─ RRF score merging\n       ↓\n3. JinaColBERT Reranking\n       ↓\n4. GenerationModule (Answer Generation)\n   └─ LLMFactory → Gemini/GPT/Claude\n       ↓\n5. SelfRAGOrchestrator (Quality Evaluation)\n   └─ Re-search/re-generate if quality insufficient\n       ↓\n6. PIIProcessor (PII Masking)\n       ↓\n7. Return Response\n```\n\n**Core Modules:**\n- RetrievalOrchestrator: Merges multiple search methods\n- GenerationModule: Prompt management + LLM invocation\n- SelfRAGOrchestrator: Automatic answer quality evaluation\n- PIIProcessor: Personal information protection",
+      "metadata": {
+        "category": "Architecture",
+        "tags": ["pipeline", "RAG", "flow"]
+      }
+    },
+    {
+      "id": "guide-arch-004",
+      "title": "How to Add New Features",
+      "content": "How to add new features to RAG_Standard.\n\n**Adding a New API Endpoint:**\n1. Define request/response models in app/api/schemas/\n2. Create a router in app/api/routers/\n3. Register the router in main.py\n\n**Adding a New Vector DB:**\n1. Create a class in app/infrastructure/storage/vector/:\n```python\nclass MyVectorStore(VectorStore):\n    async def search(self, query, limit):\n        # Implementation\n        pass\n```\n2. Register in VectorStoreFactory\n3. Set environment variable VECTOR_DB_PROVIDER=mydb\n\n**Adding a New LLM Provider:**\n1. Add to the Factory in app/lib/llm_client.py\n2. Configure environment variables\n3. Add to llm.fallback_order\n\n**Writing Tests:**\n```python\n# tests/unit/test_my_feature.py\ndef test_my_feature():\n    # Given\n    # When\n    # Then\n    assert result == expected\n```\n\n**Rules:**\n- Follow existing interfaces (Protocol)\n- Dependency injection via DI Container\n- Unit tests required",
+      "metadata": {
+        "category": "Architecture",
+        "tags": ["extension", "development", "adding"]
+      }
+    },
+    {
+      "id": "guide-dev-001",
+      "title": "How to Run Tests",
+      "content": "How to run tests in RAG_Standard.\n\n**Run All Tests (1,370+):**\n```bash\nmake test\n```\n\n**Coverage Report:**\n```bash\nmake test-cov\n# View results at htmlcov/index.html\n```\n\n**Run Specific Tests:**\n```bash\n# By file\nuv run pytest tests/unit/api/test_chat.py -v\n\n# By function\nuv run pytest tests/unit/api/test_chat.py::test_chat_endpoint -v\n\n# By marker\nuv run pytest -m \"not slow\" -v  # Exclude slow\n```\n\n**Test Structure:**\n```\ntests/\n├── unit/           # Unit Tests\n├── integration/    # Integration Tests\n├── e2e/           # E2E Tests\n└── fixtures/       # Test Data\n```\n\n**Test Writing Rules:**\n- Given-When-Then pattern\n- Use unittest.mock or pytest-mock for mocking\n- Async tests: @pytest.mark.asyncio",
+      "metadata": {
+        "category": "Developer Guide",
+        "tags": ["test", "pytest", "coverage"]
+      }
+    },
+    {
+      "id": "guide-dev-002",
+      "title": "Code Quality Management",
+      "content": "Code quality tools for RAG_Standard.\n\n**Linting (Ruff):**\n```bash\nmake lint         # Check only\nmake lint-fix     # Auto-fix\n```\n\n**Type Checking (Mypy):**\n```bash\nmake type-check   # Strict mode\n```\n\n**Code Formatting (Black):**\n```bash\nmake format\n```\n\n**Dependency Layer Verification:**\n```bash\nmake lint-imports  # Import Linter\n```\n\n**CI/CD Checklist:**\nAll PRs must pass the following:\n1. make lint - No linting errors\n2. make type-check - No type errors\n3. make test - 100% test pass\n4. make lint-imports - No layer violations\n\n**pre-commit Setup:**\n```bash\npre-commit install\n# Automatically runs lint, format on commit\n```",
+      "metadata": {
+        "category": "Developer Guide",
+        "tags": ["quality", "linting", "type checking"]
+      }
+    },
+    {
+      "id": "guide-dev-003",
+      "title": "How to Contribute",
+      "content": "How to contribute to RAG_Standard.\n\n**Contribution Process:**\n1. Fork → Clone\n2. Create branch: git checkout -b feature/my-feature\n3. Write code + tests\n4. Quality check: make lint && make test\n5. Commit: Udacity style\n6. Create PR\n\n**Commit Message Style:**\n```\nfeat: Add new feature\nfix: Fix bug\ndocs: Update documentation\nstyle: Code formatting\nrefactor: Code refactoring\ntest: Add/modify tests\n```\n\n**Code Rules:**\n- Type hints required\n- Korean docstrings\n- Unit tests required\n- No TODO comments (resolve immediately)\n\n**PR Checklist:**\n- Tests added/modified\n- Documentation updated\n- make lint passes\n- make test passes\n- Code review addressed\n\n**License:** MIT",
+      "metadata": {
+        "category": "Developer Guide",
+        "tags": ["contributing", "PR", "open source"]
+      }
+    }
+  ]
+}

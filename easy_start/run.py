@@ -6,11 +6,15 @@ Docker-Free 로컬 퀵스타트 원클릭 실행
 2단계: 데이터 로드 (미적재 시)
 3단계: CLI 챗봇 실행
 
+다국어 지원: EASY_START_LANG 환경변수로 언어 선택 (ko, en, ja, zh)
+
 사용법:
     uv run python easy_start/run.py
+    EASY_START_LANG=en uv run python easy_start/run.py
 """
 
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +22,8 @@ from pathlib import Path
 # 프로젝트 루트
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
+
+from easy_start.i18n import t  # noqa: E402
 
 # 상수
 REQUIRED_PACKAGES = ["chromadb", "sentence_transformers", "rich"]
@@ -87,72 +93,85 @@ def check_data_loaded(chroma_dir: str = CHROMA_DATA_DIR) -> bool:
 
 def main() -> None:
     """메인 실행 함수"""
+    # EASY_START_LANG 환경변수 전파 (서브프로세스에서도 사용)
+    lang_env = os.environ.get("EASY_START_LANG", "")
+
     print("=" * 50)
-    print("🚀 OneRAG Docker-Free 로컬 퀵스타트")
+    print(f"🚀 {t('run.title')}")
     print("=" * 50)
     print()
 
     # Step 1: 의존성 확인
-    print("[1/3] 의존성 확인 중...")
+    print(t("run.step1"))
     ok, missing = check_dependencies()
     if not ok:
-        print(f"❌ 필수 패키지 미설치: {', '.join(missing)}")
-        print("   설치: uv sync")
+        print(f"❌ {t('run.missing_packages', packages=', '.join(missing))}")
+        print(f"   {t('run.install_hint')}")
         sys.exit(1)
-    print("  ✅ 필수 의존성 확인 완료")
+    print(f"  ✅ {t('run.deps_ok')}")
 
     optional_missing = check_optional_dependencies()
     if optional_missing:
-        print(f"  ⚠️  BM25 의존성 미설치: {', '.join(optional_missing)}")
-        print("     하이브리드 검색을 위해 설치 권장: uv sync --extra bm25")
-        print("     (Dense 검색만으로도 동작합니다)")
+        print(f"  ⚠️  {t('run.bm25_missing', packages=', '.join(optional_missing))}")
+        print(f"     {t('run.bm25_install_hint')}")
+        print(f"     {t('run.bm25_note')}")
     else:
-        print("  ✅ BM25 하이브리드 검색 활성화")
+        print(f"  ✅ {t('run.bm25_active')}")
     print()
 
     # Step 2: .env 파일 확인
     if not check_env_file():
-        print("[2/3] .env 파일 생성 중...")
+        print(t("run.step2_create"))
         local_env = project_root / "easy_start" / ".env.local"
         if local_env.exists():
             import shutil
             shutil.copy(str(local_env), ENV_FILE_PATH)
-            print("  ✅ .env 파일 복사 완료")
-            print("  ⚠️  .env 파일을 열어 API 키를 하나 설정하세요!")
-            print("     Option 1: GOOGLE_API_KEY - https://aistudio.google.com/apikey (무료)")
-            print("     Option 2: OPENROUTER_API_KEY - https://openrouter.ai/keys")
+            print(f"  ✅ {t('run.env_copied')}")
+            print(f"  ⚠️  {t('run.env_warning')}")
+            print(f"     {t('run.env_option1')}")
+            print(f"     {t('run.env_option2')}")
             print()
         else:
-            print("  ❌ easy_start/.env.local 파일을 찾을 수 없습니다")
+            print(f"  ❌ {t('run.env_not_found')}")
             sys.exit(1)
     else:
-        print("[2/3] .env 파일 확인 완료")
+        print(t("run.step2_ok"))
         print()
 
     # Step 3: 데이터 로드 (미적재 시)
+    # 서브프로세스에 언어 설정 전파
+    env = os.environ.copy()
+    if lang_env:
+        env["EASY_START_LANG"] = lang_env
+
     if not check_data_loaded():
-        print("[3/3] 샘플 데이터 로드 중...")
+        print(t("run.step3_loading"))
         print()
         load_script = project_root / "easy_start" / "load_data.py"
         result = subprocess.run(
             [sys.executable, str(load_script)],
             cwd=str(project_root),
+            env=env,
         )
         if result.returncode != 0:
-            print("❌ 데이터 로드 실패")
+            print(f"❌ {t('run.load_failed')}")
             sys.exit(1)
         print()
     else:
-        print("[3/3] 데이터 이미 적재됨 (건너뜀)")
+        print(t("run.step3_skip"))
         print()
 
     # Step 4: CLI 챗봇 실행
     print("=" * 50)
-    print("💬 CLI 챗봇을 시작합니다...")
+    print(f"💬 {t('run.starting_chat')}")
     print("=" * 50)
     print()
     chat_script = project_root / "easy_start" / "chat.py"
-    result = subprocess.run([sys.executable, str(chat_script)], cwd=str(project_root))
+    result = subprocess.run(
+        [sys.executable, str(chat_script)],
+        cwd=str(project_root),
+        env=env,
+    )
     sys.exit(result.returncode)
 
 

@@ -4,9 +4,11 @@ Rich CLI 대화형 RAG 챗봇
 
 Docker 없이 로컬에서 RAG 하이브리드 검색 + LLM 답변 생성을 체험하는 CLI 인터페이스입니다.
 FastAPI 서버 없이 직접 검색 파이프라인과 LLM을 호출합니다.
+다국어 지원: EASY_START_LANG 환경변수로 언어 선택 (ko, en, ja, zh)
 
 사용법:
     uv run python easy_start/chat.py
+    EASY_START_LANG=en uv run python easy_start/chat.py
 
 의존성:
     - rich: CLI UI
@@ -26,6 +28,7 @@ from typing import Any
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from easy_start.i18n import load_prompt, t  # noqa: E402
 from easy_start.load_data import (  # noqa: E402
     BM25_INDEX_PATH,
     CHROMA_PERSIST_DIR,
@@ -40,16 +43,26 @@ GEMINI_MODEL = "gemini-3-flash-preview"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OPENROUTER_MODEL = "google/gemini-3-flash-preview"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
+OLLAMA_DEFAULT_MODEL = "llama3.2"
+OLLAMA_BASE_URL = "http://localhost:11434"
 
-# RAG 시스템 프롬프트
-SYSTEM_PROMPT = """당신은 OneRAG 시스템의 AI 어시스턴트입니다.
-사용자의 질문에 대해 제공된 참고 문서를 기반으로 정확하고 친절하게 답변하세요.
 
-규칙:
-- 참고 문서에 있는 정보만 사용하여 답변하세요.
-- 문서에 없는 내용은 "제공된 문서에서 해당 정보를 찾을 수 없습니다"라고 답하세요.
-- 답변은 자연스러운 한국어로 작성하세요.
-- 핵심 내용을 먼저 말하고, 필요하면 부연 설명을 추가하세요."""
+def _get_system_prompt() -> str:
+    """
+    언어별 시스템 프롬프트 로드
+
+    Returns:
+        시스템 프롬프트 문자열
+    """
+    prompt = load_prompt("system_prompt")
+    if prompt:
+        return prompt
+
+    # 폴백: 기본 한국어 프롬프트
+    return (
+        "당신은 OneRAG 시스템의 AI 어시스턴트입니다.\n"
+        "사용자의 질문에 대해 제공된 참고 문서를 기반으로 정확하고 친절하게 답변하세요."
+    )
 
 
 def build_user_prompt(query: str, documents: list[dict[str, Any]]) -> str:
@@ -66,24 +79,54 @@ def build_user_prompt(query: str, documents: list[dict[str, Any]]) -> str:
     context_parts = []
     for i, doc in enumerate(documents, 1):
         content = doc.get("content", "")
-        context_parts.append(f"[문서 {i}]\n{content}")
+        doc_label = t("chat.prompt.doc_label", index=i)
+        context_parts.append(f"{doc_label}\n{content}")
 
     context = "\n\n".join(context_parts)
+    instruction = t("chat.prompt.instruction")
 
-    return f"""<참고문서>
+    return f"""<context>
 {context}
-</참고문서>
+</context>
 
-<질문>
+<question>
 {query}
-</질문>
+</question>
 
-위 참고문서를 바탕으로 질문에 답변해주세요."""
+{instruction}"""
+
+
+def _check_ollama_available(base_url: str = OLLAMA_BASE_URL) -> bool:
+    """
+    Ollama 서버 가용성 확인
+
+    /api/tags 엔드포인트를 호출하여 Ollama 서버가 실행 중인지 확인합니다.
+
+    Args:
+        base_url: Ollama 서버 URL
+
+    Returns:
+        서버 가용 여부
+    """
+    try:
+        import urllib.error
+        import urllib.request
+
+        req = urllib.request.Request(
+            f"{base_url}/api/tags",
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def _resolve_llm_providers() -> list[tuple[str, str, str, str]]:
     """
-    사용 가능한 LLM provider 목록 반환 (Gemini 우선)
+    사용 가능한 LLM provider 목록 반환 (Gemini > OpenRouter > Ollama 우선순위)
+
+    Ollama는 API 키 없이 로컬 서버 감지로 자동 추가됩니다.
 
     Returns:
         (base_url, api_key, model, provider_name) 튜플 리스트
@@ -97,6 +140,14 @@ def _resolve_llm_providers() -> list[tuple[str, str, str, str]]:
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
     if openrouter_key:
         providers.append((OPENROUTER_API_URL, openrouter_key, OPENROUTER_MODEL, "OpenRouter"))
+
+    # Ollama 자동감지: API 키 기반 provider가 없을 때 또는 fallback으로 추가
+    ollama_url = os.getenv("OLLAMA_BASE_URL", OLLAMA_BASE_URL)
+    if _check_ollama_available(ollama_url):
+        ollama_model = os.getenv("OLLAMA_MODEL", OLLAMA_DEFAULT_MODEL)
+        providers.append(
+            (f"{ollama_url}/v1", "not-needed", ollama_model, "Ollama")
+        )
 
     return providers
 
@@ -131,7 +182,7 @@ async def _call_llm(
         response = await client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": _get_system_prompt()},
                 {"role": "user", "content": user_prompt},
             ],
             max_tokens=2048,
@@ -180,7 +231,9 @@ async def generate_answer(query: str, documents: list[dict[str, Any]]) -> str | 
             continue
 
     # 모든 provider 실패
-    return _format_llm_error(last_error or Exception("알 수 없는 오류"), last_provider_name)
+    return _format_llm_error(
+        last_error or Exception(t("chat.errors.unknown")), last_provider_name,
+    )
 
 
 def _format_llm_error(error: Exception, provider_name: str = "Gemini") -> str:
@@ -206,24 +259,18 @@ def _format_llm_error(error: Exception, provider_name: str = "Gemini") -> str:
 
     # API 할당량 초과 (429)
     if "429" in error_str or "quota" in error_str.lower():
-        return (
-            "API 호출 한도를 초과했습니다.\n"
-            f"해결: 잠시 후 다시 시도하거나, {key_url} 에서 새 키를 발급받으세요."
-        )
+        return t("chat.errors.quota_exceeded", url=key_url)
 
     # 인증 실패 (401/403)
     if "401" in error_str or "403" in error_str or "auth" in error_str.lower():
-        return (
-            "API 키 인증에 실패했습니다.\n"
-            f"해결: {key_env} 환경변수가 올바른지 확인하세요."
-        )
+        return t("chat.errors.auth_failed", env=key_env)
 
     # 타임아웃
     if "timeout" in error_str.lower() or "timed out" in error_str.lower():
-        return "API 응답 시간이 초과되었습니다.\n해결: 잠시 후 다시 시도하세요."
+        return t("chat.errors.timeout")
 
     # 기타 에러
-    return f"답변 생성 중 오류가 발생했습니다: {type(error).__name__}"
+    return t("chat.errors.generation_error", error_type=type(error).__name__)
 
 
 async def search_documents(
@@ -334,59 +381,67 @@ async def chat_loop() -> None:
         from rich.table import Table
         from rich.text import Text
     except ImportError:
-        print("rich 패키지가 필요합니다: uv pip install rich")
+        print(t("chat.errors.rich_missing"))
         sys.exit(1)
 
     console = Console()
 
     # ── 헤더 출력 ──
     header = Text()
-    header.append("OneRAG 로컬 챗봇\n", style="bold white")
-    header.append("하이브리드 검색 (벡터 + 한글 키워드) + LLM 답변 생성\n\n", style="dim")
+    header.append(t("chat.header.title") + "\n", style="bold white")
+    header.append(t("chat.header.subtitle") + "\n\n", style="dim")
     header.append("  quit", style="bold yellow")
-    header.append("  종료  ", style="dim")
+    header.append(f"  {t('chat.header.quit_label')}  ", style="dim")
     header.append("help", style="bold yellow")
-    header.append("  도움말  ", style="dim")
+    header.append(f"  {t('chat.header.help_label')}  ", style="dim")
     header.append("search", style="bold yellow")
-    header.append("  검색만 (답변 생성 없이)", style="dim")
+    header.append(f"  {t('chat.header.search_label')}", style="dim")
     console.print(Panel(header, title="[bold cyan]OneRAG[/bold cyan]", border_style="cyan"))
     console.print()
 
     # ── 컴포넌트 초기화 ──
-    with console.status("[bold cyan]검색 엔진 초기화 중...", spinner="dots"):
+    with console.status(f"[bold cyan]{t('chat.status.initializing')}", spinner="dots"):
         retriever, bm25_index, merger = initialize_components()
         llm_available, llm_provider_name = _check_llm_available()
 
     # 상태 테이블 출력
     status_table = Table(show_header=False, box=None, padding=(0, 2))
-    status_table.add_column("항목", style="dim")
-    status_table.add_column("상태")
+    status_table.add_column(t("chat.status.item"), style="dim")
+    status_table.add_column(t("chat.status.state"))
 
-    hybrid_status = "[green]활성[/green]" if bm25_index else "[yellow]비활성 (Dense만)[/yellow]"
+    hybrid_status = (
+        f"[green]{t('chat.status.hybrid_active')}[/green]"
+        if bm25_index
+        else f"[yellow]{t('chat.status.hybrid_inactive')}[/yellow]"
+    )
     llm_status = (
-        f"[green]활성 ({llm_provider_name})[/green]"
+        f"[green]{t('chat.status.llm_active', provider=llm_provider_name)}[/green]"
         if llm_available
-        else "[yellow]비활성[/yellow]"
+        else f"[yellow]{t('chat.status.llm_inactive')}[/yellow]"
     )
 
-    status_table.add_row("하이브리드 검색", hybrid_status)
-    status_table.add_row("LLM 답변 생성", llm_status)
+    status_table.add_row(t("chat.status.hybrid_search"), hybrid_status)
+    status_table.add_row(t("chat.status.llm_generation"), llm_status)
 
-    console.print(Panel(status_table, title="[bold]초기화 완료[/bold]", border_style="green"))
+    console.print(Panel(
+        status_table,
+        title=f"[bold]{t('chat.status.init_complete')}[/bold]",
+        border_style="green",
+    ))
 
     if not llm_available:
         console.print()
         console.print(
             Panel(
-                "[bold yellow]LLM 답변 생성을 사용하려면 API 키를 하나 설정하세요.[/bold yellow]\n\n"
-                "[bold]Option 1: Google Gemini (추천 - 무료)[/bold]\n"
-                "  1. https://aistudio.google.com/apikey 에서 API 키 발급\n"
-                "  2. [bold]export GOOGLE_API_KEY=\"발급받은키\"[/bold]\n\n"
-                "[bold]Option 2: OpenRouter (다양한 모델)[/bold]\n"
-                "  1. https://openrouter.ai/keys 에서 API 키 발급\n"
-                "  2. [bold]export OPENROUTER_API_KEY=\"발급받은키\"[/bold]\n\n"
-                "[dim]API 키 없이도 검색 기능은 정상 작동합니다.[/dim]",
-                title="[yellow]API 키 안내[/yellow]",
+                f"[bold yellow]{t('chat.api_key_guide.message')}[/bold yellow]\n\n"
+                f"[bold]{t('chat.api_key_guide.option1_title')}[/bold]\n"
+                f"  {t('chat.api_key_guide.option1_step1')}\n"
+                f"  [bold]{t('chat.api_key_guide.option1_step2')}[/bold]\n\n"
+                f"[bold]{t('chat.api_key_guide.option2_title')}[/bold]\n"
+                f"  {t('chat.api_key_guide.option2_step1')}\n"
+                f"  [bold]{t('chat.api_key_guide.option2_step2')}[/bold]\n\n"
+                f"[dim]{t('chat.api_key_guide.note')}[/dim]",
+                title=f"[yellow]{t('chat.api_key_guide.title')}[/yellow]",
                 border_style="yellow",
             )
         )
@@ -397,38 +452,53 @@ async def chat_loop() -> None:
     while True:
         try:
             console.print("[bold cyan]─[/bold cyan]" * 50)
-            query = console.input("[bold yellow]질문 > [/bold yellow]").strip()
+            query = console.input(f"[bold yellow]{t('chat.input.prompt')}[/bold yellow]").strip()
         except (EOFError, KeyboardInterrupt):
-            console.print("\n[dim]종료합니다.[/dim]")
+            console.print(f"\n[dim]{t('chat.input.exit_message')}[/dim]")
             break
 
         if not query:
             continue
         if query.lower() in ("quit", "exit", "q"):
-            console.print("[dim]종료합니다.[/dim]")
+            console.print(f"[dim]{t('chat.input.exit_message')}[/dim]")
             break
 
         if query.lower() == "help":
             help_table = Table(
-                title="사용 가능한 명령어",
+                title=t("chat.help.title"),
                 show_header=True,
                 header_style="bold",
                 border_style="dim",
             )
-            help_table.add_column("명령어", style="bold yellow", width=12)
-            help_table.add_column("설명")
-            help_table.add_row("quit / q", "챗봇 종료")
-            help_table.add_row("help", "이 도움말 표시")
-            help_table.add_row("search <질문>", "검색만 수행 (LLM 답변 없이)")
+            help_table.add_column(t("chat.help.cmd_header"), style="bold yellow", width=12)
+            help_table.add_column(t("chat.help.desc_header"))
+            help_table.add_row("quit / q", t("chat.help.quit_desc"))
+            help_table.add_row("help", t("chat.help.help_desc"))
+            help_table.add_row("search <query>", t("chat.help.search_desc"))
 
             console.print()
             console.print(help_table)
             console.print()
-            console.print("[bold]예시 질문:[/bold]")
-            console.print("  [dim]-[/dim] RAG 시스템이란?")
-            console.print("  [dim]-[/dim] 설치 방법 알려줘")
-            console.print("  [dim]-[/dim] 하이브리드 검색이 뭐야?")
-            console.print("  [dim]-[/dim] 환경변수 설정 어떻게 해?")
+            console.print(f"[bold]{t('chat.help.example_title')}[/bold]")
+
+            # 동적 예시 질문 출력
+            from easy_start.i18n import Translator
+            translator = Translator.get_instance()
+            examples_data = translator.translate("chat.help.examples")
+            if isinstance(examples_data, str) and examples_data != "chat.help.examples":
+                # 단일 문자열인 경우
+                console.print(f"  [dim]-[/dim] {examples_data}")
+            else:
+                # YAML 리스트인 경우 - 원본 데이터에서 직접 접근
+                translations = translator._translations
+                examples = (
+                    translations.get("chat", {})
+                    .get("help", {})
+                    .get("examples", [])
+                )
+                for ex in examples:
+                    console.print(f"  [dim]-[/dim] {ex}")
+
             console.print()
             continue
 
@@ -438,12 +508,12 @@ async def chat_loop() -> None:
             search_only = True
             query = query[7:].strip()
             if not query:
-                console.print("[dim]검색어를 입력하세요. 예: search RAG란?[/dim]")
+                console.print(f"[dim]{t('chat.input.search_hint')}[/dim]")
                 continue
 
         # ── 검색 실행 ──
         console.print()
-        with console.status("[bold cyan]검색 중...", spinner="dots"):
+        with console.status(f"[bold cyan]{t('chat.input.searching')}", spinner="dots"):
             results = await search_documents(
                 query=query,
                 retriever=retriever,
@@ -451,14 +521,14 @@ async def chat_loop() -> None:
 
         if not results:
             console.print(
-                Panel("[dim]검색 결과가 없습니다.[/dim]", border_style="dim")
+                Panel(f"[dim]{t('chat.input.no_results')}[/dim]", border_style="dim")
             )
             console.print()
             continue
 
         # ── 검색 결과 테이블 ──
         result_table = Table(
-            title=f"검색 결과 ({len(results)}건)",
+            title=t("chat.input.search_results", count=len(results)),
             show_header=True,
             header_style="bold",
             border_style="blue",
@@ -466,8 +536,8 @@ async def chat_loop() -> None:
             expand=True,
         )
         result_table.add_column("#", style="dim", width=3, justify="right")
-        result_table.add_column("내용", ratio=5)
-        result_table.add_column("정규화 점수", style="cyan", width=10, justify="right")
+        result_table.add_column(t("chat.input.content_col"), ratio=5)
+        result_table.add_column(t("chat.input.score_col"), style="cyan", width=10, justify="right")
 
         # 점수 정규화: 최고 점수를 1.0 기준으로 스케일링
         display_results = results[:5]
@@ -486,7 +556,7 @@ async def chat_loop() -> None:
         # ── LLM 답변 생성 ──
         if not search_only and llm_available:
             console.print()
-            with console.status("[bold cyan]답변 생성 중...", spinner="dots"):
+            with console.status(f"[bold cyan]{t('chat.input.generating')}", spinner="dots"):
                 answer = await generate_answer(query, results)
 
             if answer:
@@ -494,18 +564,16 @@ async def chat_loop() -> None:
                 console.print(
                     Panel(
                         Markdown(answer),
-                        title="[bold green]AI 답변[/bold green]",
+                        title=f"[bold green]{t('chat.input.ai_answer')}[/bold green]",
                         border_style="green",
                         padding=(1, 2),
                     )
                 )
             else:
-                console.print("[dim]답변 생성에 실패했습니다.[/dim]")
+                console.print(f"[dim]{t('chat.input.generation_failed')}[/dim]")
         elif not search_only and not llm_available:
             console.print()
-            console.print(
-                "[dim]GOOGLE_API_KEY 또는 OPENROUTER_API_KEY를 설정하면 AI 답변도 함께 제공됩니다.[/dim]"
-            )
+            console.print(f"[dim]{t('chat.input.api_key_hint')}[/dim]")
 
         console.print()
 

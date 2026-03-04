@@ -1,0 +1,229 @@
+{
+  "documents": [
+    {
+      "id": "faq-001",
+      "title": "什么是RAG系统？",
+      "content": "RAG（Retrieval-Augmented Generation）是一种检索增强生成技术。针对用户的问题，系统首先检索相关文档，然后基于这些文档由LLM生成回答。通过这种方式，可以减少LLM的幻觉（hallucination）问题，并利用最新信息或企业内部数据提供准确的回答。",
+      "metadata": {
+        "category": "技术介绍",
+        "tags": ["RAG", "LLM", "检索"]
+      }
+    },
+    {
+      "id": "faq-002",
+      "title": "混合检索的优势",
+      "content": "混合检索是将Dense检索（基于语义）和Sparse检索（基于关键词，BM25）相结合的方式。Dense检索擅长查找语义相似的文档，Sparse检索擅长精确的关键词匹配。将两种方式结合后，无论是像'三星电子股价'这样关键词重要的问题，还是像'最近发展好的IT企业'这样语义重要的问题，都能有效应对。",
+      "metadata": {
+        "category": "技术介绍",
+        "tags": ["混合检索", "Dense", "Sparse", "BM25"]
+      }
+    },
+    {
+      "id": "faq-003",
+      "title": "Weaviate 向量数据库",
+      "content": "Weaviate是一个开源向量数据库，原生支持混合检索。可以通过Docker轻松安装，并提供GraphQL和REST API。RAG_Standard将Weaviate作为默认向量数据库，并激活了中文分词器以提高中文检索质量。",
+      "metadata": {
+        "category": "技术介绍",
+        "tags": ["Weaviate", "向量数据库", "Docker"]
+      }
+    },
+    {
+      "id": "faq-004",
+      "title": "LLM Fallback 策略",
+      "content": "RAG_Standard通过Multi-LLM Factory支持多个LLM提供商（Google Gemini、OpenAI GPT、Anthropic Claude、OpenRouter）。当主LLM发生故障时，系统会按照设定的顺序自动切换到其他LLM。例如，可以按Google Gemini → OpenAI GPT → Anthropic Claude的顺序进行故障转移。",
+      "metadata": {
+        "category": "技术介绍",
+        "tags": ["LLM", "Fallback", "高可用性"]
+      }
+    },
+    {
+      "id": "faq-005",
+      "title": "GraphRAG 功能",
+      "content": "GraphRAG是一种通过将文档间的关系以图的形式表示来提高检索质量的技术。RAG_Standard的GraphRAG在基于NetworkX的图存储中集成了向量检索，可以通过英文查询'SAMSUNG'找到'三星电子'节点。通过这种方式，可以同时检索相关实体及其关系，提供更丰富的上下文。",
+      "metadata": {
+        "category": "技术介绍",
+        "tags": ["GraphRAG", "知识图谱", "实体"]
+      }
+    },
+    {
+      "id": "guide-start-001",
+      "title": "RAG_Standard 安装方法",
+      "content": "安装RAG_Standard分为3个步骤。\n\n**步骤 1: 克隆并安装依赖**\n```bash\ngit clone https://github.com/youngouk/RAG_Standard.git\ncd RAG_Standard\nuv sync\n```\n\n**步骤 2: 环境配置**\n```bash\ncp quickstart/.env.quickstart .env\n# 在 .env 文件中设置 GOOGLE_API_KEY\n```\n在 Google AI Studio 免费获取API密钥: https://aistudio.google.com/apikey\n\n**步骤 3: 运行**\n```bash\nmake start\n```\n\n完成后可在 http://localhost:8000/docs 测试API。\n\n**系统要求:**\n- Docker 20.10+\n- Docker Compose v2+\n- uv 包管理器 (自动安装)",
+      "metadata": {
+        "category": "快速开始",
+        "tags": ["安装", "quickstart", "docker", "uv"]
+      }
+    },
+    {
+      "id": "guide-start-002",
+      "title": "Start 与 Start Full 的区别",
+      "content": "RAG_Standard提供两种运行模式。\n\n**Start (仅后端)**\n```bash\nmake start\n```\n- 仅运行Weaviate（向量数据库）+ API服务器\n- 适用于API测试和后端开发\n- 在 http://localhost:8000/docs 提供Swagger UI\n\n**Start Full (包含前端)**\n```bash\nmake start-full\n```\n- Weaviate + API服务器 + React前端\n- 适用于完整用户体验测试\n- 在 http://localhost:5173 提供聊天UI\n\n**命令对比:**\n| 命令 | 服务 | 端口 |\n|------|------|------|\n| start | Weaviate, API | 8080, 8000 |\n| start-full | Weaviate, API, Frontend | 8080, 8000, 5173 |",
+      "metadata": {
+        "category": "快速开始",
+        "tags": ["start", "start-full", "对比"]
+      }
+    },
+    {
+      "id": "guide-start-003",
+      "title": "必需环境变量设置",
+      "content": "运行RAG_Standard所需的环境变量。\n\n**最低要求 (Start)**\n```bash\n# LLM API密钥 (至少需要一个)\nGOOGLE_API_KEY=AIza...  # 推荐 (免费版)\n```\n\n**生产环境必需**\n```bash\n# 安全\nFASTAPI_AUTH_KEY=your-secret-key-32chars  # 管理员API认证\nENVIRONMENT=production\n\n# LLM (至少1个)\nGOOGLE_API_KEY=AIza...\nOPENAI_API_KEY=sk-...      # 可选\nANTHROPIC_API_KEY=sk-ant-...  # 可选\n```\n\n**向量数据库 (默认值自动设置)**\n```bash\nWEAVIATE_URL=http://localhost:8080\nVECTOR_DB_PROVIDER=weaviate\n```\n\n**LLM 选择**\n```bash\nLLM_PROVIDER=google          # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash   # 模型名称\n```",
+      "metadata": {
+        "category": "快速开始",
+        "tags": ["环境变量", "配置", "API密钥"]
+      }
+    },
+    {
+      "id": "guide-start-004",
+      "title": "第一次聊天测试",
+      "content": "安装后进行第一次聊天测试的方法。\n\n**方法 1: Swagger UI (最简单)**\n1. 访问 http://localhost:8000/docs\n2. 点击 POST /chat 端点\n3. 点击 Try it out 按钮\n4. 在 Request body 中输入:\n```json\n{\n  \"message\": \"什么是RAG系统？\",\n  \"stream\": false\n}\n```\n5. 点击 Execute 按钮\n\n**方法 2: curl 命令**\n```bash\ncurl -X POST http://localhost:8000/chat \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"什么是RAG系统？\"}'\n```\n\n**方法 3: Python 代码**\n```python\nimport httpx\n\nresponse = httpx.post(\n    \"http://localhost:8000/chat\",\n    json={\"message\": \"什么是RAG系统？\"}\n)\nprint(response.json()[\"answer\"])\n```\n\n**预期响应:**\nRAG（Retrieval-Augmented Generation）是一种检索增强生成技术...",
+      "metadata": {
+        "category": "快速开始",
+        "tags": ["测试", "聊天", "API"]
+      }
+    },
+    {
+      "id": "guide-api-001",
+      "title": "聊天API使用方法 (POST /chat)",
+      "content": "基于RAG的聊天API使用方法。\n\n**端点:** POST /chat\n\n**请求体:**\n```json\n{\n  \"message\": \"问题内容\",\n  \"session_id\": \"optional-session-id\",\n  \"stream\": false,\n  \"use_agent\": false\n}\n```\n\n**参数说明:**\n- `message` (必需): 用户问题\n- `session_id` (可选): 用于保持对话历史的会话ID\n- `stream` (可选): 设为true时返回SSE流式响应\n- `use_agent` (可选): 设为true时启用Agentic RAG模式\n\n**响应示例:**\n```json\n{\n  \"answer\": \"RAG是一种检索增强生成技术...\",\n  \"sources\": [{\"title\": \"文档1\", \"score\": 0.95}],\n  \"metadata\": {\"tokens\": 150, \"latency_ms\": 1200}\n}\n```\n\n**速率限制:** 100次/15分钟",
+      "metadata": {
+        "category": "API使用方法",
+        "tags": ["聊天", "API", "POST"]
+      }
+    },
+    {
+      "id": "guide-api-002",
+      "title": "获取流式响应 (SSE)",
+      "content": "获取实时流式响应的方法。\n\n**方法 1: 使用stream参数**\n```bash\ncurl -X POST http://localhost:8000/chat \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"问题\", \"stream\": true}'\n```\n\n**方法 2: 专用流式端点**\n```bash\ncurl -X POST http://localhost:8000/chat/stream \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\": \"问题\"}'\n```\n\n**SSE 事件格式:**\n```\nevent: chunk\ndata: {\"token\": \"RAG\"}\n\nevent: chunk\ndata: {\"token\": \"是 \"}\n\nevent: sources\ndata: {\"sources\": [...]}\n\nevent: done\ndata: {\"total_tokens\": 150}\n```\n\n**JavaScript 示例:**\n```javascript\nconst eventSource = new EventSource('/chat/stream?message=问题');\neventSource.onmessage = (e) => {\n  const data = JSON.parse(e.data);\n  console.log(data.token);\n};\n```",
+      "metadata": {
+        "category": "API使用方法",
+        "tags": ["流式传输", "SSE", "实时"]
+      }
+    },
+    {
+      "id": "guide-api-003",
+      "title": "WebSocket 实时聊天",
+      "content": "使用WebSocket的双向实时聊天。\n\n**端点:** ws://localhost:8000/chat-ws?session_id=xxx\n\n**连接并发送消息:**\n```javascript\nconst ws = new WebSocket('ws://localhost:8000/chat-ws?session_id=user-123');\n\nws.onopen = () => {\n  ws.send(JSON.stringify({\n    type: 'message',\n    message_id: 'msg_001',\n    content: '这是一个问题',\n    session_id: 'user-123'\n  }));\n};\n\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  switch(data.type) {\n    case 'stream_start':\n      console.log('开始响应');\n      break;\n    case 'stream_token':\n      console.log(data.token);\n      break;\n    case 'stream_sources':\n      console.log('来源:', data.sources);\n      break;\n    case 'stream_end':\n      console.log('完成');\n      break;\n  }\n};\n```\n\n**消息类型:**\n- `stream_start`: 开始响应\n- `stream_token`: 令牌 (含index)\n- `stream_sources`: 参考文档\n- `stream_end`: 完成 (令牌数、处理时间)\n- `stream_error`: 错误",
+      "metadata": {
+        "category": "API使用方法",
+        "tags": ["WebSocket", "实时", "双向"]
+      }
+    },
+    {
+      "id": "guide-api-004",
+      "title": "会话管理API",
+      "content": "管理对话会话的API。\n\n**创建会话:**\n```bash\ncurl -X POST http://localhost:8000/chat/session\n```\n响应: `{\"session_id\": \"sess_abc123\"}`\n\n**查询聊天历史:**\n```bash\ncurl http://localhost:8000/chat/history/sess_abc123\n```\n响应: 该会话的所有对话记录\n\n**查询会话信息:**\n```bash\ncurl http://localhost:8000/chat/session/sess_abc123/info\n```\n响应: 会话创建时间、消息数量等\n\n**删除会话:**\n```bash\ncurl -X DELETE http://localhost:8000/chat/session/sess_abc123\n```\n\n**Python 示例:**\n```python\nimport httpx\n\nclient = httpx.Client(base_url=\"http://localhost:8000\")\n\n# 创建会话\nsession = client.post(\"/chat/session\").json()\nsession_id = session[\"session_id\"]\n\n# 使用会话聊天\nresponse = client.post(\"/chat\", json={\n    \"message\": \"你好\",\n    \"session_id\": session_id\n})\n```",
+      "metadata": {
+        "category": "API使用方法",
+        "tags": ["会话", "历史记录", "管理"]
+      }
+    },
+    {
+      "id": "guide-api-005",
+      "title": "文档上传API",
+      "content": "上传用于RAG检索的文档的API。\n\n**单个文档上传:**\n```bash\ncurl -X POST http://localhost:8000/upload/documents \\\n  -H \"Content-Type: multipart/form-data\" \\\n  -F \"file=@document.pdf\"\n```\n\n**支持的文件格式:**\n- PDF (.pdf)\n- Word (.docx)\n- 文本 (.txt)\n- Markdown (.md)\n- JSON (.json)\n\n**Python 示例:**\n```python\nimport httpx\n\nwith open(\"document.pdf\", \"rb\") as f:\n    response = httpx.post(\n        \"http://localhost:8000/upload/documents\",\n        files={\"file\": f}\n    )\nprint(response.json())\n```\n\n**速率限制:** 20次/小时\n\n**注意事项:**\n- 最大文件大小: 10MB\n- 上传的文档会自动进行分块和向量化\n- 处理时间因文档大小而异",
+      "metadata": {
+        "category": "API使用方法",
+        "tags": ["上传", "文档", "文件"]
+      }
+    },
+    {
+      "id": "guide-config-001",
+      "title": "LLM Provider 选择与更改",
+      "content": "RAG_Standard支持4种LLM Provider。\n\n**支持的Provider:**\n| Provider | 环境变量 | 特点 |\n|----------|---------|------|\n| Google Gemini | GOOGLE_API_KEY | 推荐，免费版 |\n| OpenAI GPT | OPENAI_API_KEY | GPT-4, GPT-3.5 |\n| Anthropic Claude | ANTHROPIC_API_KEY | Claude 3 |\n| OpenRouter | OPENROUTER_API_KEY | 多种模型 |\n\n**更改Provider:**\n```bash\n# 在 .env 文件中\nLLM_PROVIDER=google       # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash\n```\n\n**自动Fallback设置:**\n在 app/config/base.yaml 文件中设置 fallback_order:\n```yaml\nllm:\n  fallback_order:\n    - google\n    - openai\n    - anthropic\n```\n主LLM故障时会按顺序自动切换。\n\n**各模型推荐用途:**\n- gemini-2.0-flash: 快速响应，一般问题\n- gpt-4: 复杂推理\n- claude-3-opus: 长文档分析",
+      "metadata": {
+        "category": "配置指南",
+        "tags": ["LLM", "配置", "Provider"]
+      }
+    },
+    {
+      "id": "guide-config-002",
+      "title": "向量数据库选择与配置",
+      "content": "RAG_Standard支持6种向量数据库。\n\n**支持的数据库:**\n| 数据库 | 混合检索 | 特点 |\n|--------|---------|------|\n| Weaviate (默认) | Dense+BM25 | 自托管，推荐 |\n| Chroma | 仅Dense | 轻量，开发用 |\n| Pinecone | Dense+Sparse | 无服务器 |\n| Qdrant | Dense+Full-Text | 高性能 |\n| pgvector | 仅Dense | PostgreSQL |\n| MongoDB | 仅Dense | Atlas |\n\n**更改数据库:**\n```bash\n# .env\nVECTOR_DB_PROVIDER=weaviate  # weaviate, chroma, pinecone, qdrant, pgvector, mongodb\n```\n\n**Weaviate 配置 (推荐):**\n```bash\nWEAVIATE_URL=http://localhost:8080\nWEAVIATE_GRPC_HOST=localhost\nWEAVIATE_GRPC_PORT=50051\n```\n\n**Pinecone 配置:**\n```bash\nVECTOR_DB_PROVIDER=pinecone\nPINECONE_API_KEY=xxx\nPINECONE_ENVIRONMENT=us-east-1\nPINECONE_INDEX_NAME=rag-index\n```",
+      "metadata": {
+        "category": "配置指南",
+        "tags": ["向量数据库", "Weaviate", "配置"]
+      }
+    },
+    {
+      "id": "guide-config-003",
+      "title": "安全配置 (生产环境)",
+      "content": "用于生产环境部署的安全配置。\n\n**必需安全设置:**\n```bash\n# .env\nFASTAPI_AUTH_KEY=your-32-char-secret-key-here\nENVIRONMENT=production\n```\n\n**API Key 认证:**\n所有管理员API (/api/admin/*) 需要X-API-Key头:\n```bash\ncurl -H \"X-API-Key: your-key\" http://localhost:8000/api/admin/status\n```\n\n**PII 脱敏:**\n自动对个人信息（电话号码、邮箱等）进行脱敏处理:\n- 输入: \"联系方式是 138-1234-5678\"\n- 输出: \"联系方式是 138-****-5678\"\n\n**CORS 设置:**\n在 app/config/production.yaml 中配置 cors_origins\n\n**速率限制:**\n- /chat: 100次/15分钟\n- /upload: 20次/小时\n- 管理员API: 无限制 (仅限认证请求)",
+      "metadata": {
+        "category": "配置指南",
+        "tags": ["安全", "认证", "生产环境"]
+      }
+    },
+    {
+      "id": "guide-config-004",
+      "title": "YAML 配置文件结构",
+      "content": "RAG_Standard使用基于YAML的配置。\n\n**配置文件位置:**\n```\napp/config/\n├── base.yaml            # 通用配置\n├── environments/\n│   ├── development.yaml # 开发环境\n│   ├── test.yaml       # 测试环境\n│   └── production.yaml  # 生产环境\n└── routing_rules_v2.yaml  # 动态路由\n```\n\n**环境自动检测:**\n根据ENVIRONMENT环境变量自动加载对应的配置文件:\n- development: debug=true, reload=true\n- test: 较短超时时间\n- production: 4个worker, 缓存启用\n\n**主要配置示例 (base.yaml):**\n```yaml\nllm:\n  default_provider: google\n  temperature: 0.7\n  max_tokens: 2048\n\nretrieval:\n  enable_hybrid_search: true\n  enable_reranking: true\n  top_k: 5\n```\n\n**配置优先级:**\n环境变量 > environments/*.yaml > base.yaml",
+      "metadata": {
+        "category": "配置指南",
+        "tags": ["YAML", "配置", "环境"]
+      }
+    },
+    {
+      "id": "guide-arch-001",
+      "title": "项目目录结构",
+      "content": "RAG_Standard的代码结构。\n\n**主要目录:**\n```\napp/\n├── api/              # REST API 层\n│   ├── routers/      # 端点 (chat, admin, websocket)\n│   ├── services/     # 业务逻辑\n│   └── schemas/      # Pydantic 模型\n│\n├── modules/core/     # RAG 核心模块\n│   ├── retrieval/    # 检索 (Weaviate, GraphRAG, 重排序)\n│   ├── generation/   # 回答生成 (LLM, 提示词)\n│   ├── privacy/      # PII 脱敏\n│   └── session/      # 会话管理\n│\n├── core/             # 中央依赖\n│   └── di_container.py  # DI Container\n│\n└── lib/              # 公共工具\n    ├── llm_client.py # Multi-LLM Factory\n    └── auth.py       # 认证\n```\n\n**各模块职责:**\n- api/: HTTP 请求/响应处理\n- modules/core/: RAG 管道逻辑\n- core/: 依赖注入管理\n- lib/: 公共工具类",
+      "metadata": {
+        "category": "架构",
+        "tags": ["结构", "目录", "模块"]
+      }
+    },
+    {
+      "id": "guide-arch-002",
+      "title": "DI 容器模式",
+      "content": "RAG_Standard使用依赖注入（Dependency Injection）模式。\n\n**DI Container 位置:** app/core/di_container.py\n\n**主要Provider (80+个):**\n- Singleton: 70个 (配置、数据库连接等)\n- Factory: 10个 (动态创建)\n\n**8个主要Factory:**\n| Factory | 职责 |\n|---------|------|\n| LLMClientFactory | Multi-LLM 管理 |\n| VectorStoreFactory | 向量数据库选择 |\n| RetrieverFactory | 检索策略 |\n| AgentFactory | Agent 创建 |\n| EvaluatorFactory | 评估系统 |\n| GraphRAGFactory | 图检索 |\n\n**使用示例:**\n```python\nfrom app.core.di_container import get_container\n\ncontainer = get_container()\n\n# 获取LLM客户端\nllm = container.llm_factory()\n\n# 获取向量存储\nvector_store = container.vector_store_factory()\n```\n\n**优点:**\n- 测试时可轻松替换为Mock\n- 运行时可更改实现\n- 防止循环依赖",
+      "metadata": {
+        "category": "架构",
+        "tags": ["DI", "依赖注入", "Container"]
+      }
+    },
+    {
+      "id": "guide-arch-003",
+      "title": "RAG 管道流程",
+      "content": "RAG_Standard的问答流程。\n\n**管道步骤:**\n```\n1. 用户输入问题\n       ↓\n2. RetrievalOrchestrator (检索)\n   ├─ Weaviate 向量检索\n   ├─ BM25 关键词检索\n   ├─ GraphRAG 关系检索\n   └─ RRF 分数融合\n       ↓\n3. JinaColBERT 重排序\n       ↓\n4. GenerationModule (回答生成)\n   └─ LLMFactory → Gemini/GPT/Claude\n       ↓\n5. SelfRAGOrchestrator (质量评估)\n   └─ 质量不达标时重新检索/生成\n       ↓\n6. PIIProcessor (个人信息脱敏)\n       ↓\n7. 返回响应\n```\n\n**核心模块:**\n- RetrievalOrchestrator: 融合多种检索方法\n- GenerationModule: 提示词管理 + LLM调用\n- SelfRAGOrchestrator: 回答质量自动评估\n- PIIProcessor: 个人信息保护",
+      "metadata": {
+        "category": "架构",
+        "tags": ["管道", "RAG", "流程"]
+      }
+    },
+    {
+      "id": "guide-arch-004",
+      "title": "添加新功能的方法",
+      "content": "在RAG_Standard中添加新功能的方法。\n\n**添加新API端点:**\n1. 在 app/api/schemas/ 中定义请求/响应模型\n2. 在 app/api/routers/ 中创建路由\n3. 在 main.py 中注册路由\n\n**添加新向量数据库:**\n1. 在 app/infrastructure/storage/vector/ 中创建类:\n```python\nclass MyVectorStore(VectorStore):\n    async def search(self, query, limit):\n        # 实现\n        pass\n```\n2. 在 VectorStoreFactory 中注册\n3. 设置环境变量 VECTOR_DB_PROVIDER=mydb\n\n**添加新LLM Provider:**\n1. 在 app/lib/llm_client.py 的 Factory 中添加\n2. 设置环境变量\n3. 添加到 llm.fallback_order\n\n**编写测试:**\n```python\n# tests/unit/test_my_feature.py\ndef test_my_feature():\n    # Given\n    # When\n    # Then\n    assert result == expected\n```\n\n**规则:**\n- 遵循现有接口(Protocol)\n- 通过DI Container进行依赖注入\n- 单元测试必须编写",
+      "metadata": {
+        "category": "架构",
+        "tags": ["扩展", "开发", "添加"]
+      }
+    },
+    {
+      "id": "guide-dev-001",
+      "title": "测试运行方法",
+      "content": "RAG_Standard的测试运行方法。\n\n**全部测试 (1,370+个):**\n```bash\nmake test\n```\n\n**覆盖率报告:**\n```bash\nmake test-cov\n# 在 htmlcov/index.html 查看结果\n```\n\n**运行特定测试:**\n```bash\n# 按文件\nuv run pytest tests/unit/api/test_chat.py -v\n\n# 按函数\nuv run pytest tests/unit/api/test_chat.py::test_chat_endpoint -v\n\n# 按标记\nuv run pytest -m \"not slow\" -v  # 排除slow\n```\n\n**测试结构:**\n```\ntests/\n├── unit/           # 单元测试\n├── integration/    # 集成测试\n├── e2e/           # E2E测试\n└── fixtures/       # 测试数据\n```\n\n**测试编写规则:**\n- Given-When-Then 模式\n- 使用Mock时用 unittest.mock 或 pytest-mock\n- 异步测试: @pytest.mark.asyncio",
+      "metadata": {
+        "category": "开发者指南",
+        "tags": ["测试", "pytest", "覆盖率"]
+      }
+    },
+    {
+      "id": "guide-dev-002",
+      "title": "代码质量管理",
+      "content": "RAG_Standard的代码质量工具。\n\n**代码检查 (Ruff):**\n```bash\nmake lint         # 仅检查\nmake lint-fix     # 自动修复\n```\n\n**类型检查 (Mypy):**\n```bash\nmake type-check   # 严格模式\n```\n\n**代码格式化 (Black):**\n```bash\nmake format\n```\n\n**依赖层级验证:**\n```bash\nmake lint-imports  # Import Linter\n```\n\n**CI/CD 检查清单:**\n所有PR必须通过以下检查:\n1. make lint - 无代码检查错误\n2. make type-check - 无类型错误\n3. make test - 测试100%通过\n4. make lint-imports - 无层级违规\n\n**pre-commit 设置:**\n```bash\npre-commit install\n# 提交时自动运行 lint, format\n```",
+      "metadata": {
+        "category": "开发者指南",
+        "tags": ["质量", "代码检查", "类型检查"]
+      }
+    },
+    {
+      "id": "guide-dev-003",
+      "title": "贡献方法 (Contributing)",
+      "content": "向RAG_Standard贡献的方法。\n\n**贡献流程:**\n1. Fork → Clone\n2. 创建分支: git checkout -b feature/my-feature\n3. 编写代码 + 测试\n4. 质量检查: make lint && make test\n5. 提交: Udacity风格\n6. 创建PR\n\n**提交消息风格:**\n```\n功能: 添加新功能\n修复: 修复bug\n文档: 更新文档\n样式: 代码格式化\n重构: 代码重构\n测试: 添加/修改测试\n```\n\n**代码规范:**\n- 类型提示必需\n- 中文文档字符串\n- 单元测试必需\n- 禁止TODO注释 (发现后立即解决)\n\n**PR 检查清单:**\n- 添加/修改测试\n- 更新文档\n- 通过 make lint\n- 通过 make test\n- 处理代码审查意见\n\n**许可证:** MIT",
+      "metadata": {
+        "category": "开发者指南",
+        "tags": ["贡献", "PR", "开源"]
+      }
+    }
+  ]
+}

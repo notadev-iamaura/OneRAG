@@ -439,6 +439,19 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "ko": "내부 서버 오류",
         "en": "Internal server error",
     },
+    # GROK (Grok Collections API) - 3개
+    "GROK-001": {
+        "ko": "xAI API 인증 실패: API 키가 유효하지 않거나 설정되지 않았습니다",
+        "en": "xAI API authentication failed: API key is invalid or not configured",
+    },
+    "GROK-002": {
+        "ko": "xAI API 속도 제한 초과: 잠시 후 다시 시도해주세요",
+        "en": "xAI API rate limit exceeded: please try again later",
+    },
+    "GROK-003": {
+        "ko": "Grok Collections 검색 실패: {reason}",
+        "en": "Grok Collections search failed: {reason}",
+    },
 }
 
 # 에러 해결 방법 저장소: {error_code: {"ko": [...], "en": [...]}}
@@ -1615,6 +1628,43 @@ ERROR_SOLUTIONS: dict[str, dict[str, list[str]]] = {
             "Try restarting the application",
             "Verify database and external service connections",
             "Contact system administrator",
+        ],
+    },
+    # GROK (Grok Collections API)
+    "GROK-001": {
+        "ko": [
+            "XAI_API_KEY 환경변수가 올바르게 설정되었는지 확인하세요",
+            "xAI 콘솔(https://console.x.ai)에서 API 키를 발급받으세요",
+            "API 키가 만료되지 않았는지 확인하세요",
+        ],
+        "en": [
+            "Verify XAI_API_KEY environment variable is set correctly",
+            "Get an API key from xAI console (https://console.x.ai)",
+            "Check if your API key has expired",
+        ],
+    },
+    "GROK-002": {
+        "ko": [
+            "잠시 후 다시 시도해주세요 (보통 1분 이내)",
+            "API 호출 빈도를 줄여주세요",
+            "xAI 콘솔에서 요금 플랜을 확인하세요",
+        ],
+        "en": [
+            "Wait a moment and try again (usually within 1 minute)",
+            "Reduce API call frequency",
+            "Check your rate plan on xAI console",
+        ],
+    },
+    "GROK-003": {
+        "ko": [
+            "xAI 콘솔에서 Collection ID가 올바른지 확인하세요",
+            "네트워크 연결을 확인하세요",
+            "xAI API 서비스 상태(https://status.x.ai)를 확인하세요",
+        ],
+        "en": [
+            "Verify Collection ID is correct on xAI console",
+            "Check your network connection",
+            "Check xAI API service status (https://status.x.ai)",
         ],
     },
 }

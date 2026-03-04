@@ -1,0 +1,27 @@
+# Ollama 로컬 LLM 설정
+# 기능: API 키 없이 로컬에서 LLM 및 임베딩 사용
+# 사용: Ollama 서버 실행 필요 (https://ollama.com)
+# 참고: 인터넷 연결 불필요 (에어갭 환경 지원)
+
+ollama:
+  # Ollama 서버 URL
+  base_url: "${OLLAMA_BASE_URL:-http://localhost:11434}"
+
+  # 기본 LLM 모델
+  # ollama pull llama3.2 명령으로 사전 다운로드 필요
+  default_model: "llama3.2"
+
+  # 임베딩 모델
+  # ollama pull nomic-embed-text 명령으로 사전 다운로드 필요
+  embedding_model: "nomic-embed-text"
+  embedding_dimensions: 768
+
+  # 타임아웃 (초) - 로컬 모델은 GPU에 따라 느릴 수 있음
+  timeout: 300
+
+  # 자동 감지 설정
+  auto_detect:
+    # easy_start에서 Ollama 자동 감지 여부
+    enabled: true
+    # 헬스 체크 타임아웃 (초)
+    health_check_timeout: 3

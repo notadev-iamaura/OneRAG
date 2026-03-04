@@ -314,22 +314,23 @@ start-load:
 
 # =============================================================================
 # Easy Start 명령 (Docker 불필요, 간편 실행)
+# 다국어 지원: make easy-start LANG=en (ko, en, ja, zh)
 # =============================================================================
 
-# Docker 없이 간편 실행
+# Docker 없이 간편 실행 (LANG 파라미터로 언어 선택)
 easy-start: check-uv check-env
 	@echo "🚀 Easy Start — Docker 없이 간편 실행..."
-	uv run python easy_start/run.py
+	EASY_START_LANG=$(LANG) uv run python easy_start/run.py
 
 # 간편 시작 데이터만 로드
 easy-start-load: check-uv
 	@echo "📥 ChromaDB 샘플 데이터 로드 중..."
-	uv run python easy_start/load_data.py
+	EASY_START_LANG=$(LANG) uv run python easy_start/load_data.py
 
 # 간편 시작 CLI 챗봇만 실행
 easy-start-chat: check-uv
 	@echo "💬 CLI 챗봇 실행..."
-	uv run python easy_start/chat.py
+	EASY_START_LANG=$(LANG) uv run python easy_start/chat.py
 
 # 간편 시작 데이터 초기화
 easy-start-clean:

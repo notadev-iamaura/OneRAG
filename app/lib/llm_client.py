@@ -636,6 +636,184 @@ class OpenRouterLLMClient(BaseLLMClient):
         yield  # AsyncGenerator 타입 힌트를 위해 필요
 
 
+class OllamaLLMClient(BaseLLMClient):
+    """
+    Ollama 로컬 LLM 클라이언트
+
+    Ollama는 로컬에서 LLM을 실행하는 오픈소스 도구입니다.
+    OpenAI 호환 API를 제공하므로 OpenAI SDK로 호출할 수 있습니다.
+    API 키 없이 완전한 "에어갭(Air-Gapped)" 모드를 지원합니다.
+
+    기본 설정:
+    - base_url: http://localhost:11434/v1
+    - api_key: "not-needed" (Ollama는 인증 불필요)
+    - 기본 모델: llama3.2 (Ollama에서 가장 많이 사용)
+
+    사용법:
+        # Ollama 설치 후 모델 다운로드
+        ollama pull llama3.2
+
+        # config 설정
+        config = {"model": "llama3.2", "base_url": "http://localhost:11434"}
+        client = OllamaLLMClient(config)
+
+    참고: https://ollama.com/
+    """
+
+    # Ollama API 기본 설정
+    DEFAULT_BASE_URL = "http://localhost:11434"
+    OPENAI_COMPAT_PATH = "/v1"
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        super().__init__(config)
+        self.base_url = config.get("base_url", self.DEFAULT_BASE_URL)
+        self.model = config.get("model", "llama3.2")
+
+        # OpenAI 호환 클라이언트 초기화 (지연 로딩)
+        self._client: OpenAI | None = None
+
+        logger.info(
+            "Ollama 클라이언트 생성 완료",
+            extra={
+                "base_url": self.base_url,
+                "model": self.model,
+            },
+        )
+
+    def _get_client(self) -> OpenAI:
+        """OpenAI 호환 클라이언트 지연 초기화"""
+        if self._client is None:
+            self._client = OpenAI(
+                base_url=f"{self.base_url}{self.OPENAI_COMPAT_PATH}",
+                api_key="not-needed",  # Ollama는 API 키 불필요
+                timeout=self.timeout,
+                max_retries=0,
+            )
+        return self._client
+
+    async def generate_text(
+        self, prompt: str, system_prompt: str | None = None, **kwargs: Any
+    ) -> str:
+        """
+        Ollama 텍스트 생성 (OpenAI 호환 API 사용)
+
+        Args:
+            prompt: 사용자 프롬프트
+            system_prompt: 시스템 프롬프트 (선택적)
+
+        Returns:
+            생성된 텍스트
+        """
+        try:
+            client = self._get_client()
+            messages: list[dict[str, str]] = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+            )
+
+            return response.choices[0].message.content or ""
+        except Exception as e:
+            logger.error(
+                "Ollama LLM 생성 실패",
+                extra={
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "base_url": self.base_url,
+                    "model": self.model,
+                },
+                exc_info=True,
+            )
+            raise
+
+    async def stream_text(
+        self, prompt: str, system_prompt: str | None = None, **kwargs: Any
+    ) -> AsyncGenerator[str, None]:
+        """
+        Ollama 스트리밍 텍스트 생성
+
+        Args:
+            prompt: 사용자 프롬프트
+            system_prompt: 시스템 프롬프트 (선택적)
+
+        Yields:
+            str: 생성된 텍스트 청크
+        """
+        try:
+            client = self._get_client()
+            messages: list[dict[str, str]] = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                stream=True,
+            )
+
+            for chunk in response:  # type: ignore[union-attr]
+                if chunk.choices and chunk.choices[0].delta.content:  # type: ignore[union-attr]
+                    yield chunk.choices[0].delta.content  # type: ignore[union-attr]
+
+        except Exception as e:
+            logger.error(
+                "Ollama LLM 스트리밍 실패",
+                extra={"error": str(e), "error_type": type(e).__name__},
+                exc_info=True,
+            )
+            raise
+
+    async def health_check(self) -> bool:
+        """
+        Ollama 서버 가용성 확인
+
+        /api/tags 엔드포인트로 서버 상태를 확인합니다.
+
+        Returns:
+            서버가 정상이면 True
+        """
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                response = await client.get(f"{self.base_url}/api/tags")
+                return response.status_code == 200
+        except Exception:
+            return False
+
+    async def list_models(self) -> list[str]:
+        """
+        설치된 Ollama 모델 목록 반환
+
+        Returns:
+            모델 이름 리스트
+        """
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                response = await client.get(f"{self.base_url}/api/tags")
+                if response.status_code == 200:
+                    data = response.json()
+                    return [m["name"] for m in data.get("models", [])]
+        except Exception as e:
+            logger.warning(
+                "Ollama 모델 목록 조회 실패",
+                extra={"error": str(e)},
+            )
+        return []
+
+
 class LLMClientFactory:
     """
     LLM 클라이언트 팩토리
@@ -649,6 +827,7 @@ class LLMClientFactory:
         "openai": OpenAILLMClient,
         "anthropic": AnthropicLLMClient,
         "openrouter": OpenRouterLLMClient,  # OpenRouter 통합 게이트웨이
+        "ollama": OllamaLLMClient,  # Ollama 로컬 LLM
     }
 
     # 환경 변수 자동 매핑
@@ -657,6 +836,7 @@ class LLMClientFactory:
         "openai": "OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",  # OpenRouter API 키
+        "ollama": "OLLAMA_BASE_URL",  # Ollama 서버 URL (API 키 불필요)
     }
 
     def __init__(self, config: dict[str, Any]):

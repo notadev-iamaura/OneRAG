@@ -100,6 +100,11 @@ _DEFAULT_PROVIDERS: dict[str, RetrieverProviderInfo] = {
         "hybrid_support": False,
         "description": "MongoDB Atlas Dense Retriever - 클라우드 관리형 벡터 검색 (하이브리드 미지원)",
     },
+    "grok": {
+        "class_path": "app.modules.core.retrieval.retrievers.grok_retriever.GrokRetriever",
+        "hybrid_support": True,
+        "description": "Grok Collections API - xAI 관리형 하이브리드 검색 (VectorStore 불필요)",
+    },
 }
 
 

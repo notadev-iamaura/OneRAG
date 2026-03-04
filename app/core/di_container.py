@@ -1367,6 +1367,18 @@ def create_retriever_via_factory(
             "collection_name": mongodb_config.get("collection_name", "documents"),
             "top_k": mongodb_config.get("retrieval", {}).get("default_top_k", 10),
         }
+    elif provider == "grok":
+        # Grok Collections API: 검색 전용 (VectorStore 불필요)
+        grok_config = config.get("grok", {})
+        retriever_config = {
+            "api_key": grok_config.get("api_key"),
+            "collection_ids": grok_config.get("collection_ids", []),
+            "model": grok_config.get("model", "grok-3"),
+            "timeout": grok_config.get("timeout", 30),
+            "top_k": grok_config.get("top_k", 10),
+        }
+        # Grok은 VectorStore 없이 동작하므로 BM25 전처리 불필요
+        bm25_preprocessors = None
 
     logger.info(
         "Retriever 생성 시작",
