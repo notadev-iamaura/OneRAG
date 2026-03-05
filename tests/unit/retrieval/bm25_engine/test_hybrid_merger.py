@@ -12,7 +12,6 @@ RRF(Reciprocal Rank Fusion)로 병합하는 모듈.
 5. 빈 결과 처리
 """
 
-import pytest
 
 from app.modules.core.retrieval.interfaces import SearchResult
 

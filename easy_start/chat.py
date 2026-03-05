@@ -114,7 +114,7 @@ def _check_ollama_available(base_url: str = OLLAMA_BASE_URL) -> bool:
             method="GET",
         )
         with urllib.request.urlopen(req, timeout=3) as resp:
-            return resp.status == 200
+            return bool(resp.status == 200)
     except Exception:
         return False
 

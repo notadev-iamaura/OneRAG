@@ -13,7 +13,7 @@ WeaviateRetriever 문서 관리 메서드 단위 테스트
 9. backup_metadata — 메타데이터 백업
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

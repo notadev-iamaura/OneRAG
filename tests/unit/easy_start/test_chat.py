@@ -156,10 +156,11 @@ class TestSearchDocuments:
         assert results[0]["metadata"] == {}
 
 
+@patch("easy_start.chat._check_ollama_available", return_value=False)
 class TestResolveLlmProviders:
     """LLM provider 결정 로직 테스트"""
 
-    def test_both_keys_returns_gemini_first(self):
+    def test_both_keys_returns_gemini_first(self, _mock_ollama):
         """
         두 키 모두 있을 때 Gemini이 리스트 첫 번째
 
@@ -181,7 +182,7 @@ class TestResolveLlmProviders:
         assert result[1][3] == "OpenRouter"
         assert result[1][1] == "openrouter-key"
 
-    def test_openrouter_only(self):
+    def test_openrouter_only(self, _mock_ollama):
         """
         OpenRouter 키만 있을 때 OpenRouter만 반환
 
@@ -198,7 +199,7 @@ class TestResolveLlmProviders:
         assert result[0][3] == "OpenRouter"
         assert "openrouter" in result[0][0]
 
-    def test_gemini_only(self):
+    def test_gemini_only(self, _mock_ollama):
         """
         Gemini 키만 있을 때 Gemini만 반환
 
@@ -214,7 +215,7 @@ class TestResolveLlmProviders:
         assert len(result) == 1
         assert result[0][3] == "Gemini"
 
-    def test_no_keys(self):
+    def test_no_keys(self, _mock_ollama):
         """
         키가 하나도 없을 때 빈 리스트 반환
 
@@ -234,7 +235,8 @@ class TestGenerateAnswer:
     """LLM 답변 생성 테스트"""
 
     @pytest.mark.asyncio
-    async def test_returns_none_without_api_key(self):
+    @patch("easy_start.chat._check_ollama_available", return_value=False)
+    async def test_returns_none_without_api_key(self, _mock_ollama):
         """
         API 키 미설정 시 None 반환
 
@@ -339,10 +341,11 @@ class TestFormatLlmError:
         assert "GOOGLE_API_KEY" in msg
 
 
+@patch("easy_start.chat._check_ollama_available", return_value=False)
 class TestCheckLlmAvailable:
     """LLM 가용성 확인 테스트"""
 
-    def test_available_with_google_key(self):
+    def test_available_with_google_key(self, _mock_ollama):
         """Google API 키 설정 시 (True, "Gemini") 반환"""
         from easy_start.chat import _check_llm_available
 
@@ -352,7 +355,7 @@ class TestCheckLlmAvailable:
         assert available is True
         assert name == "Gemini"
 
-    def test_available_with_openrouter_key(self):
+    def test_available_with_openrouter_key(self, _mock_ollama):
         """OpenRouter API 키 설정 시 (True, "OpenRouter") 반환"""
         from easy_start.chat import _check_llm_available
 
@@ -362,7 +365,7 @@ class TestCheckLlmAvailable:
         assert available is True
         assert name == "OpenRouter"
 
-    def test_available_with_both_keys(self):
+    def test_available_with_both_keys(self, _mock_ollama):
         """두 키 모두 설정 시 (True, "Gemini+OpenRouter") 반환"""
         from easy_start.chat import _check_llm_available
 
@@ -375,7 +378,7 @@ class TestCheckLlmAvailable:
         assert available is True
         assert name == "Gemini+OpenRouter"
 
-    def test_unavailable_without_key(self):
+    def test_unavailable_without_key(self, _mock_ollama):
         """API 키 미설정 시 (False, "") 반환"""
         from easy_start.chat import _check_llm_available
 

@@ -6,7 +6,6 @@ TDD 방식: 먼저 테스트 작성 후 패턴 구현
 """
 
 import pytest
-from pydantic import ValidationError
 
 from app.modules.core.privacy import PrivacyMasker
 from app.modules.core.privacy.masker import MaskingResult

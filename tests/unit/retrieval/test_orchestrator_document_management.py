@@ -15,7 +15,7 @@ RetrievalOrchestrator 문서 관리 위임 메서드 테스트
 위임 패턴: 기존 add_documents()와 동일한 hasattr() 기반 Duck Typing
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
