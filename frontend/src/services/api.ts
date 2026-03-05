@@ -84,8 +84,8 @@ axiosRetry(api, {
   retryCondition: (error) => {
     // 네트워크 오류 또는 5xx 서버 오류 시 재시도
     return axiosRetry.isNetworkOrIdempotentRequestError(error) ||
-           error.response?.status === 429 || // Rate limiting
-           (error.response?.status !== undefined && error.response.status >= 500);
+      error.response?.status === 429 || // Rate limiting
+      (error.response?.status !== undefined && error.response.status >= 500);
   },
   onRetry: (retryCount, error) => {
     logger.warn(`API 재시도 (${retryCount}/3):`, {
@@ -138,7 +138,7 @@ api.interceptors.request.use(
         }
       }
     }
-    
+
     // 세션 생성 API 호출 시 상세 로깅 (API Key 설정 후)
     if (config.url === '/api/chat/session') {
       logger.log('세션 생성 요청 상세 정보:', {
@@ -220,7 +220,7 @@ api.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config;
-    
+
     // 세션 생성 API 에러 시 상세 로깅
     if (originalRequest?.url === '/api/chat/session') {
       const errorDetails = {
@@ -265,9 +265,9 @@ api.interceptors.response.use(
         localStorage.removeItem('sessionId');
         localStorage.removeItem('chatSessionId');
 
-        // 로그인 페이지로 리다이렉션 (존재하는 경우)
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login';
+        // 랜딩 페이지로 리다이렉션 (/login 라우트가 없으므로 /로 이동)
+        if (window.location.pathname !== '/') {
+          window.location.href = '/';
         }
 
         return Promise.reject(refreshError);
@@ -370,7 +370,7 @@ export const documentAPI = {
   upload: (file: File, onProgress?: (progress: number) => void, settings?: { splitterType?: string; chunkSize?: number; chunkOverlap?: number }) => {
     const formData = new FormData();
     formData.append('file', file);
-    
+
     // 업로드 설정이 있으면 추가
     if (settings) {
       if (settings.splitterType) {
@@ -397,36 +397,29 @@ export const documentAPI = {
     });
   },
 
-  // 업로드 상태 확인용 별도 axios 인스턴스
-  getUploadStatus: (jobId: string) => {
-    const statusApi = axios.create({
-      baseURL: API_BASE_URL,
+  // 업로드 상태 확인 (메인 api 인스턴스 사용으로 Auth interceptor 적용)
+  getUploadStatus: (jobId: string) =>
+    api.get<UploadStatus>(`/api/upload/status/${jobId}`, {
       timeout: 60000, // 1분으로 설정
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      withCredentials: false,
-    });
-    return statusApi.get<UploadStatus>(`/api/upload/status/${jobId}`);
-  },
+    }),
 
   // 문서 삭제 (단일)
-  deleteDocument: (id: string) => 
+  deleteDocument: (id: string) =>
     api.delete(`/api/upload/documents/${id}`),
 
   // 문서 일괄 삭제
-  deleteDocuments: (ids: string[]) => 
+  deleteDocuments: (ids: string[]) =>
     api.post('/api/upload/documents/bulk-delete', { ids }),
 
   // 전체 문서 삭제
-  deleteAllDocuments: (confirmCode: string, reason: string, dryRun?: boolean) => 
-    api.delete('/api/documents/all', { 
+  deleteAllDocuments: (confirmCode: string, reason: string, dryRun?: boolean) =>
+    api.delete('/api/documents/all', {
       params: { dry_run: dryRun || false },
       data: { confirm_code: confirmCode, reason }
     }),
 
   // 문서 다운로드
-  downloadDocument: (id: string) => 
+  downloadDocument: (id: string) =>
     api.get(`/api/upload/documents/${id}/download`, {
       responseType: 'blob',
     }),
@@ -452,7 +445,7 @@ export const chatAPI = {
       baseURL: API_BASE_URL,
       endpoint: '/api/chat/session',
     });
-    
+
     return api.post<{ session_id: string }>('/api/chat/session', {}, {
       timeout: 30000, // 30초 타임아웃
     });

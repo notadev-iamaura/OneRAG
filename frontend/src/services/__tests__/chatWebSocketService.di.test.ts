@@ -297,4 +297,70 @@ describe('ChatWebSocketService with DI', () => {
       expect(MockWebSocket.instances.length).toBe(3);
     });
   });
+
+  describe('Issue #11: stop() — 이벤트 리스너 보존 연결 해제', () => {
+    it('stop()은 연결을 끊지만 이벤트 리스너는 보존해야 함', async () => {
+      const service = createChatWebSocketService(mockFactory);
+      const connectPromise = service.connect('test-session');
+      MockWebSocket.getLastInstance()?.simulateOpen();
+      await connectPromise;
+
+      // 이벤트 리스너 등록
+      const tokenHandler = vi.fn();
+      service.on('stream_token', tokenHandler);
+
+      // stop() 호출 — 연결만 끊고 이벤트 리스너 보존
+      service.stop();
+
+      expect(service.isConnected).toBe(false);
+
+      // 재연결 후 기존 이벤트 리스너가 동작해야 함
+      const reconnectPromise = service.connect('test-session');
+      MockWebSocket.getLastInstance()?.simulateOpen();
+      await reconnectPromise;
+
+      // 토큰 메시지 수신 시뮬레이션
+      MockWebSocket.getLastInstance()?.simulateMessage({
+        type: 'stream_token',
+        message_id: 'msg-002',
+        token: '복구됨',
+      });
+
+      // 이벤트 리스너가 여전히 동작해야 함
+      expect(tokenHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'stream_token',
+          token: '복구됨',
+        })
+      );
+    });
+
+    it('disconnect()는 이벤트 리스너까지 모두 제거해야 함', async () => {
+      const service = createChatWebSocketService(mockFactory);
+      const connectPromise = service.connect('test-session');
+      MockWebSocket.getLastInstance()?.simulateOpen();
+      await connectPromise;
+
+      const tokenHandler = vi.fn();
+      service.on('stream_token', tokenHandler);
+
+      // disconnect() 호출 — 이벤트 리스너 포함 전체 정리
+      service.disconnect();
+
+      // 재연결
+      const reconnectPromise = service.connect('test-session');
+      MockWebSocket.getLastInstance()?.simulateOpen();
+      await reconnectPromise;
+
+      // 토큰 메시지 수신 시뮬레이션
+      MockWebSocket.getLastInstance()?.simulateMessage({
+        type: 'stream_token',
+        message_id: 'msg-003',
+        token: '이벤트',
+      });
+
+      // disconnect() 이후이므로 핸들러 호출되지 않아야 함
+      expect(tokenHandler).not.toHaveBeenCalled();
+    });
+  });
 });

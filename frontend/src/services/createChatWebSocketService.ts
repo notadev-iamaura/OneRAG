@@ -49,8 +49,10 @@ export interface IChatWebSocketService {
   connect(sessionId: string): Promise<void>;
   /** 메시지 전송 */
   sendMessage(content: string): string;
-  /** 연결 해제 */
+  /** 연결 해제 (이벤트 리스너 포함 전체 정리) */
   disconnect(): void;
+  /** 연결만 해제 (이벤트 리스너 보존, handleStop용) */
+  stop(): void;
   /** 이벤트 리스너 등록 */
   on(event: string, callback: EventCallback): void;
   /** 이벤트 리스너 제거 */
@@ -346,7 +348,7 @@ export function createChatWebSocketService(
   };
 
   /**
-   * WebSocket 연결 해제
+   * WebSocket 연결 해제 (이벤트 리스너 포함 전체 정리)
    */
   const disconnect = (): void => {
     // 재연결 타이머 취소
@@ -356,7 +358,7 @@ export function createChatWebSocketService(
     }
 
     if (ws) {
-      logger.log('🔌 Chat WebSocket 연결 해제');
+      logger.log('🔌 Chat WebSocket 연결 해제 (전체 정리)');
       ws.close(1000, '클라이언트 연결 해제');
       ws = null;
     }
@@ -365,6 +367,28 @@ export function createChatWebSocketService(
     state = 'idle';
     reconnectAttempts = 0;
     eventListeners.clear();
+  };
+
+  /**
+   * WebSocket 연결만 해제 (이벤트 리스너 보존)
+   * handleStop 등에서 사용 — 다음 메시지 전송 시 재연결 가능
+   */
+  const stop = (): void => {
+    // 재연결 타이머 취소
+    if (reconnectTimeoutId) {
+      clearTimeout(reconnectTimeoutId);
+      reconnectTimeoutId = null;
+    }
+
+    if (ws) {
+      logger.log('⏹️ Chat WebSocket 연결 중단 (이벤트 리스너 보존)');
+      ws.close(1000, '스트리밍 중단');
+      ws = null;
+    }
+
+    state = 'idle';
+    reconnectAttempts = 0;
+    // 이벤트 리스너는 보존 — sessionId도 보존하여 재연결 가능
   };
 
   /**
@@ -385,6 +409,7 @@ export function createChatWebSocketService(
     connect,
     sendMessage,
     disconnect,
+    stop,
     on,
     off,
     resetReconnectAttempts,

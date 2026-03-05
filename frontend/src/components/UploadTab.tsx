@@ -13,6 +13,7 @@ import {
   Layers,
   Database,
   Cpu,
+  Settings,
 } from 'lucide-react';
 import { ToastMessage } from '../types';
 import { documentAPI } from '../services/api';
@@ -165,10 +166,18 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
   };
 
   const retryFailedFile = (fileId: string) => {
-    setFiles(prev => prev.map(f => f.id === fileId && f.status === 'failed' ? { ...f, status: 'ready', error: undefined, progress: 0 } : f));
+    // stale closure 방지: setFiles 콜백 내에서 파일을 찾아 retryTarget에 저장
+    let retryTarget: UploadFile | undefined;
+    setFiles(prev => prev.map(f => {
+      if (f.id === fileId && f.status === 'failed') {
+        const updated = { ...f, status: 'ready' as const, error: undefined, progress: 0 };
+        retryTarget = updated;
+        return updated;
+      }
+      return f;
+    }));
     setTimeout(() => {
-      const file = files.find(f => f.id === fileId);
-      if (file) uploadSingleFile({ ...file, status: 'ready', error: undefined, progress: 0 });
+      if (retryTarget) uploadSingleFile(retryTarget);
     }, 100);
   };
 

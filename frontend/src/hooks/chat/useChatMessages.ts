@@ -297,9 +297,8 @@ export const useChatMessages = ({
     const handleStop = useCallback(() => {
         setLoading(false);
         if (isStreamingEnabled) {
-            streaming.disconnect();
-            // 필요시 재연결 로직 유도 (다음 메시지 전송 시 자동 연결되거나 여기서 다시 connect 호출)
-            // 여기선 단순히 로딩만 끊음
+            streaming.stop();
+            // stop()은 이벤트 리스너를 보존하므로, 다음 메시지 전송 시 재연결 후 스트리밍 정상 동작
         }
         logger.log('⏹️ 전송 중단됨');
     }, [isStreamingEnabled, streaming]);
