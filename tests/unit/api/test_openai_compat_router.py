@@ -159,3 +159,62 @@ class TestModelsEndpoint:
         assert "id" in model
         assert model["object"] == "model"
         assert "owned_by" in model
+
+
+class TestChatCompletionsStreaming:
+    """스트리밍 /v1/chat/completions 테스트"""
+
+    def test_streaming_response_format(self, client, mock_modules):
+        """스트리밍 응답이 SSE 형식인지 확인"""
+        # stream_text mock 설정
+        async def mock_stream(*args, **kwargs):
+            for token in ["안녕", "하세요", "!"]:
+                yield token
+
+        mock_modules["llm_factory"].get_client().stream_text = mock_stream
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gemini",
+                "messages": [{"role": "user", "content": "안녕"}],
+                "stream": True,
+            },
+        )
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+
+        # SSE 라인 파싱
+        lines = response.text.strip().split("\n")
+        data_lines = [l for l in lines if l.startswith("data: ")]
+        assert len(data_lines) >= 2  # 최소 1개 청크 + [DONE]
+
+        # 마지막은 [DONE]
+        assert data_lines[-1] == "data: [DONE]"
+
+        # 첫 번째 청크에 role 포함
+        first_chunk = json.loads(data_lines[0].replace("data: ", ""))
+        assert first_chunk["object"] == "chat.completion.chunk"
+        assert first_chunk["choices"][0]["delta"]["role"] == "assistant"
+
+    def test_streaming_finish_reason(self, client, mock_modules):
+        """스트리밍 종료 시 finish_reason=stop"""
+        async def mock_stream(*args, **kwargs):
+            yield "답변"
+
+        mock_modules["llm_factory"].get_client().stream_text = mock_stream
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gemini",
+                "messages": [{"role": "user", "content": "테스트"}],
+                "stream": True,
+            },
+        )
+        lines = response.text.strip().split("\n")
+        data_lines = [l for l in lines if l.startswith("data: ") and l != "data: [DONE]"]
+
+        # 마지막 데이터 청크에 finish_reason 확인
+        last_data = json.loads(data_lines[-1].replace("data: ", ""))
+        assert last_data["choices"][0]["finish_reason"] == "stop"
