@@ -38,3 +38,4 @@ imports:
   - features/sql_search.yaml      # SQL 검색 설정 (Phase 3: 메타데이터 검색)
   - features/graph_rag.yaml       # GraphRAG 지식 그래프 검색 (GraphRAGFactory 지원)
   - features/evaluation.yaml      # 평가 시스템 (EvaluatorFactory 지원)
+  - features/openai_compat.yaml   # OpenAI 호환 API 설정

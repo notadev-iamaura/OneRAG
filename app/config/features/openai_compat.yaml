@@ -1,0 +1,7 @@
+# OpenAI 호환 API 설정
+openai_compat:
+  enabled: true
+  # RAG 모드 기본 활성화 (문서 검색 후 답변 생성)
+  default_rag_mode: true
+  # 검색 결과 최대 개수
+  max_search_results: 5
