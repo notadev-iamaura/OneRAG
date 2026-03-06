@@ -31,6 +31,7 @@ from app.api.services.openai_model_resolver import (
     parse_model,
     resolve_model_config,
 )
+from app.lib.errors.codes import ErrorCode
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
@@ -39,6 +40,9 @@ router = APIRouter(prefix="/v1", tags=["OpenAI Compatible"])
 
 # DI: main.py에서 주입
 _modules: dict[str, Any] = {}
+
+# 검색 결과 최대 개수 (openai_compat.yaml에서 설정 가능)
+_MAX_SEARCH_RESULTS = 5
 
 
 def set_modules(modules: dict[str, Any]) -> None:
@@ -80,7 +84,7 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     except ValueError as e:
         raise HTTPException(
             status_code=400,
-            detail={"error": {"message": str(e), "type": "invalid_request_error"}},
+            detail={"error": {"message": str(e), "type": "invalid_request_error", "code": ErrorCode.OPENAI_001.value}},
         )
 
     # 2. 메시지 추출
@@ -111,7 +115,7 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     retriever = _modules.get("retrieval")
     if retriever:
         try:
-            search_results = await retriever.search(query=user_message, top_k=5)
+            search_results = await retriever.search(query=user_message, top_k=_MAX_SEARCH_RESULTS)
             documents = [
                 {"content": getattr(r, "content", ""), "score": getattr(r, "score", 0.0)}
                 for r in search_results
@@ -126,7 +130,7 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     try:
         llm_factory = _modules.get("llm_factory")
         if not llm_factory:
-            raise HTTPException(status_code=503, detail={"error": {"message": "LLM 서비스 사용 불가"}})
+            raise HTTPException(status_code=503, detail={"error": {"message": "LLM 서비스 사용 불가", "code": ErrorCode.OPENAI_002.value}})
 
         llm_client = llm_factory.get_client(model_config["provider"])
 
@@ -143,7 +147,7 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
         logger.error(f"LLM 생성 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"error": {"message": f"답변 생성 실패: {e}", "type": "server_error"}},
+            detail={"error": {"message": f"답변 생성 실패: {e}", "type": "server_error", "code": ErrorCode.OPENAI_003.value}},
         )
 
     # 7. OpenAI 형식 응답
@@ -169,7 +173,7 @@ async def _stream_completion(
         retriever = _modules.get("retrieval")
         if retriever:
             try:
-                search_results = await retriever.search(query=user_message, top_k=5)
+                search_results = await retriever.search(query=user_message, top_k=_MAX_SEARCH_RESULTS)
                 documents = [
                     {"content": getattr(r, "content", "")}
                     for r in search_results
