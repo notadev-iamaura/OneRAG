@@ -172,6 +172,11 @@ class ErrorCode(str, Enum):
     # STREAM (스트리밍) - 1개
     STREAM_001 = "STREAM-001"  # 스트리밍 중 오류 발생
 
+    # OPENAI 호환 API - 3개
+    OPENAI_001 = "OPENAI-001"  # 미지원 모델/provider
+    OPENAI_002 = "OPENAI-002"  # LLM provider 사용 불가 (API 키 미설정 등)
+    OPENAI_003 = "OPENAI-003"  # RAG 파이프라인 오류
+
     # API (API 응답) - 1개
     API_001 = "API-001"  # 내부 오류
 
