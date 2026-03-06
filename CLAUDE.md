@@ -175,6 +175,28 @@ data: {"session_id": "abc-123", "total_chunks": 10}
 
 상세 가이드: `docs/websocket-api-guide.md`
 
+### 11. OpenAI 호환 API (v1.1.0)
+- **POST /v1/chat/completions**: OpenAI SDK 형식의 채팅 완료 (RAG 파이프라인 포함)
+- **GET /v1/models**: 사용 가능한 모델 목록
+- **인증**: 없음 (Ollama 방식 — 로컬 서비스 전제)
+- **모델 선택**: `model` 필드에 슬래시 구분 (`provider/sub-model`)
+  - `gemini` — Google Gemini 기본 모델
+  - `ollama/qwen2.5:3b` — Ollama 특정 모델
+  - `openrouter/google/gemini-2.0-flash` — OpenRouter 경유
+  - `claude`, `openai` — 각 provider 기본 모델
+- **RAG Mode 기본**: 문서 검색 → 컨텍스트 조합 → LLM 답변 생성
+- **스트리밍 지원**: `"stream": true`로 SSE 스트리밍 응답
+```python
+# OpenAI SDK로 OneRAG에 연결
+from openai import OpenAI
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+resp = client.chat.completions.create(
+    model="gemini",
+    messages=[{"role": "user", "content": "RAG란?"}],
+)
+print(resp.choices[0].message.content)
+```
+
 상세 분석: `docs/TECHNICAL_DEBT_ANALYSIS.md`
 
 ## 코드 컨벤션 및 규칙
@@ -222,9 +244,24 @@ app/config/environments/
 | **Streaming API** | 완료 | SSE 기반 실시간 응답, Multi-LLM 스트리밍 지원 |
 | **WebSocket API** | 완료 | 양방향 실시간 채팅, RAG 파이프라인 통합 |
 | **Reranker 설정 v2.1** | 완료 | 4 approach, 6 provider (Cohere, Local 추가) |
+| **OpenAI 호환 API** | 완료 | /v1/chat/completions, /v1/models, 스트리밍 지원 |
 | **문서화** | 완료 | API Reference, 개발 가이드 등 12개 문서 |
 
 상세 기술부채 분석: `docs/TECHNICAL_DEBT_ANALYSIS.md`
+
+## 향후 보강 계획 (Feature Roadmap)
+
+15개 신규/개선 피처를 5단계로 나누어 추진합니다. 경쟁 프레임워크 분석(Dify, RAGFlow, Kotaemon 등) 및 2026 RAG 트렌드 기반.
+
+| Phase | 기간 | 핵심 피처 | 목표 |
+|-------|------|----------|------|
+| **Phase 1** | 1-2주 | Ollama 통합, Grok API, 다국어 easy-start | 글로벌 사용자 유입 |
+| **Phase 2** | 2-3주 | RAGAS 평가, 적응형 청킹, OpenAI 호환 API | 검색 품질 + 통합성 |
+| **Phase 3** | 3-4주 | 문서 관리 GUI, PDF 인용 하이라이트, 시맨틱 캐시 | 프론트엔드 UX |
+| **Phase 4** | 4-6주 | Agentic RAG, 데이터 커넥터, Auto-Metadata | 지능형 RAG |
+| **Phase 5** | 6-8주+ | 멀티모달 RAG, NoCode 빌더, 경량 그래프 RAG | 차세대 경쟁 우위 |
+
+상세 계획: `docs/plans/2026-02-25-feature-roadmap.md`
 
 ---
 **Claude Note**: 본 프로젝트는 이미 "완벽"한 상태이므로, 코드 수정 시 기존의 추상화 인터페이스(Protocol)와 DI 패턴을 엄격히 준수하십시오.

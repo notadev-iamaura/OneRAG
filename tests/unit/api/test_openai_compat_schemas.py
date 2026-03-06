@@ -5,8 +5,6 @@ OpenAI 호환 API 스키마 단위 테스트
 OpenAI Chat Completions API 형식의 Request/Response 스키마를 검증합니다.
 """
 
-import time
-
 import pytest
 from pydantic import ValidationError
 

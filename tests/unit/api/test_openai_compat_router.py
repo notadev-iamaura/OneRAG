@@ -7,7 +7,7 @@ LLM과 검색은 Mock으로 대체하여 격리된 환경에서 실행합니다.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -186,7 +186,7 @@ class TestChatCompletionsStreaming:
 
         # SSE 라인 파싱
         lines = response.text.strip().split("\n")
-        data_lines = [l for l in lines if l.startswith("data: ")]
+        data_lines = [line for line in lines if line.startswith("data: ")]
         assert len(data_lines) >= 2  # 최소 1개 청크 + [DONE]
 
         # 마지막은 [DONE]
@@ -213,7 +213,7 @@ class TestChatCompletionsStreaming:
             },
         )
         lines = response.text.strip().split("\n")
-        data_lines = [l for l in lines if l.startswith("data: ") and l != "data: [DONE]"]
+        data_lines = [line for line in lines if line.startswith("data: ") and line != "data: [DONE]"]
 
         # 마지막 데이터 청크에 finish_reason 확인
         last_data = json.loads(data_lines[-1].replace("data: ", ""))
