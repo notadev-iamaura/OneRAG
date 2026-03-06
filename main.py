@@ -65,6 +65,8 @@ from app.api.routers import (
     weaviate_admin_router,  # Weaviate 관리 API 라우터
     websocket_router,  # ✅ Task 4: WebSocket 채팅 라우터
 )
+from app.api.routers.openai_compat_router import router as openai_compat_router
+from app.api.routers.openai_compat_router import set_modules as set_openai_modules
 
 # from app.batch.scheduler import BatchScheduler  # Moved to legacy
 from app.core.di_container import (
@@ -343,6 +345,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         websocket_router.set_chat_service(chat_service_instance)
         logger.info("✅ WebSocket 라우터에 ChatService 주입 완료")
 
+        # OpenAI 호환 API에 모듈 주입
+        set_openai_modules({
+            "llm_factory": modules_dict.get("llm_factory"),
+            "retrieval": modules_dict.get("retrieval"),
+        })
+        logger.info("✅ OpenAI 호환 API 모듈 주입 완료")
+
         # Rate Limiter cleanup task 시작 (24시간 주기 메모리 정리)
         rate_limiter.start_cleanup_task()
         logger.info("✅ Rate Limiter cleanup task started")
@@ -604,6 +613,7 @@ app.include_router(tools_router.router, prefix="/api", tags=["Tools"])
 app.include_router(weaviate_admin_router.router, tags=["Weaviate Admin"])
 app.include_router(admin_eval_router, prefix="/api", tags=["Admin Evaluation"])
 app.include_router(websocket_router.router, tags=["WebSocket"])  # ✅ Task 4: WebSocket 채팅
+app.include_router(openai_compat_router)  # OpenAI 호환 API (prefix="/v1"은 라우터에 포함)
 
 
 @app.get("/")
