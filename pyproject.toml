@@ -1,14 +1,30 @@
 [project]
 name = "onerag"
 version = "1.0.7"
-description = "모듈형 한국어 RAG 시스템 - 시멘틱 청킹, 동적 임계값, 쿼리 확장 지원"
+description = "Production-ready modular RAG backend — swap Vector DB, LLM, Reranker with 1 line of config"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "OneRAG Contributors"},
 ]
-keywords = ["rag", "chatbot", "korean", "ai", "fastapi"]
+keywords = [
+    "rag",
+    "retrieval-augmented-generation",
+    "llm",
+    "chatbot",
+    "ai",
+    "fastapi",
+    "vector-database",
+    "hybrid-search",
+    "openai-compatible",
+    "weaviate",
+    "ollama",
+    "graphrag",
+    "reranker",
+    "korean-nlp",
+    "document-qa",
+]
 
 dependencies = [
     # FastAPI and ASGI Server

@@ -1,0 +1,282 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 760">
+  <defs>
+    <!-- 그라데이션 -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#58a6ff"/>
+      <stop offset="100%" stop-color="#1f6feb"/>
+    </linearGradient>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7ee787"/>
+      <stop offset="100%" stop-color="#3fb950"/>
+    </linearGradient>
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#bc8cff"/>
+      <stop offset="100%" stop-color="#8957e5"/>
+    </linearGradient>
+    <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e3b341"/>
+      <stop offset="100%" stop-color="#d29922"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#79c0ff"/>
+      <stop offset="100%" stop-color="#56d4dd"/>
+    </linearGradient>
+    <linearGradient id="pinkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f778ba"/>
+      <stop offset="100%" stop-color="#db61a2"/>
+    </linearGradient>
+    <linearGradient id="pipeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1f6feb"/>
+      <stop offset="100%" stop-color="#8957e5"/>
+    </linearGradient>
+
+    <!-- 그림자 필터 -->
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="116%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#1e293b" flood-opacity="0.08"/>
+    </filter>
+    <filter id="shadowSm" x="-4%" y="-4%" width="108%" height="116%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#1e293b" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <!-- 배경 -->
+  <rect width="960" height="760" rx="16" fill="url(#bgGrad)"/>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- 섹션 1: 인터페이스 계층 (y: 20-90)          -->
+  <!-- ════════════════════════════════════════════ -->
+  <text x="480" y="36" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#64748b" font-weight="600" letter-spacing="2">INTERFACES</text>
+
+  <!-- REST API -->
+  <rect x="60" y="48" width="192" height="44" rx="8" fill="url(#blueGrad)" filter="url(#shadow)"/>
+  <text x="156" y="75" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" fill="#fff" font-weight="600">REST API</text>
+
+  <!-- SSE Streaming -->
+  <rect x="270" y="48" width="192" height="44" rx="8" fill="url(#blueGrad)" filter="url(#shadow)"/>
+  <text x="366" y="75" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" fill="#fff" font-weight="600">SSE Streaming</text>
+
+  <!-- WebSocket -->
+  <rect x="480" y="48" width="192" height="44" rx="8" fill="url(#blueGrad)" filter="url(#shadow)"/>
+  <text x="576" y="75" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" fill="#fff" font-weight="600">WebSocket</text>
+
+  <!-- OpenAI Compatible -->
+  <rect x="690" y="48" width="210" height="44" rx="8" fill="url(#blueGrad)" filter="url(#shadow)"/>
+  <text x="795" y="69" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" fill="#fff" font-weight="600">OpenAI Compatible</text>
+  <text x="795" y="84" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="10" fill="rgba(255,255,255,0.75)">/v1/chat/completions</text>
+
+  <!-- 화살표: 인터페이스 → 파이프라인 -->
+  <line x1="480" y1="92" x2="480" y2="118" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4,3"/>
+  <polygon points="475,116 480,124 485,116" fill="#94a3b8"/>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- 섹션 2: RAG 파이프라인 (y: 124-300)         -->
+  <!-- ════════════════════════════════════════════ -->
+
+  <!-- 파이프라인 컨테이너 -->
+  <rect x="30" y="124" width="900" height="176" rx="12" fill="#fff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadow)"/>
+
+  <!-- 파이프라인 타이틀 바 -->
+  <rect x="30" y="124" width="900" height="36" rx="12" fill="url(#pipeGrad)"/>
+  <rect x="30" y="148" width="900" height="12" fill="url(#pipeGrad)"/>
+  <text x="480" y="147" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" fill="#fff" font-weight="700" letter-spacing="1">7-STEP RAG PIPELINE</text>
+
+  <!-- 파이프라인 단계들 -->
+  <!-- Step 1: Route -->
+  <rect x="52" y="174" width="108" height="56" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="106" y="197" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#1e40af" font-weight="700">① Route</text>
+  <text x="106" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#3b82f6">쿼리 분류</text>
+
+  <!-- Arrow -->
+  <line x1="160" y1="202" x2="176" y2="202" stroke="#cbd5e1" stroke-width="2"/>
+  <polygon points="174,198 182,202 174,206" fill="#cbd5e1"/>
+
+  <!-- Step 2: Expand -->
+  <rect x="182" y="174" width="108" height="56" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="236" y="197" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#1e40af" font-weight="700">② Expand</text>
+  <text x="236" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#3b82f6">쿼리 확장</text>
+
+  <!-- Arrow -->
+  <line x1="290" y1="202" x2="306" y2="202" stroke="#cbd5e1" stroke-width="2"/>
+  <polygon points="304,198 312,202 304,206" fill="#cbd5e1"/>
+
+  <!-- Step 3: Search (Green - swappable) -->
+  <rect x="312" y="174" width="108" height="56" rx="8" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2"/>
+  <text x="366" y="197" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#065f46" font-weight="700">③ Search</text>
+  <text x="366" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#059669">6종 Vector DB</text>
+
+  <!-- Arrow -->
+  <line x1="420" y1="202" x2="436" y2="202" stroke="#cbd5e1" stroke-width="2"/>
+  <polygon points="434,198 442,202 434,206" fill="#cbd5e1"/>
+
+  <!-- Step 4: Cache (Cyan - swappable) -->
+  <rect x="442" y="174" width="108" height="56" rx="8" fill="#ecfeff" stroke="#67e8f9" stroke-width="2"/>
+  <text x="496" y="197" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#155e75" font-weight="700">④ Cache</text>
+  <text x="496" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#0891b2">3종 캐시</text>
+
+  <!-- Arrow -->
+  <line x1="550" y1="202" x2="566" y2="202" stroke="#cbd5e1" stroke-width="2"/>
+  <polygon points="564,198 572,202 564,206" fill="#cbd5e1"/>
+
+  <!-- Step 5: Rerank (Amber - swappable) -->
+  <rect x="572" y="174" width="108" height="56" rx="8" fill="#fffbeb" stroke="#fcd34d" stroke-width="2"/>
+  <text x="626" y="197" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#92400e" font-weight="700">⑤ Rerank</text>
+  <text x="626" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#d97706">6종 리랭커</text>
+
+  <!-- Arrow -->
+  <line x1="680" y1="202" x2="696" y2="202" stroke="#cbd5e1" stroke-width="2"/>
+  <polygon points="694,198 702,202 694,206" fill="#cbd5e1"/>
+
+  <!-- Step 6: Generate (Purple - swappable) -->
+  <rect x="702" y="174" width="108" height="56" rx="8" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text x="756" y="197" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#5b21b6" font-weight="700">⑥ Generate</text>
+  <text x="756" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#7c3aed">5종 LLM</text>
+
+  <!-- Arrow -->
+  <line x1="810" y1="202" x2="826" y2="202" stroke="#cbd5e1" stroke-width="2"/>
+  <polygon points="824,198 832,202 824,206" fill="#cbd5e1"/>
+
+  <!-- Step 7: Protect (Pink) -->
+  <rect x="832" y="174" width="88" height="56" rx="8" fill="#fdf2f8" stroke="#f9a8d4" stroke-width="1.5"/>
+  <text x="876" y="197" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#9d174d" font-weight="700">⑦ Protect</text>
+  <text x="876" y="216" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#db2777">PII 마스킹</text>
+
+  <!-- 파이프라인 하단 설명 -->
+  <text x="480" y="260" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#64748b">색상 테두리가 있는 단계 = 설정 파일로 교체 가능한 컴포넌트</text>
+
+  <!-- DI 컨테이너 뱃지 -->
+  <rect x="340" y="274" width="280" height="20" rx="10" fill="#f1f5f9" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="480" y="288" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="10" fill="#8b949e">DI Container  ·  80+ Providers  ·  2,100+ Tests</text>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- 섹션 3: 교체 가능 컴포넌트 (y: 310-700)    -->
+  <!-- ════════════════════════════════════════════ -->
+
+  <!-- 점선 연결: Pipeline → Components -->
+  <line x1="366" y1="300" x2="168" y2="340" stroke="#6ee7b7" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="496" y1="300" x2="366" y2="340" stroke="#67e8f9" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="626" y1="300" x2="564" y2="340" stroke="#fcd34d" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="756" y1="300" x2="762" y2="340" stroke="#c4b5fd" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- ─── Vector DB 카드 (Green) ─── -->
+  <rect x="50" y="340" width="236" height="200" rx="12" fill="#fff" stroke="#6ee7b7" stroke-width="2" filter="url(#shadowSm)"/>
+  <rect x="50" y="340" width="236" height="36" rx="12" fill="url(#greenGrad)"/>
+  <rect x="50" y="364" width="236" height="12" fill="url(#greenGrad)"/>
+  <text x="168" y="364" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" fill="#fff" font-weight="700">Vector DB</text>
+  <text x="168" y="400" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Weaviate</text>
+  <text x="274" y="400" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#059669">하이브리드</text>
+  <text x="168" y="420" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">ChromaDB</text>
+  <text x="274" y="420" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#059669">경량 로컬</text>
+  <text x="168" y="440" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Pinecone</text>
+  <text x="274" y="440" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#059669">서버리스</text>
+  <text x="168" y="460" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Qdrant</text>
+  <text x="274" y="460" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#059669">고성능</text>
+  <text x="168" y="480" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">pgvector</text>
+  <text x="274" y="480" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#059669">PostgreSQL</text>
+  <text x="168" y="500" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">MongoDB Atlas</text>
+  <text x="274" y="500" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#059669">Atlas Search</text>
+  <!-- 교체 방법 -->
+  <rect x="68" y="514" width="200" height="18" rx="4" fill="#ecfdf5"/>
+  <text x="168" y="527" text-anchor="middle" font-family="'SF Mono', 'Fira Code', monospace" font-size="9" fill="#059669">VECTOR_DB_PROVIDER=qdrant</text>
+
+  <!-- ─── Cache 카드 (Cyan) ─── -->
+  <rect x="302" y="340" width="206" height="200" rx="12" fill="#fff" stroke="#67e8f9" stroke-width="2" filter="url(#shadowSm)"/>
+  <rect x="302" y="340" width="206" height="36" rx="12" fill="url(#cyanGrad)"/>
+  <rect x="302" y="364" width="206" height="12" fill="url(#cyanGrad)"/>
+  <text x="405" y="364" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" fill="#fff" font-weight="700">Cache</text>
+  <text x="405" y="406" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Memory</text>
+  <text x="492" y="406" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#0891b2">인메모리</text>
+  <text x="405" y="430" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Redis</text>
+  <text x="492" y="430" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#0891b2">분산 캐시</text>
+  <text x="405" y="454" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Semantic Cache</text>
+  <text x="492" y="454" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#0891b2">유사 질문</text>
+  <!-- 교체 방법 -->
+  <rect x="318" y="514" width="174" height="18" rx="4" fill="#ecfeff"/>
+  <text x="405" y="527" text-anchor="middle" font-family="'SF Mono', 'Fira Code', monospace" font-size="9" fill="#0891b2">cache.type: "redis"</text>
+
+  <!-- ─── Reranker 카드 (Amber) ─── -->
+  <rect x="524" y="340" width="206" height="200" rx="12" fill="#fff" stroke="#fcd34d" stroke-width="2" filter="url(#shadowSm)"/>
+  <rect x="524" y="340" width="206" height="36" rx="12" fill="url(#amberGrad)"/>
+  <rect x="524" y="364" width="206" height="12" fill="url(#amberGrad)"/>
+  <text x="627" y="364" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" fill="#fff" font-weight="700">Reranker</text>
+  <text x="627" y="400" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Jina</text>
+  <text x="714" y="400" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#d97706">cross-encoder</text>
+  <text x="627" y="420" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Cohere</text>
+  <text x="714" y="420" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#d97706">100+ 언어</text>
+  <text x="627" y="440" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Google / OpenAI</text>
+  <text x="714" y="440" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#d97706">LLM 기반</text>
+  <text x="627" y="460" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">OpenRouter</text>
+  <text x="714" y="460" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#d97706">300+ 모델</text>
+  <text x="627" y="480" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Local</text>
+  <text x="714" y="480" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#d97706">API 키 불필요</text>
+  <!-- 교체 방법 -->
+  <rect x="540" y="514" width="174" height="18" rx="4" fill="#fffbeb"/>
+  <text x="627" y="527" text-anchor="middle" font-family="'SF Mono', 'Fira Code', monospace" font-size="9" fill="#d97706">reranking.provider: "jina"</text>
+
+  <!-- ─── LLM 카드 (Purple) ─── -->
+  <rect x="746" y="340" width="176" height="200" rx="12" fill="#fff" stroke="#c4b5fd" stroke-width="2" filter="url(#shadowSm)"/>
+  <rect x="746" y="340" width="176" height="36" rx="12" fill="url(#purpleGrad)"/>
+  <rect x="746" y="364" width="176" height="12" fill="url(#purpleGrad)"/>
+  <text x="834" y="364" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" fill="#fff" font-weight="700">LLM</text>
+  <text x="834" y="400" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Google Gemini</text>
+  <text x="834" y="420" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">OpenAI GPT</text>
+  <text x="834" y="440" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Anthropic Claude</text>
+  <text x="834" y="460" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">OpenRouter</text>
+  <text x="910" y="460" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#7c3aed">300+</text>
+  <text x="834" y="480" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#334155">Ollama</text>
+  <text x="910" y="480" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#7c3aed">로컬 LLM</text>
+  <!-- 교체 방법 -->
+  <rect x="762" y="514" width="144" height="18" rx="4" fill="#f5f3ff"/>
+  <text x="834" y="527" text-anchor="middle" font-family="'SF Mono', 'Fira Code', monospace" font-size="9" fill="#7c3aed">LLM_PROVIDER=openai</text>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- 섹션 4: 추가 기능 (y: 560-660)              -->
+  <!-- ════════════════════════════════════════════ -->
+  <text x="480" y="572" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" fill="#64748b" font-weight="600" letter-spacing="2">BUILT-IN FEATURES</text>
+
+  <!-- Feature 뱃지들 -->
+  <rect x="60" y="588" width="130" height="52" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadowSm)"/>
+  <text x="125" y="610" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#334155" font-weight="600">GraphRAG</text>
+  <text x="125" y="628" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#64748b">지식 그래프 추론</text>
+
+  <rect x="206" y="588" width="130" height="52" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadowSm)"/>
+  <text x="271" y="610" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#334155" font-weight="600">PII Protection</text>
+  <text x="271" y="628" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#64748b">개인정보 마스킹</text>
+
+  <rect x="352" y="588" width="130" height="52" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadowSm)"/>
+  <text x="417" y="610" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#334155" font-weight="600">Hybrid Search</text>
+  <text x="417" y="628" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#64748b">Dense + BM25</text>
+
+  <rect x="498" y="588" width="130" height="52" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadowSm)"/>
+  <text x="563" y="610" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#334155" font-weight="600">Rate Limiting</text>
+  <text x="563" y="628" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#64748b">IP/세션 기반</text>
+
+  <rect x="644" y="588" width="130" height="52" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadowSm)"/>
+  <text x="709" y="610" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#334155" font-weight="600">Observability</text>
+  <text x="709" y="628" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#64748b">실시간 메트릭</text>
+
+  <rect x="790" y="588" width="130" height="52" rx="8" fill="#fff" stroke="#e2e8f0" stroke-width="1.5" filter="url(#shadowSm)"/>
+  <text x="855" y="610" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#334155" font-weight="600">Agent / MCP</text>
+  <text x="855" y="628" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="9" fill="#64748b">도구 실행</text>
+
+  <!-- ════════════════════════════════════════════ -->
+  <!-- 푸터: 핵심 메시지                           -->
+  <!-- ════════════════════════════════════════════ -->
+  <rect x="200" y="668" width="560" height="40" rx="20" fill="#1e293b" filter="url(#shadow)"/>
+  <text x="480" y="693" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" fill="#fff" font-weight="600">모든 컴포넌트를 .env 1줄 또는 YAML 설정으로 교체할 수 있습니다</text>
+
+  <!-- 하단 3개 키워드 -->
+  <text x="480" y="733" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" fill="#94a3b8">
+    <tspan fill="#3fb950" font-weight="600">Zero Lock-in</tspan>
+    <tspan fill="#94a3b8">  ·  </tspan>
+    <tspan fill="#1f6feb" font-weight="600">Production Ready</tspan>
+    <tspan fill="#94a3b8">  ·  </tspan>
+    <tspan fill="#8957e5" font-weight="600">API Key Optional</tspan>
+  </text>
+
+  <!-- 하단 세부 수치 -->
+  <text x="480" y="752" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="10" fill="#cbd5e1">6 Vector DBs · 5 LLMs · 6 Rerankers · 3 Caches · 4 Interfaces · 2,100+ Tests</text>
+</svg>
