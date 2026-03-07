@@ -103,6 +103,20 @@ llm:
     - "anthropic/claude-3-5-haiku-20241022"  # 1순위: Claude 3.5 Haiku (빠르고 저렴)
 
   # ========================================
+  # Ollama 로컬 LLM 설정
+  # ========================================
+  # API 키 없이 로컬에서 LLM 사용 (에어갭 환경 지원)
+  # Ollama 서버 실행 필요: https://ollama.com
+  # Ollama가 미실행 시에도 서버 기동에 영향 없음 (지연 초기화)
+
+  ollama:
+    base_url: "${OLLAMA_BASE_URL:-http://localhost:11434}"
+    model: "llama3.2"
+    temperature: 0.7
+    max_tokens: 2048
+    timeout: 300
+
+  # ========================================
   # 레거시 설정 (deprecated - 제거 예정)
   # ========================================
   # 기존 코드 호환을 위해 유지, 새 코드에서는 사용하지 않음

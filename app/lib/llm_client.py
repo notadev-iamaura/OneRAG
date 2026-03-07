@@ -28,6 +28,15 @@ class BaseLLMClient(ABC):
         self.max_tokens = config.get("max_tokens", 2048)
         self.timeout = config.get("timeout", 30)
 
+    def _resolve_params(self, **kwargs: Any) -> tuple[str, float, int]:
+        """kwargs에서 런타임 오버라이드 파라미터 추출 (OpenAI 호환 API 지원)"""
+        model = kwargs.get("model") or self.model
+        temp = kwargs.get("temperature")
+        temperature = float(temp) if temp is not None else self.temperature
+        max_tok = kwargs.get("max_tokens")
+        max_tokens = int(max_tok) if max_tok is not None else self.max_tokens
+        return model, temperature, max_tokens
+
     @abstractmethod
     async def generate_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
@@ -104,15 +113,20 @@ class GoogleLLMClient(BaseLLMClient):
     ) -> str:
         """Gemini 텍스트 생성"""
         try:
+            model_name, temperature, max_tokens = self._resolve_params(**kwargs)
             model = genai.GenerativeModel(
-                model_name=self.model, system_instruction=system_prompt if system_prompt else None
+                model_name=model_name, system_instruction=system_prompt if system_prompt else None
             )
+            gen_config = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens,
+            }
 
             # 동기 함수를 비동기로 실행
             response = await asyncio.to_thread(
                 model.generate_content,
                 prompt,
-                generation_config=self.generation_config,  # type: ignore[arg-type]
+                generation_config=gen_config,  # type: ignore[arg-type]
             )
 
             return response.text  # type: ignore[no-any-return]
@@ -145,15 +159,20 @@ class GoogleLLMClient(BaseLLMClient):
             str: 생성된 텍스트 청크
         """
         try:
+            model_name, temperature, max_tokens = self._resolve_params(**kwargs)
             model = genai.GenerativeModel(
-                model_name=self.model,
+                model_name=model_name,
                 system_instruction=system_prompt if system_prompt else None,
             )
+            gen_config = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens,
+            }
 
             # stream=True로 스트리밍 응답 요청
             response = model.generate_content(
                 prompt,
-                generation_config=self.generation_config,  # type: ignore[arg-type]
+                generation_config=gen_config,  # type: ignore[arg-type]
                 stream=True,
             )
 
@@ -305,6 +324,7 @@ class OpenAILLMClient(BaseLLMClient):
             }
         )
         try:
+            model, temperature, max_tokens = self._resolve_params(**kwargs)
             messages: list[dict[str, str]] = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
@@ -313,17 +333,17 @@ class OpenAILLMClient(BaseLLMClient):
             # Reasoning 모델 (o1, GPT-5)은 max_completion_tokens 사용
             # Reasoning 모델은 temperature 파라미터 지원 안 함
             # 일반 GPT 모델 (GPT-4 등)은 max_tokens 사용
-            is_reasoning_model = self.model.startswith("o1") or self.model.startswith("gpt-5")
+            is_reasoning_model = model.startswith("o1") or model.startswith("gpt-5")
 
-            api_params = {"model": self.model, "messages": messages, "timeout": self.timeout}
+            api_params = {"model": model, "messages": messages, "timeout": self.timeout}
 
             # Reasoning 모델 (o1, GPT-5)은 max_completion_tokens 파라미터 사용, temperature 제외
             # GPT-5는 추가로 verbosity, reasoning_effort 파라미터 지원
             # 일반 GPT 모델은 max_tokens와 temperature 사용
             if is_reasoning_model:
-                api_params["max_completion_tokens"] = self.max_tokens
+                api_params["max_completion_tokens"] = max_tokens
                 # GPT-5만 verbosity와 reasoning_effort 지원 (o1은 미지원)
-                if self.model.startswith("gpt-5"):
+                if model.startswith("gpt-5"):
                     api_params["verbosity"] = self.verbosity
                     api_params["reasoning_effort"] = self.reasoning_effort
                     logger.debug(
@@ -331,8 +351,8 @@ class OpenAILLMClient(BaseLLMClient):
                         f"reasoning_effort={self.reasoning_effort}"
                     )
             else:
-                api_params["max_tokens"] = self.max_tokens
-                api_params["temperature"] = self.temperature
+                api_params["max_tokens"] = max_tokens
+                api_params["temperature"] = temperature
 
             response = await asyncio.to_thread(
                 self.client.chat.completions.create, **api_params  # type: ignore[arg-type]
@@ -378,27 +398,26 @@ class OpenAILLMClient(BaseLLMClient):
             str: 생성된 텍스트 청크
         """
         try:
+            model, temperature, max_tokens = self._resolve_params(**kwargs)
             messages: list[dict[str, str]] = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
             # Reasoning 모델 분기 처리 (generate_text와 일관성 유지)
-            # Reasoning 모델 (o1, GPT-5)은 max_completion_tokens 사용, temperature 미지원
-            # 일반 GPT 모델은 max_tokens와 temperature 사용
-            is_reasoning_model = self.model.startswith("o1") or self.model.startswith("gpt-5")
+            is_reasoning_model = model.startswith("o1") or model.startswith("gpt-5")
 
             api_params: dict[str, Any] = {
-                "model": self.model,
+                "model": model,
                 "messages": messages,
                 "stream": True,
             }
 
             if is_reasoning_model:
-                api_params["max_completion_tokens"] = self.max_tokens
+                api_params["max_completion_tokens"] = max_tokens
             else:
-                api_params["max_tokens"] = self.max_tokens
-                api_params["temperature"] = self.temperature
+                api_params["max_tokens"] = max_tokens
+                api_params["temperature"] = temperature
 
             # stream=True로 스트리밍 응답 요청
             response = self.client.chat.completions.create(**api_params)  # type: ignore[arg-type]
@@ -429,11 +448,12 @@ class AnthropicLLMClient(BaseLLMClient):
     ) -> str:
         """Claude 텍스트 생성"""
         try:
+            model, temperature, max_tokens = self._resolve_params(**kwargs)
             response = await asyncio.to_thread(
                 self.client.messages.create,  # type: ignore[arg-type]
-                model=self.model,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
                 system=system_prompt if system_prompt else "",
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -472,11 +492,12 @@ class AnthropicLLMClient(BaseLLMClient):
             str: 생성된 텍스트 청크
         """
         try:
+            model, temperature, max_tokens = self._resolve_params(**kwargs)
             # Anthropic 스트리밍 API 사용 (with 문으로 리소스 관리)
             with self.client.messages.stream(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,  # generate_text와 일관성 유지
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,  # generate_text와 일관성 유지
                 system=system_prompt if system_prompt else "",
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
@@ -571,6 +592,7 @@ class OpenRouterLLMClient(BaseLLMClient):
         )
 
         try:
+            model, temperature, max_tokens = self._resolve_params(**kwargs)
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
@@ -578,20 +600,20 @@ class OpenRouterLLMClient(BaseLLMClient):
 
             # OpenRouter는 OpenAI와 동일한 파라미터 사용
             # Reasoning 모델 (o1, gpt-5 등)은 별도 처리 필요
-            is_reasoning_model = "o1" in self.model.lower() or "gpt-5" in self.model.lower()
+            is_reasoning_model = "o1" in model.lower() or "gpt-5" in model.lower()
 
             api_params = {
-                "model": self.model,  # OpenRouter 형식: openai/gpt-4o, anthropic/claude-3.5-sonnet
+                "model": model,  # OpenRouter 형식: openai/gpt-4o, anthropic/claude-3.5-sonnet
                 "messages": messages,
                 "timeout": self.timeout,
             }
 
             # Reasoning 모델은 max_completion_tokens 사용, 일반 모델은 max_tokens 사용
             if is_reasoning_model:
-                api_params["max_completion_tokens"] = self.max_tokens
+                api_params["max_completion_tokens"] = max_tokens
             else:
-                api_params["max_tokens"] = self.max_tokens
-                api_params["temperature"] = self.temperature
+                api_params["max_tokens"] = max_tokens
+                api_params["temperature"] = temperature
 
             response = await asyncio.to_thread(
                 self.client.chat.completions.create, **api_params  # type: ignore[arg-type]
@@ -625,15 +647,56 @@ class OpenRouterLLMClient(BaseLLMClient):
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> AsyncGenerator[str, None]:
         """
-        OpenRouter 스트리밍 텍스트 생성 (향후 구현 예정)
+        OpenRouter 스트리밍 텍스트 생성
 
-        현재는 NotImplementedError를 발생시킵니다.
+        OpenAI SDK 호환 API의 stream=True 옵션으로 청크 단위 응답을 yield합니다.
+
+        Args:
+            prompt: 사용자 프롬프트
+            system_prompt: 시스템 프롬프트 (선택적)
+            **kwargs: 추가 파라미터 (model, temperature, max_tokens 오버라이드)
+
+        Yields:
+            str: 생성된 텍스트 청크
         """
-        raise NotImplementedError(
-            "OpenRouterLLMClient.stream_text()는 아직 구현되지 않았습니다. "
-            "GoogleLLMClient를 사용하거나 향후 업데이트를 기다려주세요."
-        )
-        yield  # AsyncGenerator 타입 힌트를 위해 필요
+        try:
+            model, temperature, max_tokens = self._resolve_params(**kwargs)
+            messages: list[dict[str, str]] = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            # Reasoning 모델 분기 (generate_text와 동일 로직)
+            is_reasoning_model = "o1" in model.lower() or "gpt-5" in model.lower()
+
+            api_params: dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "stream": True,
+                "timeout": self.timeout,
+            }
+
+            if is_reasoning_model:
+                api_params["max_completion_tokens"] = max_tokens
+            else:
+                api_params["max_tokens"] = max_tokens
+                api_params["temperature"] = temperature
+
+            # OpenAI SDK의 스트리밍 응답 (OpenRouter도 동일 인터페이스)
+            response = self.client.chat.completions.create(**api_params)  # type: ignore[arg-type]
+
+            # 청크 단위로 yield (빈 콘텐츠는 건너뜀)
+            for chunk in response:  # type: ignore[union-attr]
+                if chunk.choices and chunk.choices[0].delta.content:  # type: ignore[union-attr]
+                    yield chunk.choices[0].delta.content  # type: ignore[union-attr]
+
+        except Exception as e:
+            logger.error(
+                "OpenRouter LLM 스트리밍 실패",
+                extra={"error": str(e), "error_type": type(e).__name__},
+                exc_info=True,
+            )
+            raise
 
 
 class OllamaLLMClient(BaseLLMClient):
@@ -705,6 +768,7 @@ class OllamaLLMClient(BaseLLMClient):
             생성된 텍스트
         """
         try:
+            model, temperature, max_tokens = self._resolve_params(**kwargs)
             client = self._get_client()
             messages: list[dict[str, str]] = []
             if system_prompt:
@@ -714,10 +778,10 @@ class OllamaLLMClient(BaseLLMClient):
             create_fn = client.chat.completions.create
             response = await asyncio.to_thread(
                 create_fn,  # type: ignore[arg-type]
-                model=self.model,
+                model=model,
                 messages=messages,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
+                max_tokens=max_tokens,
+                temperature=temperature,
             )
 
             return response.choices[0].message.content or ""
@@ -748,6 +812,7 @@ class OllamaLLMClient(BaseLLMClient):
             str: 생성된 텍스트 청크
         """
         try:
+            model, temperature, max_tokens = self._resolve_params(**kwargs)
             client = self._get_client()
             messages: list[dict[str, str]] = []
             if system_prompt:
@@ -755,10 +820,10 @@ class OllamaLLMClient(BaseLLMClient):
             messages.append({"role": "user", "content": prompt})
 
             response = client.chat.completions.create(
-                model=self.model,
+                model=model,
                 messages=messages,  # type: ignore[arg-type]
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
+                max_tokens=max_tokens,
+                temperature=temperature,
                 stream=True,
             )
 
