@@ -10,6 +10,7 @@ authors = [
 ]
 keywords = [
     "rag",
+    "rag-framework",
     "retrieval-augmented-generation",
     "llm",
     "chatbot",
@@ -19,11 +20,15 @@ keywords = [
     "hybrid-search",
     "openai-compatible",
     "weaviate",
+    "pinecone",
+    "qdrant",
+    "chromadb",
     "ollama",
     "graphrag",
     "reranker",
     "korean-nlp",
     "document-qa",
+    "production-ready",
 ]
 
 dependencies = [
