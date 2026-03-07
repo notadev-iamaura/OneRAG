@@ -2108,20 +2108,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/82/a1/f6d1113784dc3669d1ac4e4be1584af206a1aa7daa952a8805213324256e/kiwipiepy_model-0.22.1.tar.gz", hash = "sha256:c2359920c9f6d66b131452c905a3c8792305f9bdee6cedbe6088d0430653fd8b", size = 79496954, upload-time = "2025-12-15T15:38:39.331Z" }
 
 [[package]]
-name = "ko-core-news-sm"
-version = "3.7.0"
-source = { url = "https://github.com/explosion/spacy-models/releases/download/ko_core_news_sm-3.7.0/ko_core_news_sm-3.7.0-py3-none-any.whl" }
-dependencies = [
-    { name = "spacy" },
-]
-wheels = [
-    { url = "https://github.com/explosion/spacy-models/releases/download/ko_core_news_sm-3.7.0/ko_core_news_sm-3.7.0-py3-none-any.whl", hash = "sha256:b1a15a4987a8f9835031a6bd2fe57fe158097ab5304221c41df1bd4aab8cf458" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "spacy", specifier = ">=3.7.0,<3.8.0" }]
-
-[[package]]
 name = "kubernetes"
 version = "33.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3100,7 +3086,6 @@ dependencies = [
     { name = "google-generativeai" },
     { name = "httpx" },
     { name = "kiwipiepy" },
-    { name = "ko-core-news-sm" },
     { name = "langchain" },
     { name = "langchain-anthropic" },
     { name = "langchain-core" },
@@ -3233,7 +3218,6 @@ requires-dist = [
     { name = "ipython", marker = "extra == 'dev'", specifier = ">=8.19.0" },
     { name = "kiwipiepy", specifier = ">=0.18.0" },
     { name = "kiwipiepy", marker = "extra == 'bm25'", specifier = ">=0.18.0" },
-    { name = "ko-core-news-sm", url = "https://github.com/explosion/spacy-models/releases/download/ko_core_news_sm-3.7.0/ko_core_news_sm-3.7.0-py3-none-any.whl" },
     { name = "langchain", specifier = ">=0.1.0" },
     { name = "langchain-anthropic", specifier = ">=0.1.0" },
     { name = "langchain-core", specifier = ">=0.1.0" },

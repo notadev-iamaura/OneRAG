@@ -102,9 +102,10 @@ dependencies = [
     "playwright==1.45.0",
     "apscheduler==3.10.4",
     "lxml==5.3.0",
-    # Korean NLP for PII Detection (spaCy + 한국어 모델)
+    # Korean NLP for PII Detection (spaCy)
     "spacy>=3.7.0",
-    "ko_core_news_sm @ https://github.com/explosion/spacy-models/releases/download/ko_core_news_sm-3.7.0/ko_core_news_sm-3.7.0-py3-none-any.whl",
+    # ko_core_news_sm: PyPI 정책상 직접 URL 의존성 불가 → 설치 후 별도 다운로드 필요
+    # python -m spacy download ko_core_news_sm
     "networkx>=3.6.1",
     "neo4j>=5.15.0",  # Neo4j 그래프 데이터베이스 드라이버
     "chardet>=5.2.0",
