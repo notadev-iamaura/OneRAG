@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 580" font-family="'SF Mono','Monaco','Inconsolata','Fira Mono','Droid Sans Mono','Source Code Pro','Menlo','Consolas','DejaVu Sans Mono',monospace" font-size="13">
+  <style>
+    .bg { fill: #0d1117; }
+    .title-bar { fill: #161b22; }
+    .btn-r { fill: #ff5f56; }
+    .btn-y { fill: #ffbd2e; }
+    .btn-g { fill: #27c93f; }
+    .title { fill: #8b949e; font-size: 12px; text-anchor: middle; }
+    .prompt { fill: #7ee787; }
+    .cmd { fill: #f0f6fc; }
+    .dim { fill: #8b949e; }
+    .info { fill: #58a6ff; }
+    .warn { fill: #d29922; }
+    .success { fill: #3fb950; }
+    .pink { fill: #f778ba; }
+    .white { fill: #e6edf3; }
+    .score { fill: #bc8cff; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    .step1 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 0.5s; }
+    .step2 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 1.2s; }
+    .step3 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 2.0s; }
+    .step4 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 2.8s; }
+    .step5 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 3.5s; }
+    .step6 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 4.2s; }
+    .step7 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 4.6s; }
+    .step8 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 5.0s; }
+    .step9 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 5.4s; }
+    .step10 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 5.8s; }
+    .step11 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 6.2s; }
+    .step12 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 6.6s; }
+    .step13 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 7.0s; }
+    .step14 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 7.4s; }
+    .step15 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 7.8s; }
+    .step16 { opacity: 0; animation: fadeIn 0.3s ease forwards; animation-delay: 8.2s; }
+
+    .cursor {
+      animation: blink 1s step-end infinite;
+      animation-delay: 9.0s;
+    }
+  </style>
+
+  <!-- 터미널 창 -->
+  <rect class="bg" width="840" height="580" rx="10"/>
+  <rect class="title-bar" width="840" height="36" rx="10"/>
+  <rect class="bg" y="30" width="840" height="10"/>
+  <circle class="btn-r" cx="20" cy="18" r="6"/>
+  <circle class="btn-y" cx="40" cy="18" r="6"/>
+  <circle class="btn-g" cx="60" cy="18" r="6"/>
+  <text class="title" x="420" y="22">OneRAG — easy-start</text>
+
+  <!-- 커맨드 입력 -->
+  <g class="step1">
+    <text x="20" y="65">
+      <tspan class="prompt">$ </tspan>
+      <tspan class="cmd">make easy-start LANG=en</tspan>
+    </text>
+  </g>
+
+  <!-- 시작 메시지 -->
+  <g class="step2">
+    <text class="info" x="20" y="90">🚀 Easy Start — Running without Docker...</text>
+  </g>
+
+  <!-- 데이터 로드 -->
+  <g class="step3">
+    <text x="20" y="115">
+      <tspan class="success">✅ </tspan>
+      <tspan class="white">25 documents loaded (Dense + BM25)</tspan>
+    </text>
+  </g>
+
+  <!-- 초기화 완료 상태 -->
+  <g class="step4">
+    <text class="success" x="20" y="140">✅ Hybrid Search: Active</text>
+    <text class="success" x="20" y="158">✅ LLM Answer Generation: Active (Ollama)</text>
+  </g>
+
+  <!-- 구분선 -->
+  <g class="step5">
+    <text class="dim" x="20" y="183">────────────────────────────────────────────────────────────────────────</text>
+  </g>
+
+  <!-- 유저 질문 -->
+  <g class="step6">
+    <text x="20" y="208">
+      <tspan class="prompt">Question › </tspan>
+      <tspan class="cmd">What is hybrid search and why is it better?</tspan>
+    </text>
+  </g>
+
+  <!-- 검색 중 -->
+  <g class="step7">
+    <text class="info" x="20" y="233">🔍 Searching... 5 results found</text>
+  </g>
+
+  <!-- 검색 결과 (실제 녹화 데이터) -->
+  <g class="step8">
+    <text class="dim" x="20" y="258">── Search Results (5 items) ────────────────────────────────────────────</text>
+  </g>
+  <g class="step9">
+    <text x="20" y="278">
+      <tspan class="warn">[1]</tspan>
+      <tspan class="white"> Advantages of Hybrid Search</tspan>
+      <tspan class="score">                                  score: 1.00</tspan>
+    </text>
+  </g>
+  <g class="step10">
+    <text x="20" y="298">
+      <tspan class="warn">[2]</tspan>
+      <tspan class="white"> Weaviate Vector Database</tspan>
+      <tspan class="score">                                     score: 0.99</tspan>
+    </text>
+  </g>
+  <g class="step11">
+    <text x="20" y="318">
+      <tspan class="warn">[3]</tspan>
+      <tspan class="white"> GraphRAG Features</tspan>
+      <tspan class="score">                                           score: 0.96</tspan>
+    </text>
+  </g>
+
+  <!-- AI 답변 (실제 Ollama qwen2.5:3b 응답) -->
+  <g class="step12">
+    <text class="dim" x="20" y="348">── AI Answer (Ollama) ──────────────────────────────────────────────────</text>
+  </g>
+  <g class="step13">
+    <text class="pink" x="20" y="370">🤖 AI ›</text>
+    <text class="white" x="20" y="390">Hybrid search is a retrieval method that combines Dense search</text>
+    <text class="white" x="20" y="408">(semantic-based) and Sparse search (keyword-based, such as BM25).</text>
+  </g>
+  <g class="step14">
+    <text class="white" x="20" y="433">It leverages the strengths of both approaches:</text>
+  </g>
+  <g class="step15">
+    <text class="warn" x="20" y="458">  •</text>
+    <text class="white" x="40" y="458">Dense search excels at finding semantically similar documents</text>
+    <text class="warn" x="20" y="478">  •</text>
+    <text class="white" x="40" y="478">Sparse search excels at exact keyword matching</text>
+    <text class="warn" x="20" y="498">  •</text>
+    <text class="white" x="40" y="498">Combined, it handles both keyword-critical queries (e.g.,</text>
+    <text class="white" x="40" y="516">'Samsung stock price') and meaning-critical queries</text>
+  </g>
+  <g class="step16">
+    <text class="white" x="40" y="541">(e.g., 'trending IT companies') effectively.</text>
+  </g>
+
+  <!-- 깜빡이는 커서 -->
+  <rect class="cursor" x="20" y="560" width="8" height="2" fill="#7ee787" opacity="0"/>
+</svg>

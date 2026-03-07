@@ -39,6 +39,14 @@ ollama pull llama3.2 && make easy-start
 
 ---
 
+## 데모
+
+<p align="center">
+  <img src="assets/demo-cli.svg" alt="OneRAG CLI Demo" width="100%"/>
+</p>
+
+---
+
 ## 왜 OneRAG인가?
 
 **하나의 코드베이스로 모든 RAG 컴포넌트를 조립합니다.**
