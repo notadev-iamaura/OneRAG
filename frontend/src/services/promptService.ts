@@ -1,74 +1,33 @@
 /**
  * 프롬프트 관리 API 서비스
  * 백엔드 프롬프트 CRUD 작업 처리
+ *
+ * 타입/상수는 types/prompt.ts에서 정의되며, 하위 호환성을 위해 여기서 re-export합니다.
  */
 
 import api from './api';
 
-// 프롬프트 타입 정의
-export interface Prompt {
-  id: string;
-  name: string;
-  content: string;
-  description: string;
-  category: 'system' | 'style' | 'custom';
-  is_active: boolean;
-  metadata?: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
+// 하위 호환성을 위한 re-export (타입/상수는 types/prompt.ts에서 관리)
+export type {
+  Prompt,
+  PromptListResponse,
+  CreatePromptRequest,
+  UpdatePromptRequest,
+  PromptExport,
+  PromptImportRequest,
+} from '../types/prompt';
 
-export interface PromptListResponse {
-  prompts: Prompt[];
-  total: number;
-  page: number;
-  page_size: number;
-}
+export { PROMPT_STYLES, PROMPT_CATEGORIES } from '../types/prompt';
 
-export interface CreatePromptRequest {
-  name: string;
-  content: string;
-  description: string;
-  category: 'system' | 'style' | 'custom';
-  is_active?: boolean;
-  metadata?: Record<string, unknown>;
-}
-
-export interface UpdatePromptRequest {
-  name?: string;
-  content?: string;
-  description?: string;
-  category?: 'system' | 'style' | 'custom';
-  is_active?: boolean;
-  metadata?: Record<string, unknown>;
-}
-
-export interface PromptExport {
-  prompts: Prompt[];
-  exported_at: string;
-  total: number;
-}
-
-export interface PromptImportRequest {
-  prompts: Prompt[];
-  exported_at: string;
-  total: number;
-}
-
-// 프롬프트 스타일 옵션
-export const PROMPT_STYLES = [
-  { value: 'system', label: '기본', description: '표준 시스템 프롬프트' },
-  { value: 'detailed', label: '자세한 답변', description: '상세하고 포괄적인 응답' },
-  { value: 'concise', label: '간결한 답변', description: '핵심만 간단하게' },
-  { value: 'professional', label: '전문적 답변', description: '비즈니스 및 전문 분야용' },
-  { value: 'educational', label: '교육적 답변', description: '학습 및 설명 중심' },
-] as const;
-
-export const PROMPT_CATEGORIES = [
-  { value: 'system', label: '시스템', description: '기본 시스템 프롬프트' },
-  { value: 'style', label: '스타일', description: '답변 스타일 프롬프트' },
-  { value: 'custom', label: '커스텀', description: '사용자 정의 프롬프트' },
-] as const;
+// 내부에서 사용할 타입 import
+import type {
+  Prompt,
+  PromptListResponse,
+  CreatePromptRequest,
+  UpdatePromptRequest,
+  PromptExport,
+  PromptImportRequest,
+} from '../types/prompt';
 
 class PromptService {
   // 프롬프트 목록 조회
