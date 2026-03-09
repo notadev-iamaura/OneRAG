@@ -6,7 +6,7 @@ Chunking Strategies - 문서 청킹 전략 모듈
 - SimpleChunker: 1:1 매핑 청킹 (FAQ용)
 - PointRuleChunker: 포인트 규정 청킹 (MVP)
 - SemanticChunker: 의미 기반 청킹 (Guidebook용, Phase 2)
-- ConversationChunker: 대화 청킹 (Kakaotalk용, Phase 2)
+- ConversationChunker: 대화 로그 청킹 (Phase 2)
 
 사용 예시:
     from app.modules.core.documents.chunking import SimpleChunker, PointRuleChunker

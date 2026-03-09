@@ -162,9 +162,9 @@ curl -X POST http://localhost:8000/api/admin/evaluate \
   -d '{
     "samples": [
       {
-        "query": "강남 스튜디오 추천해줘",
-        "answer": "강남에 위치한 스튜디오 3곳을 추천드립니다...",
-        "context": "A 스튜디오: 강남역 3번 출구..."
+        "query": "서울 맛집 추천해줘",
+        "answer": "서울에 위치한 맛집 3곳을 추천드립니다...",
+        "context": "A 레스토랑: 강남역 3번 출구..."
       }
     ],
     "provider": "internal"

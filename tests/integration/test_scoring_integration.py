@@ -48,7 +48,7 @@ class TestScoringIntegrationWithConfig:
 
         result = service.apply_weight(
             score=original_score,
-            collection="NotionMetadata",
+            collection="StructuredMetadata",
             file_type="PDF"
         )
 
@@ -62,11 +62,9 @@ class TestScoringIntegrationWithConfig:
         service = ScoringService(scoring_config)
 
         # 설정 파일에서 로드된 컬렉션 가중치 확인
-        assert "NotionMetadata" in service.collection_weights
         assert "Documents" in service.collection_weights
 
         # 기본값 1.0 확인
-        assert service.collection_weights["NotionMetadata"] == 1.0
         assert service.collection_weights["Documents"] == 1.0
 
 
@@ -109,7 +107,7 @@ class TestScoringIntegrationWithOrchestrator:
         custom_config = {
             "scoring": {
                 "collection_weight_enabled": True,
-                "collection_weights": {"NotionMetadata": 1.5, "Documents": 0.8},
+                "collection_weights": {"StructuredMetadata": 1.5, "Documents": 0.8},
                 "file_type_weight_enabled": True,
                 "file_type_weights": {"PDF": 1.2, "TXT": 1.1},
             }
@@ -122,7 +120,7 @@ class TestScoringIntegrationWithOrchestrator:
 
         # 커스텀 설정이 적용되었는지 확인
         assert orchestrator.scoring_service.collection_weight_enabled is True
-        assert orchestrator.scoring_service.collection_weights["NotionMetadata"] == 1.5
+        assert orchestrator.scoring_service.collection_weights["StructuredMetadata"] == 1.5
         assert orchestrator.scoring_service.file_type_weight_enabled is True
         assert orchestrator.scoring_service.file_type_weights["PDF"] == 1.2
 
@@ -135,7 +133,7 @@ class TestScoringIntegrationWithSearchResult:
         """SearchResult의 메타데이터를 사용하여 가중치를 적용할 수 있어야 한다"""
         service = ScoringService({
             "collection_weight_enabled": True,
-            "collection_weights": {"NotionMetadata": 1.5},
+            "collection_weights": {"StructuredMetadata": 1.5},
             "file_type_weight_enabled": True,
             "file_type_weights": {"PDF": 1.2},
         })
@@ -146,7 +144,7 @@ class TestScoringIntegrationWithSearchResult:
             content="테스트 내용",
             score=0.50,
             metadata={
-                "_collection": "NotionMetadata",
+                "_collection": "StructuredMetadata",
                 "file_type": "PDF",
             }
         )
@@ -180,7 +178,7 @@ class TestScoringConfigurationScenarios:
 
         # 모든 입력에 대해 원본 점수 반환
         test_cases = [
-            (0.75, "NotionMetadata", "PDF"),
+            (0.75, "StructuredMetadata", "PDF"),
             (0.50, "Documents", "TXT"),
             (0.25, "Unknown", "XLSX"),
         ]
@@ -191,11 +189,11 @@ class TestScoringConfigurationScenarios:
 
     @pytest.mark.integration
     def test_scenario_metadata_priority(self):
-        """시나리오 2: 메타데이터 우선 (NotionMetadata 부스트)"""
+        """시나리오 2: 메타데이터 우선 (StructuredMetadata 부스트)"""
         service = ScoringService({
             "collection_weight_enabled": True,
             "collection_weights": {
-                "NotionMetadata": 1.5,  # 50% 부스트
+                "StructuredMetadata": 1.5,  # 50% 부스트
                 "Documents": 0.8,       # 20% 감쇄
             },
             "file_type_weight_enabled": False,
@@ -203,8 +201,8 @@ class TestScoringConfigurationScenarios:
 
         base_score = 0.50
 
-        # NotionMetadata: 50% 부스트
-        metadata_score = service.apply_weight(base_score, collection="NotionMetadata")
+        # StructuredMetadata: 50% 부스트
+        metadata_score = service.apply_weight(base_score, collection="StructuredMetadata")
         assert metadata_score == 0.75
 
         # Documents: 20% 감쇄
@@ -239,17 +237,17 @@ class TestScoringConfigurationScenarios:
         """시나리오 4: 복합 가중치 (컬렉션 + 파일타입)"""
         service = ScoringService({
             "collection_weight_enabled": True,
-            "collection_weights": {"NotionMetadata": 1.5},
+            "collection_weights": {"StructuredMetadata": 1.5},
             "file_type_weight_enabled": True,
             "file_type_weights": {"PDF": 1.2},
         })
 
         base_score = 0.50
 
-        # NotionMetadata + PDF: 1.5 * 1.2 = 1.8배
+        # StructuredMetadata + PDF: 1.5 * 1.2 = 1.8배
         combined_score = service.apply_weight(
             base_score,
-            collection="NotionMetadata",
+            collection="StructuredMetadata",
             file_type="PDF"
         )
         expected = base_score * 1.5 * 1.2  # 0.90

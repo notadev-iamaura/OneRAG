@@ -1673,13 +1673,13 @@ class RAGPipeline:
         category: str | None = None,
     ) -> dict[str, Any]:
         """SQL 검색 결과의 한 행을 Source 객체로 변환"""
-        shop_name = row.get("shop_name") or row.get("업체명") or f"결과 {row_idx + 1}"
+        entity_name = row.get("entity_name") or row.get("name") or f"결과 {row_idx + 1}"
         row_preview = ", ".join(f"{k}: {v}" for k, v in row.items() if v is not None)
 
         if row_preview and self.privacy_masker:
             row_preview = self.privacy_masker.mask_text(row_preview)
 
-        document_name = f"[{category}] {shop_name}" if category else str(shop_name)
+        document_name = f"[{category}] {entity_name}" if category else str(entity_name)
 
         return {
             "id": source_id,

@@ -84,7 +84,7 @@ NOTION_METADATA_SCHEMA = {
         },
         # 청킹 메타
         {"name": "chunk_index", "dataType": ["int"], "description": "청크 인덱스"},
-        {"name": "total_chunks", "dataType": ["int"], "description": "해당 업체 총 청크 수"},
+        {"name": "total_chunks", "dataType": ["int"], "description": "해당 항목 총 청크 수"},
         {
             "name": "source_field",
             "dataType": ["text"],

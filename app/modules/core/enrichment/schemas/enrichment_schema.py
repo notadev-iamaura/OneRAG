@@ -15,11 +15,11 @@ class EnrichmentResult(BaseModel):
     LLM 보강 결과 데이터 모델
 
     Attributes:
-        category_main: 주요 카테고리 (예: "보너스기능_내부", "결제", "회원관리")
-        category_sub: 세부 카테고리 (예: "친구초대", "결제수단", "회원가입")
-        intent: 사용자 의도 (예: "기능 설명 요청", "문제 해결 요청")
-        consult_type: 상담 유형 (예: "초대코드문의", "결제오류", "가입문의")
-        keywords: 키워드 리스트 (예: ["친구초대", "초대코드", "포인트"])
+        category: 주요 카테고리 (예: "기술", "비즈니스", "교육", "건강")
+        subcategory: 세부 카테고리 (예: "프로그래밍", "마케팅", "튜토리얼")
+        intent: 텍스트의 주요 의도 (예: "정보 제공", "문제 해결", "안내")
+        content_type: 콘텐츠 유형 (예: "FAQ", "가이드", "보고서", "공지사항")
+        keywords: 키워드 리스트 (예: ["Python", "리스트", "반복문"])
         summary: 문서 요약 (한 줄 설명)
         is_tool_related: 도구/기능 관련 여부
         requires_db_check: 데이터베이스 확인 필요 여부
@@ -28,25 +28,25 @@ class EnrichmentResult(BaseModel):
 
     사용 예시:
         >>> result = EnrichmentResult(
-        ...     category_main="보너스기능",
-        ...     category_sub="친구초대",
-        ...     intent="기능 설명 요청",
-        ...     consult_type="초대코드문의",
-        ...     keywords=["친구초대", "초대코드"],
-        ...     summary="친구 초대 코드 입력 방법 안내",
-        ...     is_tool_related=False,
+        ...     category="기술",
+        ...     subcategory="프로그래밍",
+        ...     intent="정보 제공",
+        ...     content_type="튜토리얼",
+        ...     keywords=["Python", "리스트 컴프리헨션"],
+        ...     summary="Python 리스트 컴프리헨션 사용법 설명",
+        ...     is_tool_related=True,
         ...     requires_db_check=False
         ... )
         >>> result.to_dict()
     """
 
-    category_main: str = Field(..., description="주요 카테고리", min_length=1, max_length=100)
+    category: str = Field(..., description="주요 카테고리", min_length=1, max_length=100)
 
-    category_sub: str = Field(..., description="세부 카테고리", min_length=1, max_length=100)
+    subcategory: str = Field(..., description="세부 카테고리", min_length=1, max_length=100)
 
-    intent: str = Field(..., description="사용자 의도", min_length=1, max_length=200)
+    intent: str = Field(..., description="텍스트의 주요 의도", min_length=1, max_length=200)
 
-    consult_type: str = Field(..., description="상담 유형", min_length=1, max_length=100)
+    content_type: str = Field(..., description="콘텐츠 유형", min_length=1, max_length=100)
 
     keywords: list[str] = Field(
         default_factory=list, description="키워드 리스트", min_length=0, max_length=20

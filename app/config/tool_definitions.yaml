@@ -68,7 +68,7 @@ tools:
 
             managerId:
               type: string
-              description: "상담사 ID"
+              description: "담당자 ID"
 
             language:
               type: string

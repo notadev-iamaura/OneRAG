@@ -54,7 +54,7 @@ class TestOrchestratorScoringIntegration:
         config = {
             "scoring": {
                 "collection_weight_enabled": True,
-                "collection_weights": {"NotionMetadata": 1.5},
+                "collection_weights": {"StructuredMetadata": 1.5},
                 "file_type_weight_enabled": True,
                 "file_type_weights": {"PDF": 1.2},
             }
@@ -66,7 +66,7 @@ class TestOrchestratorScoringIntegration:
         )
 
         assert orchestrator.scoring_service.collection_weight_enabled is True
-        assert orchestrator.scoring_service.collection_weights["NotionMetadata"] == 1.5
+        assert orchestrator.scoring_service.collection_weights["StructuredMetadata"] == 1.5
         assert orchestrator.scoring_service.file_type_weight_enabled is True
         assert orchestrator.scoring_service.file_type_weights["PDF"] == 1.2
 
@@ -145,7 +145,7 @@ class TestOrchestratorDefaultScoringBehavior:
         original_score = 0.75
         result = orchestrator.scoring_service.apply_weight(
             score=original_score,
-            collection="NotionMetadata",
+            collection="StructuredMetadata",
             file_type="PDF"
         )
 

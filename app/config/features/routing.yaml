@@ -20,8 +20,8 @@ query_routing:
     enabled: true
   
   # ========================================
-  # A경로: 업체규정 검색 (노션 우선)
-  # Phase 2 PRD 요구사항: 특정 업체 질문 시 노션 90% 비중
+  # A경로: 엔티티 규정 검색 (노션 우선)
+  # Phase 2 PRD 요구사항: 특정 엔티티 질문 시 노션 90% 비중
   # ========================================
   data_source_routing:
     enabled: true  # false로 변경 시 즉시 비활성화 (롤백)
@@ -33,8 +33,8 @@ query_routing:
     # scoring:
     #   collection_weight_enabled: true   # 활성화
     #   collection_weights:
-    #     NotionMetadata: 1.5             # 메타데이터 50% 부스트
     #     Documents: 1.0
+    #     MyCollection: 1.5              # 사용자 정의 컬렉션 부스트
     #   file_type_weight_enabled: true    # 파일 타입별 가중치 (선택)
     #   file_type_weights:
     #     PDF: 1.2

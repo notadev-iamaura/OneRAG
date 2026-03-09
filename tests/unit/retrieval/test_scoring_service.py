@@ -36,13 +36,13 @@ class TestScoringServiceInit:
         config = {
             "collection_weight_enabled": True,
             "file_type_weight_enabled": True,
-            "collection_weights": {"NotionMetadata": 1.5},
+            "collection_weights": {"StructuredMetadata": 1.5},
             "file_type_weights": {"PDF": 1.2},
         }
         service = ScoringService(config)
         assert service.collection_weight_enabled is True
         assert service.file_type_weight_enabled is True
-        assert service.collection_weights["NotionMetadata"] == 1.5
+        assert service.collection_weights["StructuredMetadata"] == 1.5
         assert service.file_type_weights["PDF"] == 1.2
 
 
@@ -62,7 +62,7 @@ class TestScoringServiceApplyWeight:
         original_score = 0.75
         result = service.apply_weight(
             score=original_score,
-            collection="NotionMetadata",
+            collection="StructuredMetadata",
             file_type="PDF"
         )
 
@@ -74,7 +74,7 @@ class TestScoringServiceApplyWeight:
 
         config = {
             "collection_weight_enabled": True,
-            "collection_weights": {"NotionMetadata": 1.5, "Documents": 1.0},
+            "collection_weights": {"StructuredMetadata": 1.5, "Documents": 1.0},
             "file_type_weight_enabled": False,
         }
         service = ScoringService(config)
@@ -82,7 +82,7 @@ class TestScoringServiceApplyWeight:
         original_score = 0.50
         result = service.apply_weight(
             score=original_score,
-            collection="NotionMetadata",
+            collection="StructuredMetadata",
             file_type="PDF"
         )
 
@@ -116,7 +116,7 @@ class TestScoringServiceApplyWeight:
 
         config = {
             "collection_weight_enabled": True,
-            "collection_weights": {"NotionMetadata": 1.5},
+            "collection_weights": {"StructuredMetadata": 1.5},
             "file_type_weight_enabled": True,
             "file_type_weights": {"PDF": 1.2},
         }
@@ -125,7 +125,7 @@ class TestScoringServiceApplyWeight:
         original_score = 0.50
         result = service.apply_weight(
             score=original_score,
-            collection="NotionMetadata",
+            collection="StructuredMetadata",
             file_type="PDF"
         )
 
@@ -139,7 +139,7 @@ class TestScoringServiceApplyWeight:
 
         config = {
             "collection_weight_enabled": True,
-            "collection_weights": {"NotionMetadata": 1.5},
+            "collection_weights": {"StructuredMetadata": 1.5},
         }
         service = ScoringService(config)
 
@@ -201,7 +201,7 @@ class TestScoringServiceApplyWeight:
 
         config = {
             "collection_weight_enabled": True,
-            "collection_weights": {"NotionMetadata": 1.5},
+            "collection_weights": {"StructuredMetadata": 1.5},
             "file_type_weight_enabled": True,
             "file_type_weights": {"PDF": 1.2},
         }

@@ -867,7 +867,7 @@ class TestWeaviateRetrieverAdditionalCollections:
             embedder=mock_embedder,
             weaviate_client=mock_weaviate_client,
             collection_name="Documents",
-            additional_collections=["NotionMetadata"],
+            additional_collections=["StructuredMetadata"],
         )
 
         # 초기화
@@ -875,7 +875,7 @@ class TestWeaviateRetrieverAdditionalCollections:
 
         # 검증: 메인 + 추가 컬렉션 모두 초기화됨
         assert retriever.collection is not None
-        assert "NotionMetadata" in retriever._additional_collection_objects
+        assert "StructuredMetadata" in retriever._additional_collection_objects
         assert mock_weaviate_client.get_collection.call_count == 2
 
     @pytest.mark.asyncio
@@ -955,7 +955,7 @@ class TestWeaviateRetrieverAdditionalCollections:
         mock_add_obj.uuid = "add-1"
         mock_add_obj.properties = {
             "content": "추가 문서",
-            "shop_name": "테스트 업체",
+            "entity_name": "테스트 엔티티",
         }
         mock_add_obj.metadata = MagicMock()
         mock_add_obj.metadata.score = 0.8
@@ -979,7 +979,7 @@ class TestWeaviateRetrieverAdditionalCollections:
             embedder=mock_embedder,
             weaviate_client=mock_weaviate_client,
             collection_name="Documents",
-            additional_collections=["NotionMetadata"],
+            additional_collections=["StructuredMetadata"],
         )
 
         # 초기화

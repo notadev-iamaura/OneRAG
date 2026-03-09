@@ -17,22 +17,20 @@ sql_search:
     timeout: 10  # 초 단위 쿼리 타임아웃
     max_rows: 100  # 최대 반환 행 수
     # 메타데이터 테이블 목록 (get_table_stats용)
+    # 도메인에 맞게 커스터마이징하세요. 예: ["product_metadata", "service_metadata"] 등
     tables:
-      - "product_metadata"
-      - "service_metadata"
-      - "place_metadata"
+      - "metadata"
 
   # Result Formatter 설정 (결과 포맷팅)
   formatter:
     max_items: 10  # 최대 표시 항목 수
     # 수치형(비용) 필드 목록 (원 단위 포맷팅용)
+    # 도메인에 맞게 커스터마이징하세요. 예: ["price_basic", "cost_service", "penalty_fee"] 등
     numeric_fields:
-      - "price_basic"
-      - "price_premium"
-      - "cost_service"
-      - "cost_option"
-      - "penalty_fee"
-      - "discount_amount"
+      - "price"
+      - "cost"
+      - "amount"
+      - "value"
 
   # RAG 파이프라인 통합 설정
   pipeline:

@@ -17,7 +17,7 @@ class Document:
 
     Attributes:
         source: 문서 출처 (파일 경로, URL 등)
-        doc_type: 문서 유형 ('FAQ', 'Guidebook', 'Kakaotalk', 'WebLink')
+        doc_type: 문서 유형 ('FAQ', 'Guidebook', 'ChatLog', 'WebLink')
         data: 원본 데이터 (dict 리스트, 텍스트 등)
         metadata: 문서 메타데이터
         created_at: 생성 시각 (UTC)
@@ -47,7 +47,7 @@ class Document:
             self.source = Path(self.source)
 
         # doc_type 검증
-        valid_types = ["FAQ", "Guidebook", "Kakaotalk", "WebLink", "Custom", "POINT_RULE"]
+        valid_types = ["FAQ", "Guidebook", "ChatLog", "WebLink", "Custom", "POINT_RULE"]
         if self.doc_type not in valid_types:
             raise ValueError(f"Invalid doc_type: {self.doc_type}. " f"Must be one of {valid_types}")
 

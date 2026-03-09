@@ -46,10 +46,10 @@ def _make_config(
 def _make_enrichment_result(**overrides) -> EnrichmentResult:
     """테스트용 EnrichmentResult 생성"""
     defaults = {
-        "category_main": "테스트",
-        "category_sub": "단위",
+        "category": "테스트",
+        "subcategory": "단위",
         "intent": "테스트 요청",
-        "consult_type": "테스트문의",
+        "content_type": "테스트문의",
         "keywords": ["테스트"],
         "summary": "테스트 요약",
     }

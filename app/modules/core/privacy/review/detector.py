@@ -72,7 +72,7 @@ class HybridPIIDetector:
     # 신용카드 번호 패턴 (4자리-4자리-4자리-4자리)
     CARD_PATTERN = re.compile(r"\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}")
 
-    # 업체 전화번호 패턴 (마스킹 제외용)
+    # 사업자 전화번호 패턴 (마스킹 제외용)
     BUSINESS_PHONE_PATTERN = re.compile(r"(?:02|0[3-6][1-5])[-\s]?\d{3,4}[-\s]?\d{4}")
 
     # spaCy NER 레이블 → PIIType 매핑
@@ -262,7 +262,7 @@ class HybridPIIDetector:
             for match in pattern.finditer(text):
                 value = match.group()
 
-                # 전화번호: 업체 전화번호 제외
+                # 전화번호: 사업자 전화번호 제외
                 if pii_type == PIIType.PHONE and self._is_business_phone(value):
                     continue
 
@@ -389,7 +389,7 @@ class HybridPIIDetector:
         return f"{prefix}{text[ctx_start:ctx_end]}{suffix}"
 
     def _is_business_phone(self, phone: str) -> bool:
-        """업체 전화번호인지 확인 (지역번호 시작)"""
+        """사업자 전화번호인지 확인 (지역번호 시작)"""
         # 숫자만 추출
         digits = re.sub(r"[-.\s]", "", phone)
 
@@ -397,7 +397,7 @@ class HybridPIIDetector:
         if digits.startswith(("010", "011", "016", "017", "018", "019")):
             return False
 
-        # 02, 031 등 지역번호로 시작하면 업체
+        # 02, 031 등 지역번호로 시작하면 사업자
         if digits.startswith("02") or (digits.startswith("0") and len(digits) >= 9):
             return True
 

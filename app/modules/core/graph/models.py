@@ -15,7 +15,7 @@ class Entity(BaseModel):
 
     Attributes:
         id: 고유 식별자
-        name: 엔티티 이름 (예: "A 업체", "김 담당자")
+        name: 엔티티 이름 (예: "A사", "김 담당자")
         type: 엔티티 유형 (예: "company", "person", "location")
         properties: 추가 속성 딕셔너리
     """

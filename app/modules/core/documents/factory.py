@@ -21,7 +21,7 @@ class DocumentProcessorFactory:
     지원하는 문서 유형:
     - 'faq': FAQProcessor (MVP)
     - 'guidebook': GuidebookProcessor (Phase 2, 미구현)
-    - 'kakaotalk': KakaotalkProcessor (Phase 2, 미구현)
+    - 'chatlog': ChatLogProcessor (Phase 2, 미구현)
 
     사용 예시:
         >>> processor = DocumentProcessorFactory.create('faq')
@@ -39,7 +39,7 @@ class DocumentProcessorFactory:
         "faq": FAQProcessor,
         # Phase 2에서 추가 예정:
         # 'guidebook': GuidebookProcessor,
-        # 'kakaotalk': KakaotalkProcessor,
+        # 'chatlog': ChatLogProcessor,
         # 'weblink': WebLinkProcessor,
     }
 
@@ -49,7 +49,7 @@ class DocumentProcessorFactory:
         문서 유형에 맞는 프로세서 생성
 
         Args:
-            doc_type: 문서 유형 ('faq', 'guidebook', 'kakaotalk')
+            doc_type: 문서 유형 ('faq', 'guidebook', 'chatlog')
             **kwargs: 프로세서별 추가 인자
                 - content_template: 청크 내용 템플릿 (FAQ)
                 - chunker: 커스텀 청킹 전략

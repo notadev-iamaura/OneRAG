@@ -105,9 +105,9 @@ class WeaviateRetriever:
             stopword_filter: Phase 2 불용어 필터 (Optional)
             user_dictionary: Phase 2 사용자 사전 (Optional)
             additional_collections: Phase 3 추가 컬렉션 목록 (Optional)
-                예: ["NotionMetadata"] - 메인 컬렉션과 함께 검색
+                예: ["Metadata"] - 메인 컬렉션과 함께 검색
             collection_properties: 컬렉션별 리턴 프로퍼티 설정 (Optional)
-                예: {"Documents": ["content", "source"], "NotionMetadata": ["shop_name"]}
+                예: {"Documents": ["content", "source"], "Metadata": ["name"]}
 
         Note:
             MongoDB Client-side RRF (150+ 라인) → Weaviate 내장 하이브리드 (20 라인)
@@ -161,7 +161,7 @@ class WeaviateRetriever:
         작업:
         1. Weaviate 클라이언트 연결 확인
         2. 메인 컬렉션 존재 및 접근 확인
-        3. Phase 3: 추가 컬렉션 초기화 (NotionMetadata 등)
+        3. Phase 3: 추가 컬렉션 초기화 (Metadata 등)
 
         Graceful Degradation:
         - Weaviate 연결 불가 시 로그만 남기고 계속 진행
@@ -277,7 +277,7 @@ class WeaviateRetriever:
         3. alpha 파라미터로 가중치 조절
 
         Phase 3: 다중 컬렉션 검색
-        - 메인 컬렉션 + 추가 컬렉션 (NotionMetadata 등) 병렬 검색
+        - 메인 컬렉션 + 추가 컬렉션 (Metadata 등) 병렬 검색
         - RRF로 결과 병합하여 다양한 소스 활용
 
         Args:
@@ -396,13 +396,13 @@ class WeaviateRetriever:
 
         results = []
         for obj in response.objects:
-            # NotionMetadata 결과에 collection 정보 추가
+            # 추가 컬렉션 결과에 collection 정보 추가
             metadata = dict(obj.properties)
             metadata["_collection"] = collection_name
 
             # metadata 필드를 source_file로 매핑 (소스 표시용)
-            # shop_name 또는 name 필드가 있으면 이를 source_file로 사용
-            entity_name = metadata.get("shop_name") or metadata.get("name")
+            # entity_name 또는 name 필드가 있으면 이를 source_file로 사용
+            entity_name = metadata.get("entity_name") or metadata.get("name")
             if entity_name:
                 metadata["source_file"] = f"{entity_name} (메타데이터)"
                 metadata["file_type"] = "METADATA"
@@ -430,7 +430,7 @@ class WeaviateRetriever:
         다중 컬렉션에서 병렬 검색 후 RRF로 결과 병합
 
         Phase 3 구현:
-        - 메인 컬렉션 (Documents) + 추가 컬렉션 (NotionMetadata) 병렬 검색
+        - 메인 컬렉션 (Documents) + 추가 컬렉션 (Metadata 등) 병렬 검색
         - RRF (Reciprocal Rank Fusion)로 결과 통합
         - 각 컬렉션에서 top_k개씩 검색 후 병합
 

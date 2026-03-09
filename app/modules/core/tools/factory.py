@@ -89,12 +89,12 @@ SUPPORTED_TOOLS: dict[str, dict[str, Any]] = {
             "max_results": 5,
         },
     },
-    # Notion 검색 도구 (레거시 호환)
-    "search_notion": {
-        "category": "notion",
-        "description": "메타데이터 소스(Notion 등)에서 정보를 검색합니다",
-        "module": "app.modules.core.tools.notion_search",
-        "function": "search_notion",
+    # 구조화 데이터 검색 도구
+    "search_structured": {
+        "category": "structured",
+        "description": "구조화된 메타데이터 소스에서 정보를 검색합니다",
+        "module": "app.modules.core.tools.structured_search",
+        "function": "search_structured",
         "default_config": {
             "timeout": 10,
         },
@@ -218,7 +218,7 @@ class ToolFactory:
         카테고리별 도구 목록 반환
 
         Args:
-            category: 도구 카테고리 (vector, graph, web, notion, sql)
+            category: 도구 카테고리 (vector, graph, web, structured, sql)
 
         Returns:
             해당 카테고리의 도구 이름 리스트

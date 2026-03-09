@@ -464,7 +464,7 @@ class NotionBatchProcessor:
                 )
                 return []
 
-            # 제목 prefix 추가 (업체명 포함)
+            # 제목 prefix 추가 (엔티티명 포함)
             full_content = f"[{page.title}]\n\n{content}"
 
             # 청킹
@@ -513,7 +513,7 @@ class NotionBatchProcessor:
         """
         lines = []
 
-        # 중요 속성 순서대로 처리 (업체명은 제목으로 이미 포함되므로 제외)
+        # 중요 속성 순서대로 처리 (엔티티명은 제목으로 이미 포함되므로 제외)
         skip_keys = {"업체명", "이름", "Name"}
 
         for prop_name, value in properties.items():

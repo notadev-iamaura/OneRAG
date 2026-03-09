@@ -48,9 +48,9 @@ class LLMEnricher(EnricherInterface):
         >>> enricher = LLMEnricher(config, openai_api_key="sk-...")
         >>> await enricher.initialize()
         >>>
-        >>> document = {"content": "친구 초대 코드 입력 방법"}
+        >>> document = {"content": "Python 리스트 컴프리헨션 사용법"}
         >>> result = await enricher.enrich(document)
-        >>> print(result.category_main)  # "보너스기능"
+        >>> print(result.category)  # "기술"
     """
 
     def __init__(self, config: EnrichmentConfig, openai_api_key: str):
@@ -140,7 +140,7 @@ class LLMEnricher(EnricherInterface):
             self.stats["successful_enrichments"] += 1
             logger.debug(
                 "Document enriched successfully",
-                category=enrichment.category_main,
+                category=enrichment.category,
                 keywords=len(enrichment.keywords),
             )
 
@@ -236,8 +236,8 @@ class LLMEnricher(EnricherInterface):
         """
         try:
             # 필수 필드 확인
-            if not enrichment.category_main:
-                logger.warning("Missing category_main")
+            if not enrichment.category:
+                logger.warning("Missing category")
                 return False
 
             if not enrichment.summary:

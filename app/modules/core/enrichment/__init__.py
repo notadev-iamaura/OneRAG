@@ -4,9 +4,9 @@ LLM 문서 보강 (Enrichment) 모듈
 문서 로드 시 LLM을 사용하여 메타데이터를 자동으로 생성하는 기능을 제공합니다.
 
 주요 기능:
-- 카테고리 자동 분류 (category_main, category_sub)
+- 카테고리 자동 분류 (category, subcategory)
 - 의도 파악 (intent)
-- 상담 유형 분류 (consult_type)
+- 콘텐츠 유형 분류 (content_type)
 - 키워드 추출 (keywords)
 - 요약문 생성 (summary)
 - 도구 관련 여부 판단 (is_tool_related)
@@ -21,7 +21,7 @@ LLM 문서 보강 (Enrichment) 모듈
     >>> await enrichment_service.initialize()
     >>>
     >>> # 단일 문서 보강
-    >>> document = {"content": "친구 초대 코드는 어디서 입력하나요?"}
+    >>> document = {"content": "Python 리스트 컴프리헨션 사용법에 대한 설명입니다."}
     >>> enriched = await enrichment_service.enrich(document)
     >>>
     >>> # 배치 처리

@@ -9,13 +9,13 @@ GraphRAG 모듈
     store = GraphRAGFactory.create(config)
 
     # 엔티티/관계 추가
-    entity = Entity(id="e1", name="A업체", type="company")
+    entity = Entity(id="e1", name="A사", type="company")
     await store.add_entity(entity)
 
     # LLM 기반 추출기 사용
     from app.modules.core.graph import LLMEntityExtractor, LLMRelationExtractor
     extractor = LLMEntityExtractor(llm_client=llm_client)
-    entities = await extractor.extract("A 업체는 서울에 있습니다.")
+    entities = await extractor.extract("A사는 서울에 있습니다.")
 
     # 지식 그래프 빌더
     from app.modules.core.graph import KnowledgeGraphBuilder

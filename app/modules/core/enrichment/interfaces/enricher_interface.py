@@ -39,7 +39,7 @@ class EnricherInterface(ABC):
 
         Args:
             document: 보강할 문서 (content 필드 필수)
-                예시: {"content": "친구 초대 코드는 어디서 입력하나요?"}
+                예시: {"content": "Python 리스트 컴프리헨션 사용법에 대한 설명입니다."}
 
         Returns:
             EnrichmentResult: 보강 결과
@@ -52,9 +52,9 @@ class EnricherInterface(ABC):
 
         사용 예시:
             >>> enricher = LLMEnricher(config)
-            >>> document = {"content": "친구 초대 코드 입력 방법"}
+            >>> document = {"content": "Python 리스트 컴프리헨션 사용법"}
             >>> result = await enricher.enrich(document)
-            >>> print(result.category_main)  # "보너스기능"
+            >>> print(result.category)  # "기술"
         """
         pass
 
@@ -77,12 +77,12 @@ class EnricherInterface(ABC):
         사용 예시:
             >>> enricher = LLMEnricher(config)
             >>> documents = [
-            ...     {"content": "친구 초대 코드"},
-            ...     {"content": "결제 오류"}
+            ...     {"content": "Python 리스트 컴프리헨션 설명"},
+            ...     {"content": "2024년 매출 보고서"}
             ... ]
             >>> results = await enricher.enrich_batch(documents)
             >>> print(len(results))  # 2
-            >>> print(results[0].category_main if results[0] else None)  # "보너스기능"
+            >>> print(results[0].category if results[0] else None)  # "기술"
         """
         pass
 

@@ -177,7 +177,7 @@ class ResultFormatter:
 
         # 제외할 시스템 필드 (이름 필드들 및 시스템 필드)
         exclude_fields = set(name_fields)
-        exclude_fields.update(["category", "notion_page_id", "id", "uuid"])
+        exclude_fields.update(["category", "source_page_id", "id", "uuid"])
 
         for key, val in row.items():
             if key in exclude_fields:

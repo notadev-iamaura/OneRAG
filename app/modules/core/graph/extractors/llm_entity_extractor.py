@@ -38,7 +38,7 @@ ENTITY_EXTRACTION_PROMPT = '''다음 텍스트에서 엔티티(개체명)를 추
 
 엔티티 타입 목록:
 - person: 인물, 담당자
-- company: 회사, 업체, 기관
+- company: 회사, 기업, 기관
 - location: 장소, 지역, 주소
 - product: 제품, 서비스
 - date: 날짜, 기간
@@ -59,9 +59,9 @@ class LLMEntityExtractor:
         >>> from app.modules.core.generation import LLMFactory
         >>> llm_client = LLMFactory.create(config)
         >>> extractor = LLMEntityExtractor(llm_client=llm_client)
-        >>> entities = await extractor.extract("A 업체는 서울에 있습니다.")
+        >>> entities = await extractor.extract("A사는 서울에 있습니다.")
         >>> print(entities)
-        [Entity(name="A 업체", type="company"), Entity(name="서울", type="location")]
+        [Entity(name="A사", type="company"), Entity(name="서울", type="location")]
     """
 
     # 기본 설정

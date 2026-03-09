@@ -1,14 +1,12 @@
 # 배치 크롤링 설정 (Hybrid Mode)
 # ================================
-# 2024-12-04 Notion API 마이그레이션
-#
 # 아키텍처:
-# - Notion 소스: NotionBatchProcessor (Notion API 직접 연동)
-# - 외부 소스: ExternalCrawler (Playwright 유지)
+# - 구조화 데이터 소스: 외부 API 연동 (Notion 등 선택적 모듈)
+# - 외부 소스: ExternalCrawler (Playwright 기반 크롤링)
 
 batch:
   # 배치 실행 모드
-  mode: hybrid  # hybrid | notion_only | external_only
+  mode: hybrid  # hybrid | structured_only | external_only
 
   # 청크 설정
   chunking:
@@ -20,17 +18,17 @@ batch:
       - ". "
       - " "
 
-  # Notion API 소스 설정
-  notion:
+  # 구조화 데이터 소스 설정 (Notion 등 선택적 모듈)
+  structured_source:
     enabled: true
     # 데이터베이스 ID (카테고리별)
     databases:
-      # NOTE: 실제 값은 사용자의 Notion Database ID로 교체하세요.
-      domain_1: "${NOTION_DB_ID_DOMAIN_1:-}"
-      domain_2: "${NOTION_DB_ID_DOMAIN_2:-}"
-      domain_3: "${NOTION_DB_ID_DOMAIN_3:-}"
+      # NOTE: 실제 값은 외부 데이터 소스의 Database ID로 교체하세요.
+      domain_1: "${STRUCTURED_DB_ID_DOMAIN_1:-}"
+      domain_2: "${STRUCTURED_DB_ID_DOMAIN_2:-}"
+      domain_3: "${STRUCTURED_DB_ID_DOMAIN_3:-}"
 
-    # Rate Limiting (Notion API 제한)
+    # Rate Limiting (API 제한)
     rate_limit:
       requests_per_second: 3
       retry_attempts: 3

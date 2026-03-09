@@ -58,7 +58,7 @@ class QueryProfile:
 
     # 도메인 및 민감도
     domain: str  # general_service, faq, domain_1, domain_2, general, out_of_scope
-    data_source: str = "general"  # 🆕 검색 전략: notion, general, both (A경로 구현)
+    data_source: str = "general"  # 🆕 검색 전략: structured, general, both (A경로 구현)
     sensitivity: str  = "public"
     freshness: str = "static"
 
@@ -198,12 +198,12 @@ class LLMQueryRouter:
         # 4. Data Source 로직 구성
         data_sources = domain_config.get("data_sources", {})
 
-        # Notion (Entities + Keywords)
-        notion_cfg = data_sources.get("notion", {})
-        notion_entities = notion_cfg.get("triggers", {}).get("entities", [])
-        notion_keywords = notion_cfg.get("triggers", {}).get("keywords", [])
-        notion_entities_str = ", ".join(notion_entities[:20]) + ("..." if len(notion_entities) > 20 else "")
-        notion_keywords_str = ", ".join(notion_keywords)
+        # 구조화 데이터 (Entities + Keywords) - "structured" 키 우선, 하위 호환을 위해 "notion" 키도 지원
+        structured_cfg = data_sources.get("structured", data_sources.get("notion", {}))
+        structured_entities = structured_cfg.get("triggers", {}).get("entities", [])
+        structured_keywords = structured_cfg.get("triggers", {}).get("keywords", [])
+        structured_entities_str = ", ".join(structured_entities[:20]) + ("..." if len(structured_entities) > 20 else "")
+        structured_keywords_str = ", ".join(structured_keywords)
 
         # General
         general_cfg = data_sources.get("general", {})
@@ -245,16 +245,16 @@ class LLMQueryRouter:
 
 **data_source 판단 기준**:
 
-### data_source = "notion" ({notion_cfg.get('description', 'Specific Entity Info')})
-다음 조건을 **모두 만족**할 때 "notion" 선택:
-1. **특정 엔티티(업체/상품명)**가 명시됨
+### data_source = "structured" ({structured_cfg.get('description', 'Specific Entity Info')})
+다음 조건을 **모두 만족**할 때 "structured" 선택:
+1. **특정 엔티티(이름/제목)**가 명시됨
 2. **규정/정책/비용** 관련 질문
 
 ✅ 엔티티 예시:
-[{notion_entities_str}]
+[{structured_entities_str}]
 
 ✅ 규정/정책 키워드:
-[{notion_keywords_str}]
+[{structured_keywords_str}]
 
 ### data_source = "general" ({general_cfg.get('description', 'General Info')})
 다음 경우 "general" 선택:
@@ -293,7 +293,7 @@ class LLMQueryRouter:
   "is_attack": true/false,
   "is_out_of_scope": true/false,
   "needs_rag": true/false,
-  "data_source": "notion" | "general" | "both",
+  "data_source": "structured" | "general" | "both",
   "reasoning": "판단 근거 설명"
 }}}}
 </response_format>"""
@@ -612,7 +612,10 @@ Return response in JSON format.
 
         # 🆕 data_source 추출 및 검증 (A경로 구현)
         data_source = decision.get("data_source", "general")
-        if data_source not in ["notion", "general", "both"]:
+        # 하위 호환: LLM이 "notion"을 반환하면 "structured"로 정규화
+        if data_source == "notion":
+            data_source = "structured"
+        if data_source not in ["structured", "general", "both"]:
             logger.warning(
                 f"⚠️ 잘못된 data_source 값: {data_source}, "
                 f"기본값 'general' 사용"

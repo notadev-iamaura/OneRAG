@@ -2,7 +2,7 @@
 CacheFactory - 설정 기반 캐시 자동 선택 팩토리
 
 YAML 설정에 따라 적절한 캐시 인스턴스를 생성합니다.
-판매용 RAG 모듈에서 고객 환경에 맞게 캐시를 쉽게 교체할 수 있도록 지원합니다.
+설정에 따라 적절한 캐시를 쉽게 교체할 수 있도록 지원합니다.
 
 사용 예시:
     from app.modules.core.retrieval.cache import CacheFactory

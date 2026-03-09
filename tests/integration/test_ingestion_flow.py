@@ -3,7 +3,7 @@ Ingestion Service Integration Test
 
 이 테스트는 API 엔드포인트부터 서비스, 저장소 어댑터까지의 전체 흐름을 검증합니다.
 DI 컨테이너가 올바르게 작동하고, 각 컴포넌트가 예상대로 호출되는지 확인합니다.
-외부 서비스(Notion, Weaviate, Postgres)는 Mocking하여 테스트 환경에 종속되지 않도록 합니다.
+외부 서비스(외부 API, Weaviate, Postgres)는 Mocking하여 테스트 환경에 종속되지 않도록 합니다.
 """
 from unittest.mock import AsyncMock, MagicMock
 
@@ -33,7 +33,7 @@ def mock_container():
     mock_metadata_store = AsyncMock()
     mock_metadata_store.save.return_value = True
 
-    # Mock Notion Client
+    # Mock 외부 데이터 소스 클라이언트
     mock_notion_client = AsyncMock()
     mock_pages = [
         MagicMock(id="page1", title="Test Page 1", properties={"prop1": "val1"}, last_edited_time="2024-01-01"),
@@ -80,13 +80,13 @@ def mock_container():
 @pytest.mark.asyncio
 async def test_ingestion_api_flow(client):
     """
-    POST /api/ingest/notion 요청 시 정상적으로 서비스가 호출되는지 검증
+    POST /api/ingest/external-source 요청 시 정상적으로 서비스가 호출되는지 검증
     (Background Task는 TestClient에서 즉시 실행되지 않을 수 있으므로,
      서비스 로직 자체를 검증하는 것에 집중)
     """
     # 1. API Call check
     response = client.post(
-        "/api/ingest/notion",
+        "/api/ingest/external-source",
         json={"database_id": "test-db-id", "category_name": "test-category"},
         headers={"Authorization": "Bearer test-key"} # Assuming auth middleware might be active or mocked
     )

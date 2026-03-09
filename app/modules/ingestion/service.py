@@ -2,7 +2,7 @@
 Ingestion Service
 
 데이터 적재(Ingestion)를 담당하는 서비스 모듈.
-다양한 소스(Notion, File 등)로부터 데이터를 추출하여
+다양한 소스(외부 API, File 등)로부터 데이터를 추출하여
 벡터 저장소(Vector Store)와 메타데이터 저장소(Metadata Store)에 저장합니다.
 """
 import time
@@ -11,10 +11,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.batch.metadata_chunker import MetadataChunker
-from app.batch.notion_client import NotionAPIClient
 from app.core.interfaces.storage import IMetadataStore, IVectorStore
 from app.lib.logger import get_logger
 from app.modules.ingestion.interfaces import IIngestionConnector
+
+# 선택적 모듈: Notion 클라이언트
+try:
+    from app.batch.notion_client import NotionAPIClient
+except ImportError:
+    NotionAPIClient = None  # type: ignore[assignment,misc]
 
 logger = get_logger(__name__)
 
@@ -34,7 +39,7 @@ class IngestionService:
         vector_store: IVectorStore,
         metadata_store: IMetadataStore,
         config: dict[str, Any] | None = None,
-        notion_client: NotionAPIClient | None = None,
+        notion_client: Any | None = None,
         chunker: MetadataChunker | None = None
     ):
         self.vector_store = vector_store

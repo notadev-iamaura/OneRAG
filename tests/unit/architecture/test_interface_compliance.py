@@ -150,11 +150,11 @@ class TestSearchResultDataclass:
             id="test-id",
             content="테스트",
             score=0.9,
-            metadata={"source": "notion", "page_id": "abc123"},
+            metadata={"source": "structured", "page_id": "abc123"},
         )
 
         # 메타데이터가 속성으로 접근 가능
-        assert result.source == "notion"
+        assert result.source == "structured"
         assert result.page_id == "abc123"
 
 

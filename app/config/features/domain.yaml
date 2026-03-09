@@ -1,6 +1,8 @@
 domain:
   # 1. 개인정보 보호 설정 (Privacy)
   privacy:
+    # PII 마스킹 시 마스킹 대상에서 제외할 화이트리스트 단어
+    # 도메인에 맞게 커스터마이징하세요. 예: ["사진","영상"] (사진 도메인), ["진료","처방"] (의료 도메인)
     whitelist:
       - "서비스"
       - "문의"
@@ -11,10 +13,6 @@ domain:
       - "고객"
       - "가족"
       - "친구"
-      - "사진"
-      - "영상"
-      - "음향"
-      - "조명"
     # 이름 마스킹을 위한 호칭 패턴
     name_suffixes:
       - "고객님"
@@ -40,6 +38,11 @@ domain:
       enabled: false
 
     # Weaviate 컬렉션별 리턴 프로퍼티
+    # 추가 컬렉션이 있으면 아래 형식으로 확장하세요:
+    #   MyCollection:
+    #     properties:
+    #       - "content"
+    #       - "custom_field"
     collections:
       Documents:
         properties:
@@ -49,11 +52,6 @@ domain:
           - "source_file"
           - "file_type"
           - "keywords"
-      NotionMetadata:
-        properties:
-          - "content"
-          - "source_field"
-          - "chunk_index"
 
   # 3. 데이터 배치 설정 (Batch)
   batch:
@@ -123,9 +121,9 @@ domain:
       - name: "절차 안내"
         description: "이용 방법 및 절차 문의"
 
-    # 데이터 소스 판단 로직 (Notion vs General)
+    # 데이터 소스 판단 로직 (Structured vs General)
     data_sources:
-      notion:
+      structured:
         description: "구조화된 메타데이터 우선"
         triggers:
           entities: []

@@ -386,7 +386,7 @@ class BatchSourceLogModel(Base):
     # 소스 정보
     source_url = Column(Text, nullable=False, index=True, comment="크롤링 소스 URL")
     source_name = Column(
-        String(100), nullable=False, index=True, comment="소스명 (예: notion_page_1)"
+        String(100), nullable=False, index=True, comment="소스명 (예: source_page_1)"
     )
 
     # 실행 결과
@@ -458,7 +458,7 @@ class ParsingRuleModel(Base):
         Text, nullable=False, unique=True, index=True, comment="크롤링 소스 URL (UNIQUE)"
     )
     source_name = Column(
-        String(100), nullable=False, index=True, comment="소스명 (예: notion_page_1)"
+        String(100), nullable=False, index=True, comment="소스명 (예: source_page_1)"
     )
 
     # 파싱 규칙

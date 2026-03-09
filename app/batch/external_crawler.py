@@ -1,13 +1,13 @@
 """
 외부 사이트 크롤러 (Playwright 기반)
 ====================================
-기능: 비Notion(외부 웹) 소스 크롤링 (설정 기반)
-용도: Notion API로 접근 불가능한 외부 사이트 데이터 수집
+기능: 외부 웹 소스 크롤링 (설정 기반)
+용도: 외부 사이트 데이터 수집
 
 대상 소스:
 - `app/config/features/batch.yaml`의 `batch.external.sources`에 정의된 항목
 
-참고: Notion 소스는 notion_batch.py에서 처리
+참고: 구조화 데이터 소스는 별도 배치 모듈에서 처리
 """
 
 import asyncio

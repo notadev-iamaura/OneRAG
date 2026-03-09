@@ -20,9 +20,8 @@ weaviate:
 
   # Phase 3: 추가 검색 컬렉션 목록
   # 메인 컬렉션(Documents)과 함께 병렬 검색하여 RRF로 결과 병합
-  # 예: NotionMetadata - 구조화된 업체 메타데이터 (1,129개 청크)
-  additional_collections:
-    - "NotionMetadata"
+  # 도메인에 맞게 커스터마이징하세요. 예: ["ProductMetadata", "FAQCollection"] 등
+  additional_collections: []
 
   # Connection timeout (seconds)
   timeout: 30
@@ -31,7 +30,7 @@ weaviate:
   hybrid_search:
     # alpha: 0 (BM25만), 1 (Vector만)
     # 0.6 = 60% Vector + 40% BM25
-    # 카카오톡 대화(구어체)는 BM25보다 Vector 유사도에서 강점
+    # 구어체 텍스트는 BM25보다 Vector 유사도에서 강점
     default_alpha: 0.6
     # 기본 검색 결과 수
     default_limit: 10

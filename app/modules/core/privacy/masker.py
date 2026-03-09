@@ -6,7 +6,7 @@
 - 한글 이름: 홍길동 고객 → 홍** 고객 (성만 노출)
 
 비마스킹 대상:
-- 업체 전화번호: 02-XXX-XXXX, 031-XXX-XXXX 등 (업체 문의처)
+- 사업자 전화번호: 02-XXX-XXXX, 031-XXX-XXXX 등 (기관/사업자 문의처)
 - 화이트리스트 단어: 담당, 고객 등 (privacy.yaml에서 관리)
 
 Phase 2 구현 (2025-11-28)
@@ -70,7 +70,7 @@ class PrivacyMasker:
     # 형식: 010-1234-5678, 01012345678, 010 1234 5678
     PERSONAL_PHONE_PATTERN = re.compile(r"010[-\s]?\d{4}[-\s]?\d{4}")
 
-    # 업체 전화번호 패턴 (지역번호 시작 - 마스킹 제외용)
+    # 사업자 전화번호 패턴 (지역번호 시작 - 마스킹 제외용)
     # 형식: 02-XXX-XXXX, 031-XXX-XXXX 등
     BUSINESS_PHONE_PATTERN = re.compile(r"(02|0[3-6][1-5])[-\s]?\d{3,4}[-\s]?\d{4}")
 
@@ -196,7 +196,7 @@ class PrivacyMasker:
         if self.mask_driver_license:
             result = self._mask_driver_license(result)
 
-        # 4. 개인 전화번호 마스킹 (업체 전화번호 제외)
+        # 4. 개인 전화번호 마스킹 (사업자 전화번호 제외)
         if self.mask_phone:
             result = self._mask_personal_phone(result)
 
@@ -251,7 +251,7 @@ class PrivacyMasker:
         # 4. 개인 전화번호 마스킹
         if self.mask_phone:
             matches = self.PERSONAL_PHONE_PATTERN.findall(result)
-            # 업체 전화번호 제외
+            # 사업자 전화번호 제외
             personal_phones = [m for m in matches if not self._is_business_phone(m)]
             phone_count = len(personal_phones)
             result = self._mask_personal_phone(result)
@@ -340,7 +340,7 @@ class PrivacyMasker:
         def replace(match: re.Match[str]) -> str:
             phone: str = match.group()
 
-            # 업체 전화번호는 마스킹 안 함
+            # 사업자 전화번호는 마스킹 안 함
             if self._is_business_phone(phone):
                 return phone
 
@@ -410,9 +410,9 @@ class PrivacyMasker:
 
     def _is_business_phone(self, phone: str) -> bool:
         """
-        업체 전화번호인지 확인
+        사업자 전화번호인지 확인
 
-        업체 전화번호는 지역번호로 시작:
+        사업자 전화번호는 지역번호로 시작:
         - 02: 서울
         - 031~039: 경기 등
         - 041~049: 충청 등
@@ -424,7 +424,7 @@ class PrivacyMasker:
         if digits.startswith("010"):
             return False
 
-        # 02 또는 0XX로 시작하면 업체 전화번호
+        # 02 또는 0XX로 시작하면 사업자 전화번호
         if digits.startswith("02") or (digits.startswith("0") and len(digits) >= 10):
             return True
 

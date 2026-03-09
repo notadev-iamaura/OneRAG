@@ -127,9 +127,9 @@ class ToolServer:
             "get_document_by_id": {
                 "document_id": {"type": "string", "description": "문서 UUID"},
             },
-            "search_notion": {
+            "search_structured": {
                 "query": {"type": "string", "description": "검색 쿼리"},
-                "category": {"type": "string", "description": "업체 카테고리 필터"},
+                "category": {"type": "string", "description": "카테고리 필터"},
             },
             "query_sql": {
                 "question": {"type": "string", "description": "자연어 질문"},
@@ -180,7 +180,7 @@ class ToolServer:
         required_params: dict[str, list[str]] = {
             "search_weaviate": ["query"],
             "get_document_by_id": ["document_id"],
-            "search_notion": ["query"],
+            "search_structured": ["query"],
             "query_sql": ["question"],
             "get_table_schema": ["table_name"],
             "search_graph": ["query"],

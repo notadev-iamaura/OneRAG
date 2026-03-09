@@ -1,12 +1,12 @@
 """
 메타데이터 기반 청킹 파이프라인
 
-Notion 페이지 속성에서 자연어 콘텐츠를 추출하고
-의미 단위로 청킹하여 Weaviate에 업로드하기 위한 모듈
+구조화된 데이터 속성에서 자연어 콘텐츠를 추출하고
+의미 단위로 청킹하여 벡터 저장소에 업로드하기 위한 모듈
 
 청킹 규칙:
 1. 섹션 구분자: ————————————— (대시 8개 이상)
-2. 섹션 헤더: [위약금 규정], [프로모션] 등 대괄호
+2. 섹션 헤더: [정책 규정], [프로모션] 등 대괄호
 3. 불릿 리스트: •, - 로 시작하는 항목
 4. 청크 크기: ~1,000 토큰 (약 2,000자)
 5. 오버랩: 150 토큰 (약 300자)
@@ -29,9 +29,9 @@ logger = get_logger(__name__)
 
 # 섹션 분류 기준 키워드 (기본값)
 DEFAULT_SECTION_KEYWORDS: dict[str, list[str]] = {
-    "위약금": ["위약금", "취소", "환불", "일정변경", "변경", "패널티"],
-    "비용": ["원본", "수정본", "촬영", "추가금", "비용", "가격", "원", "만원"],
-    "상품구성": ["의상", "항목", "구성", "세부", "전체"],
+    "정책": ["취소", "환불", "변경", "패널티"],
+    "비용": ["원본", "수정본", "추가금", "비용", "가격", "원", "만원"],
+    "구성": ["항목", "구성", "세부", "전체"],
     "혜택": ["프로모션", "혜택", "서비스", "이벤트", "할인", "적용"],
     "위치": ["위치", "주소", "주차", "역", "역세권"],
     "기타": [],  # 분류 안 되면 기타
@@ -56,10 +56,10 @@ class ChunkMetadata:
     Weaviate에 저장될 청크의 메타데이터
     """
 
-    entity_id: str  # 고유 ID (기존 shop_id 대응)
-    entity_name: str  # 업체/항목명 (기존 shop_name 대응)
+    entity_id: str  # 고유 ID
+    entity_name: str  # 항목명
     category: str  # 카테고리
-    section: str  # 섹션 분류 (위약금, 비용, 상품구성 등)
+    section: str  # 섹션 분류 (정책, 비용, 구성 등)
     source_field: str  # 원본 속성 필드명
     chunk_index: int  # 청크 순서
     total_chunks: int  # 전체 청크 수
@@ -134,7 +134,7 @@ def extract_section_header(text: str) -> str | None:
     """
     대괄호로 감싼 섹션 헤더 추출
 
-    예: [위약금 규정], [프로모션]
+    예: [정책 규정], [프로모션]
 
     Args:
         text: 텍스트
@@ -157,7 +157,7 @@ def split_by_delimiter(text: str, delimiter_pattern: str = r"[—]{4,}|[-]{8,}")
     """
     구분자로 텍스트 분할
 
-    Notion 속성에서 자주 사용되는 구분자:
+    구조화 데이터에서 자주 사용되는 구분자:
     - ———————————— (대시 여러 개)
     - -------- (하이픈 여러 개)
 
@@ -268,7 +268,7 @@ class MetadataChunker:
     """
     메타데이터 기반 청킹 파이프라인
 
-    Notion 페이지 속성에서 자연어 콘텐츠를 추출하고
+    구조화된 데이터 속성에서 자연어 콘텐츠를 추출하고
     의미 단위로 청킹
     """
 
@@ -291,12 +291,10 @@ class MetadataChunker:
         self.max_chunk_chars = max_chunk_chars
         self.overlap_chars = overlap_chars
         self.target_fields = target_fields or [
-            "추가비용",
-            "위약금 규정 *취소",
-            "위약금 규정",
-            "상품구성",
-            "혜택",
             "비용",
+            "정책",
+            "구성",
+            "혜택",
         ]
         self.section_keywords = section_keywords or DEFAULT_SECTION_KEYWORDS
 
@@ -313,7 +311,7 @@ class MetadataChunker:
         속성에서 청킹 대상 콘텐츠 추출
 
         Args:
-            properties: Notion 페이지 속성
+            properties: 구조화된 데이터 속성
 
         Returns:
             [(필드명, 콘텐츠)] 리스트
@@ -414,13 +412,13 @@ class MetadataChunker:
         properties: dict,
     ) -> ChunkingResult:
         """
-        항목 데이터를 청킹 (기존 chunk_shop_data 대응)
+        항목 데이터를 청킹
 
         Args:
             entity_id: 항목 고유 ID
             entity_name: 항목명
             category: 카테고리
-            properties: Notion 페이지 속성
+            properties: 구조화된 데이터 속성
 
         Returns:
             ChunkingResult 객체
@@ -473,12 +471,6 @@ class MetadataChunker:
             processing_time_ms=elapsed_ms,
         )
 
-    # 하위 호환성용 메서드
-    def chunk_shop_data(self, shop_id: str, shop_name: str, category: str, properties: dict):
-        return self.chunk_entity_data(
-            entity_id=shop_id, entity_name=shop_name, category=category, properties=properties
-        )
-
 
 # =============================================================================
 # 테스트 함수
@@ -489,14 +481,14 @@ def test_chunker():
     """청커 테스트"""
     properties = {
         "내용": """샘플 데이터 내용입니다.
-실내 촬영과 야외 촬영이 가능합니다.
+다양한 서비스 옵션을 제공합니다.
 """,
     }
 
     chunker = MetadataChunker()
     result = chunker.chunk_entity_data(
         entity_id="test-001",
-        entity_name="샘플 업체명",
+        entity_name="샘플 항목",
         category="샘플 카테고리",
         properties=properties,
     )

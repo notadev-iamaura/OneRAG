@@ -2,26 +2,14 @@
 
 문서 로드 시 LLM을 사용하여 메타데이터를 자동으로 생성하는 기능입니다.
 
-## 📋 목차
-
-- [개요](#개요)
-- [주요 기능](#주요-기능)
-- [아키텍처](#아키텍처)
-- [설정 방법](#설정-방법)
-- [사용 방법](#사용-방법)
-- [테스트](#테스트)
-- [문제 해결](#문제-해결)
-
----
-
 ## 개요
 
-고객 상담 데이터를 LLM으로 분석하여 다음 메타데이터를 자동 생성합니다:
+텍스트 데이터를 LLM으로 분석하여 다음 메타데이터를 자동 생성합니다:
 
-- **category_main**: 주요 카테고리 (예: "보너스기능", "결제", "회원관리")
-- **category_sub**: 세부 카테고리 (예: "친구초대", "결제오류")
-- **intent**: 사용자 의도 (예: "기능 설명 요청")
-- **consult_type**: 상담 유형 (예: "초대코드문의")
+- **category**: 주요 카테고리 (예: "기술", "비즈니스", "교육")
+- **subcategory**: 세부 카테고리 (예: "프로그래밍", "마케팅", "튜토리얼")
+- **intent**: 텍스트의 주요 의도 (예: "정보 제공", "문제 해결")
+- **content_type**: 콘텐츠 유형 (예: "FAQ", "가이드", "보고서")
 - **keywords**: 핵심 키워드 리스트
 - **summary**: 한 줄 요약
 - **is_tool_related**: 도구 관련 여부
@@ -31,7 +19,7 @@
 
 ## 주요 기능
 
-### ✅ 핵심 기능
+### 핵심 기능
 
 1. **LLM 기반 보강**: gpt-4o-mini 사용
 2. **배치 처리**: 10개씩 묶어서 처리 (성능 최적화)
@@ -39,7 +27,7 @@
 4. **재시도 로직**: Exponential Backoff 적용
 5. **타임아웃 관리**: 단건 30초, 배치 90초
 
-### 🔒 안전장치
+### 안전장치
 
 - **기본값 false**: `enrichment.enabled: false`로 시작
 - **Null Object 패턴**: 비활성화 시 NullEnricher 사용
@@ -141,13 +129,13 @@ await enrichment_service.initialize()
 
 # 단일 문서 보강
 document = {
-    "content": "고객: 친구 초대 코드는 어디서 입력하나요?\n상담원: ..."
+    "content": "Python에서 리스트 컴프리헨션을 사용하면 반복문을 간결하게 작성할 수 있습니다."
 }
 
 result = await enrichment_service.enrich(document)
 
 if result:
-    print(f"카테고리: {result.category_main}")
+    print(f"카테고리: {result.category}")
     print(f"키워드: {result.keywords}")
     print(f"요약: {result.summary}")
 
@@ -160,16 +148,16 @@ await enrichment_service.cleanup()
 ```python
 # 여러 문서 동시 보강
 documents = [
-    {"content": "친구 초대 코드..."},
-    {"content": "결제 오류..."},
-    {"content": "회원 탈퇴..."}
+    {"content": "Python 리스트 컴프리헨션 설명..."},
+    {"content": "2024년 매출 보고서..."},
+    {"content": "서비스 이용약관 안내..."}
 ]
 
 results = await enrichment_service.enrich_batch(documents)
 
 for i, result in enumerate(results):
     if result:
-        print(f"문서 {i+1}: {result.category_main} - {result.summary}")
+        print(f"문서 {i+1}: {result.category} - {result.summary}")
     else:
         print(f"문서 {i+1}: 보강 실패 (원본 사용)")
 ```
@@ -187,7 +175,7 @@ documents = await loader.load("example.json")
 for doc in documents:
     enrichment = doc.metadata.get('llm_enrichment')
     if enrichment:
-        print(f"카테고리: {enrichment['category_main']}")
+        print(f"카테고리: {enrichment['category']}")
 ```
 
 ### 4. 통계 확인
@@ -211,17 +199,10 @@ print(f"토큰 사용량: {stats['total_tokens_used']}")
 
 ```bash
 # 전체 테스트 실행
-pytest tests/unit/test_enrichment.py -v
+pytest tests/unit/enrichment/ -v
 
 # 특정 테스트 실행
-pytest tests/unit/test_enrichment.py::test_llm_enricher_single -v
-```
-
-### 통합 테스트
-
-```bash
-# 전체 파이프라인 테스트
-pytest tests/integration/test_enrichment_pipeline.py -v
+pytest tests/unit/enrichment/test_enrichment_service.py -v
 ```
 
 ---
@@ -235,11 +216,6 @@ pytest tests/integration/test_enrichment_pipeline.py -v
 2. `OPENAI_API_KEY`가 올바르게 설정되었는지 확인
 3. 로그에서 "Enrichment enabled" 메시지 확인
 
-```bash
-# 로그 확인
-tail -f logs/app.log | grep -i enrichment
-```
-
 ### Q2: LLM 호출이 너무 느려요
 
 **해결 방법:**
@@ -247,15 +223,7 @@ tail -f logs/app.log | grep -i enrichment
 2. 타임아웃 증가: `ENRICHMENT_TIMEOUT_SINGLE=60`
 3. 동시 처리 수 증가: `ENRICHMENT_CONCURRENCY=5`
 
-### Q3: 비용이 너무 많이 나와요
-
-**해결 방법:**
-1. 캐싱 활성화: `ENRICHMENT_CACHE_ENABLED=true`
-2. 배치 크기 증가: `ENRICHMENT_BATCH_SIZE=10` (토큰 효율)
-3. 온도 낮추기: `ENRICHMENT_LLM_TEMPERATURE=0.0` (일관성 향상)
-4. 모델 변경: `gpt-4o-mini` (이미 최저가 모델)
-
-### Q4: JSON 파싱 에러가 발생해요
+### Q3: JSON 파싱 에러가 발생해요
 
 **원인:**
 LLM이 JSON 외에 추가 텍스트를 출력하는 경우
@@ -264,24 +232,6 @@ LLM이 JSON 외에 추가 텍스트를 출력하는 경우
 - 프롬프트에 "JSON만 출력" 강조 (이미 적용됨)
 - 마크다운 코드 블록 제거 로직 (이미 적용됨)
 - 재시도 로직 활용 (이미 적용됨)
-
-### Q5: 특정 문서만 보강 실패해요
-
-**확인 방법:**
-```python
-# 실패한 문서 ID 확인
-failed_ids = []
-for i, result in enumerate(results):
-    if result is None:
-        failed_ids.append(documents[i].get('_id'))
-
-print(f"실패한 문서 ID: {failed_ids}")
-```
-
-**해결 방법:**
-- 해당 문서의 `content` 필드 확인
-- 문서 길이가 너무 긴지 확인 (토큰 제한)
-- 로그에서 구체적인 에러 메시지 확인
 
 ---
 
@@ -297,30 +247,7 @@ print(f"실패한 문서 ID: {failed_ids}")
 | 토큰 사용량 (배치 10개) | 1500-2500 tokens |
 | 성공률 | 95%+ |
 
-### 비용 예측 (gpt-4o-mini)
-
-- **Input**: $0.15 / 1M tokens
-- **Output**: $0.60 / 1M tokens
-
-**예시 계산:**
-- 문서 1,000개 처리
-- 평균 400 tokens/document
-- 총 비용: 약 $0.30 (30센트)
-
 ---
 
-## 라이센스
-
-이 모듈은 프로젝트 전체 라이센스를 따릅니다.
-
----
-
-## 기여
-
-문제 발견 시 이슈 등록 또는 PR 제출 환영합니다!
-
----
-
-**마지막 업데이트**: 2025-11-07
-**작성자**: AI Assistant
-**버전**: 1.0.0
+**마지막 업데이트**: 2026-03-09
+**버전**: 2.0.0

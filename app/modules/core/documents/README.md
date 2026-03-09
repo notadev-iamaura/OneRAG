@@ -155,7 +155,7 @@ chunks = chunker.chunk(document)
 ### Phase 2 예정
 
 - **SemanticChunker**: 의미 기반 청킹 (Guidebook용)
-- **ConversationChunker**: 대화 청킹 (Kakaotalk용)
+- **ConversationChunker**: 대화 로그 청킹
 
 ## 🏷️ 메타데이터 추출
 
@@ -344,9 +344,9 @@ processor = DocumentProcessorFactory.create('guidebook')
 chunks = processor.process('data/guidebook.pdf')
 ```
 
-### Kakaotalk Processor (개인정보 마스킹)
+### ChatLog Processor (개인정보 마스킹)
 ```python
-processor = DocumentProcessorFactory.create('kakaotalk')
+processor = DocumentProcessorFactory.create('chatlog')
 chunks = processor.process('data/conversation.txt')
 ```
 

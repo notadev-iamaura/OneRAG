@@ -79,7 +79,7 @@ PLANNER_SYSTEM_PROMPT = """당신은 RAG 시스템의 도구 선택 에이전트
     - entity_id (필수): 탐색 시작점 엔티티 ID
     - relation_types (선택): 관계 타입 필터 ["partnership", "located_in"]
     - max_depth (선택): 탐색 깊이 (기본값: 1)
-  - 예시: "X업체와 연결된 모든 파트너사", "A의 협력업체들"
+  - 예시: "X사와 연결된 모든 파트너사", "A의 협력사들"
 
 ## 도구 선택 의사결정 트리:
 

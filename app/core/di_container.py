@@ -20,7 +20,14 @@ from dependency_injector import containers, providers
 # Services
 from app.api.services.chat_service import ChatService
 from app.api.services.rag_pipeline import RAGPipeline
-from app.batch.notion_client import NotionAPIClient
+
+# 선택적 모듈: Notion 클라이언트 (설치되어 있을 때만 사용)
+try:
+    from app.batch.notion_client import NotionAPIClient
+    _NOTION_CLIENT_AVAILABLE = True
+except ImportError:
+    _NOTION_CLIENT_AVAILABLE = False
+    NotionAPIClient = None  # type: ignore[assignment,misc]
 
 # SQL Search 모듈 (Phase 3: 메타데이터 SQL 검색)
 from app.infrastructure.persistence.connection import DatabaseManager
@@ -1494,11 +1501,14 @@ class AppContainer(containers.DeclarativeContainer):
         database_url=os.getenv("DATABASE_URL")
     )
 
-    # Notion Client (IngestionService용)
-    notion_client = providers.Singleton(
-        NotionAPIClient,
-        api_key=os.getenv("NOTION_API_KEY")
-    )
+    # 외부 데이터 소스 클라이언트 (선택적 모듈 - Notion 등)
+    if _NOTION_CLIENT_AVAILABLE:
+        notion_client = providers.Singleton(
+            NotionAPIClient,
+            api_key=os.getenv("NOTION_API_KEY")
+        )
+    else:
+        notion_client = providers.Object(None)
 
     # Ingestion Connector Factory
     connector_factory = providers.Singleton(IngestionConnectorFactory)

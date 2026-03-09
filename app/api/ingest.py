@@ -17,7 +17,8 @@ from app.modules.ingestion.service import IngestionService
 # 모든 Ingestion API 엔드포인트는 X-API-Key 헤더 필수
 router = APIRouter(prefix="/ingest", tags=["Ingestion"], dependencies=[Depends(get_api_key)])
 
-class NotionIngestRequest(BaseModel):
+class ExternalSourceIngestRequest(BaseModel):
+    """외부 데이터 소스 적재 요청 (Notion 등 구조화 데이터)"""
     database_id: str
     category_name: str
 
@@ -58,15 +59,17 @@ async def ingest_web(
         }
     }
 
-@router.post("/notion", status_code=202)
+@router.post("/external-source", status_code=202)
 @inject
-async def ingest_notion(
-    request: NotionIngestRequest,
+async def ingest_external_source(
+    request: ExternalSourceIngestRequest,
     background_tasks: BackgroundTasks,
     ingestion_service: IngestionService = Depends(Provide[AppContainer.ingestion_service])
 ):
     """
-    Notion 데이터베이스 적재 작업 시작 (비동기)
+    외부 데이터 소스 적재 작업 시작 (비동기)
+
+    구조화된 외부 데이터 소스(Notion 등)에서 데이터를 가져와 벡터 저장소에 적재합니다.
     """
     if not request.database_id:
         raise HTTPException(status_code=400, detail="database_id is required")

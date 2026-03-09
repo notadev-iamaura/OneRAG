@@ -32,7 +32,7 @@ class ScoringService:
     Attributes:
         collection_weight_enabled: 컬렉션별 가중치 활성화 여부
         file_type_weight_enabled: 파일 타입별 가중치 활성화 여부
-        collection_weights: 컬렉션별 가중치 딕셔너리 (예: {"NotionMetadata": 1.5})
+        collection_weights: 컬렉션별 가중치 딕셔너리 (예: {"Metadata": 1.5})
         file_type_weights: 파일 타입별 가중치 딕셔너리 (예: {"PDF": 1.2})
     """
 
@@ -70,15 +70,15 @@ class ScoringService:
 
         Args:
             score: 원본 점수
-            collection: 컬렉션 이름 (예: "NotionMetadata", "Documents")
+            collection: 컬렉션 이름 (예: "Metadata", "Documents")
             file_type: 파일 타입 (예: "PDF", "TXT")
 
         Returns:
             가중치가 적용된 점수 (비활성화 시 원본 그대로)
 
         Examples:
-            >>> service = ScoringService({"collection_weight_enabled": True, "collection_weights": {"NotionMetadata": 1.5}})
-            >>> service.apply_weight(0.5, collection="NotionMetadata")
+            >>> service = ScoringService({"collection_weight_enabled": True, "collection_weights": {"Metadata": 1.5}})
+            >>> service.apply_weight(0.5, collection="Metadata")
             0.75
         """
         result = score
