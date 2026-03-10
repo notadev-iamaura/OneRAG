@@ -177,6 +177,16 @@ class ErrorCode(str, Enum):
     OPENAI_002 = "OPENAI-002"  # LLM provider 사용 불가 (API 키 미설정 등)
     OPENAI_003 = "OPENAI-003"  # RAG 파이프라인 오류
 
+    # DEMO (라이브 데모) - 4개
+    DEMO_001 = "DEMO-001"  # 데모 서비스 미초기화
+    DEMO_002 = "DEMO-002"  # 데모 세션 미존재/만료
+    DEMO_003 = "DEMO-003"  # 파일 크기 초과
+    DEMO_004 = "DEMO-004"  # 파일명 누락
+    DEMO_005 = "DEMO-005"  # 스트리밍 답변 생성 오류
+    DEMO_006 = "DEMO-006"  # 파일 MIME 타입 불일치
+    DEMO_007 = "DEMO-007"  # 요청 속도 제한 초과
+    DEMO_008 = "DEMO-008"  # 일일 API 호출 상한 초과
+
     # API (API 응답) - 1개
     API_001 = "API-001"  # 내부 오류
 

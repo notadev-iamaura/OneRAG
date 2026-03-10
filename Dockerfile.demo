@@ -1,0 +1,55 @@
+# OneRAG 라이브 데모 Dockerfile
+#
+# 경량 이미지: 풀 앱 대비 최소 의존성만 설치
+# 메모리 예산: ~315MB (Railway Hobby 512MB)
+# 보안: non-root 사용자로 실행
+#
+# 빌드: docker build -f Dockerfile.demo -t onerag-demo .
+# 실행: docker run -p 8000:8000 -e GOOGLE_API_KEY=your-key onerag-demo
+
+FROM python:3.11-slim AS base
+
+WORKDIR /app
+
+# 시스템 의존성 (최소 + libmagic for MIME 타입 검증)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv 설치 (버전 고정으로 재현 가능한 빌드 보장)
+COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
+
+# 의존성 파일 복사
+COPY pyproject.toml uv.lock ./
+
+# 의존성 설치 (데모에 필요한 최소 패키지)
+RUN uv sync --frozen --no-dev --no-install-project
+
+# 소스 코드 복사
+COPY app/ app/
+COPY easy_start/sample_data/ easy_start/sample_data/
+COPY demo_main.py .
+
+# non-root 사용자 생성 및 전환 (컨테이너 보안)
+RUN adduser --disabled-password --gecos "" --no-create-home appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
+# 환경 변수 기본값
+ENV PORT=8000
+ENV DEMO_MAX_SESSIONS=50
+ENV DEMO_TTL_SECONDS=600
+ENV DEMO_MAX_FILE_SIZE_MB=10
+ENV DEMO_MAX_DOCS_PER_SESSION=5
+ENV DEMO_DAILY_API_LIMIT=500
+ENV DEMO_SAMPLE_LANGUAGE=ko
+
+# 헬스 체크
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
+
+# 실행
+EXPOSE ${PORT}
+CMD ["sh", "-c", "uv run uvicorn demo_main:app --host 0.0.0.0 --port ${PORT}"]
