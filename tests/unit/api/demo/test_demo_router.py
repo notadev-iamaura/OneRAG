@@ -312,3 +312,49 @@ class TestStatsEndpoint:
         assert data["daily_api_limit"] == 500
         assert "allowed_file_types" in data
         assert "pdf" in data["allowed_file_types"]
+
+
+# =============================================================================
+# Path 파라미터 검증 테스트
+# =============================================================================
+
+
+class TestPathValidation:
+    """Path 파라미터 검증 테스트 — min_length=1, max_length=200"""
+
+    def test_삭제_장문_session_id_422(self, client: TestClient) -> None:
+        """201자 session_id로 세션 삭제 시 422 반환"""
+        long_id = "a" * 201
+        resp = client.delete(f"/api/demo/sessions/{long_id}")
+        assert resp.status_code == 422
+
+    def test_문서목록_장문_session_id_422(self, client: TestClient) -> None:
+        """201자 session_id로 문서 목록 조회 시 422 반환"""
+        long_id = "b" * 201
+        resp = client.get(f"/api/demo/sessions/{long_id}/documents")
+        assert resp.status_code == 422
+
+    def test_채팅_장문_session_id_422(self, client: TestClient) -> None:
+        """201자 session_id로 채팅 시 422 반환"""
+        long_id = "c" * 201
+        resp = client.post(
+            f"/api/demo/sessions/{long_id}/chat",
+            json={"question": "테스트"},
+        )
+        assert resp.status_code == 422
+
+    def test_스트리밍_장문_session_id_422(self, client: TestClient) -> None:
+        """201자 session_id로 스트리밍 시 422 반환"""
+        long_id = "d" * 201
+        resp = client.post(
+            f"/api/demo/sessions/{long_id}/chat/stream",
+            json={"question": "테스트"},
+        )
+        assert resp.status_code == 422
+
+    def test_정상_session_id_통과(self, client: TestClient) -> None:
+        """200자 session_id는 Path 검증을 통과 (Mock 세션 반환으로 200)"""
+        valid_id = "a" * 200
+        resp = client.get(f"/api/demo/sessions/{valid_id}/documents")
+        # Path 검증이 통과하여 Mock 세션 관리자가 응답 → 422가 아님
+        assert resp.status_code != 422

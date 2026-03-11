@@ -16,10 +16,10 @@ Rate Limit이 적용되어 API 비용을 보호합니다.
 
 import json
 import os
+import pathlib
 from collections.abc import AsyncGenerator
-from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, Path, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -250,7 +250,10 @@ async def create_session(request: Request) -> CreateSessionResponse:
 
 @router.delete("/sessions/{session_id}")
 @limiter.limit(RATE_LIMIT_READ)
-async def delete_session(request: Request, session_id: str) -> dict[str, str]:
+async def delete_session(
+    request: Request,
+    session_id: str = Path(..., min_length=1, max_length=200),
+) -> dict[str, str]:
     """세션을 수동으로 삭제합니다."""
     manager = _get_manager()
     deleted = await manager.delete_session(session_id)
@@ -280,7 +283,9 @@ async def delete_session(request: Request, session_id: str) -> dict[str, str]:
 )
 @limiter.limit(RATE_LIMIT_UPLOAD)
 async def upload_document(
-    request: Request, session_id: str, file: UploadFile
+    request: Request,
+    session_id: str = Path(..., min_length=1, max_length=200),
+    file: UploadFile = File(...),
 ) -> UploadResponse:
     """
     세션에 문서를 업로드합니다.
@@ -341,8 +346,8 @@ async def upload_document(
     file_bytes = b"".join(chunks)
 
     # MIME 타입 검증 (실제 파일 내용 기반)
-    safe_filename = Path(file.filename).name
-    file_ext = Path(safe_filename).suffix.lstrip(".").lower()
+    safe_filename = pathlib.Path(file.filename).name
+    file_ext = pathlib.Path(safe_filename).suffix.lstrip(".").lower()
     _validate_mime_type(file_bytes, file_ext)
 
     try:
@@ -363,7 +368,8 @@ async def upload_document(
 )
 @limiter.limit(RATE_LIMIT_READ)
 async def list_documents(
-    request: Request, session_id: str
+    request: Request,
+    session_id: str = Path(..., min_length=1, max_length=200),
 ) -> DocumentListResponse:
     """세션에 업로드된 문서 목록을 반환합니다."""
     manager = _get_manager()
@@ -394,7 +400,9 @@ async def list_documents(
 )
 @limiter.limit(RATE_LIMIT_CHAT)
 async def chat(
-    request: Request, session_id: str, body: ChatRequest
+    request: Request,
+    session_id: str = Path(..., min_length=1, max_length=200),
+    body: ChatRequest = Body(...),
 ) -> ChatResponse:
     """
     RAG 기반 질문 답변 (비스트리밍)
@@ -422,7 +430,9 @@ async def chat(
 @router.post("/sessions/{session_id}/chat/stream")
 @limiter.limit(RATE_LIMIT_CHAT)
 async def chat_stream(
-    request: Request, session_id: str, body: ChatRequest
+    request: Request,
+    session_id: str = Path(..., min_length=1, max_length=200),
+    body: ChatRequest = Body(...),
 ) -> StreamingResponse:
     """
     RAG 기반 질문 답변 (SSE 스트리밍)

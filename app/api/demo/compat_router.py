@@ -143,7 +143,7 @@ async def compat_chat(
             id=i,
             document=src.get("source", ""),
             content_preview=src.get("content", "")[:200],
-            relevance=0.8,
+            relevance=src.get("relevance", 0.8),
         )
         for i, src in enumerate(result.get("sources", []))
     ]
