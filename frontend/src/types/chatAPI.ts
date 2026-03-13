@@ -231,9 +231,28 @@ export type ChatAPIFactory = (config: ChatAPIConfig) => IChatAPIService;
 // ============================================================================
 
 /**
+ * Chat API 기본 URL 해석
+ *
+ * api.ts의 getAPIBaseURL()과 동일한 우선순위 체인을 따릅니다:
+ * 1. VITE_API_BASE_URL (빌드 타임)
+ * 2. window.RUNTIME_CONFIG.API_BASE_URL (런타임)
+ * 3. localhost:8000 (폴백)
+ */
+function getChatAPIBaseURL(): string {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined' && window.RUNTIME_CONFIG?.API_BASE_URL) {
+    return window.RUNTIME_CONFIG.API_BASE_URL;
+  }
+  return 'http://localhost:8000';
+}
+
+/**
  * 기본 Chat API 설정
  *
  * 합리적인 기본값을 제공합니다.
+ * - baseURL: api.ts와 동일한 URL 해석 로직 사용
  * - timeout: 30000ms (대용량 문서 처리 대응)
  * - retryAttempts: 3회 (네트워크 일시 장애 대응)
  * - retryDelay: 1000ms (서버 부하 방지)
@@ -241,7 +260,7 @@ export type ChatAPIFactory = (config: ChatAPIConfig) => IChatAPIService;
 export const defaultChatAPIConfig: Required<Omit<ChatAPIConfig, 'apiKey'>> & {
   apiKey?: string;
 } = {
-  baseURL: 'http://localhost:8000',
+  baseURL: getChatAPIBaseURL(),
   timeout: 30000,
   retryAttempts: 3,
   retryDelay: 1000,
