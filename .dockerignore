@@ -1,0 +1,30 @@
+# OneRAG 데모 Docker 빌드 컨텍스트 최적화
+# 빌드 컨텍스트: 2.4GB → ~50MB
+
+# 프론트엔드 (별도 Railway 서비스로 배포)
+frontend/
+
+# 테스트 & 문서
+tests/
+docs/
+*.md
+
+# VCS & 캐시
+.git/
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# 환경 파일 (보안 — Railway 환경변수로 주입)
+.env*
+
+# 기타 불필요 파일
+node_modules/
+.venv/
+*.egg-info/
+dist/
+quickstart/
+.github/

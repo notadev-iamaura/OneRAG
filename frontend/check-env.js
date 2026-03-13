@@ -7,12 +7,12 @@ console.log('========================================\n');
 
 // 필수 환경변수 목록
 const requiredEnvVars = [
-  'VITE_API_KEY',
   'VITE_API_BASE_URL',
 ];
 
-// 선택적 환경변수 목록
+// 선택적 환경변수 목록 (VITE_API_KEY: 데모 모드에서는 인증 불필요)
 const optionalEnvVars = [
+  'VITE_API_KEY',
   'VITE_ACCESS_CODE',
   'VITE_DEV_API_BASE_URL',
   'VITE_DEV_WS_BASE_URL',
