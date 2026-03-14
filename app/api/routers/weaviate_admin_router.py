@@ -96,7 +96,7 @@ async def check_weaviate_status():
                         "content_preview": props.get("content", "")[:100] + "...",
                         "entity_name": props.get("entity_name"),
                         "location": props.get("location"),
-                        "price": props.get("price"),
+                        "numeric_value": props.get("numeric_value"),
                         "capacity": props.get("capacity"),
                         "rating": props.get("rating"),
                     }

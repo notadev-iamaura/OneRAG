@@ -31,6 +31,34 @@ const processCitations = (text: string, onCitationClick?: (index: number) => voi
   });
 };
 
+/**
+ * React children 트리를 재귀 순회하며 텍스트 노드에만 인용 처리 적용
+ *
+ * String(children)으로 변환하면 <strong>, <em> 등 React 요소가
+ * [object Object]로 변환되는 문제를 해결합니다.
+ */
+const processChildrenWithCitations = (
+  children: React.ReactNode,
+  onCitationClick?: (index: number) => void
+): React.ReactNode => {
+  return React.Children.map(children, (child) => {
+    // 텍스트 노드: 인용 처리 적용
+    if (typeof child === 'string') {
+      return processCitations(child, onCitationClick);
+    }
+    // React 요소: 자식을 재귀 처리
+    if (React.isValidElement(child) && child.props.children) {
+      return React.cloneElement(
+        child as React.ReactElement<{ children?: React.ReactNode }>,
+        {},
+        processChildrenWithCitations(child.props.children, onCitationClick),
+      );
+    }
+    // 숫자, null, boolean 등: 그대로 반환
+    return child;
+  });
+};
+
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, className, onCitationClick }) => {
   return (
     <div className={cn("markdown-content prose prose-slate dark:prose-invert max-w-none prose-sm overflow-hidden", className)}>
@@ -44,7 +72,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           p: ({ node: _node, children, ...props }) => {
             void props;
-            return <p className="mb-3 leading-relaxed">{processCitations(String(children), onCitationClick)}</p>;
+            return <p className="mb-3 leading-relaxed">{processChildrenWithCitations(children, onCitationClick)}</p>;
           },
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           ul: ({ node: _node, ...props }) => <ul className="pl-5 space-y-1 my-3 bg-muted/30 border border-border/50 rounded-lg p-3 list-disc list-inside" {...props} />,
@@ -53,7 +81,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           li: ({ node: _node, children, ...props }) => {
             void props;
-            return <li className="leading-relaxed marker:text-blue-500 marker:font-bold">{processCitations(String(children), onCitationClick)}</li>;
+            return <li className="leading-relaxed marker:text-blue-500 marker:font-bold">{processChildrenWithCitations(children, onCitationClick)}</li>;
           },
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           strong: ({ node: _node, ...props }) => <strong className="font-bold text-primary italic px-0.5" {...props} />,

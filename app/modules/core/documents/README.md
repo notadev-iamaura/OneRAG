@@ -170,12 +170,12 @@ extractor = RuleBasedExtractor(use_konlpy=True)
 metadata = extractor.extract(chunk)
 
 print(metadata['keywords'])          # ['서비스', '이용', '시간']
-print(metadata['contains_price'])    # True
+print(metadata['contains_numeric'])   # True
 print(metadata['categories'])        # ['서비스', '이용']
 ```
 
 **추출 항목**:
-- `contains_price`: 가격 정보 포함 여부
+- `contains_numeric`: 수치/금액 정보 포함 여부
 - `keywords`: 핵심 키워드 리스트 (정규식 + 단어 분리)
 - `has_date`: 날짜 정보 포함 여부
 - `categories`: 도메인 카테고리
@@ -212,7 +212,7 @@ print(metadata['categories'])        # ['서비스', '이용']
   },
 
   // 검색 최적화 필드 (선택적)
-  "contains_price": true,
+  "contains_numeric": true,
   "categories": ["서비스", "이용"],
   "content_type": "question"
 }

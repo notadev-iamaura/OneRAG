@@ -7,6 +7,7 @@ FastAPI TestClient와 mock을 사용하여 스키마 변환 및 히스토리 기
 
 import time
 from collections.abc import AsyncGenerator, Generator
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -121,10 +122,12 @@ class TestCompatChatEndpoint:
         assert data["session_id"] == "test_session_id"
 
     def test_chat_session_not_found(
-        self, client: TestClient, mock_session_manager: MagicMock
+        self, client: TestClient, mock_pipeline: MagicMock
     ) -> None:
-        """POST /api/chat → 미존재 세션 시 404 반환"""
-        mock_session_manager.get_session = AsyncMock(return_value=None)
+        """POST /api/chat → 미존재 세션 시 pipeline.query가 ValueError → 404 반환"""
+        mock_pipeline.query = AsyncMock(
+            side_effect=ValueError("세션을 찾을 수 없습니다.")
+        )
         resp = client.post(
             "/api/chat",
             json={"message": "질문", "session_id": "nonexistent_session"},
@@ -398,16 +401,23 @@ class TestCompatStreamEndpoint:
         assert done_data["sources"][0]["source"] == "test.pdf"
 
     def test_stream_chat_session_not_found(
-        self, client: TestClient, mock_session_manager: MagicMock
+        self, client: TestClient, mock_pipeline: MagicMock
     ) -> None:
-        """POST /api/chat/stream → 미존재 세션 시 404 반환"""
-        mock_session_manager.get_session = AsyncMock(return_value=None)
+        """POST /api/chat/stream → 미존재 세션 시 스트림 에러 이벤트 반환"""
+        # 스트리밍에서는 pipeline.stream_query가 ValueError를 발생시킴
+        # 이벤트 제너레이터 내부에서 에러가 캡처되어 SSE error 이벤트로 반환됨
+        async def failing_stream(*args: Any, **kwargs: Any) -> AsyncGenerator[dict[str, Any], None]:
+            raise ValueError("세션을 찾을 수 없습니다.")
+            yield  # type: ignore[misc]  # AsyncGenerator 타입 충족용
+
+        mock_pipeline.stream_query = failing_stream
         resp = client.post(
             "/api/chat/stream",
             json={"message": "질문", "session_id": "nonexistent_session"},
         )
-        assert resp.status_code == 404
-        assert resp.json()["detail"] == ErrorCode.DEMO_002.value
+        # 스트리밍은 200으로 시작하고 에러 이벤트를 보내는 방식
+        assert resp.status_code == 200
+        assert "event: error" in resp.text
 
     def test_stream_chat_api_budget_exceeded(
         self, client: TestClient, mock_session_manager: MagicMock

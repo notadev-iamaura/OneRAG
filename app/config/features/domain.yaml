@@ -81,8 +81,8 @@ domain:
     schema:
       required_fields: ["name"]
       numeric_fields:
-        - "price"
-        - "cost"
+        - "numeric_value"
+        - "amount"
       boolean_fields:
         - "is_active"
       field_aliases:
@@ -96,8 +96,8 @@ domain:
     tables:
       - "metadata_table"
     numeric_fields:
-      - "price"
-      - "cost"
+      - "numeric_value"
+      - "amount"
 
   # 6. 라우터 설정 (Router)
   router:

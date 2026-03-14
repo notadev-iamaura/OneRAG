@@ -81,9 +81,9 @@ async def create_schema() -> bool:
                     description="위치/장소",
                 ),
                 Property(
-                    name="price",
+                    name="numeric_value",
                     data_type=DataType.TEXT,  # INT → TEXT (클라이언트 호환성)
-                    description="가격/비용",
+                    description="수치 데이터 (범용)",
                 ),
                 Property(
                     name="capacity",
