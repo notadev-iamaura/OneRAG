@@ -8,9 +8,9 @@
 
 <p align="center">
   <a href="https://github.com/youngouk/OneRAG/actions/workflows/ci.yml"><img src="https://github.com/youngouk/OneRAG/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://demo-frontend-production-3c93.up.railway.app"><img src="https://img.shields.io/badge/Live_Demo-Railway-blueviolet.svg" alt="Live Demo"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python 3.11+"></a>
+  <a href="https://demo-frontend-production-3c93.up.railway.app"><img src="https://img.shields.io/badge/Live_Demo-Railway-blueviolet.svg" alt="Live Demo"></a>
   <a href="https://github.com/youngouk/OneRAG/stargazers"><img src="https://img.shields.io/github/stars/youngouk/OneRAG?style=social" alt="GitHub Stars"></a>
 </p>
 
@@ -235,12 +235,21 @@ Query → Router → Expansion → Retriever → Cache → Reranker → Generato
 
 A full-featured React web UI is included. **[Try the live demo](https://demo-frontend-production-3c93.up.railway.app)** or run it locally alongside the backend.
 
+<p align="center">
+  <img src="assets/screenshot-chat-dark.png" alt="OneRAG Chat - Dark Mode" width="49%"/>
+  <img src="assets/screenshot-docs.png" alt="OneRAG Document Management" width="49%"/>
+</p>
+<p align="center">
+  <sub>Chat interface (dark mode) · Document management</sub>
+</p>
+
 **Key Features:**
 - WebSocket real-time streaming chat (RAG search results + AI answers)
 - Drag-and-drop document upload (PDF, Word, Excel, Markdown, etc.)
 - Document management — search, sort, bulk delete, detail view
 - Dark mode, mobile-responsive layout
 - Feature flag-based module activation/deactivation
+- Admin dashboard — sessions, performance, prompt management
 
 ```bash
 # With the backend running

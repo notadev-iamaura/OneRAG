@@ -235,12 +235,21 @@ Query → Router → Expansion → Retriever → Cache → Reranker → Generato
 
 별도의 React 기반 웹 UI가 포함되어 있습니다. **[라이브 데모](https://demo-frontend-production-3c93.up.railway.app)**에서 바로 체험하거나, 로컬에서 실행할 수 있습니다.
 
+<p align="center">
+  <img src="assets/screenshot-chat-dark.png" alt="OneRAG Chat - Dark Mode" width="49%"/>
+  <img src="assets/screenshot-docs.png" alt="OneRAG Document Management" width="49%"/>
+</p>
+<p align="center">
+  <sub>챗봇 인터페이스 (다크 모드) · 문서 관리</sub>
+</p>
+
 **주요 기능:**
 - WebSocket 실시간 스트리밍 채팅 (RAG 검색 결과 + AI 답변)
 - 드래그앤드롭 문서 업로드 (PDF, Word, Excel, Markdown 등)
 - 문서 관리 — 검색, 정렬, 일괄 삭제, 상세 정보 조회
 - 다크 모드, 모바일 반응형 레이아웃
 - Feature Flag 기반 모듈 활성화/비활성화
+- 관리자 대시보드 — 세션, 성능, 프롬프트 통합 관제
 
 ```bash
 # 백엔드 실행 중인 상태에서
