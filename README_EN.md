@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/youngouk/OneRAG/actions/workflows/ci.yml"><img src="https://github.com/youngouk/OneRAG/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://demo-frontend-production-3c93.up.railway.app"><img src="https://img.shields.io/badge/Live_Demo-Railway-blueviolet.svg" alt="Live Demo"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="https://github.com/youngouk/OneRAG/stargazers"><img src="https://img.shields.io/github/stars/youngouk/OneRAG?style=social" alt="GitHub Stars"></a>
@@ -15,6 +16,10 @@
 
 <p align="center">
   <a href="README.md">한국어</a> | <strong>English</strong>
+</p>
+
+<p align="center">
+  <a href="https://demo-frontend-production-3c93.up.railway.app">Try Live Demo</a> · Access code: <code>1127</code>
 </p>
 
 ---
@@ -51,11 +56,13 @@ ollama pull llama3.2 && make easy-start
 
 **Assemble every RAG component from a single codebase.**
 
-- **Swap with 1 line** — Vector DB, LLM, Reranker, Cache — all changeable via `.env` or YAML
+- **Just change the config** — Vector DB (6), LLM (5), Reranker (6), Cache (3) — all swappable via `.env` or YAML
 - **Start without API keys** — Fully functional offline with Ollama local LLM
 - **OpenAI SDK compatible** — Connect existing OpenAI code directly to OneRAG (`/v1/chat/completions`)
-- **2,100+ tests** — Production-verified stability with full CI/CD
+- **2,200+ tests** — Production-verified stability with full CI/CD
 - **PoC to Production** — Scale with the same codebase, no rebuilding needed
+
+> **[Try the live demo](https://demo-frontend-production-3c93.up.railway.app)** (access code: `1127`)
 
 ### Architecture at a Glance
 
@@ -154,44 +161,26 @@ Works with any tool that uses the OpenAI SDK — LangChain, Cursor, Open WebUI, 
 
 ## Swapping Components
 
-### Change Vector DB (1 line)
+Change `.env` or YAML config to swap any component.
 
 ```bash
-# Change just one line in .env
+# Vector DB
 VECTOR_DB_PROVIDER=weaviate  # or chroma, pinecone, qdrant, pgvector, mongodb
+
+# LLM
+LLM_PROVIDER=google          # or openai, anthropic, openrouter, ollama
 ```
-
-### Change LLM (1 line)
-
-```bash
-# Change just one line in .env
-LLM_PROVIDER=google  # or openai, anthropic, openrouter, ollama
-```
-
-### Add Reranker (2 lines YAML)
 
 ```yaml
-# app/config/features/reranking.yaml
+# Reranker (app/config/features/reranking.yaml)
 reranking:
   approach: "cross-encoder"  # or late-interaction, llm, local
   provider: "jina"           # or cohere, google, openai, openrouter, sentence-transformers
-```
 
-### Toggle Features On/Off (YAML config)
-
-```yaml
-# Enable caching
-cache:
-  enabled: true
-  type: "redis"  # or memory, semantic
-
-# Enable GraphRAG
-graph_rag:
-  enabled: true
-
-# Enable PII masking
-pii:
-  enabled: true
+# Toggle features On/Off
+cache:     { enabled: true, type: "redis" }    # or memory, semantic
+graph_rag: { enabled: true }                    # Knowledge graph reasoning
+pii:       { enabled: true }                    # PII masking
 ```
 
 ---
@@ -244,7 +233,7 @@ Query → Router → Expansion → Retriever → Cache → Reranker → Generato
 
 ## Frontend UI
 
-A full-featured React web UI is included. Run it alongside the backend API server to experience the complete RAG system in your browser.
+A full-featured React web UI is included. **[Try the live demo](https://demo-frontend-production-3c93.up.railway.app)** or run it locally alongside the backend.
 
 **Key Features:**
 - WebSocket real-time streaming chat (RAG search results + AI answers)
@@ -281,7 +270,7 @@ UI text, system prompts, and sample data are fully localized for each language.
 
 ```bash
 make dev-reload   # Dev server (auto-reload)
-make test         # Run tests (2,100+)
+make test         # Run tests (2,200+)
 make lint         # Lint check
 make type-check   # Type check
 ```
