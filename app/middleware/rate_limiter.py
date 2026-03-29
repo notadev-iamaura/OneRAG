@@ -116,7 +116,7 @@ class RateLimiter:
                 - int: 남은 요청 수
         """
         current_time = time.time()
-        
+
         # Override된 Limit 적용 (없으면 기본값)
         active_ip_limit = override_ip_limit if override_ip_limit is not None else self.ip_limit
         active_session_limit = override_session_limit if override_session_limit is not None else self.session_limit
