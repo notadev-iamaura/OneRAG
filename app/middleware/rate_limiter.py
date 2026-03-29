@@ -10,7 +10,7 @@ import asyncio
 import time
 from collections import defaultdict
 from collections.abc import Callable
-from typing import cast
+from typing import Any, cast
 
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
@@ -90,7 +90,11 @@ class RateLimiter:
         return sum(count for _, count in request_list)
 
     async def check_rate_limit(
-        self, ip: str | None = None, session_id: str | None = None
+        self,
+        ip: str | None = None,
+        session_id: str | None = None,
+        override_ip_limit: int | None = None,
+        override_session_limit: int | None = None,
     ) -> tuple[bool, str, int]:
         """
         Rate Limit 체크
@@ -102,6 +106,8 @@ class RateLimiter:
         Args:
             ip: 클라이언트 IP 주소
             session_id: 세션 ID
+            override_ip_limit: 지정 시 해당 값으로 IP 제한 수행
+            override_session_limit: 지정 시 해당 값으로 Session 제한 수행
 
         Returns:
             tuple[bool, str, int]:
@@ -110,6 +116,10 @@ class RateLimiter:
                 - int: 남은 요청 수
         """
         current_time = time.time()
+        
+        # Override된 Limit 적용 (없으면 기본값)
+        active_ip_limit = override_ip_limit if override_ip_limit is not None else self.ip_limit
+        active_session_limit = override_session_limit if override_session_limit is not None else self.session_limit
 
         async with self.lock:
             # 🛡️ 메모리 보호: IP 개수 제한 (LRU 방식 제거)
@@ -132,16 +142,16 @@ class RateLimiter:
 
                 current_count = self._get_request_count(request_list)
 
-                if current_count >= self.ip_limit:
+                if current_count >= active_ip_limit:
                     remaining = 0
                     logger.warning(
-                        f"Rate Limit 초과 (IP): ip={ip}, count={current_count}/{self.ip_limit}"
+                        f"Rate Limit 초과 (IP): ip={ip}, count={current_count}/{active_ip_limit}"
                     )
                     return False, "ip", remaining
 
                 # 요청 기록 추가
                 request_list.append((current_time, 1))
-                remaining = self.ip_limit - (current_count + 1)
+                remaining = active_ip_limit - (current_count + 1)
 
                 return True, "ip", remaining
 
@@ -169,10 +179,10 @@ class RateLimiter:
 
                 current_count = self._get_request_count(request_list)
 
-                if current_count >= self.session_limit:
+                if current_count >= active_session_limit:
                     remaining = 0
                     logger.warning(
-                        f"Rate Limit 초과 (Session): session_id={session_id}, count={current_count}/{self.session_limit}"
+                        f"Rate Limit 초과 (Session): session_id={session_id}, count={current_count}/{active_session_limit}"
                     )
                     return False, "session", remaining
 
@@ -473,5 +483,125 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         )
         response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Type"] = limit_type
+
+        return cast(Response, response)
+
+
+class ChatRateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Chat API 전용 경량 Rate Limiter
+
+    기존 RateLimitMiddleware와의 차이점:
+    - ✅ body를 읽지 않음 → StreamingResponse와 충돌 없음
+    - ✅ IP + X-Session-ID 헤더만으로 Rate Limit 판단
+    - ✅ Chat API에 특화된 제한 (IP당 분당 20회)
+
+    보안 목적:
+    - Chat 요청 1건당 LLM API 1-3회 호출 (비용 발생)
+    - 무제한 요청 시 LLM 비용 폭탄 + 서버 스레드 고갈 방지
+    - 기존 RateLimitMiddleware는 body 읽기로 인한 StreamingResponse 충돌 때문에
+      Chat API를 excluded_paths에 포함시켰으나, 이 미들웨어로 해결
+    """
+
+    # Chat API 경로 목록
+    CHAT_PATHS = frozenset({
+        "/api/chat",
+        "/api/chat/stream",
+        "/api/chat/session",
+        "/v1/chat/completions",
+    })
+
+    def __init__(
+        self,
+        app: Any,
+        rate_limiter: RateLimiter,
+        ip_limit: int = 20,
+        session_limit: int = 10,
+    ):
+        super().__init__(app)
+        self.rate_limiter = rate_limiter
+        self.ip_limit = ip_limit
+        self.session_limit = session_limit
+
+        logger.info(
+            f"ChatRateLimitMiddleware 초기화: "
+            f"IP={ip_limit}/min, Session={session_limit}/min, "
+            f"paths={list(self.CHAT_PATHS)}"
+        )
+
+    def _get_client_ip(self, request: Request) -> str | None:
+        """클라이언트 IP 주소 추출 (X-Forwarded-For → X-Real-IP → client.host)"""
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+
+        if request.client:
+            return request.client.host
+
+        return None
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        """
+        Chat API 요청만 인터셉션하여 Rate Limiting 적용
+
+        핵심: body를 읽지 않고 IP + 헤더만으로 판단
+        → StreamingResponse와 충돌 없음
+        """
+        # Chat API가 아니면 통과
+        if request.url.path not in self.CHAT_PATHS:
+            return cast(Response, await call_next(request))
+
+        # IP 추출 (body 읽기 없음)
+        client_ip = self._get_client_ip(request)
+
+        # X-Session-ID 헤더에서 세션 ID 추출 (body 읽기 없음)
+        session_id = request.headers.get("X-Session-ID")
+
+        # Rate Limit 체크
+        allowed, limit_type, remaining = await self.rate_limiter.check_rate_limit(
+            ip=client_ip,
+            session_id=session_id,
+            override_ip_limit=self.ip_limit,
+            override_session_limit=self.session_limit,
+        )
+
+        if not allowed:
+            logger.warning(
+                f"Chat Rate Limit 거부: path={request.url.path}, "
+                f"ip={client_ip}, session_id={session_id}, type={limit_type}"
+            )
+
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={
+                    "error": "Too Many Requests",
+                    "message": "채팅 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+                    "limit_type": limit_type,
+                    "retry_after": 60,
+                },
+
+                headers={
+                    "Retry-After": "60",
+                    "X-RateLimit-Limit": str(
+                        self.ip_limit if limit_type == "ip" else self.session_limit
+                    ),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(int(time.time()) + 60),
+                },
+            )
+
+        # Rate Limit 통과 → 요청 처리
+        response = await call_next(request)
+
+        # Rate Limit 정보를 응답 헤더에 추가
+        response.headers["X-RateLimit-Limit"] = str(
+            self.ip_limit if limit_type == "ip" else self.session_limit
+        )
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Type"] = f"chat-{limit_type}"
 
         return cast(Response, response)

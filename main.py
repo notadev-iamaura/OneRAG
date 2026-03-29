@@ -567,7 +567,7 @@ async def api_key_auth_middleware(
 
 # Rate Limiting Middleware 추가 (IP/Session 기반)
 # ⚠️ rate_limiter 인스턴스는 위에서 전역으로 생성됨 (lifespan에서 cleanup task 관리)
-from app.middleware.rate_limiter import RateLimitMiddleware
+from app.middleware.rate_limiter import ChatRateLimitMiddleware, RateLimitMiddleware
 
 app.add_middleware(
     RateLimitMiddleware,
@@ -575,16 +575,27 @@ app.add_middleware(
     excluded_paths=[
         "/health",
         "/api/health",
-        "/api/chat",  # 🔧 채팅 API도 제외 (body 읽기로 인한 타임아웃 방지)
-        "/api/chat/session",  # 세션 생성은 Rate Limit 제외 (body 읽기로 인한 14초 타임아웃 방지)
-        "/api/chat/stream",  # 🔧 스트리밍 API도 제외
-        "/v1/chat/completions",  # OpenAI 호환 API (body 읽기로 인한 타임아웃 방지)
+        # ✅ P0 보안 패치: Chat API는 전용 ChatRateLimitMiddleware에서 처리
+        # (기존에는 body 읽기 충돌로 제외했으나, 전용 미들웨어로 해결)
+        "/api/chat",  # ChatRateLimitMiddleware에서 처리
+        "/api/chat/session",  # ChatRateLimitMiddleware에서 처리
+        "/api/chat/stream",  # ChatRateLimitMiddleware에서 처리
+        "/v1/chat/completions",  # ChatRateLimitMiddleware에서 처리
         "/docs",
         "/redoc",
         "/openapi.json",
         "/",
         "/api",
     ],
+)
+
+# ✅ P0 보안 패치: Chat API 전용 Rate Limiter (body 읽기 없이 IP+헤더로 제한)
+# Chat 요청 1건당 LLM API 1-3회 호출 → 비용 보호 + 서버 부하 보호
+app.add_middleware(
+    ChatRateLimitMiddleware,
+    rate_limiter=rate_limiter,
+    ip_limit=20,  # Chat IP당 분당 20회 (일반 API 30회보다 엄격)
+    session_limit=10,  # Chat Session당 분당 10회
 )
 
 # Error Logging Middleware 추가 (모든 에러 자동 로깅)
