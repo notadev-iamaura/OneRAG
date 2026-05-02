@@ -15,6 +15,7 @@
  */
 
 import type { AxiosResponse } from 'axios';
+import { getOperatorApiBaseUrl } from '../config/operatorSettings';
 
 // ============================================================================
 // 응답 타입 정의
@@ -239,6 +240,11 @@ export type ChatAPIFactory = (config: ChatAPIConfig) => IChatAPIService;
  * 3. localhost:8000 (폴백)
  */
 function getChatAPIBaseURL(): string {
+  const operatorApiUrl = getOperatorApiBaseUrl();
+  if (operatorApiUrl) {
+    return operatorApiUrl;
+  }
+
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }

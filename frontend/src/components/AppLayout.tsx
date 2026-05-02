@@ -99,6 +99,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     if (path === '/upload') return '문서 관리';
     if (path === '/prompts') return '프롬프트';
     if (path === '/admin') return '관리자 대시보드';
+    if (path === '/admin/settings') return '글로벌 운영 설정';
     return '';
   };
 

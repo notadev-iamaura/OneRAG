@@ -17,6 +17,7 @@
  */
 
 import { logger } from '../utils/logger';
+import { getOperatorWsBaseUrl } from '../config/operatorSettings';
 import type {
   IWebSocket,
   WebSocketFactory,
@@ -67,6 +68,11 @@ export interface IChatWebSocketService {
  * api.ts의 VITE_DEV_API_BASE_URL 또는 런타임 설정 사용
  */
 const getWSBaseURL = (): string => {
+  const operatorWsUrl = getOperatorWsBaseUrl();
+  if (operatorWsUrl) {
+    return operatorWsUrl;
+  }
+
   // 개발 모드: 환경변수 우선
   if (import.meta.env.DEV) {
     const devWsUrl = import.meta.env.VITE_DEV_WS_BASE_URL;

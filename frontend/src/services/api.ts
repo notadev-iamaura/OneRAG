@@ -12,9 +12,16 @@ import {
 } from '../types';
 import { logger } from '../utils/logger';
 import { maskPhoneNumberDeep } from '../utils/privacy';
+import { getOperatorApiBaseUrl } from '../config/operatorSettings';
 
 // Railway 배포 최적화 API URL 관리
 const getAPIBaseURL = (): string => {
+  const operatorApiUrl = getOperatorApiBaseUrl();
+  if (operatorApiUrl) {
+    logger.log('API URL 소스: 운영 설정');
+    return operatorApiUrl;
+  }
+
   // 개발 모드: 환경변수로 직접 백엔드 URL 사용 (프록시 대신)
   if (import.meta.env.DEV) {
     // 개발 환경에서도 직접 백엔드 URL 사용 (프록시 타임아웃 문제 해결)
@@ -112,6 +119,11 @@ const getCsrfToken = (): string | null => {
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
+    const runtimeBaseURL = getAPIBaseURL();
+    if (runtimeBaseURL && config.baseURL !== runtimeBaseURL) {
+      config.baseURL = runtimeBaseURL;
+    }
+
     // 0. API Key 추가 (/api/* 경로에만 적용, /health는 제외)
     const isApiEndpoint = config.url?.startsWith('/api/');
     const isHealthEndpoint = config.url === '/health';

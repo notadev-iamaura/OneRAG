@@ -7,6 +7,7 @@ import { BRAND_CONFIG } from './config/brand';
 import { FeatureProvider } from './core/FeatureProvider';
 import { useIsModuleEnabled } from './core/useFeature';
 import { ConfigProvider } from './core/ConfigProvider';
+import { useConfig } from './core/useConfig';
 import { WebSocketProvider } from './core/WebSocketProvider';
 import { ChatAPIProvider } from './core/ChatAPIProvider';
 import { createChatAPIService } from './services/chatAPIService';
@@ -19,6 +20,7 @@ const ChatPage = lazy(() => import('./pages/ChatPage'));
 const UploadPage = lazy(() => import('./pages/UploadPage'));
 const PromptsPage = lazy(() => import('./pages/PromptsPage'));
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboard'));
+const GlobalSettingsPage = lazy(() => import('./pages/Admin/GlobalSettingsPage'));
 
 // 로딩 폴백 컴포넌트
 function LoadingFallback() {
@@ -226,25 +228,69 @@ function AppRoutes() {
 
       {/* 관리자 대시보드 (조건부) */}
       {isAdminEnabled && (
-        <Route
-          path="/admin"
-          element={
-            <AppLayout>
-              <ErrorBoundary key={location.pathname}>
-                <ProtectedRoute module="admin">
-                  <Suspense fallback={<LoadingFallback />}>
-                    <AdminDashboard />
-                  </Suspense>
-                </ProtectedRoute>
-              </ErrorBoundary>
-            </AppLayout>
-          }
-        />
+        <>
+          <Route
+            path="/admin"
+            element={
+              <AppLayout>
+                <ErrorBoundary key={location.pathname}>
+                  <ProtectedRoute module="admin">
+                    <Suspense fallback={<LoadingFallback />}>
+                      <AdminDashboard />
+                    </Suspense>
+                  </ProtectedRoute>
+                </ErrorBoundary>
+              </AppLayout>
+            }
+          />
+          <Route
+            path="/admin/settings"
+            element={
+              <AppLayout>
+                <ErrorBoundary key={location.pathname}>
+                  <ProtectedRoute module="admin">
+                    <Suspense fallback={<LoadingFallback />}>
+                      <GlobalSettingsPage />
+                    </Suspense>
+                  </ProtectedRoute>
+                </ErrorBoundary>
+              </AppLayout>
+            }
+          />
+        </>
       )}
 
       {/* 404 페이지 */}
       <Route path="*" element={<LandingPageContent />} />
     </Routes>
+  );
+}
+
+function RuntimeProviders() {
+  const { runtimeConfig } = useConfig();
+  const apiBaseUrl = runtimeConfig?.operator?.apiBaseUrl.trim();
+
+  const chatAPIConfig = React.useMemo(
+    () => ({
+      ...defaultChatAPIConfig,
+      baseURL: apiBaseUrl || defaultChatAPIConfig.baseURL,
+    }),
+    [apiBaseUrl]
+  );
+
+  return (
+    <FeatureProvider>
+      <WebSocketProvider>
+        <ChatAPIProvider
+          createService={createChatAPIService}
+          config={chatAPIConfig}
+        >
+          <Router>
+            <AppRoutes />
+          </Router>
+        </ChatAPIProvider>
+      </WebSocketProvider>
+    </FeatureProvider>
   );
 }
 
@@ -261,21 +307,9 @@ function AppRoutes() {
 function App() {
   return (
     <ConfigProvider>
-      <FeatureProvider>
-        <WebSocketProvider>
-          <ChatAPIProvider
-            createService={createChatAPIService}
-            config={defaultChatAPIConfig}
-          >
-            <Router>
-              <AppRoutes />
-            </Router>
-          </ChatAPIProvider>
-        </WebSocketProvider>
-      </FeatureProvider>
+      <RuntimeProviders />
     </ConfigProvider>
   );
 }
 
 export default App;
-
