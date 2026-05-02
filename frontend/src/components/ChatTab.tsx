@@ -16,6 +16,8 @@ import { ChatDevTools } from './chat/ChatDevTools';
 import { ChatMessageList } from './chat/ChatMessageList';
 import { ChatInput } from './chat/ChatInput';
 import { ChatHeader } from './chat/ChatHeader';
+import { ChatSessionSidebar } from './chat/ChatSessionSidebar';
+import { RagTracePanel } from './chat/RagTracePanel';
 import { ChunkDetailModal } from './chat/ChunkDetailModal';
 
 interface DocumentInfoItem {
@@ -132,6 +134,12 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
 
   return (
     <div className="flex h-[85vh] bg-muted/20 overflow-hidden font-sans antialiased">
+      <ChatSessionSidebar
+        sessionId={sessionId}
+        messages={messages}
+        onNewSession={handleNewSession}
+      />
+
       <ChatDevTools
         showDevTools={showDevTools}
         setShowDevTools={setShowDevTools}
@@ -184,6 +192,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
         </div>
       </div>
 
+      <RagTracePanel
+        messages={messages}
+        apiLogs={apiLogs}
+        selectedChunk={selectedChunk}
+        isStreaming={isStreaming}
+      />
+
       <ChunkDetailModal
         open={modalOpen}
         onClose={handleCloseModal}
@@ -193,4 +208,3 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
     </div>
   );
 };
-

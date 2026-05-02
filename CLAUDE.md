@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 도메인 범용화된 완벽한 오픈소스 RAG 시스템. 2026년 기준 가장 진보된 RAG 기술들을 하나의 표준 파이프라인으로 통합한 엔터프라이즈급 솔루션입니다.
 
 - **버전**: 1.0.7
-- **상태**: ✅ **2,039개 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**, ✅ **Streaming API**, ✅ **WebSocket**
+- **상태**: ✅ **2,200+ 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**, ✅ **Streaming API**, ✅ **WebSocket**
 - **주요 개선**: Reranker 확장 - Cohere, Local(sentence-transformers), OpenRouter 추가 (v1.2.1)
 
 ## 🚀 시작하기
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | **Docker** | 필요 | 불필요 |
 | **Vector DB** | Weaviate (하이브리드 검색) | ChromaDB (로컬 파일) |
 | **인터페이스** | REST API + Swagger UI | 터미널 CLI |
-| **LLM** | 4종 (Gemini, OpenAI, Claude, OpenRouter) | Gemini / OpenRouter |
+| **LLM** | 5종 (Gemini, OpenAI, Claude, OpenRouter, Ollama) | Gemini / OpenRouter / Ollama |
 | **용도** | 프로덕션, API 통합, 팀 개발 | 학습, 체험, 빠른 PoC |
 
 ### 방법 A: Full API 서버 (Docker)
@@ -70,7 +70,7 @@ uv sync
 
 # 개발 서버 및 테스트
 make dev-reload         # 자동 리로드 (uvicorn --reload)
-make test               # 2,039개 테스트 실행 (외부 로그 차단 격리 환경)
+make test               # 2,200+ 테스트 실행 (외부 로그 차단 격리 환경)
 make test-cov           # 테스트 커버리지 리포트
 
 # 코드 품질 관리 (CI/CD 통과 필수)
@@ -118,7 +118,7 @@ raise GenerationError(ErrorCode.GENERATION_TIMEOUT, model="claude-sonnet-4-5")
 - **테스트 용이성**: 모든 의존성 주입 가능, Mock 교체 용이
 
 ### 6. Multi-LLM Factory (v1.0.3)
-- **4개 Provider 지원**: Google Gemini, OpenAI GPT, Anthropic Claude, OpenRouter
+- **5개 Provider 지원**: Google Gemini, OpenAI GPT, Anthropic Claude, OpenRouter, Ollama
 - **자동 Fallback**: 주 LLM 실패 시 설정된 순서대로 자동 전환
 - **GPT5QueryExpansionEngine**: `llm_factory` 필수화로 OpenAI 직접 의존성 제거
 
@@ -231,14 +231,14 @@ app/config/environments/
 
 | 항목 | 현황 | 비고 |
 |------|------|------|
-| **전체 테스트** | 2,039개 Pass | 단위/통합/안정성 테스트 완비 |
+| **전체 테스트** | 2,200+ Pass | 단위/통합/안정성 테스트 완비 |
 | **Deprecated 함수** | 0건 | Phase 1,2,3 완료, 모든 deprecated 함수 제거/리팩토링 |
 | **보안 인증** | 완료 | 관리자 API 및 PII 보호 통합 |
 | **GraphRAG 지능** | 완료 | 벡터 검색 기반 엔티티 탐색 |
 | **설정 관리** | 완료 | 환경별 분리 및 검증 강화 |
 | **에러 시스템** | 완료 | 양언어(한/영) 자동 전환 v2.0 |
 | **DI 컨테이너** | 완료 | 80+ Provider, 9개 팩토리 (RerankerV2 추가) |
-| **Multi-LLM** | 완료 | 4개 Provider 지원, 자동 Fallback |
+| **Multi-LLM** | 완료 | 5개 Provider 지원, 자동 Fallback |
 | **Multi Vector DB** | 완료 | 6종 지원 (Weaviate, Chroma, Pinecone, Qdrant, pgvector, MongoDB) |
 | **Observability** | 완료 | 실시간 캐시 히트율/LLM 비용 모니터링 |
 | **Streaming API** | 완료 | SSE 기반 실시간 응답, Multi-LLM 스트리밍 지원 |

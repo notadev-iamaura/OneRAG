@@ -24,13 +24,13 @@ sql_search:
   # Result Formatter 설정 (결과 포맷팅)
   formatter:
     max_items: 10  # 최대 표시 항목 수
-    # 수치형(비용) 필드 목록 (원 단위 포맷팅용)
-    # 도메인에 맞게 커스터마이징하세요. 예: ["price_basic", "cost_service", "penalty_fee"] 등
+    # 수치형 필드 목록 (숫자 포맷팅 대상)
+    # 도메인에 맞게 커스터마이징하세요. 예: ["total", "quantity", "score"] 등
     numeric_fields:
-      - "price"
-      - "cost"
+      - "numeric_value"
       - "amount"
       - "value"
+      - "count"
 
   # RAG 파이프라인 통합 설정
   pipeline:

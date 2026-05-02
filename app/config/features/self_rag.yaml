@@ -26,17 +26,25 @@ self_rag:
   enable_rollback: true  # 재생성 품질 저하 시 원본 답변 반환
   rollback_threshold: -0.1  # 재생성 품질이 원본보다 0.1 이상 낮으면 롤백
 
-  # 5. 평가 모듈 설정 (OpenRouter 통합)
+  # 5. 평가 모듈 설정
+  # ✅ P1 안정성 패치: 기본 provider를 Google로 변경
+  # GOOGLE_API_KEY는 시스템 필수 설정이므로 추가 설정 없이 동작
+  # (기존 OpenRouter는 선택적이라 API 키 미설정 시 런타임 실패했음)
   evaluation:
-    # OpenRouter 게이트웨이 사용
-    provider: "openrouter"
+    # ✅ Google Gemini 사용 (시스템 기본 LLM, 추가 API 키 불필요)
+    provider: "google"
 
     # 경량 평가 모델 (비용 효율적)
-    # Gemini 2.5 Flash Lite - 빠르고 저렴한 평가
-    model: "google/gemini-2.5-flash-lite"
+    # Gemini 2.0 Flash - 빠르고 비용 효율적인 평가
+    model: "gemini-2.0-flash"
 
-    # API 키 설정 (OpenRouter 단일 키)
-    api_key: "${OPENROUTER_API_KEY:-}"
+    # API 키 설정 (GOOGLE_API_KEY 재사용, 이미 필수 환경변수)
+    api_key: "${GOOGLE_API_KEY}"
+
+    # OpenRouter Fallback (선택적: OPENROUTER_API_KEY 설정 시 더 경량한 모델 사용 가능)
+    fallback_provider: "openrouter"
+    fallback_model: "google/gemini-2.5-flash-lite"
+    fallback_api_key: "${OPENROUTER_API_KEY:-}"
 
     # 평가 요청 파라미터
     temperature: 0.0  # 일관성을 위해 0으로 고정

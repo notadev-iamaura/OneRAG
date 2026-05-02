@@ -21,7 +21,7 @@ class RuleBasedExtractor(BaseMetadataExtractor):
     LLM을 사용하지 않으므로 비용이 없고 속도가 빠릅니다.
 
     추출 항목:
-    - contains_price: 가격 정보 포함 여부
+    - contains_numeric: 수치/금액 정보 포함 여부
     - keywords: 핵심 키워드 리스트 (한국어 형태소 분석)
     - has_date: 날짜 정보 포함 여부
     - has_phone: 전화번호 포함 여부
@@ -37,7 +37,7 @@ class RuleBasedExtractor(BaseMetadataExtractor):
     """
 
     # 정규식 패턴 (클래스 변수로 한 번만 컴파일)
-    PRICE_PATTERN = re.compile(r"\d{1,3}(,\d{3})*원|\d+만원|₩\d+")
+    NUMERIC_PATTERN = re.compile(r"\d{1,3}(,\d{3})*원|\d+만원|₩\d+")
     DATE_PATTERN = re.compile(r"\d{4}년\s*\d{1,2}월\s*\d{1,2}일|\d{1,2}월\s*\d{1,2}일")
     PHONE_PATTERN = re.compile(r"\d{2,3}-\d{3,4}-\d{4}")
     EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
@@ -91,11 +91,11 @@ class RuleBasedExtractor(BaseMetadataExtractor):
         content = chunk.content
         metadata = {}
 
-        # 1. 가격 정보 추출
-        metadata["contains_price"] = bool(self.PRICE_PATTERN.search(content))
-        if metadata["contains_price"]:
-            prices = self.PRICE_PATTERN.findall(content)
-            metadata["price_mentions"] = len(prices)  # type: ignore[assignment]
+        # 1. 수치/금액 정보 추출
+        metadata["contains_numeric"] = bool(self.NUMERIC_PATTERN.search(content))
+        if metadata["contains_numeric"]:
+            numeric_matches = self.NUMERIC_PATTERN.findall(content)
+            metadata["numeric_mentions"] = len(numeric_matches)  # type: ignore[assignment]
 
         # 2. 날짜 정보 추출
         metadata["has_date"] = bool(self.DATE_PATTERN.search(content))  # type: ignore[assignment]

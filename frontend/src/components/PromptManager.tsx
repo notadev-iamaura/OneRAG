@@ -60,7 +60,7 @@ const PromptManager: React.FC = () => {
         <Alert className="bg-amber-500/10 border-none text-amber-700 dark:text-amber-400 rounded-2xl">
           <Info className="h-4 w-4" />
           <AlertDescription className="text-sm font-medium">
-            프롬프트는 오직 1개만 활성화할 수 있습니다. 새로운 프롬프트를 활성화하면 기존 제품은 자동으로 비활성화됩니다.
+            프롬프트는 오직 1개만 활성화할 수 있습니다. 새로운 프롬프트를 활성화하면 기존 프롬프트는 자동으로 비활성화됩니다.
           </AlertDescription>
         </Alert>
 

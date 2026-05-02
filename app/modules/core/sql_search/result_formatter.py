@@ -27,13 +27,13 @@ class ResultFormatter:
     형식으로 변환합니다.
     """
 
-    # 기본 비용 관련 필드
+    # 기본 수치형 필드 (범용)
     DEFAULT_NUMERIC_FIELDS = frozenset(
         [
             "value",
-            "cost",
-            "price",
+            "numeric_value",
             "amount",
+            "count",
         ]
     )
 
@@ -112,7 +112,7 @@ class ResultFormatter:
             for col in columns:
                 value = row.get(col)
                 if col in self.numeric_fields and isinstance(value, int | float):
-                    formatted_values.append(self._format_cost(value))
+                    formatted_values.append(self._format_numeric(value))
                 else:
                     formatted_values.append(str(value) if value is not None else "-")
             rows.append("| " + " | ".join(formatted_values) + " |")
@@ -169,7 +169,7 @@ class ResultFormatter:
         # 기본 형식: "1. 항목명: 값"
         if value is not None:
             if isinstance(value, int | float):
-                return f"{index}. {entity_name}: {self._format_cost(value)}"
+                return f"{index}. {entity_name}: {self._format_numeric(value)}"
             return f"{index}. {entity_name}: {value}"
 
         # value가 없으면 모든 필드 나열
@@ -184,7 +184,7 @@ class ResultFormatter:
                 continue
             if val is not None:
                 if key in self.numeric_fields and isinstance(val, int | float):
-                    parts.append(f"{key}={self._format_cost(val)}")
+                    parts.append(f"{key}={self._format_numeric(val)}")
                 else:
                     parts.append(f"{key}={val}")
 
@@ -193,24 +193,19 @@ class ResultFormatter:
 
         return " ".join(parts)
 
-    def _format_cost(self, value: int | float) -> str:
+    def _format_numeric(self, value: int | float) -> str:
         """
-        비용을 한국어 형식으로 포맷합니다.
+        수치 데이터를 읽기 쉬운 형식으로 포맷합니다.
 
         Args:
-            value: 비용 (원)
+            value: 수치 데이터
 
         Returns:
-            str: 포맷된 비용 문자열
+            str: 포맷된 수치 문자열
         """
-        if value >= 10000:
-            # 만원 단위
-            man = int(value // 10000)
-            remainder = int(value % 10000)
-            if remainder == 0:
-                return f"{man}만원"
-            return f"{man}만{remainder:,}원"
-        return f"{int(value):,}원"
+        if isinstance(value, float) and not value.is_integer():
+            return f"{value:,.2f}"
+        return f"{int(value):,}"
 
     def get_summary(self, query_result: QueryResult) -> dict[str, Any]:
         """

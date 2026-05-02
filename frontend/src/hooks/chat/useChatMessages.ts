@@ -5,7 +5,7 @@
  * Feature Flag(chatbot.streaming)에 따라 WebSocket 스트리밍 또는 REST API를 사용합니다.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ChatMessage, ApiLog, ToastMessage, SessionInfo } from '../../types';
 import { StreamingMessage } from '../../types/chatStreaming';
 import { chatAPI } from '../../services/api';
@@ -17,8 +17,8 @@ interface UseChatMessagesProps {
     sessionId: string;
     initialMessages: ChatMessage[];
     synchronizeSessionId: (newSessionId: string, context?: string) => boolean;
-    refreshSessionInfo: (targetSessionId?: string) => Promise<void>;
-    setSessionInfo: React.Dispatch<React.SetStateAction<SessionInfo | null>>;
+    refreshSessionInfo?: (targetSessionId?: string) => Promise<void>;
+    setSessionInfo?: React.Dispatch<React.SetStateAction<SessionInfo | null>>;
     showToast: (message: Omit<ToastMessage, 'id'>) => void;
     setApiLogs: React.Dispatch<React.SetStateAction<ApiLog[]>>;
 }
@@ -52,6 +52,9 @@ export const useChatMessages = ({
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
 
+    // 스트리밍 전송 활성 상태 추적 (백그라운드 연결 에러 vs 실제 전송 에러 구분)
+    const isStreamingSendActiveRef = useRef(false);
+
     // Feature Flag 체크
     const isStreamingEnabled = useIsFeatureEnabled('chatbot', 'streaming');
 
@@ -59,13 +62,16 @@ export const useChatMessages = ({
      * 스트리밍 메시지 완료 콜백
      */
     const handleStreamingComplete = useCallback((message: ChatMessage) => {
+        isStreamingSendActiveRef.current = false;
         setMessages((prev) => [...prev, message]);
         setLoading(false);
 
-        // 세션 정보 갱신
-        refreshSessionInfo(sessionId).catch((error) => {
-            logger.warn('세션 정보 갱신 실패:', error);
-        });
+        // 세션 정보 갱신 (refreshSessionInfo가 제공된 경우에만)
+        if (refreshSessionInfo) {
+            refreshSessionInfo(sessionId).catch((error) => {
+                logger.warn('세션 정보 갱신 실패:', error);
+            });
+        }
 
         logger.log('✅ 스트리밍 메시지 완료:', message.id);
     }, [sessionId, refreshSessionInfo]);
@@ -74,6 +80,14 @@ export const useChatMessages = ({
      * 스트리밍 에러 콜백
      */
     const handleStreamingError = useCallback((error: string) => {
+        // 백그라운드 WebSocket 연결 실패는 사용자에게 표시하지 않음
+        // (스트리밍 전송 중이 아닌 경우 = 백그라운드 재연결 실패)
+        if (!isStreamingSendActiveRef.current) {
+            logger.warn('백그라운드 스트리밍 연결 에러 (무시):', error);
+            return;
+        }
+
+        isStreamingSendActiveRef.current = false;
         setLoading(false);
         showToast({ type: 'error', message: error });
 
@@ -176,26 +190,31 @@ export const useChatMessages = ({
 
             // 세션 정보 갱신
             const currentSessionId = backendSessionId || sessionId;
-            try {
-                await refreshSessionInfo(currentSessionId);
-            } catch (sessionInfoError) {
-                logger.warn('세션 정보 갱신 실패 (Fallback 적용):', sessionInfoError);
+            // 세션 정보 갱신 (refreshSessionInfo가 제공된 경우에만)
+            if (refreshSessionInfo) {
+                try {
+                    await refreshSessionInfo(currentSessionId);
+                } catch (sessionInfoError) {
+                    logger.warn('세션 정보 갱신 실패 (Fallback 적용):', sessionInfoError);
 
-                // 백엔드에서 세션 정보를 가져올 수 없으면 기존 방식 사용 (Fallback logic)
-                const fallbackSessionInfo: SessionInfo = {
-                    session_id: currentSessionId,
-                    messageCount: messages.length + 2,
-                    tokensUsed: response.data.tokens_used || 0,
-                    processingTime: response.data.processing_time || 0,
-                    modelInfo: response.data.model_info || {
-                        provider: 'unknown',
-                        model: 'unknown',
-                        generation_time: 0,
-                        model_config: {}
-                    },
-                    timestamp: new Date().toISOString()
-                };
-                setSessionInfo(fallbackSessionInfo);
+                    // 백엔드에서 세션 정보를 가져올 수 없으면 기존 방식 사용 (Fallback logic)
+                    if (setSessionInfo) {
+                        const fallbackSessionInfo: SessionInfo = {
+                            session_id: currentSessionId,
+                            messageCount: messages.length + 2,
+                            tokensUsed: response.data.tokens_used || 0,
+                            processingTime: response.data.processing_time || 0,
+                            modelInfo: response.data.model_info || {
+                                provider: 'unknown',
+                                model: 'unknown',
+                                generation_time: 0,
+                                model_config: {}
+                            },
+                            timestamp: new Date().toISOString()
+                        };
+                        setSessionInfo(fallbackSessionInfo);
+                    }
+                }
             }
 
         } catch (error: unknown) {
@@ -259,6 +278,7 @@ export const useChatMessages = ({
 
         if (canUseStreaming) {
             // WebSocket 스트리밍 사용
+            isStreamingSendActiveRef.current = true;
             logger.log('📡 WebSocket 스트리밍으로 메시지 전송');
 
             // API 로그 (WebSocket)
@@ -278,9 +298,11 @@ export const useChatMessages = ({
             const messageId = streaming.sendStreamingMessage(messageContent);
 
             if (!messageId) {
-                // 전송 실패 시 REST API로 폴백
+                // 전송 실패 시 스트리밍 상태 리셋 후 REST API로 폴백
+                isStreamingSendActiveRef.current = false;
                 logger.warn('스트리밍 전송 실패, REST API로 폴백');
                 await sendViaRestAPI(messageContent);
+                setLoading(false);
             }
             // 스트리밍 성공 시 loading은 콜백에서 처리됨
         } else {

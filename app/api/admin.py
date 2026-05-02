@@ -482,11 +482,11 @@ async def get_keywords(period: str = "7d"):
     try:
         return {
             "keywords": [
-                {"rank": 1, "keyword": "퇴사 절차", "count": 45},
-                {"rank": 2, "keyword": "연차 사용", "count": 38},
-                {"rank": 3, "keyword": "급여 명세서", "count": 32},
-                {"rank": 4, "keyword": "업무 인수인계", "count": 28},
-                {"rank": 5, "keyword": "보험 해지", "count": 24},
+                {"rank": 1, "keyword": "이용 방법", "count": 45},
+                {"rank": 2, "keyword": "서비스 안내", "count": 38},
+                {"rank": 3, "keyword": "문의 사항", "count": 32},
+                {"rank": 4, "keyword": "절차 안내", "count": 28},
+                {"rank": 5, "keyword": "자주 묻는 질문", "count": 24},
             ]
         }
     except Exception as error:
@@ -507,11 +507,11 @@ async def get_chunks(period: str = "7d"):
     try:
         return {
             "chunks": [
-                {"rank": 1, "chunkName": "퇴사신청서_작성방법.pdf", "count": 42},
-                {"rank": 2, "chunkName": "연차사용_가이드라인.docx", "count": 35},
-                {"rank": 3, "chunkName": "급여정산_절차.pdf", "count": 29},
-                {"rank": 4, "chunkName": "업무인수인계_템플릿.xlsx", "count": 26},
-                {"rank": 5, "chunkName": "보험해지_안내.pdf", "count": 21},
+                {"rank": 1, "chunkName": "서비스_이용가이드.pdf", "count": 42},
+                {"rank": 2, "chunkName": "자주묻는질문_FAQ.docx", "count": 35},
+                {"rank": 3, "chunkName": "운영정책_안내.pdf", "count": 29},
+                {"rank": 4, "chunkName": "문의접수_절차.xlsx", "count": 26},
+                {"rank": 5, "chunkName": "시작하기_가이드.pdf", "count": 21},
             ]
         }
     except Exception as error:

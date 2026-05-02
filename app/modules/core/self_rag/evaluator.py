@@ -61,11 +61,16 @@ class LLMQualityEvaluator:
 
         # LLM 초기화 (Graceful Degradation - MVP Phase 1)
         if llm_provider == "google":
-            # API 키가 없으면 Self-RAG 비활성화
+            # API 키가 없으면 Self-RAG 평가 비활성화
             if not api_key:
                 logger.warning(
-                    "self_rag_disabled",
-                    reason="Google API 키가 제공되지 않았습니다. MVP Phase 1에서는 Self-RAG 없이 진행합니다.",
+                    "self_rag_evaluator_no_api_key",
+                    provider=llm_provider,
+                    reason=(
+                        "Self-RAG evaluator에 API 키가 제공되지 않았습니다. "
+                        "GOOGLE_API_KEY 환경변수를 설정하면 Self-RAG 품질 평가가 활성화됩니다. "
+                        "현재는 Self-RAG 없이 기본 점수(0.5)로 진행합니다."
+                    ),
                 )
                 return
 
@@ -86,13 +91,19 @@ class LLMQualityEvaluator:
                 logger.warning(
                     "evaluator_initialization_failed",
                     provider=llm_provider,
+                    model=model_name,
                     error=str(e),
-                    reason="Self-RAG 평가기 초기화 실패. MVP Phase 1에서는 Self-RAG 없이 진행합니다.",
+                    reason=(
+                        "Self-RAG 평가기 초기화 실패. "
+                        "API 키 형식, 네트워크, 모델명을 확인하세요. "
+                        "현재는 Self-RAG 없이 기본 점수(0.5)로 진행합니다."
+                    ),
                 )
-                # self.llm은 None 상태로 유지
+                # self.llm은 None 상태로 유지 (Graceful Degradation)
         else:
             logger.error("unsupported_llm_provider", provider=llm_provider)
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
+
 
     async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityScore:
         """

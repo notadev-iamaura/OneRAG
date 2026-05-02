@@ -243,7 +243,7 @@ app.add_middleware(
     allow_origins=_demo_allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept-Language"],
+    allow_headers=["*"],
 )
 
 # 라우터 등록
@@ -254,7 +254,7 @@ app.include_router(compat_router)  # 프론트엔드 호환 라우터 (/api/chat
 @app.get("/health")
 async def health_check() -> dict[str, str]:
     """헬스 체크"""
-    return {"status": "healthy", "service": "onerag-demo"}
+    return {"status": "OK", "service": "onerag-demo"}
 
 
 @app.get("/")
