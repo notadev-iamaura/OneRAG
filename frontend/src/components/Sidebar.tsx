@@ -4,6 +4,7 @@ import {
   UploadCloud,
   BrainCircuit,
   Settings,
+  SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -63,6 +64,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
       label: '관리자',
       path: '/admin',
       icon: Settings,
+      enabled: isAdminEnabled
+    },
+    {
+      label: '운영 설정',
+      path: '/admin/settings',
+      icon: SlidersHorizontal,
       enabled: isAdminEnabled
     },
   ].filter(item => item.enabled);
@@ -214,4 +221,3 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
 };
 
 export default Sidebar;
-

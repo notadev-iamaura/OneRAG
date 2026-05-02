@@ -5,9 +5,15 @@
  */
 
 import { logger } from '../utils/logger';
+import { getOperatorApiBaseUrl, getOperatorWsBaseUrl } from '../config/operatorSettings';
 
 // API 기본 설정 - Railway 배포된 백엔드 서버 사용
 const getAPIBaseURL = (): string => {
+  const operatorApiUrl = getOperatorApiBaseUrl();
+  if (operatorApiUrl) {
+    return operatorApiUrl;
+  }
+
   // 개발 모드: 로컬 백엔드 사용 (api.ts와 동일한 전략)
   if (import.meta.env.DEV) {
     return import.meta.env.VITE_DEV_API_BASE_URL || 'http://localhost:8000';
@@ -44,6 +50,11 @@ const getAPIBaseURL = (): string => {
 };
 
 const getWSBaseURL = (): string => {
+  const operatorWsUrl = getOperatorWsBaseUrl();
+  if (operatorWsUrl) {
+    return operatorWsUrl;
+  }
+
   // 개발 모드: 로컬 백엔드 WebSocket 사용
   if (import.meta.env.DEV) {
     return import.meta.env.VITE_DEV_WS_BASE_URL || 'ws://localhost:8000';
@@ -98,7 +109,7 @@ class AdminService {
    * API 호출 헬퍼 함수
    */
   private async apiCall(endpoint: string, options?: RequestInit) {
-    const url = `${API_BASE_URL}/api/admin${endpoint}`;
+    const url = `${getAPIBaseURL()}/api/admin${endpoint}`;
     logger.log('🌐 API 호출:', url);
 
     try {
@@ -135,8 +146,9 @@ class AdminService {
     }
 
     try {
-      logger.log('🔗 WebSocket 연결 시도:', `${WS_BASE_URL}/admin-ws`);
-      this.wsConnection = new WebSocket(`${WS_BASE_URL}/api/admin/ws`);
+      const wsBaseUrl = getWSBaseURL();
+      logger.log('🔗 WebSocket 연결 시도:', `${wsBaseUrl}/admin-ws`);
+      this.wsConnection = new WebSocket(`${wsBaseUrl}/api/admin/ws`);
 
       this.wsConnection.onopen = () => {
         logger.log('✅ Admin WebSocket 연결됨');
@@ -312,7 +324,7 @@ class AdminService {
    */
   async downloadLogs() {
     try {
-      const url = `${API_BASE_URL}/api/admin/logs/download`;
+      const url = `${getAPIBaseURL()}/api/admin/logs/download`;
       logger.log('📥 로그 다운로드:', url);
 
       const response = await fetch(url);

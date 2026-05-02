@@ -12,132 +12,45 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { useConfig } from '../../core/useConfig';
-
-const STORAGE_KEY = 'onerag_operator_settings';
-
-interface OperatorSettings {
-  apiBaseUrl: string;
-  wsBaseUrl: string;
-  defaultModel: string;
-  ragProfile: 'basic' | 'hybrid' | 'hybrid-reranker' | 'graph-rag' | 'agent';
-  chunkSize: number;
-  chunkOverlap: number;
-  enableStreaming: boolean;
-  enableDocumentUpload: boolean;
-  enablePhoneMasking: boolean;
-  systemNotice: string;
-}
-
-const DEFAULT_SETTINGS: OperatorSettings = {
-  apiBaseUrl: '',
-  wsBaseUrl: '',
-  defaultModel: 'gemini',
-  ragProfile: 'hybrid-reranker',
-  chunkSize: 1000,
-  chunkOverlap: 150,
-  enableStreaming: true,
-  enableDocumentUpload: true,
-  enablePhoneMasking: true,
-  systemNotice: '',
-};
-
-function readSettings(): OperatorSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-}
-
-function writeSettings(settings: OperatorSettings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-}
+import {
+  DEFAULT_OPERATOR_SETTINGS,
+  buildOperatorRuntimeConfig,
+  clearOperatorRuntimeSettings,
+  clearOperatorSettings,
+  readOperatorSettings,
+  writeOperatorSettings,
+  type OperatorSettings,
+} from '../../config/operatorSettings';
 
 export default function GlobalSettingsPage() {
-  const { updateConfig } = useConfig();
+  const { updateConfig, resetConfig } = useConfig();
   const { toast } = useToast();
-  const [settings, setSettings] = useState<OperatorSettings>(() => readSettings());
+  const [settings, setSettings] = useState<OperatorSettings>(() => readOperatorSettings());
 
-  const configPreview = useMemo(() => JSON.stringify({
-    operator: settings,
-    features: {
-      chatbot: {
-        enabled: true,
-        streaming: settings.enableStreaming,
-        history: true,
-      },
-      documentManagement: {
-        enabled: true,
-        upload: settings.enableDocumentUpload,
-        search: true,
-      },
-      privacy: {
-        enabled: true,
-        maskPhoneNumbers: settings.enablePhoneMasking,
-      },
-    },
-  }, null, 2), [settings]);
+  const configPreview = useMemo(
+    () => JSON.stringify(buildOperatorRuntimeConfig(settings), null, 2),
+    [settings]
+  );
 
   const update = <K extends keyof OperatorSettings>(key: K, value: OperatorSettings[K]) => {
     setSettings((previous) => ({ ...previous, [key]: value }));
   };
 
   const handleSave = () => {
-    writeSettings(settings);
-    updateConfig({
-      features: {
-        chatbot: {
-          enabled: true,
-          streaming: settings.enableStreaming,
-          history: true,
-          sessionManagement: true,
-          markdown: true,
-        },
-        documentManagement: {
-          enabled: true,
-          upload: settings.enableDocumentUpload,
-          bulkDelete: true,
-          search: true,
-          pagination: true,
-          dragAndDrop: true,
-          preview: true,
-        },
-        admin: {
-          enabled: true,
-          userManagement: true,
-          systemStats: true,
-          qdrantManagement: true,
-          accessControl: true,
-        },
-        prompts: {
-          enabled: true,
-          templates: true,
-          history: true,
-        },
-        analysis: {
-          enabled: true,
-          realtime: true,
-          export: true,
-          visualization: true,
-        },
-        privacy: {
-          enabled: true,
-          maskPhoneNumbers: settings.enablePhoneMasking,
-        },
-      },
-    });
+    writeOperatorSettings(settings);
+    updateConfig(buildOperatorRuntimeConfig(settings));
 
     toast({
       title: '글로벌 설정 저장 완료',
-      description: '운영 설정이 저장되었습니다. 일부 값은 새로고침 후 반영됩니다.',
+      description: '운영 설정이 저장되었고 앱 런타임 설정에 반영되었습니다.',
     });
   };
 
   const handleReset = () => {
-    setSettings(DEFAULT_SETTINGS);
-    localStorage.removeItem(STORAGE_KEY);
+    setSettings(DEFAULT_OPERATOR_SETTINGS);
+    clearOperatorSettings();
+    clearOperatorRuntimeSettings();
+    resetConfig();
     toast({
       title: '글로벌 설정 초기화',
       description: '운영 설정이 기본값으로 초기화되었습니다.',

@@ -7,6 +7,7 @@ import { BRAND_CONFIG } from './config/brand';
 import { FeatureProvider } from './core/FeatureProvider';
 import { useIsModuleEnabled } from './core/useFeature';
 import { ConfigProvider } from './core/ConfigProvider';
+import { useConfig } from './core/useConfig';
 import { WebSocketProvider } from './core/WebSocketProvider';
 import { ChatAPIProvider } from './core/ChatAPIProvider';
 import { createChatAPIService } from './services/chatAPIService';
@@ -265,6 +266,34 @@ function AppRoutes() {
   );
 }
 
+function RuntimeProviders() {
+  const { runtimeConfig } = useConfig();
+  const apiBaseUrl = runtimeConfig?.operator?.apiBaseUrl.trim();
+
+  const chatAPIConfig = React.useMemo(
+    () => ({
+      ...defaultChatAPIConfig,
+      baseURL: apiBaseUrl || defaultChatAPIConfig.baseURL,
+    }),
+    [apiBaseUrl]
+  );
+
+  return (
+    <FeatureProvider>
+      <WebSocketProvider>
+        <ChatAPIProvider
+          createService={createChatAPIService}
+          config={chatAPIConfig}
+        >
+          <Router>
+            <AppRoutes />
+          </Router>
+        </ChatAPIProvider>
+      </WebSocketProvider>
+    </FeatureProvider>
+  );
+}
+
 /**
  * App - 메인 애플리케이션 컴포넌트
  *
@@ -278,21 +307,9 @@ function AppRoutes() {
 function App() {
   return (
     <ConfigProvider>
-      <FeatureProvider>
-        <WebSocketProvider>
-          <ChatAPIProvider
-            createService={createChatAPIService}
-            config={defaultChatAPIConfig}
-          >
-            <Router>
-              <AppRoutes />
-            </Router>
-          </ChatAPIProvider>
-        </WebSocketProvider>
-      </FeatureProvider>
+      <RuntimeProviders />
     </ConfigProvider>
   );
 }
 
 export default App;
-

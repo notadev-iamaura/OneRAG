@@ -32,6 +32,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
+import { readOperatorSettings } from '../config/operatorSettings';
 
 interface UploadTabProps {
   showToast: (message: Omit<ToastMessage, 'id'>) => void;
@@ -65,10 +66,14 @@ interface UploadFile {
 export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
   const [files, setFiles] = useState<UploadFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [globalSettings, setGlobalSettings] = useState<UploadSettings>({
-    splitterType: 'recursive',
-    chunkSize: 1500,
-    chunkOverlap: 200
+  const [globalSettings, setGlobalSettings] = useState<UploadSettings>(() => {
+    const operatorSettings = readOperatorSettings();
+
+    return {
+      splitterType: 'recursive',
+      chunkSize: operatorSettings.chunkSize,
+      chunkOverlap: operatorSettings.chunkOverlap
+    };
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 

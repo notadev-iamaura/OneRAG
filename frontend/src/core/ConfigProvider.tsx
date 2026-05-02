@@ -10,6 +10,12 @@ import { APP_CONFIG, mergeConfig } from '../config';
 import { applyPreset } from '../config/presets';
 import { ConfigContext, type RuntimeConfig } from './ConfigContext';
 import { logger } from '../utils/logger';
+import {
+  applyOperatorRuntimeSettings,
+  buildOperatorRuntimeConfig,
+  hasStoredOperatorSettings,
+  readOperatorSettings,
+} from '../config/operatorSettings';
 
 interface ConfigProviderProps {
   children: ReactNode;
@@ -24,19 +30,35 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
     const loadRuntimeConfig = () => {
       try {
         const saved = localStorage.getItem('customSettings');
+        const operatorRuntimeConfig = hasStoredOperatorSettings()
+          ? buildOperatorRuntimeConfig(readOperatorSettings())
+          : null;
 
         if (!saved) {
+          if (operatorRuntimeConfig) {
+            setRuntimeConfig(operatorRuntimeConfig);
+            applyRuntimeConfig(operatorRuntimeConfig);
+            return;
+          }
+
           logger.debug('[ConfigProvider] localStorage에 저장된 설정이 없습니다.');
           return;
         }
 
         const parsed: RuntimeConfig = JSON.parse(saved);
+        const runtime = operatorRuntimeConfig
+          ? {
+              ...parsed,
+              operator: parsed.operator ?? operatorRuntimeConfig.operator,
+              features: parsed.features ?? operatorRuntimeConfig.features,
+            }
+          : parsed;
         logger.debug('[ConfigProvider] 저장된 설정 로드 완료');
 
-        setRuntimeConfig(parsed);
+        setRuntimeConfig(runtime);
 
         // 설정 적용
-        applyRuntimeConfig(parsed);
+        applyRuntimeConfig(runtime);
       } catch (error) {
         logger.error('[ConfigProvider] 런타임 설정 로드 실패:', error);
       }
@@ -47,6 +69,11 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
 
   const applyRuntimeConfig = (runtime: RuntimeConfig) => {
     let updatedConfig = { ...APP_CONFIG };
+
+    // 운영 설정 적용
+    if (runtime.operator) {
+      applyOperatorRuntimeSettings(runtime.operator);
+    }
 
     // 색상 프리셋 적용
     if (runtime.preset) {
