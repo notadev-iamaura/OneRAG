@@ -11,7 +11,7 @@ vi.mock('../../../services/api', () => ({
 }));
 
 vi.mock('../../../core/useFeature', () => ({
-    useIsFeatureEnabled: vi.fn(() => true),
+    useIsFeatureEnabled: vi.fn(() => false),
 }));
 
 vi.mock('../../../utils/logger', () => ({

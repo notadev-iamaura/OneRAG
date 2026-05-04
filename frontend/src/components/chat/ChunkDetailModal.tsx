@@ -3,6 +3,7 @@ import { FileText } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
     DialogFooter,
@@ -47,6 +48,9 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
                             RAG 참고 자료 상세
                         </DialogTitle>
                     </div>
+                    <DialogDescription className="sr-only">
+                        선택한 RAG 참고 자료의 문서 정보와 청크 내용을 확인합니다.
+                    </DialogDescription>
                 </DialogHeader>
 
                 <ScrollArea className="flex-1 overflow-y-auto">
@@ -126,4 +130,3 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
         </Dialog>
     );
 };
-

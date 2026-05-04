@@ -17,7 +17,9 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -51,10 +53,10 @@ export const PromptDeleteDialog: React.FC<PromptDeleteDialogProps> = ({
 
           {/* 삭제 확인 메시지 */}
           <div className="space-y-1">
-            <h3 className="text-xl font-bold text-foreground">프롬프트 삭제</h3>
-            <p className="text-sm text-muted-foreground">
+            <DialogTitle className="text-xl font-bold text-foreground">프롬프트 삭제</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
               &apos;<span className="font-bold text-foreground">{selectedPrompt?.name}</span>&apos; 프롬프트를 정말 삭제하시겠습니까?<br />이 작업은 되돌릴 수 없습니다.
-            </p>
+            </DialogDescription>
           </div>
 
           {/* 시스템 프롬프트 경고 */}
