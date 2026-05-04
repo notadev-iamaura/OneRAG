@@ -2,7 +2,7 @@ name: LLM Cost Analysis
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main]
 
 permissions:
   contents: read
@@ -10,9 +10,14 @@ permissions:
 
 jobs:
   cost-analysis:
+    # This job posts PR comments, so only run it for branches inside this repo.
+    # Fork PRs still get the normal CI matrix without handing write-capable
+    # tokens to a third-party composite action.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: Jwrede/tokentoll@753ca4d1150c74169b52a843439049b65e256d2b  # v0.6.1
