@@ -2371,11 +2371,11 @@ wheels = [
 
 [[package]]
 name = "markdown"
-version = "3.5.1"
+version = "3.10.2"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/35/14/1ec9742e151f3b06a723a20d9af7201a389ebd3aae8b7d93b521819489dc/Markdown-3.5.1.tar.gz", hash = "sha256:b65d7beb248dc22f2e8a31fb706d93798093c308dc1aba295aedeb9d41a813bd", size = 348575, upload-time = "2023-10-31T19:59:23.678Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/f4/69fa6ed85ae003c2378ffa8f6d2e3234662abd02c10d216c0ba96081a238/markdown-3.10.2.tar.gz", hash = "sha256:994d51325d25ad8aa7ce4ebaec003febcce822c3f8c911e3b17c52f7f589f950", size = 368805, upload-time = "2026-02-09T14:57:26.942Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/70/58/2c5a654173937d9f540a4971c569b44dcd55e5424a484d954cdaeebcf79c/Markdown-3.5.1-py3-none-any.whl", hash = "sha256:5874b47d4ee3f0b14d764324d2c94c03ea66bee56f2d929da9f2508d65e722dc", size = 102151, upload-time = "2023-10-31T19:59:21.762Z" },
+    { url = "https://files.pythonhosted.org/packages/de/1f/77fa3081e4f66ca3576c896ae5d31c3002ac6607f9747d2e3aa49227e464/markdown-3.10.2-py3-none-any.whl", hash = "sha256:e91464b71ae3ee7afd3017d9f358ef0baf158fd9a298db92f1d4761133824c36", size = 108180, upload-time = "2026-02-09T14:57:25.787Z" },
 ]
 
 [[package]]
@@ -3228,7 +3228,7 @@ requires-dist = [
     { name = "langfuse", specifier = ">=2.0.0" },
     { name = "langsmith", specifier = ">=0.0.60" },
     { name = "lxml", specifier = "==5.3.0" },
-    { name = "markdown", specifier = "==3.5.1" },
+    { name = "markdown", specifier = "==3.10.2" },
     { name = "motor", specifier = ">=3.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "neo4j", specifier = ">=5.15.0" },
