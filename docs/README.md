@@ -1,6 +1,6 @@
-# Blank RAG 프로젝트 문서 (Documentation)
+# OneRAG 프로젝트 문서 (Documentation)
 
-범용 Advanced RAG 시스템인 **Blank RAG**의 공식 문서 저장소입니다.
+범용 Advanced RAG 시스템인 **OneRAG**의 공식 문서 저장소입니다.
 
 ---
 
@@ -16,8 +16,10 @@
 - **[API 참조 (API_REFERENCE.md)](API_REFERENCE.md)**: 엔드포인트 및 사용 예시.
 
 ### ⚙️ 고도화 가이드 (Advanced)
-- **[도메인 특성화 가이드 (CUSTOMIZATION.md)](CUSTOMIZATION.md)**: 설정 기반 도메인 전환 및 최적화 전략.
-- **[운영 가이드 (OPERATIONS.md)](OPERATIONS.md)**: 배포 및 모니터링 가이드.
+- **[도메인 가이드 (DOMAIN_GUIDE.md)](DOMAIN_GUIDE.md)**: 도메인별 지식 베이스 구성 및 운영 전략.
+- **[프로덕션 준비 검증 (PRODUCTION_READINESS_VERIFICATION.md)](PRODUCTION_READINESS_VERIFICATION.md)**: 배포 전 검증 항목과 운영 리스크 점검.
+- **[스트리밍 API 가이드 (streaming-api-guide.md)](streaming-api-guide.md)**: SSE 기반 실시간 응답 사용법.
+- **[WebSocket API 가이드 (websocket-api-guide.md)](websocket-api-guide.md)**: 양방향 실시간 채팅 사용법.
 
 ---
 
@@ -25,4 +27,4 @@
 - `docs/`: 필수 최신 문서 보관.
 - `docs/archive/`: 과거 계획서, PRD, 배포 이력 등 역사적 기록 보관.
 
-**최종 업데이트**: 2026-01-05
+**최종 업데이트**: 2026-05-03

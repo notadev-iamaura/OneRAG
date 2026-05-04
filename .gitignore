@@ -27,6 +27,7 @@ ENV/
 .env
 .env.*
 !.env.example
+!quickstart/.env.quickstart
 API_KEYS.txt
 
 # ===================================
@@ -45,6 +46,8 @@ API_KEYS.txt
 .AppleDouble
 .LSOverride
 Icon?
+!frontend/src/components/icons/
+!frontend/src/components/icons/**
 Thumbs.db
 
 # ===================================

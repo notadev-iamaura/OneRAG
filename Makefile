@@ -5,7 +5,7 @@
 
 # 도움말
 help:
-	@echo "RAG_Standard - Makefile Commands"
+	@echo "OneRAG - Makefile Commands"
 	@echo "================================="
 	@echo ""
 	@echo "🚀 Start (처음 시작하세요!):"
@@ -277,7 +277,7 @@ check-env:
 
 # Docker 원클릭 실행
 start: check-env
-	@echo "🚀 RAG_Standard 시작..."
+	@echo "🚀 OneRAG 시작..."
 	@echo ""
 	@echo "1️⃣  Docker 서비스 시작 중..."
 	docker compose up -d
@@ -401,7 +401,7 @@ start-full: check-env
 	@echo "❤️  Health:   http://localhost:8000/health"
 	@echo ""
 	@echo "💬 가이드 챗봇 테스트 질문:"
-	@echo "   - RAG_Standard 어떻게 설치해?"
+	@echo "   - OneRAG 어떻게 설치해?"
 	@echo "   - 채팅 API 사용법 알려줘"
 	@echo "   - 환경변수 뭐 설정해야 돼?"
 	@echo ""
