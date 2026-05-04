@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest a OneRAG capability or improvement.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please focus on the user workflow and RAG outcome. For security issues,
+        use the private process in `SECURITY.md` instead of this template.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow, integration, provider, or quality issue should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or interface you want.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Retrieval/RAG quality
+        - LLM provider
+        - Reranker
+        - Vector database
+        - Ingestion
+        - Evaluation
+        - Observability
+        - Frontend UX
+        - API compatibility
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What have you tried or considered?
+  - type: textarea
+    id: impact
+    attributes:
+      label: Expected impact
+      description: Who benefits, and how would this be verified?

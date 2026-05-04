@@ -58,7 +58,7 @@ dependencies = [
     "openpyxl==3.1.2",
     "pandas>=2.2.0",
     "beautifulsoup4==4.12.2",
-    "markdown==3.5.1",
+    "markdown==3.10.2",
     "Pillow>=10.0.0,<12", # 이미지 처리 (image_chat.py에서 필요)
     # BM25 하이브리드 검색 (한국어 토크나이저 + BM25 인덱스)
     "kiwipiepy>=0.18.0",
@@ -99,7 +99,7 @@ dependencies = [
     "weaviate-client>=4.0.0", # 4.4.0 → 4.18.0: AssertionError phone_value 버그 수정
     "pylnk3>=0.4.3",
     "psycopg2-binary>=2.9.11",
-    "playwright==1.45.0",
+    "playwright==1.59.0",
     "apscheduler==3.10.4",
     "lxml==5.3.0",
     # Korean NLP for PII Detection (spaCy)

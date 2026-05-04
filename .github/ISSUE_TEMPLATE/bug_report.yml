@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a reproducible OneRAG bug.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Do not include secrets, private documents,
+        production credentials, or vulnerability details in public issues.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Backend API
+        - Frontend
+        - CLI easy-start
+        - Docker quickstart
+        - Retrieval/RAG quality
+        - LLM provider
+        - Vector database
+        - Documentation
+        - CI/CD
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include commands, API requests, or UI steps using dummy data.
+      placeholder: |
+        1. Run ...
+        2. Send ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "v1.0.7 or commit SHA"
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python, Node, browser, Docker, vector DB, and provider details.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste relevant sanitized logs only.
+      render: text

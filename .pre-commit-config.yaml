@@ -15,7 +15,7 @@ repos:
 
   # Ruff: 빠른 Python 린팅 (Flake8, isort 대체)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.8
+    rev: v0.15.12
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
@@ -23,7 +23,7 @@ repos:
 
   # Black: 코드 포맷팅
   - repo: https://github.com/psf/black
-    rev: 24.10.0
+    rev: 26.3.1
     hooks:
       - id: black
         language_version: python3.11
@@ -31,7 +31,7 @@ repos:
 
   # YAML Lint: YAML 파일 검증
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
         args: [--unsafe]
@@ -46,7 +46,7 @@ repos:
 
   # MyPy: 타입 체크 (핵심 데이터 처리 모듈 엄격 검증)
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v1.20.2
     hooks:
       - id: mypy
         args: [--config-file=pyproject.toml]
