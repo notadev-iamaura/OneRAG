@@ -12,14 +12,18 @@ export default tseslint.config([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs['recommended-latest'],
       reactRefresh.configs.vite,
     ],
+    plugins: {
+      'react-hooks': reactHooks,
+    },
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
     },
     rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       // 하드코딩된 색상 사용 금지 - src/config/colors.ts의 COLORS 상수 사용
       'no-restricted-syntax': [
         'error',
