@@ -46,7 +46,7 @@ repos:
 
   # MyPy: 타입 체크 (핵심 데이터 처리 모듈 엄격 검증)
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v1.20.2
     hooks:
       - id: mypy
         args: [--config-file=pyproject.toml]
