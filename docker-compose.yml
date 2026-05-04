@@ -1,4 +1,4 @@
-# RAG_Standard 통합 Docker Compose
+# OneRAG 통합 Docker Compose
 # Start: make start 명령어로 실행
 #
 # 포함 서비스:
@@ -76,15 +76,17 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.local
+      dockerfile: Dockerfile
     container_name: rag-frontend
     restart: unless-stopped
     ports:
       - "5173:80"
     environment:
-      # API 서버 연결 (컨테이너 네트워크 사용)
-      VITE_API_BASE_URL: "http://api:8000"
-      VITE_WS_BASE_URL: "ws://api:8000"
+      # Browser runtime config for local fullstack quickstart
+      PORT: "80"
+      VITE_API_BASE_URL: "http://localhost:8000"
+      VITE_WS_BASE_URL: "ws://localhost:8000"
+      VITE_ACCESS_CODE: "${VITE_ACCESS_CODE:-1127}"
     depends_on:
       api:
         condition: service_healthy
@@ -99,4 +101,4 @@ services:
 
 volumes:
   weaviate_data:
-    name: rag_standard_weaviate_data
+    name: onerag_weaviate_data
