@@ -15,7 +15,7 @@ repos:
 
   # Ruff: 빠른 Python 린팅 (Flake8, isort 대체)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.8
+    rev: v0.15.12
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
