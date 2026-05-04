@@ -56,6 +56,8 @@ describe('useDocumentList', () => {
   // ============================================================
 
   it('초기 상태가 올바르게 설정되어야 한다', () => {
+    mockGetDocuments.mockReturnValue(new Promise(() => {}));
+
     const { result } = renderHook(() =>
       useDocumentList({ showToast: mockShowToast }),
     );
@@ -146,6 +148,8 @@ describe('useDocumentList', () => {
       expect(result.current.loading).toBe(false);
     });
 
+    mockGetDocuments.mockReturnValue(new Promise(() => {}));
+
     act(() => {
       result.current.handleSort('filename');
     });
@@ -161,6 +165,8 @@ describe('useDocumentList', () => {
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
     });
+
+    mockGetDocuments.mockReturnValue(new Promise(() => {}));
 
     // 초기값: desc → asc로 토글
     act(() => {
@@ -189,6 +195,8 @@ describe('useDocumentList', () => {
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
     });
+
+    mockGetDocuments.mockReturnValue(new Promise(() => {}));
 
     act(() => {
       result.current.handleSearch('test query');
@@ -230,6 +238,8 @@ describe('useDocumentList', () => {
       expect(result.current.loading).toBe(false);
     });
 
+    mockGetDocuments.mockReturnValue(new Promise(() => {}));
+
     act(() => {
       result.current.setPage(3);
     });
@@ -242,6 +252,8 @@ describe('useDocumentList', () => {
   // ============================================================
 
   it('모든 핸들러가 함수로 반환되어야 한다', () => {
+    mockGetDocuments.mockReturnValue(new Promise(() => {}));
+
     const { result } = renderHook(() =>
       useDocumentList({ showToast: mockShowToast }),
     );

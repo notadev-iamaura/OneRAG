@@ -130,7 +130,7 @@ export const ChatEmptyState: React.FC<ChatEmptyStateProps> = ({ onSuggestionClic
           {/* 블러 광채 효과 및 회전 링 */}
           <div className="absolute inset-x-0 inset-y-0 bg-primary/20 blur-[60px] rounded-full -z-10 animate-pulse" />
           <div className="absolute inset-[-20%] border-[0.5px] border-primary/10 rounded-full -z-5 animate-slow-spin" />
-          <div className="absolute inset-[-40%] border-[0.5px] border-primary/5 rounded-full -z-5 animate-slow-spin direction-reverse duration-[12s]" />
+          <div className="absolute inset-[-40%] border-[0.5px] border-primary/5 rounded-full -z-5 animate-slow-spin direction-reverse [animation-duration:12s]" />
         </div>
       </div>
 

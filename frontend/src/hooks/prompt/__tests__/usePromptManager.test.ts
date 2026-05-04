@@ -122,6 +122,8 @@ describe('usePromptManager', () => {
     });
 
     it('초기 상태값이 올바르다', () => {
+      (promptService.getPrompts as Mock).mockReturnValue(new Promise(() => {}));
+
       const { result } = renderHook(() => usePromptManager());
 
       // 다이얼로그 상태 모두 닫힘
