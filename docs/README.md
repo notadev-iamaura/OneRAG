@@ -25,6 +25,11 @@
 - **[보안 정책 (SECURITY.md)](../SECURITY.md)**: 취약점 비공개 신고, 지원 범위, 응답 기준.
 - **[의존성 triage 가이드 (dependency-triage.md)](security/dependency-triage.md)**: Dependabot 운영과 취약점 업데이트 검증 기준.
 
+### 🤝 오픈소스 운영 (Open Source)
+- **[기여 가이드 (CONTRIBUTING.md)](../CONTRIBUTING.md)**: 개발 환경, 품질 게이트, PR 체크리스트.
+- **[지원 안내 (SUPPORT.md)](../SUPPORT.md)**: 질문, 버그, 기능 요청, 보안 이슈 채널.
+- **[행동 규범 (CODE_OF_CONDUCT.md)](../CODE_OF_CONDUCT.md)**: 협업 원칙과 커뮤니티 기준.
+
 ---
 
 ## 📁 디렉토리 구조
