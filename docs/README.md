@@ -21,10 +21,14 @@
 - **[스트리밍 API 가이드 (streaming-api-guide.md)](streaming-api-guide.md)**: SSE 기반 실시간 응답 사용법.
 - **[WebSocket API 가이드 (websocket-api-guide.md)](websocket-api-guide.md)**: 양방향 실시간 채팅 사용법.
 
+### 🔒 보안 및 공급망 (Security)
+- **[보안 정책 (SECURITY.md)](../SECURITY.md)**: 취약점 비공개 신고, 지원 범위, 응답 기준.
+- **[의존성 triage 가이드 (dependency-triage.md)](security/dependency-triage.md)**: Dependabot 운영과 취약점 업데이트 검증 기준.
+
 ---
 
 ## 📁 디렉토리 구조
 - `docs/`: 필수 최신 문서 보관.
 - `docs/archive/`: 과거 계획서, PRD, 배포 이력 등 역사적 기록 보관.
 
-**최종 업데이트**: 2026-05-03
+**최종 업데이트**: 2026-05-05
