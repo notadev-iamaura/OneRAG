@@ -1,7 +1,7 @@
-# RAG_Standard CI/CD Pipeline
+# OneRAG CI/CD Pipeline
 #
 # 트리거: main 브랜치 push 및 모든 PR
-# 검증 항목: 린트, 타입체크, 아키텍처, 테스트
+# 검증 항목: 백엔드 린트/타입체크/아키텍처/테스트, 프론트엔드 빌드/린트/테스트
 # 최적화: 의존성 캐싱, 타임아웃 설정
 
 name: CI
@@ -124,10 +124,10 @@ jobs:
         run: uv run lint-imports
 
   # ============================================
-  # 테스트 (Pytest) - 30분 타임아웃
+  # 테스트 및 커버리지 (Pytest) - 30분 타임아웃
   # ============================================
   test:
-    name: Test
+    name: Test + Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -157,14 +157,49 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Run Tests
-        run: uv run pytest --tb=short -q --timeout=60 --ignore=tests/integration
+      - name: Run Tests with Coverage
+        run: uv run pytest --cov=app --cov-report=html --cov-report=xml --tb=short -q --timeout=60 --ignore=tests/integration
 
-      - name: Upload coverage (optional)
-        if: success()
+      - name: Upload coverage
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: htmlcov/
+          path: |
+            htmlcov/
+            coverage.xml
+          if-no-files-found: error
           retention-days: 7
-        continue-on-error: true
+
+  # ============================================
+  # 프론트엔드 검증 (Vite + ESLint + Vitest)
+  # ============================================
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test:run
