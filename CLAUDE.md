@@ -122,18 +122,19 @@ raise GenerationError(ErrorCode.GENERATION_TIMEOUT, model="claude-sonnet-4-5")
 - **자동 Fallback**: 주 LLM 실패 시 설정된 순서대로 자동 전환
 - **GPT5QueryExpansionEngine**: `llm_factory` 필수화로 OpenAI 직접 의존성 제거
 
-### 7. Multi Vector DB (v1.0.5)
-- **Factory 패턴**: `VectorStoreFactory`, `RetrieverFactory`로 벡터 DB 동적 선택
-- **6종 벡터 DB 지원**: 환경변수 `VECTOR_DB_PROVIDER`로 선택
+### 7. Multi Retrieval Provider (v1.0.5+)
+- **Factory 패턴**: `VectorStoreFactory`, `RetrieverFactory`로 검색 Provider 동적 선택
+- **VectorStore 기반 6종 + Grok Retriever 모드**: 환경변수 `VECTOR_DB_PROVIDER`로 선택
   | Provider | 하이브리드 검색 | 특징 |
   |----------|---------------|------|
   | **weaviate** (기본) | ✅ Dense + BM25 | 셀프호스팅, 하이브리드 내장 |
-  | **chroma** | ❌ Dense 전용 | 경량, 로컬 개발용 |
+  | **chroma** | ✅ Dense + BM25 | 경량, 로컬 개발용 (BM25 엔진 필요) |
   | **pinecone** | ✅ Dense + Sparse | 서버리스 클라우드 |
   | **qdrant** | ✅ Dense + Full-Text | 고성능 셀프호스팅 |
   | **pgvector** | ❌ Dense 전용 | PostgreSQL 확장 |
   | **mongodb** | ❌ Dense 전용 | Atlas Vector Search |
-- **선택적 의존성**: 필요한 DB만 설치 (`uv sync --extra pinecone` 등)
+  | **grok** | ✅ 관리형 검색 | xAI Grok Collections API, VectorStore 불필요 |
+- **선택적 의존성**: VectorStore 기반 DB는 필요한 클라이언트만 설치 (`uv sync --extra pinecone` 등)
 
 ### 8. Observability (v1.0.4)
 - **실시간 메트릭**: `/api/admin/realtime-metrics` 엔드포인트
@@ -239,7 +240,7 @@ app/config/environments/
 | **에러 시스템** | 완료 | 양언어(한/영) 자동 전환 v2.0 |
 | **DI 컨테이너** | 완료 | 80+ Provider, 9개 팩토리 (RerankerV2 추가) |
 | **Multi-LLM** | 완료 | 5개 Provider 지원, 자동 Fallback |
-| **Multi Vector DB** | 완료 | 6종 지원 (Weaviate, Chroma, Pinecone, Qdrant, pgvector, MongoDB) |
+| **Multi Retrieval Provider** | 완료 | Vector DB 6종 + Grok Retriever 모드 |
 | **Observability** | 완료 | 실시간 캐시 히트율/LLM 비용 모니터링 |
 | **Streaming API** | 완료 | SSE 기반 실시간 응답, Multi-LLM 스트리밍 지원 |
 | **WebSocket API** | 완료 | 양방향 실시간 채팅, RAG 파이프라인 통합 |
@@ -267,7 +268,7 @@ app/config/environments/
 **Claude Note**: 본 프로젝트는 이미 "완벽"한 상태이므로, 코드 수정 시 기존의 추상화 인터페이스(Protocol)와 DI 패턴을 엄격히 준수하십시오.
 - **에러**: 반드시 `ErrorCode` 기반 새 형식 사용
 - **LLM**: 반드시 `llm_factory`를 통해 호출
-- **Vector DB**: 새 벡터 DB 추가 시 `VectorStoreFactory`에 등록
+- **검색 Provider**: 새 VectorStore DB는 `VectorStoreFactory`, 새 검색 모드는 `RetrieverFactory`에 등록
 - **모니터링**: 새 메트릭 추가 시 `RealtimeMetrics` 모델 확장
 - **Reranker**: `RerankerFactoryV2` 사용, approach/provider/model 3단계 구조 준수
   - **지원 approach**: llm, cross-encoder, late-interaction, local

@@ -1249,7 +1249,7 @@ def create_retriever_via_factory(
     Args:
         config: 설정 딕셔너리
         embedder: 임베딩 모델 인스턴스
-        vector_store: VectorStore 인스턴스 (Weaviate 외 provider용)
+        vector_store: VectorStore 인스턴스 (Weaviate/Grok 외 provider용)
         weaviate_client: Weaviate 클라이언트 (Weaviate provider용)
         synonym_manager: 동의어 관리자 (하이브리드 지원 provider용)
         stopword_filter: 불용어 필터 (하이브리드 지원 provider용)
@@ -1260,11 +1260,12 @@ def create_retriever_via_factory(
 
     지원 Provider:
     - weaviate: Dense + BM25 하이브리드 (weaviate_client 필요)
-    - chroma: Dense 전용 (store 필요)
+    - chroma: Dense + BM25 하이브리드 (store + BM25 엔진 필요)
     - pinecone: Dense + Sparse 하이브리드 (store 필요)
     - qdrant: Dense + Full-Text 하이브리드 (store 필요)
     - pgvector: Dense 전용 (store 필요)
     - mongodb: Dense 전용 (store 필요)
+    - grok: 관리형 검색 (VectorStore 불필요)
     """
     provider = config.get("vector_db", {}).get("provider", "weaviate")
 
@@ -1282,7 +1283,7 @@ def create_retriever_via_factory(
                 "user_dictionary": user_dictionary,
             }
         elif provider in ("chroma", "pgvector", "mongodb"):
-            # Dense 전용 DB는 BM25 엔진 주입 (선택적)
+            # BM25 엔진 기반 하이브리드 확장 (현재는 chroma에서 사용)
             try:
                 from app.modules.core.retrieval.bm25_engine import (
                     BM25Index,
@@ -1333,7 +1334,7 @@ def create_retriever_via_factory(
             ),
         }
     elif provider == "chroma":
-        # Chroma: Dense 전용
+        # Chroma: BM25 엔진이 있으면 하이브리드 검색 지원
         chroma_config = config.get("chroma", {})
         retriever_config = {
             "store": vector_store,
@@ -1488,7 +1489,7 @@ class AppContainer(containers.DeclarativeContainer):
     # ========================================
     # 8. Storage & Ingestion Providers (New Architecture)
     # ========================================
-    # VectorStore: Factory 패턴으로 Provider 기반 동적 생성
+    # VectorStore: Factory 패턴으로 VectorStore 기반 Provider 동적 생성
     # VECTOR_DB_PROVIDER 환경변수로 벡터 DB 선택 (기본값: weaviate)
     # 지원: weaviate, chroma, pinecone, qdrant, pgvector, mongodb
     vector_store = providers.Singleton(
@@ -1654,8 +1655,8 @@ class AppContainer(containers.DeclarativeContainer):
 
     # Retriever: Factory 패턴으로 Provider 기반 동적 생성
     # VECTOR_DB_PROVIDER 환경변수로 Retriever 선택 (기본값: weaviate)
-    # 하이브리드 지원: weaviate, pinecone, qdrant
-    # Dense 전용: chroma, pgvector, mongodb
+    # 하이브리드 지원: weaviate, chroma, pinecone, qdrant, grok
+    # Dense 전용: pgvector, mongodb
     retriever = providers.Singleton(
         create_retriever_via_factory,
         config=config,
