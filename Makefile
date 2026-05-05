@@ -1,4 +1,4 @@
-.PHONY: help install install-dev sync update run dev test lint format clean docker-build docker-run neo4j-up neo4j-down neo4j-logs test-neo4j start start-down start-logs start-load frontend-install frontend-dev frontend-build frontend-lint frontend-test start-full start-full-down start-full-logs start-full-build easy-start easy-start-load easy-start-chat easy-start-clean
+.PHONY: help install install-dev sync update run dev test lint format clean docker-build docker-run neo4j-up neo4j-down neo4j-logs test-neo4j start start-down start-logs start-load frontend-install frontend-dev frontend-build frontend-lint frontend-test frontend-warning-gate-self-test start-full start-full-down start-full-logs start-full-build easy-start easy-start-load easy-start-chat easy-start-clean
 
 # 기본 타겟
 .DEFAULT_GOAL := help
@@ -51,9 +51,10 @@ help:
 	@echo "🎨 Frontend (React):"
 	@echo "  frontend-install - 프론트엔드 의존성 설치"
 	@echo "  frontend-dev     - 프론트엔드 개발 서버 (localhost:5173)"
-	@echo "  frontend-build   - 프론트엔드 프로덕션 빌드"
+	@echo "  frontend-build   - 프론트엔드 warning-gated 프로덕션 빌드"
 	@echo "  frontend-lint    - 프론트엔드 린트 검사"
-	@echo "  frontend-test    - 프론트엔드 테스트"
+	@echo "  frontend-test    - 프론트엔드 warning-gated 테스트"
+	@echo "  frontend-warning-gate-self-test - 프론트엔드 warning gate 자체 검증"
 	@echo ""
 	@echo "🏠 Easy Start (Docker 불필요! 비개발자 추천):"
 	@echo "  easy-start            - Docker 없이 간편 실행 (ChromaDB + BM25)"
@@ -346,7 +347,7 @@ easy-start-clean:
 # 프론트엔드 의존성 설치
 frontend-install:
 	@echo "📦 프론트엔드 의존성 설치 중..."
-	cd frontend && npm install
+	cd frontend && npm ci
 	@echo "✅ 프론트엔드 의존성 설치 완료"
 
 # 프론트엔드 개발 서버
@@ -357,8 +358,8 @@ frontend-dev: frontend-install
 
 # 프론트엔드 프로덕션 빌드
 frontend-build: frontend-install
-	@echo "🔨 프론트엔드 프로덕션 빌드 중..."
-	cd frontend && npm run build
+	@echo "🔨 프론트엔드 warning-gated 프로덕션 빌드 중..."
+	cd frontend && npm run build:warning-gate
 	@echo "✅ 프론트엔드 빌드 완료 (frontend/dist/)"
 
 # 프론트엔드 린트
@@ -368,8 +369,13 @@ frontend-lint: frontend-install
 
 # 프론트엔드 테스트
 frontend-test: frontend-install
-	@echo "🧪 프론트엔드 테스트 실행..."
-	cd frontend && npm run test:run
+	@echo "🧪 프론트엔드 warning-gated 테스트 실행..."
+	cd frontend && npm run test:warning-gate
+
+# 프론트엔드 warning gate 자체 검증
+frontend-warning-gate-self-test: frontend-install
+	@echo "🧪 프론트엔드 warning gate 자체 검증..."
+	cd frontend && npm run warning-gate:self-test
 
 # =============================================================================
 # Start Full 명령 (Frontend + Backend + Weaviate)
