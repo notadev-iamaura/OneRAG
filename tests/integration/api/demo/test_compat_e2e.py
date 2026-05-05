@@ -418,9 +418,13 @@ class TestNotFoundFlow:
         self,
         e2e_client: TestClient,
         mock_session_manager: MagicMock,
+        mock_pipeline: MagicMock,
     ) -> None:
         """존재하지 않는 session_id로 채팅 시 404"""
         mock_session_manager.get_session = AsyncMock(return_value=None)
+        mock_pipeline.query = AsyncMock(
+            side_effect=ValueError("세션을 찾을 수 없습니다: nonexistent"),
+        )
         resp = e2e_client.post(
             "/api/chat",
             json={"message": "질문", "session_id": "nonexistent"},
