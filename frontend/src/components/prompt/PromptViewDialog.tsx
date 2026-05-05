@@ -64,12 +64,12 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">프롬프트명</Label>
-                  <p className="font-bold flex items-center gap-2">
+                  <div className="font-bold flex items-center gap-2">
                     {selectedPrompt.name}
                     <Badge variant={selectedPrompt.is_active ? 'default' : 'secondary'} className="h-5 text-[10px] rounded-sm font-black">
                       {selectedPrompt.is_active ? 'ACTIVE' : 'INACTIVE'}
                     </Badge>
-                  </p>
+                  </div>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">카테고리</Label>

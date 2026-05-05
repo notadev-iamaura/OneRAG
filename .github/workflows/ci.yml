@@ -196,10 +196,10 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build
+        run: npm run build:warning-gate
 
       - name: Lint
         run: npm run lint
 
       - name: Test
-        run: npm run test:run
+        run: npm run test:warning-gate
