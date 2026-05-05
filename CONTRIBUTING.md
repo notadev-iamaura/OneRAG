@@ -35,9 +35,10 @@ ENVIRONMENT=test uv run pytest --tb=short -q --timeout=60 --ignore=tests/integra
 
 ```bash
 cd frontend
-npm run build
+npm run warning-gate:self-test
+npm run build:warning-gate
 npm run lint
-npm run test:run
+npm run test:warning-gate
 ```
 
 Docker, quickstart, and integration changes should also include the relevant

@@ -35,8 +35,9 @@ Use the smallest sufficient command set for the dependency surface:
 
 - Python runtime or tooling: `uv sync --frozen`, `uv run ruff check .`,
   `uv run mypy .`, and targeted `ENVIRONMENT=test uv run pytest ...`.
-- Frontend runtime or tooling: `npm ci`, `npm run build`, `npm run lint`, and
-  `npm run test:run` from `frontend/`.
+- Frontend runtime or tooling: `npm ci`, `npm run warning-gate:self-test`,
+  `npm run build:warning-gate`, `npm run lint`, and
+  `npm run test:warning-gate` from `frontend/`.
 - GitHub Actions: workflow YAML parse plus the pull request's own Actions run.
 - Pre-commit hooks: `uv run pre-commit run --all-files` when hook behavior
   changes.
