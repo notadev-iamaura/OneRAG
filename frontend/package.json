@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:warning-gate": "node scripts/fail-on-warning-output.mjs -- npm run build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:warning-gate": "node scripts/fail-on-warning-output.mjs -- npm run test:run -- --reporter=dot",
+    "warning-gate:self-test": "node scripts/fail-on-warning-output.mjs --self-test",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
