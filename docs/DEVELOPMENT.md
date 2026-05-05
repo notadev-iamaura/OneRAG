@@ -114,26 +114,27 @@ Neo4j 통합 테스트는 다음을 검증합니다:
 
 ---
 
-### 4.2 Multi Vector DB 설정 (v1.0.5)
+### 4.2 Multi Retrieval Provider 설정 (v1.0.5+)
 
-본 프로젝트는 6종의 벡터 데이터베이스를 지원합니다. `VECTOR_DB_PROVIDER` 환경변수로 사용할 DB를 선택합니다.
+본 프로젝트는 VectorStore 기반 6종 데이터베이스와 Grok 관리형 검색 모드를 지원합니다. `VECTOR_DB_PROVIDER` 환경변수로 사용할 검색 Provider를 선택합니다.
 
 #### 지원 Provider 목록
 
 | Provider | 하이브리드 검색 | 설치 의존성 | 용도 |
 |----------|---------------|------------|------|
 | **weaviate** (기본) | ✅ Dense + BM25 | `weaviate-client` | 셀프호스팅, 프로덕션 |
-| **chroma** | ❌ Dense 전용 | `chromadb` | 로컬 개발, 프로토타이핑 |
+| **chroma** | ✅ Dense + BM25 | `chromadb` | 로컬 개발, 프로토타이핑 (BM25 엔진 필요) |
 | **pinecone** | ✅ Dense + Sparse | `pinecone-client` | 서버리스 클라우드 |
 | **qdrant** | ✅ Dense + Full-Text | `qdrant-client` | 고성능 셀프호스팅 |
 | **pgvector** | ❌ Dense 전용 | `psycopg[binary]` | PostgreSQL 통합 |
 | **mongodb** | ❌ Dense 전용 | `pymongo` | Atlas Vector Search |
+| **grok** | ✅ 관리형 검색 | 기본 의존성 | xAI Grok Collections, VectorStore 불필요 |
 
 #### 환경변수 설정
 
 ```bash
 # Provider 선택 (필수)
-export VECTOR_DB_PROVIDER="weaviate"  # weaviate | chroma | pinecone | qdrant | pgvector | mongodb
+export VECTOR_DB_PROVIDER="weaviate"  # weaviate | chroma | pinecone | qdrant | pgvector | mongodb | grok
 
 # === Weaviate (기본) ===
 export WEAVIATE_URL="http://localhost:8080"
@@ -160,11 +161,16 @@ export DATABASE_URL="postgresql://user:pass@localhost:5432/vectors"
 export MONGODB_URI="mongodb+srv://user:pass@cluster.mongodb.net/"
 export MONGODB_DATABASE="rag_db"
 export MONGODB_COLLECTION="documents"
+
+# === Grok Collections API ===
+export VECTOR_DB_PROVIDER="grok"
+export XAI_API_KEY="your-xai-api-key"
+# app/config/features/grok.yaml에서 collection_ids를 설정합니다.
 ```
 
 #### 선택적 의존성 설치
 
-필요한 벡터 DB 클라이언트만 설치할 수 있습니다:
+VectorStore 기반 Provider는 필요한 클라이언트만 설치할 수 있습니다. Grok 모드는 VectorStore를 만들지 않고 `RetrieverFactory` 경로로 직접 동작합니다:
 
 ```bash
 # 개별 설치
@@ -201,7 +207,7 @@ from app.core.di_container import Container
 
 # DI 컨테이너가 VECTOR_DB_PROVIDER 환경변수를 읽어 자동 설정
 container = Container()
-vector_store = container.vector_store()  # 선택된 Provider 인스턴스 반환
+retriever = container.retriever()  # 선택된 Retriever 인스턴스 반환
 
 # 또는 Factory 직접 사용
 from app.infrastructure.storage.vector.factory import VectorStoreFactory
@@ -212,6 +218,8 @@ store = VectorStoreFactory.create("pinecone", {
     "index_name": "my-index"
 })
 ```
+
+`VECTOR_DB_PROVIDER=grok`는 `VectorStoreFactory`가 아니라 `RetrieverFactory`에 등록된 `GrokRetriever`를 사용합니다.
 
 ---
 

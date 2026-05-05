@@ -88,7 +88,7 @@ flowchart TB
         SC -->|"Yes"| CACHED["캐시 결과"]
         SC -->|"No"| RO["RetrievalOrchestrator"]
 
-        RO --> VDB["Vector DB 검색"]
+        RO --> VDB["검색 Provider"]
         RO --> GR["GraphRAG 검색"]
         RO --> SQL["SQL 메타데이터 검색"]
     end
@@ -219,13 +219,14 @@ graph TB
         YAML["base.yaml + environments/*.yaml"]
     end
 
-    subgraph VDB["Vector DB (6종)"]
+    subgraph VDB["Retrieval Provider"]
         W["Weaviate ★기본<br/>Dense + BM25 하이브리드"]
         CH["Chroma<br/>경량 로컬 개발용"]
         PI["Pinecone<br/>서버리스 클라우드"]
         QD["Qdrant<br/>고성능 셀프호스팅"]
         PG["pgvector<br/>PostgreSQL 확장"]
         MO["MongoDB<br/>Atlas Vector Search"]
+        GX["Grok Collections<br/>xAI 관리형 검색<br/>VectorStore 불필요"]
     end
 
     subgraph LLMP["LLM Provider (4종)"]
@@ -326,9 +327,11 @@ flowchart TB
 
     subgraph Store["저장"]
         VS["VectorStoreFactory<br/>6종 Vector DB"]
+        GRK["RetrieverFactory<br/>Grok 관리형 검색"]
     end
 
     Input --> LD --> CK --> EN --> EM --> VS
+    EM -. "Grok은 외부 Collection 사용" .-> GRK
 
     style Input fill:#58a6ff,color:#fff
     style Process fill:#238636,color:#fff
@@ -401,7 +404,7 @@ graph LR
 
     subgraph L2["Level 2: 활용<br/>⭐⭐⭐"]
         L2A["Docker 서버 운영"]
-        L2B["Vector DB 교체"]
+        L2B["검색 Provider 교체"]
         L2C["LLM Provider 변경"]
         L2D["문서 업로드/관리"]
     end
@@ -443,7 +446,7 @@ graph LR
 |------|------|
 | **대상** | 팀 프로젝트에 RAG를 통합하려는 백엔드 개발자 |
 | **필요 지식** | Docker Compose, REST API, 환경 변수 관리 |
-| **필요 설정** | `.env` 파일 (LLM Key + Vector DB 설정) |
+| **필요 설정** | `.env` 파일 (LLM Key + 검색 Provider 설정) |
 | **실행 방법** | `cp quickstart/.env.quickstart .env` → `make start` |
 | **사용하는 것** | Weaviate (하이브리드 검색), FastAPI 서버, Swagger UI |
 
@@ -451,7 +454,7 @@ graph LR
 
 | 작업 | 난이도 | 방법 |
 |------|--------|------|
-| Vector DB 교체 | 쉬움 | `.env`에서 `VECTOR_DB_PROVIDER=chroma` 1줄 변경 |
+| 검색 Provider 교체 | 쉬움 | `.env`에서 `VECTOR_DB_PROVIDER=chroma` 1줄 변경 |
 | LLM 변경 | 쉬움 | `.env`에서 API Key 교체 (자동 감지) |
 | 문서 업로드 | 쉬움 | `/api/upload` 엔드포인트 또는 Swagger UI |
 | Reranker 변경 | 보통 | `base.yaml`에서 approach/provider 2줄 변경 |
@@ -472,7 +475,7 @@ graph LR
 | 작업 | 난이도 | 핵심 포인트 |
 |------|--------|-------------|
 | 커스텀 Reranker 추가 | 높음 | `RerankerFactoryV2`에 등록, Protocol 인터페이스 구현 |
-| 새 Vector DB 추가 | 높음 | `VectorStoreFactory` + `RetrieverFactory`에 등록 |
+| 새 검색 Provider 추가 | 높음 | VectorStore 기반 DB는 `VectorStoreFactory` + `RetrieverFactory`, 검색 전용 모드는 `RetrieverFactory`에 등록 |
 | Agent Tool 개발 | 높음 | `MCPToolFactory`에 등록, `interfaces.py` Protocol 준수 |
 | GraphRAG 구축 | 높음 | `GraphRAGFactory` 사용, Neo4j 또는 NetworkX 선택 |
 | Self-RAG 튜닝 | 높음 | `LLMQualityEvaluator` 임계값 조정 |
@@ -519,7 +522,7 @@ Level 3 (확장)
 | **테스트** | 1,943개 통과 / 0 실패 |
 | **DI Provider** | 80+ (Singleton 70 + Factory 10) |
 | **API 엔드포인트** | 15+ 라우터 (REST + SSE + WebSocket) |
-| **Vector DB** | 6종 (Weaviate, Chroma, Pinecone, Qdrant, pgvector, MongoDB) |
+| **검색 Provider** | Vector DB 6종 + Grok Collections |
 | **LLM Provider** | 4종 (Gemini, OpenAI, Claude, OpenRouter) |
 | **Reranker** | 4 approach x 6 provider |
 | **파일 로더** | 8종 (PDF, DOCX, XLSX, CSV, JSON, MD, HTML, TXT) |

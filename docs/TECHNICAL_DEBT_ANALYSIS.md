@@ -15,7 +15,7 @@ RAG_Standard 프로젝트는 **코드 정리가 완료된 상태**입니다. Pha
 | 레거시 코드 | ✅ 모든 deprecated 함수 제거 완료 | 🟢 완료 |
 | 전역 상태 | ✅ DI Container로 완전 이전 | 🟢 완료 |
 | 테스트 | 1,700+개 통과, 일부 skip | 🟢 양호 |
-| Multi Vector DB | ✅ 6종 지원 완료 | 🟢 완료 |
+| Multi Retrieval Provider | ✅ Vector DB 6종 + Grok Retriever 모드 | 🟢 완료 |
 | Reranker 설정 | ✅ v2.1 (4 approach, 6 provider) | 🟢 완료 |
 
 ---
@@ -173,26 +173,27 @@ raise GenerationError(ErrorCode.GENERATION_TIMEOUT, model="claude-sonnet-4-5")
 
 ## 5. Multi Vector DB 지원 (✅ v1.0.5 완료)
 
-### 5.1 지원 벡터 DB (6종)
+### 5.1 지원 검색 Provider
 
 | Provider | 하이브리드 검색 | 특징 |
 |----------|---------------|------|
 | **weaviate** (기본) | ✅ Dense + BM25 | 셀프호스팅, 하이브리드 내장 |
-| **chroma** | ❌ Dense 전용 | 경량, 로컬 개발용 |
+| **chroma** | ✅ Dense + BM25 | 경량, 로컬 개발용 (BM25 엔진 필요) |
 | **pinecone** | ✅ Dense + Sparse | 서버리스 클라우드 |
 | **qdrant** | ✅ Dense + Full-Text | 고성능 셀프호스팅 |
 | **pgvector** | ❌ Dense 전용 | PostgreSQL 확장 |
 | **mongodb** | ❌ Dense 전용 | Atlas Vector Search |
+| **grok** | ✅ 관리형 검색 | xAI Grok Collections API, VectorStore 불필요 |
 
 ### 5.2 Factory 패턴
 
 ```python
-# 환경변수로 벡터 DB 선택
+# 환경변수로 검색 Provider 선택
 export VECTOR_DB_PROVIDER="pinecone"
 
 # DI Container가 자동으로 적절한 인스턴스 생성
 container = Container()
-vector_store = container.vector_store()  # PineconeStore 반환
+retriever = container.retriever()  # 선택된 Retriever 반환
 ```
 
 ---
@@ -205,7 +206,7 @@ vector_store = container.vector_store()  # PineconeStore 반환
 3. ~~`GPT5QueryExpansionEngine` OpenAI 직접 호출 제거~~ → 완료
 4. ~~Deprecated 헬퍼 함수 제거~~ → 완료 (Phase 1, 2)
 5. ~~`routing_rules.yaml` → `routing_rules_v2.yaml` 완전 이관~~ → 완료
-6. ~~Multi Vector DB 지원 (6종)~~ → 완료
+6. ~~Multi Vector DB 지원 (6종)~~ → 완료, Grok Retriever 모드 추가 반영
 
 ### ✅ 완료됨 (v1.1.0)
 
@@ -276,7 +277,7 @@ RAG_Standard는 **코드 정리가 완료된 프로젝트**입니다:
 - **팩토리 패턴**: 9개 명시적 팩토리로 확장성 확보 (VectorStore, Retriever, RerankerV2 추가)
 - **에러 시스템**: 양언어 지원 v2.0 완료
 - **테스트**: 1,637개 테스트로 높은 커버리지
-- **Multi Vector DB**: 6종 벡터 데이터베이스 지원
+- **Multi Retrieval Provider**: Vector DB 6종 + Grok Retriever 모드
 - **Reranker 설정 v2**: 3단계 계층 구조 (approach/provider/model)
 
 모든 필수 코드 정리가 완료되었습니다. 남은 항목은 **선택적 기능 확장**입니다.

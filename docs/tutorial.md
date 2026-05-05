@@ -8,7 +8,7 @@
 
 1. [환경 설정](#1-환경-설정)
 2. [첫 번째 RAG 실행하기](#2-첫-번째-rag-실행하기)
-3. [Vector DB 바꿔보기](#3-vector-db-바꿔보기)
+3. [검색 Provider 바꿔보기](#3-검색-provider-바꿔보기)
 4. [LLM 바꿔보기](#4-llm-바꿔보기)
 5. [리랭커 추가하기](#5-리랭커-추가하기)
 6. [캐싱 활성화하기](#6-캐싱-활성화하기)
@@ -103,9 +103,9 @@ make start-down
 
 ---
 
-## 3. Vector DB 바꿔보기
+## 3. 검색 Provider 바꿔보기
 
-### 현재 지원하는 Vector DB
+### 현재 지원하는 Provider
 
 | Provider | 환경 변수 값 | 특징 |
 |----------|-------------|------|
@@ -115,6 +115,7 @@ make start-down
 | Qdrant | `qdrant` | 빠른 성능, 필터링 강력 |
 | pgvector | `pgvector` | PostgreSQL 기반, SQL 친화적 |
 | MongoDB | `mongodb` | 문서 DB와 벡터 검색 통합 |
+| Grok Collections | `grok` | xAI 관리형 검색, VectorStore 불필요 |
 
 ### 변경 방법
 
@@ -129,6 +130,8 @@ VECTOR_DB_PROVIDER=pinecone
 PINECONE_API_KEY=your_key
 PINECONE_ENVIRONMENT=your_env
 ```
+
+Grok을 사용할 때는 `VECTOR_DB_PROVIDER=grok`, `XAI_API_KEY`, `app/config/features/grok.yaml`의 `collection_ids`가 필요합니다.
 
 서버 재시작하면 끝!
 
