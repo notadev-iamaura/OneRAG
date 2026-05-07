@@ -16,6 +16,7 @@ RAG Pipeline 단위 테스트
 
 import asyncio
 import time
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -269,6 +270,55 @@ class TestExecute:
 
         assert result["answer"] == "Agent 답변"
         mock_agent_exec.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_grok_answer_mode_bypasses_local_pipeline(
+        self,
+        pipeline: RAGPipeline,
+    ) -> None:
+        """
+        Grok answer 모드 실행
+
+        Given: options.rag_mode=grok_answer, GrokAnswerProvider 설정됨
+        When: execute 호출
+        Then: 로컬 검색/생성 단계 없이 Grok 답변 결과를 표준 응답으로 반환
+        """
+        grok_provider = MagicMock()
+        grok_provider.answer = AsyncMock(
+            return_value=SimpleNamespace(
+                answer="Grok 답변",
+                provider="grok",
+                model_used="grok-4.20-reasoning",
+                citations=["collections://collection_1/files/file_1"],
+                tokens_used=42,
+                tool_usage={"SERVER_SIDE_TOOL_COLLECTIONS_SEARCH": 1},
+            )
+        )
+        pipeline.grok_answer_provider = grok_provider
+
+        with (
+            patch.object(pipeline, "route_query") as mock_route,
+            patch.object(pipeline, "prepare_context") as mock_prepare,
+            patch.object(pipeline, "retrieve_documents") as mock_retrieve,
+            patch.object(pipeline, "generate_answer") as mock_generate,
+        ):
+            mock_route.return_value = RouteDecision(should_continue=True, metadata={})
+
+            result = await pipeline.execute(
+                message="테스트 질문",
+                session_id="test-session",
+                options={"rag_mode": "grok_answer", "collection_ids": ["collection_1"]},
+            )
+
+        assert result["answer"] == "Grok 답변"
+        assert result["model_info"]["provider"] == "grok"
+        assert result["model_info"]["mode"] == "grok_answer"
+        assert result["search_results"] == 1
+        assert result["sources"][0].source_type == "grok"
+        grok_provider.answer.assert_awaited_once()
+        mock_prepare.assert_not_called()
+        mock_retrieve.assert_not_called()
+        mock_generate.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_execute_sql_and_rag_parallel_success(

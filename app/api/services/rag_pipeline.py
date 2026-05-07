@@ -17,12 +17,14 @@ RAG Pipeline 모듈
 목적: TASK-H4 구현 - 150줄 블랙박스 함수 → 7개 독립 메서드
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from ...lib.circuit_breaker import CircuitBreakerOpenError
 from ...lib.cost_tracker import CostTracker
@@ -33,16 +35,19 @@ from ...lib.metrics import PerformanceMetrics
 from ...lib.prompt_sanitizer import contains_output_leakage, validate_document
 from ...lib.score_normalizer import RRFScoreNormalizer  # RRF 점수 정규화
 from ...lib.types import RAGResultDict
-from ...modules.core.agent.interfaces import AgentResult
-from ...modules.core.agent.orchestrator import AgentOrchestrator
-from ...modules.core.generation.generator import GenerationResult
-from ...modules.core.privacy.masker import PrivacyMasker
 from ...modules.core.retrieval.interfaces import IMultiQueryRetriever, SearchResult
-from ...modules.core.routing.rule_based_router import RuleBasedRouter
-from ...modules.core.sql_search import SQLSearchResult, SQLSearchService
-from ..schemas.debug import DebugTrace
+
+if TYPE_CHECKING:
+    from ...modules.core.agent.orchestrator import AgentOrchestrator
+    from ...modules.core.generation.generator import GenerationResult
+    from ...modules.core.sql_search import SQLSearchResult, SQLSearchService
+    from ..schemas.debug import DebugTrace
 
 logger = get_logger(__name__)
+
+# Kept as a patchable module attribute for existing tests while avoiding the
+# heavy routing module import until route_query actually runs.
+RuleBasedRouter: Any | None = None
 
 
 @dataclass
@@ -341,6 +346,7 @@ class RAGPipeline:
         performance_metrics: PerformanceMetrics,
         sql_search_service: SQLSearchService | None = None,
         agent_orchestrator: AgentOrchestrator | None = None,
+        grok_answer_provider: Any | None = None,
     ):
         """
         RAGPipeline 초기화 (의존성 주입)
@@ -359,6 +365,7 @@ class RAGPipeline:
             performance_metrics: 성능 메트릭 (필수)
             sql_search_service: SQL 검색 서비스 (선택적, Phase 3)
             agent_orchestrator: Agent 오케스트레이터 (선택적, Agentic RAG)
+            grok_answer_provider: Grok이 검색과 답변을 모두 맡는 provider (선택적)
         """
         self.config = config
         self.query_router = query_router
@@ -373,6 +380,7 @@ class RAGPipeline:
         self.performance_metrics = performance_metrics
         self.sql_search_service = sql_search_service  # SQL 검색 서비스 (Phase 3)
         self.agent_orchestrator = agent_orchestrator  # Agent 오케스트레이터 (Agentic RAG)
+        self.grok_answer_provider = grok_answer_provider
 
         # YAML 설정에서 retrieval 파라미터 로드
         rag_config = config.get("rag", {})
@@ -395,6 +403,8 @@ class RAGPipeline:
         privacy_enabled = privacy_config.get("enabled", True)
 
         if privacy_enabled:
+            from ...modules.core.privacy.masker import PrivacyMasker
+
             whitelist = privacy_config.get("whitelist", [])
             masking_config = privacy_config.get("masking", {})
             char_config = privacy_config.get("characters", {})
@@ -559,6 +569,8 @@ class RAGPipeline:
             return None
 
         try:
+            from ..schemas.debug import DebugTrace
+
             if "query_transformation" not in debug_trace_data:
                 debug_trace_data["query_transformation"] = {
                     "original": message,
@@ -581,6 +593,107 @@ class RAGPipeline:
                 exc_info=True
             )
             return None
+
+    def _resolve_rag_mode(self, options: dict[str, Any]) -> str:
+        """Resolve local/grok_search/grok_answer without changing default local flow."""
+        explicit_mode = options.get("rag_mode") or options.get("grok_mode")
+        if explicit_mode:
+            return self._normalize_rag_mode(str(explicit_mode))
+
+        vector_db_config = self.config.get("vector_db", {})
+        vector_provider = (
+            vector_db_config.get("provider")
+            or self.config.get("vector_store", {}).get("provider")
+            or os.getenv("VECTOR_DB_PROVIDER", "")
+        )
+        if str(vector_provider).lower() != "grok":
+            return "local"
+
+        grok_config = self.config.get("grok", {})
+        return self._normalize_rag_mode(str(grok_config.get("mode", "search")))
+
+    @staticmethod
+    def _normalize_rag_mode(mode: str) -> str:
+        normalized = mode.strip().lower().replace("-", "_")
+        aliases = {
+            "local": "local",
+            "standard": "local",
+            "grok": "grok_search",
+            "grok_search": "grok_search",
+            "search": "grok_search",
+            "grok_answer": "grok_answer",
+            "answer": "grok_answer",
+        }
+        return aliases.get(normalized, "local")
+
+    def _format_grok_citations(self, citations: list[Any]) -> list[Any]:
+        """Convert Grok citation payloads into OneRAG Source objects."""
+        sources: list[Any] = []
+        for idx, citation in enumerate(citations):
+            citation_text = citation if isinstance(citation, str) else str(citation)
+            sources.append(
+                self.Source(
+                    id=idx,
+                    document=citation_text,
+                    relevance=1.0,
+                    content_preview=citation_text[:300],
+                    source_type="grok",
+                    additional_metadata={"citation": citation},
+                )
+            )
+        return sources
+
+    async def _execute_grok_answer_mode(
+        self,
+        message: str,
+        start_time: float,
+        options: dict[str, Any],
+        routing_metadata: dict[str, Any],
+    ) -> RAGResultDict:
+        """Execute Grok managed RAG answer mode as a narrow fast path."""
+        provider = self.grok_answer_provider
+        if asyncio.iscoroutine(provider) or isinstance(provider, asyncio.Future):
+            provider = await provider
+
+        if provider is None:
+            raise RetrievalError(
+                ErrorCode.GROK_003,
+                reason="Grok answer mode requested but GrokAnswerProvider is not configured",
+            )
+
+        result = await provider.answer(
+            question=message,
+            collection_ids=options.get("collection_ids") or options.get("grok_collection_ids"),
+            system_prompt=options.get("system_prompt"),
+            top_k=options.get("top_k") or options.get("limit"),
+            temperature=float(options.get("temperature", 0.0)),
+            include_code_interpreter=bool(options.get("include_code_interpreter", False)),
+        )
+        sources = self._format_grok_citations(result.citations)
+        model_info = {
+            "provider": result.provider,
+            "model": result.model_used,
+            "model_used": result.model_used,
+            "mode": "grok_answer",
+            "tool_usage": result.tool_usage,
+            "citations_count": len(result.citations),
+        }
+        routing_metadata = {
+            **routing_metadata,
+            "rag_mode": "grok_answer",
+            "source": routing_metadata.get("source", "grok"),
+        }
+        return self.build_result(
+            answer=result.answer,
+            sources=sources,
+            tokens_used=result.tokens_used,
+            topic=self.extract_topic_func(message),
+            processing_time=time.time() - start_time,
+            search_count=len(result.citations),
+            ranked_count=len(result.citations),
+            model_info=model_info,
+            routing_metadata=routing_metadata,
+        )
 
     @observe(name="RAG Pipeline", capture_input=True, capture_output=True)
     async def execute(
@@ -629,6 +742,17 @@ class RAGPipeline:
 
         if enable_debug_trace:
             debug_trace_data["original_query"] = message
+
+        rag_mode = self._resolve_rag_mode(options)
+        route_decision.metadata["rag_mode"] = rag_mode
+        if rag_mode == "grok_answer":
+            logger.info("Grok answer mode 실행")
+            return await self._execute_grok_answer_mode(
+                message=message,
+                start_time=start_time,
+                options=options,
+                routing_metadata=route_decision.metadata,
+            )
 
         tracker.start_stage("prepare_context")
         prepared_context = await self.prepare_context(message, session_id)
@@ -754,6 +878,14 @@ class RAGPipeline:
                     exc_info=True
                 )
         try:
+            global RuleBasedRouter
+            if RuleBasedRouter is None:
+                from ...modules.core.routing.rule_based_router import (
+                    RuleBasedRouter as _RuleBasedRouter,
+                )
+
+                RuleBasedRouter = _RuleBasedRouter
+
             rule_router = RuleBasedRouter(enabled=True)
             rule_match = await rule_router.check_rules(message)
             if rule_match:
@@ -1218,6 +1350,8 @@ class RAGPipeline:
         Raises:
             GenerationError: 답변 생성 실패 시
         """
+        from ...modules.core.generation.generator import GenerationResult
+
         logger.debug("[6단계] 답변 생성 시작")
         if not self.generation_module:
             logger.error("생성 모듈 없음")
@@ -1412,6 +1546,8 @@ class RAGPipeline:
         Returns:
             GenerationResult: 최종 답변 (기존 답변 또는 재생성 답변)
         """
+        from ...modules.core.generation.generator import GenerationResult
+
         logger.debug("[6단계] Self-RAG 품질 검증 시작")
 
         # ⭐ 디버깅 추적 데이터 추출
@@ -1860,6 +1996,9 @@ class RAGPipeline:
                 "initial_quality",
                 "final_quality",
                 "self_rag_regenerated",
+                "mode",
+                "tool_usage",
+                "citations_count",
             ]
             for field in optional_fields:
                 if field in model_info and model_info[field] is not None:
@@ -1921,6 +2060,8 @@ class RAGPipeline:
         """
         if not self.sql_search_service:
             return None
+
+        from ...modules.core.sql_search import SQLSearchResult
 
         try:
             # SQL 검색 설정에서 타임아웃 조회
@@ -2002,7 +2143,7 @@ class RAGPipeline:
 
         try:
             # AgentOrchestrator 실행
-            agent_result: AgentResult = await self.agent_orchestrator.run(
+            agent_result = await self.agent_orchestrator.run(
                 query=message,
                 session_context=session_context,
             )

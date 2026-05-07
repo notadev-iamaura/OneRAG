@@ -1,8 +1,12 @@
-"""
-API package initialization
-"""
+"""API package initialization with lazy router exports."""
 
-# API 모듈들을 여기서 임포트하여 사용 가능하게 함
-from . import admin, chat, health, prompts, upload
+from importlib import import_module
+from types import ModuleType
 
 __all__ = ["chat", "upload", "admin", "health", "prompts"]
+
+
+def __getattr__(name: str) -> ModuleType:
+    if name in __all__:
+        return import_module(f"app.api.{name}")
+    raise AttributeError(f"module 'app.api' has no attribute {name!r}")

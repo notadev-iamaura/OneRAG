@@ -15,20 +15,23 @@ Phase 2 구현 (2025-11-28):
   - 한글 이름: 김** 고객
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any, TypedDict, cast
-
-import httpx
-from openai import OpenAI
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from ....lib.errors import ErrorCode, GenerationError
 from ....lib.logger import get_logger
 from ....lib.prompt_sanitizer import escape_xml, sanitize_for_prompt
-from .prompt_manager import PromptManager
+
+if TYPE_CHECKING:
+    from openai import OpenAI
+
+    from .prompt_manager import PromptManager
 
 logger = get_logger(__name__)
 
@@ -195,6 +198,9 @@ class GenerationModule:
 
     def _initialize_google_client(self) -> None:
         """Google Gemini OpenAI 호환 API 클라이언트 초기화"""
+        import httpx
+        from openai import OpenAI
+
         api_key = self.provider_config.get("api_key") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError(
@@ -220,6 +226,9 @@ class GenerationModule:
 
     def _initialize_ollama_client(self) -> None:
         """Ollama 로컬 LLM 클라이언트 초기화 (OpenAI 호환 API)"""
+        import httpx
+        from openai import OpenAI
+
         base_url = self.provider_config.get("base_url") or os.getenv(
             "OLLAMA_BASE_URL", "http://localhost:11434"
         )
@@ -239,6 +248,9 @@ class GenerationModule:
 
     def _initialize_openrouter_client(self) -> None:
         """OpenRouter 클라이언트 초기화 (레거시)"""
+        import httpx
+        from openai import OpenAI
+
         api_key = self.openrouter_config.get("api_key") or os.getenv("OPENROUTER_API_KEY")
         if not api_key:
             raise ValueError(

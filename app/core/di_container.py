@@ -11,32 +11,15 @@ Provider 타입:
 - Factory: 요청마다 새 인스턴스 (RAGPipeline, ChatService 등)
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from dependency_injector import containers, providers
 
-# Services
-from app.api.services.chat_service import ChatService
 from app.api.services.rag_pipeline import RAGPipeline
-
-# 선택적 모듈: Notion 클라이언트 (설치되어 있을 때만 사용)
-try:
-    from app.batch.notion_client import NotionAPIClient
-    _NOTION_CLIENT_AVAILABLE = True
-except ImportError:
-    _NOTION_CLIENT_AVAILABLE = False
-    NotionAPIClient = None  # type: ignore[assignment,misc]
-
-# SQL Search 모듈 (Phase 3: 메타데이터 SQL 검색)
-from app.infrastructure.persistence.connection import DatabaseManager
-from app.infrastructure.persistence.evaluation_manager import EvaluationDataManager
-from app.infrastructure.persistence.prompt_repository import PromptRepository
-from app.infrastructure.storage.metadata.postgres_store import PostgresMetadataStore
-
-# Phase 8: Storage & Ingestion (Factory 패턴 적용)
-from app.infrastructure.storage.vector.factory import VectorStoreFactory
 
 # Core modules
 from app.lib.auth import get_api_key_auth
@@ -44,10 +27,8 @@ from app.lib.circuit_breaker import CircuitBreakerFactory
 from app.lib.config_validator import get_env_int, get_env_url
 
 # from app.lib.ip_geolocation import IPGeolocationModule  # 비활성화: 세션 생성 타임아웃 원인
-from app.lib.llm_client import LLMClientFactory, get_llm_factory, initialize_llm_factory
 from app.lib.logger import get_logger
 from app.lib.metrics import CostTracker, PerformanceMetrics
-from app.lib.weaviate_client import WeaviateClient
 
 # Phase 5: Agent 모듈 (Agentic RAG Orchestrator)
 from app.modules.core.agent import AgentFactory
@@ -90,6 +71,7 @@ from app.modules.core.retrieval.cache.semantic_cache import (
     InMemorySemanticCache,
     SemanticCacheConfig,
 )
+from app.modules.core.retrieval.grok_answer_provider import GrokAnswerProvider
 from app.modules.core.retrieval.orchestrator import RetrievalOrchestrator
 from app.modules.core.retrieval.query_expansion.gpt5_engine import GPT5QueryExpansionEngine
 
@@ -126,8 +108,58 @@ from app.modules.ingestion.service import IngestionService
 
 logger = get_logger(__name__)
 
+if TYPE_CHECKING:
+    from app.lib.llm_client import LLMClientFactory
+
 # TypeVar for generic type parameters
 T = TypeVar("T")
+
+
+def _create_chat_service(*args: Any, **kwargs: Any) -> Any:
+    """Create ChatService lazily so importing the container stays lightweight."""
+    from app.api.services.chat_service import ChatService
+
+    return ChatService(*args, **kwargs)
+
+
+def _create_notion_client(api_key: str | None = None) -> Any | None:
+    """Create optional Notion client lazily if the integration is installed."""
+    try:
+        from app.batch.notion_client import NotionAPIClient
+    except ImportError:
+        return None
+
+    return NotionAPIClient(api_key=api_key)
+
+
+def _create_database_manager(*args: Any, **kwargs: Any) -> Any:
+    from app.infrastructure.persistence.connection import DatabaseManager
+
+    return DatabaseManager(*args, **kwargs)
+
+
+def _create_evaluation_data_manager(*args: Any, **kwargs: Any) -> Any:
+    from app.infrastructure.persistence.evaluation_manager import EvaluationDataManager
+
+    return EvaluationDataManager(*args, **kwargs)
+
+
+def _create_prompt_repository(*args: Any, **kwargs: Any) -> Any:
+    from app.infrastructure.persistence.prompt_repository import PromptRepository
+
+    return PromptRepository(*args, **kwargs)
+
+
+def _create_postgres_metadata_store(*args: Any, **kwargs: Any) -> Any:
+    from app.infrastructure.storage.metadata.postgres_store import PostgresMetadataStore
+
+    return PostgresMetadataStore(*args, **kwargs)
+
+
+def _create_weaviate_client(*args: Any, **kwargs: Any) -> Any:
+    from app.lib.weaviate_client import WeaviateClient
+
+    return WeaviateClient(*args, **kwargs)
 
 
 # ========================================
@@ -148,6 +180,8 @@ def initialize_llm_factory_wrapper(config: dict) -> LLMClientFactory:
     Returns:
         LLMClientFactory: LLM 클라이언트 팩토리 인스턴스
     """
+    from app.lib.llm_client import get_llm_factory, initialize_llm_factory
+
     initialize_llm_factory(config)
     return get_llm_factory()
 
@@ -1160,6 +1194,8 @@ def create_vector_store_via_factory(config: dict) -> Any:
     - pgvector: PostgreSQL 기반 벡터 검색
     - mongodb: MongoDB Atlas Vector Search
     """
+    from app.infrastructure.storage.vector.factory import VectorStoreFactory
+
     provider = config.get("vector_db", {}).get("provider", "weaviate")
 
     # Provider별 설정 매핑
@@ -1382,8 +1418,12 @@ def create_retriever_via_factory(
             "api_key": grok_config.get("api_key"),
             "collection_ids": grok_config.get("collection_ids", []),
             "model": grok_config.get("model", "grok-3"),
+            "api_url": grok_config.get(
+                "search_api_url", "https://api.x.ai/v1/documents/search"
+            ),
             "timeout": grok_config.get("timeout", 30),
             "top_k": grok_config.get("top_k", 10),
+            "retrieval_mode": grok_config.get("retrieval_mode", "hybrid"),
         }
         # Grok은 VectorStore 없이 동작하므로 BM25 전처리 불필요
         bm25_preprocessors = None
@@ -1471,7 +1511,7 @@ class AppContainer(containers.DeclarativeContainer):
     )
 
     # PostgreSQL PromptRepository (Hybrid Mode를 위한 Repository 주입)
-    prompt_repository = providers.Singleton(PromptRepository, config=config.prompts)
+    prompt_repository = providers.Singleton(_create_prompt_repository, config=config.prompts)
 
     # PromptManager (Hybrid Mode: PostgreSQL + JSON Fallback)
     prompt_manager = providers.Singleton(
@@ -1480,7 +1520,7 @@ class AppContainer(containers.DeclarativeContainer):
 
     cost_tracker = providers.Singleton(CostTracker)
 
-    weaviate_client = providers.Singleton(WeaviateClient)
+    weaviate_client = providers.Singleton(_create_weaviate_client)
 
     circuit_breaker_factory = providers.Singleton(CircuitBreakerFactory, config=config)
 
@@ -1498,18 +1538,15 @@ class AppContainer(containers.DeclarativeContainer):
     )
 
     metadata_store = providers.Singleton(
-        PostgresMetadataStore,
+        _create_postgres_metadata_store,
         database_url=os.getenv("DATABASE_URL")
     )
 
     # 외부 데이터 소스 클라이언트 (선택적 모듈 - Notion 등)
-    if _NOTION_CLIENT_AVAILABLE:
-        notion_client = providers.Singleton(
-            NotionAPIClient,
-            api_key=os.getenv("NOTION_API_KEY")
-        )
-    else:
-        notion_client = providers.Object(None)
+    notion_client = providers.Singleton(
+        _create_notion_client,
+        api_key=os.getenv("NOTION_API_KEY"),
+    )
 
     # Ingestion Connector Factory
     connector_factory = providers.Singleton(IngestionConnectorFactory)
@@ -1621,7 +1658,7 @@ class AppContainer(containers.DeclarativeContainer):
         privacy_masker=privacy_masker,  # Phase 2: 개인정보 마스킹
     )
 
-    evaluation = providers.Singleton(EvaluationDataManager, config=config.evaluation)
+    evaluation = providers.Singleton(_create_evaluation_data_manager, config=config.evaluation)
 
     # ========================================
     # 4. Retrieval System (Phase 5 - 순차, embedder 의존)
@@ -1930,7 +1967,7 @@ class AppContainer(containers.DeclarativeContainer):
     # Phase 3: SQL Search (메타데이터 검색)
     # ----------------------------------------
     # PostgreSQL DatabaseManager (기존 연결 재사용)
-    database_manager = providers.Singleton(DatabaseManager)
+    database_manager = providers.Singleton(_create_database_manager)
 
     # SQL Search Service (LLM 기반 SQL 생성 + PostgreSQL 실행)
     sql_search_service = providers.Singleton(
@@ -1938,6 +1975,17 @@ class AppContainer(containers.DeclarativeContainer):
         config=config.sql_search,
         db_manager=database_manager,
         api_key=providers.Callable(lambda: os.getenv("OPENROUTER_API_KEY")),
+    )
+
+    # Grok Managed RAG answer mode (optional)
+    grok_answer_provider = providers.Singleton(
+        GrokAnswerProvider,
+        api_key=config.grok.api_key,
+        collection_ids=config.grok.collection_ids,
+        model=config.grok.model,
+        api_url=config.grok.answer_api_url,
+        timeout=config.grok.timeout,
+        top_k=config.grok.top_k,
     )
 
     # ========================================
@@ -1960,11 +2008,12 @@ class AppContainer(containers.DeclarativeContainer):
         performance_metrics=performance_metrics,  # ✅ 성능 메트릭 주입
         sql_search_service=sql_search_service,  # ✅ SQL Search Service 주입 (Phase 3)
         agent_orchestrator=agent_orchestrator,  # ✅ Agent Orchestrator 주입 (Phase 5)
+        grok_answer_provider=grok_answer_provider,  # Grok managed RAG answer mode
     )
 
     # ChatService Factory
     chat_service = providers.Factory(
-        ChatService,
+        _create_chat_service,
         modules=providers.Dict(
             llm_factory=llm_factory,
             session=session,

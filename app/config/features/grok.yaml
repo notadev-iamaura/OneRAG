@@ -1,21 +1,37 @@
-# Grok Collections API 설정
-# 기능: xAI의 관리형 하이브리드 검색 서비스
+# Grok Managed RAG 설정
+# 기능: xAI Collections 기반 관리형 검색/답변 옵션
 # 사용: VECTOR_DB_PROVIDER=grok + XAI_API_KEY 설정
-# 참고: 문서 관리는 xAI 콘솔에서 수행 (https://console.x.ai)
+# 문서 관리 자동화가 필요할 때만 XAI_MANAGEMENT_API_KEY 추가
 
 grok:
   # xAI API 키
   api_key: "${XAI_API_KEY:}"
 
+  # xAI Management API 키 (Collection 생성/파일 추가/삭제 전용)
+  management_api_key: "${XAI_MANAGEMENT_API_KEY:}"
+
   # 검색 대상 Collection ID 리스트
   # xAI 콘솔에서 Collection 생성 후 ID 입력
   collection_ids: []
 
-  # Grok 모델 (검색 쿼리 처리용)
+  # RAG 모드:
+  # - answer: Grok이 Collections 검색과 최종 답변을 모두 수행
+  # - search: Grok은 검색만 수행하고 OneRAG 생성기가 답변
+  mode: "answer"
+
+  # Grok 모델 (검색/답변 처리용)
   model: "grok-3"
 
-  # API 엔드포인트
+  # 검색 방식: keyword, semantic, hybrid
+  retrieval_mode: "hybrid"
+
+  # 하위 호환 API 엔드포인트 (기존 GrokRetriever가 사용)
   api_url: "https://api.x.ai/v1/chat/completions"
+
+  # 명시적 API 엔드포인트
+  answer_api_url: "https://api.x.ai/v1/responses"
+  search_api_url: "https://api.x.ai/v1/documents/search"
+  management_api_url: "https://management-api.x.ai/v1"
 
   # 타임아웃 (초)
   timeout: 30

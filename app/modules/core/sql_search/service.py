@@ -15,13 +15,14 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ....infrastructure.persistence.connection import DatabaseManager
 from ....lib.logger import get_logger
-from .query_executor import QueryExecutor, QueryResult
-from .result_formatter import ResultFormatter
-from .sql_generator import SingleSQLQuery, SQLGenerationResult, SQLGenerator
+
+if TYPE_CHECKING:
+    from ....infrastructure.persistence.connection import DatabaseManager
+    from .query_executor import QueryResult
+    from .sql_generator import SingleSQLQuery, SQLGenerationResult
 
 logger = get_logger(__name__)
 
@@ -140,8 +141,12 @@ class SQLSearchService:
         Args:
             config: SQL 검색 설정
             db_manager: DatabaseManager 인스턴스
-            api_key: OpenRouter API 키
+        api_key: OpenRouter API 키
         """
+        from .query_executor import QueryExecutor
+        from .result_formatter import ResultFormatter
+        from .sql_generator import SQLGenerator
+
         self.config = config
         self.enabled: bool = bool(config.get("enabled", True))
 
