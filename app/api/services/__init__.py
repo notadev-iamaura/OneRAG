@@ -1,9 +1,19 @@
-"""
-API Services - 비즈니스 로직 레이어
+"""API Services - 비즈니스 로직 레이어."""
 
-Phase 3.2: chat.py에서 추출한 검증된 서비스 모듈
-"""
-
-from .chat_service import ChatService
+from importlib import import_module
 
 __all__ = ["ChatService"]
+
+_LAZY_EXPORTS = {
+    "ChatService": ".chat_service",
+}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module = import_module(_LAZY_EXPORTS[name], __name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

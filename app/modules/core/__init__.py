@@ -1,37 +1,12 @@
-"""Core RAG pipeline modules.
+"""Core RAG pipeline modules with lazy compatibility exports."""
 
-이 패키지는 RAG 시스템의 핵심 파이프라인을 구성하는 모듈들을 포함합니다:
-- 문서 처리 (Document Processing)
-- 검색 및 재랭킹 (Retrieval & Reranking)
-- 답변 생성 (Generation)
-- 세션 관리 (Session Management)
-- 쿼리 처리 (Query Processing)
-"""
-
-from .documents import DocumentProcessor
-from .embedding import GeminiEmbedder, GeminiEmbeddings  # 하위 호환성 유지
-from .generation import GenerationModule, GenerationResult, PromptManager
-from .retrieval import QueryComplexity, RetrievalOrchestrator, SearchIntent
-from .retrieval.interfaces import SearchResult
-from .retrieval.query_expansion import ExpandedQuery, GPT5QueryExpansionEngine
-from .routing import (
-    ComplexityCalculator,
-    ComplexityResult,
-    LLMQueryRouter,
-    QueryProfile,
-    RoutingDecision,
-    RuleBasedRouter,
-    RuleMatch,
-)
-from .self_rag import SelfRAGOrchestrator, SelfRAGResult
-from .session import EnhancedSessionModule  # Phase 1.5: session 폴더로 이동
+from importlib import import_module
+from typing import Any
 
 __all__ = [
-    # Document Processing
     "DocumentProcessor",
-    "GeminiEmbeddings",  # 하위 호환성
-    "GeminiEmbedder",  # 새로운 이름
-    # Retrieval & Reranking
+    "GeminiEmbeddings",
+    "GeminiEmbedder",
     "SearchResult",
     "QueryExpansionEngine",
     "GPT5QueryExpansionEngine",
@@ -39,22 +14,63 @@ __all__ = [
     "QueryComplexity",
     "SearchIntent",
     "RetrievalOrchestrator",
-    # Query Processing
     "LLMQueryRouter",
     "QueryProfile",
     "RoutingDecision",
     "ComplexityCalculator",
     "ComplexityResult",
-    # Self-RAG
     "SelfRAGOrchestrator",
     "SelfRAGResult",
-    # Generation
     "GenerationModule",
     "GenerationResult",
     "PromptManager",
-    # Session Management
     "EnhancedSessionModule",
-    # Query Routing
     "RuleBasedRouter",
     "RuleMatch",
 ]
+
+_EXPORTS = {
+    "DocumentProcessor": ("app.modules.core.documents", "DocumentProcessor"),
+    "GeminiEmbeddings": ("app.modules.core.embedding", "GeminiEmbeddings"),
+    "GeminiEmbedder": ("app.modules.core.embedding", "GeminiEmbedder"),
+    "SearchResult": ("app.modules.core.retrieval.interfaces", "SearchResult"),
+    "QueryExpansionEngine": (
+        "app.modules.core.retrieval.query_expansion",
+        "IQueryExpansionEngine",
+    ),
+    "GPT5QueryExpansionEngine": (
+        "app.modules.core.retrieval.query_expansion",
+        "GPT5QueryExpansionEngine",
+    ),
+    "ExpandedQuery": ("app.modules.core.retrieval.query_expansion", "ExpandedQuery"),
+    "QueryComplexity": (
+        "app.modules.core.retrieval.query_expansion.interface",
+        "QueryComplexity",
+    ),
+    "SearchIntent": ("app.modules.core.retrieval.query_expansion.interface", "SearchIntent"),
+    "RetrievalOrchestrator": (
+        "app.modules.core.retrieval.orchestrator",
+        "RetrievalOrchestrator",
+    ),
+    "LLMQueryRouter": ("app.modules.core.routing", "LLMQueryRouter"),
+    "QueryProfile": ("app.modules.core.routing", "QueryProfile"),
+    "RoutingDecision": ("app.modules.core.routing", "RoutingDecision"),
+    "ComplexityCalculator": ("app.modules.core.routing", "ComplexityCalculator"),
+    "ComplexityResult": ("app.modules.core.routing", "ComplexityResult"),
+    "SelfRAGOrchestrator": ("app.modules.core.self_rag", "SelfRAGOrchestrator"),
+    "SelfRAGResult": ("app.modules.core.self_rag", "SelfRAGResult"),
+    "GenerationModule": ("app.modules.core.generation", "GenerationModule"),
+    "GenerationResult": ("app.modules.core.generation", "GenerationResult"),
+    "PromptManager": ("app.modules.core.generation", "PromptManager"),
+    "EnhancedSessionModule": ("app.modules.core.session", "EnhancedSessionModule"),
+    "RuleBasedRouter": ("app.modules.core.routing", "RuleBasedRouter"),
+    "RuleMatch": ("app.modules.core.routing", "RuleMatch"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _EXPORTS:
+        module_name, attr_name = _EXPORTS[name]
+        module = import_module(module_name)
+        return getattr(module, attr_name)
+    raise AttributeError(f"module 'app.modules.core' has no attribute {name!r}")

@@ -1,40 +1,13 @@
-"""
-Modules package initialization
+"""Modules package initialization.
 
-이 패키지는 RAG 시스템의 핵심 모듈을 포함합니다:
-- core: RAG 파이프라인 핵심 모듈
-
-Note: 이전 utils 모듈들은 다음으로 이동되었습니다:
-- langsmith_sdk_client → app.lib.langsmith_client
-- ip_geolocation → app.lib.ip_geolocation
-- llm_quality_evaluator → app.modules.core.self_rag.evaluator
-- evaluation_data_manager → app.database.evaluation_manager
+The package historically re-exported many core classes. Keep those exports lazy so
+importing one submodule does not initialize the entire RAG stack.
 """
 
-# Core modules (핵심 RAG 파이프라인)
-from .core import (
-    ComplexityCalculator,
-    ComplexityResult,
-    DocumentProcessor,
-    EnhancedSessionModule,
-    ExpandedQuery,
-    GeminiEmbeddings,
-    GenerationModule,
-    GenerationResult,
-    GPT5QueryExpansionEngine,
-    LLMQueryRouter,
-    PromptManager,
-    QueryProfile,
-    RoutingDecision,
-    RuleBasedRouter,
-    RuleMatch,
-    SearchResult,
-    SelfRAGOrchestrator,
-    SelfRAGResult,
-)
+from importlib import import_module
+from typing import Any
 
 __all__ = [
-    # Core modules
     "DocumentProcessor",
     "SearchResult",
     "GenerationModule",
@@ -54,3 +27,10 @@ __all__ = [
     "RuleBasedRouter",
     "RuleMatch",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name in __all__:
+        core = import_module("app.modules.core")
+        return getattr(core, name)
+    raise AttributeError(f"module 'app.modules' has no attribute {name!r}")

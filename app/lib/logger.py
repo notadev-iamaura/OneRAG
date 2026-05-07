@@ -12,9 +12,6 @@ from pathlib import Path
 from time import time
 from typing import Any
 
-import structlog
-from structlog.stdlib import LoggerFactory
-
 # 한국 시간대 (KST = UTC+9)
 KST = timezone(timedelta(hours=9))
 
@@ -61,21 +58,66 @@ def add_kst_timestamp(logger: Any, method_name: str, event_dict: dict[str, Any])
     return event_dict
 
 
+class LightweightBoundLogger:
+    """Small structlog-compatible wrapper used in test/import-sensitive paths."""
+
+    def __init__(self, name: str | None = None) -> None:
+        self._logger = logging.getLogger(name or __name__)
+
+    def bind(self, **kwargs: Any) -> "LightweightBoundLogger":
+        return self
+
+    def unbind(self, *args: str) -> "LightweightBoundLogger":
+        return self
+
+    def _log(self, level: int, event: str, *args: Any, **kwargs: Any) -> None:
+        exc_info = kwargs.pop("exc_info", None)
+        extra = kwargs.pop("extra", None) or {}
+        if kwargs:
+            extra = {**extra, **kwargs}
+        self._logger.log(level, event, *args, extra={"structured": extra}, exc_info=exc_info)
+
+    def debug(self, event: str, *args: Any, **kwargs: Any) -> None:
+        self._log(logging.DEBUG, event, *args, **kwargs)
+
+    def info(self, event: str, *args: Any, **kwargs: Any) -> None:
+        self._log(logging.INFO, event, *args, **kwargs)
+
+    def warning(self, event: str, *args: Any, **kwargs: Any) -> None:
+        self._log(logging.WARNING, event, *args, **kwargs)
+
+    warn = warning
+
+    def error(self, event: str, *args: Any, **kwargs: Any) -> None:
+        self._log(logging.ERROR, event, *args, **kwargs)
+
+    def exception(self, event: str, *args: Any, **kwargs: Any) -> None:
+        kwargs["exc_info"] = True
+        self._log(logging.ERROR, event, *args, **kwargs)
+
+
 class RAGLogger:
     """RAG 챗봇 로깅 시스템"""
 
     def __init__(self) -> None:
         self.log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         self.is_production = os.getenv("NODE_ENV", "development") == "production"
+        self.use_lightweight_logger = (
+            os.getenv("ENVIRONMENT") == "test"
+            or os.getenv("ONERAG_LIGHTWEIGHT_LOGGER") == "1"
+            or "pytest" in sys.modules
+        )
 
         if self.is_production:
             self.log_level = os.getenv("LOG_LEVEL", "WARNING").upper()
 
-        if os.path.exists("/app"):
-            self.log_dir = Path("/app/logs")
-        else:
-            self.log_dir = Path("./logs")
-        self.log_dir.mkdir(exist_ok=True, parents=True)
+        self.log_dir: Path | None = None
+        if not self.use_lightweight_logger:
+            if os.path.exists("/app"):
+                self.log_dir = Path("/app/logs")
+            else:
+                self.log_dir = Path("./logs")
+            self.log_dir.mkdir(exist_ok=True, parents=True)
 
         self.throttler = LogThrottler(max_logs_per_second=50)
 
@@ -86,13 +128,19 @@ class RAGLogger:
         level = getattr(logging, self.log_level, logging.INFO)
 
         handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
-        if not self.is_production:
+        if not self.is_production and self.log_dir is not None:
             handlers.append(logging.FileHandler(self.log_dir / "app.log"))
 
         logging.basicConfig(level=level, format="%(message)s", handlers=handlers)
 
+        if self.use_lightweight_logger:
+            return
+
         for noisy_logger in ["httpx", "httpcore", "urllib3"]:
             logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
+        import structlog
+        from structlog.stdlib import LoggerFactory
 
         # Structlog 설정 (KST 타임스탬프 사용)
         use_json = self._should_use_json()
@@ -138,9 +186,14 @@ class RAGLogger:
         event_dict["pid"] = os.getpid()
         return event_dict
 
-    def get_logger(self, name: str | None = None) -> structlog.BoundLogger:
+    def get_logger(self, name: str | None = None) -> Any:
         """구조화된 로거 반환"""
+        if self.use_lightweight_logger:
+            return LightweightBoundLogger(name)
+
         from typing import cast
+
+        import structlog
 
         return cast(structlog.BoundLogger, structlog.get_logger(name or __name__))
 
@@ -149,7 +202,7 @@ class RAGLogger:
 _rag_logger = RAGLogger()
 
 
-def get_logger(name: str | None = None) -> structlog.BoundLogger:
+def get_logger(name: str | None = None) -> Any:
     """로거 인스턴스 반환"""
     return _rag_logger.get_logger(name)
 

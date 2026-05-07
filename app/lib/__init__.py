@@ -1,16 +1,11 @@
+"""Library package initialization.
+
+Keep this package import lightweight. Submodules such as ``app.lib.errors`` are used
+throughout tests and request paths; eagerly importing config validation and LangSmith
+clients here makes unrelated imports pay a large startup cost.
 """
-Library package initialization
-"""
 
-from .config_loader import ConfigLoader, load_config
-
-# IP Geolocation 비활성화 (세션 생성 타임아웃 원인 - 9-14초 지연)
-# from .ip_geolocation import IPGeolocationModule
-from .langsmith_client import LangSmithSDKClient, QueryLogSDK
-from .logger import create_chat_logging_middleware, get_logger
-
-# types 모듈은 명시적으로 import하지 않아도 됨 (필요시 from .types import 사용)
-# 하지만 타입 안전성을 위해 types 모듈도 export
+from typing import Any
 
 __all__ = [
     "ConfigLoader",
@@ -21,3 +16,35 @@ __all__ = [
     "QueryLogSDK",
     # 'IPGeolocationModule',  # 비활성화: 세션 생성 타임아웃 원인
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily expose historical app.lib exports without eager side effects."""
+    if name in {"ConfigLoader", "load_config"}:
+        from .config_loader import ConfigLoader, load_config
+
+        exports = {
+            "ConfigLoader": ConfigLoader,
+            "load_config": load_config,
+        }
+        return exports[name]
+
+    if name in {"LangSmithSDKClient", "QueryLogSDK"}:
+        from .langsmith_client import LangSmithSDKClient, QueryLogSDK
+
+        exports = {
+            "LangSmithSDKClient": LangSmithSDKClient,
+            "QueryLogSDK": QueryLogSDK,
+        }
+        return exports[name]
+
+    if name in {"create_chat_logging_middleware", "get_logger"}:
+        from .logger import create_chat_logging_middleware, get_logger
+
+        exports = {
+            "create_chat_logging_middleware": create_chat_logging_middleware,
+            "get_logger": get_logger,
+        }
+        return exports[name]
+
+    raise AttributeError(f"module 'app.lib' has no attribute {name!r}")

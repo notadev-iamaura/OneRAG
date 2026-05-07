@@ -25,11 +25,7 @@ Multi-LLM 지원 답변 생성 시스템
     print(f"토큰 사용: {result.tokens_used}")
 """
 
-# 핵심 클래스
-from .generator import GenerationModule, GenerationResult
-
-# 프롬프트 관리자
-from .prompt_manager import PromptManager
+from importlib import import_module
 
 __all__ = [
     # Generation
@@ -38,3 +34,19 @@ __all__ = [
     # Prompt Management
     "PromptManager",
 ]
+
+_LAZY_EXPORTS = {
+    "GenerationModule": ".generator",
+    "GenerationResult": ".generator",
+    "PromptManager": ".prompt_manager",
+}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module = import_module(_LAZY_EXPORTS[name], __name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
