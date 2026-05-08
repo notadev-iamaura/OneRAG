@@ -36,6 +36,7 @@ from ...lib.prompt_sanitizer import contains_output_leakage, validate_document
 from ...lib.score_normalizer import RRFScoreNormalizer  # RRF 점수 정규화
 from ...lib.types import RAGResultDict
 from ...modules.core.retrieval.interfaces import IMultiQueryRetriever, SearchResult
+from .source_contract import normalize_citation_source_payload, normalize_source_payload
 
 if TYPE_CHECKING:
     from ...modules.core.agent.orchestrator import AgentOrchestrator
@@ -630,17 +631,8 @@ class RAGPipeline:
         """Convert Grok citation payloads into OneRAG Source objects."""
         sources: list[Any] = []
         for idx, citation in enumerate(citations):
-            citation_text = citation if isinstance(citation, str) else str(citation)
-            sources.append(
-                self.Source(
-                    id=idx,
-                    document=citation_text,
-                    relevance=1.0,
-                    content_preview=citation_text[:300],
-                    source_type="grok",
-                    additional_metadata={"citation": citation},
-                )
-            )
+            source_data = normalize_citation_source_payload(idx, citation, source_type="grok")
+            sources.append(self.Source(**source_data))
         return sources
 
     async def _execute_grok_answer_mode(
@@ -1745,15 +1737,23 @@ class RAGPipeline:
     def _format_rag_source(self, idx: int, doc: Any) -> dict[str, Any] | None:
         """RAG 검색 결과를 Source 객체로 변환"""
         try:
-            metadata = getattr(doc, "metadata", {})
+            metadata = getattr(doc, "metadata", {}) or {}
+            source_metadata = dict(metadata)
             document_name = (
                 metadata.get("source_file")
+                or metadata.get("filename")
+                or metadata.get("document_name")
                 or metadata.get("source")
                 or f"Document {idx + 1}"
             )
 
             if self.privacy_masker:
                 document_name = self.privacy_masker.mask_filename(document_name)
+                for key in ("source_file", "filename", "document_name", "file_name"):
+                    if source_metadata.get(key):
+                        source_metadata[key] = self.privacy_masker.mask_filename(
+                            str(source_metadata[key])
+                        )
 
             content_text = getattr(doc, "content", None) or getattr(doc, "page_content", "")
             if content_text and self.privacy_masker:
@@ -1763,16 +1763,6 @@ class RAGPipeline:
             raw_score = getattr(doc, "score", 0.0)
             normalized_score = self.score_normalizer.normalize(raw_score)
 
-            source_data = {
-                "id": idx,
-                "document": document_name,
-                "page": metadata.get("page"),
-                "chunk": metadata.get("chunk"),
-                "relevance": normalized_score,
-                "content_preview": content_preview,
-                "source_type": "rag",
-            }
-
             if metadata:
                 file_path = metadata.get("file_path")
                 if file_path and self.privacy_masker:
@@ -1780,18 +1770,17 @@ class RAGPipeline:
                     file_name = os.path.basename(file_path)
                     masked_name = self.privacy_masker.mask_filename(file_name)
                     file_path = os.path.join(dir_path, masked_name) if dir_path else masked_name
+                if file_path:
+                    source_metadata["file_path"] = file_path
 
-                source_data.update(
-                    {
-                        "file_type": metadata.get("file_type"),
-                        "file_path": file_path,
-                        "file_size": metadata.get("file_size"),
-                        "total_chunks": metadata.get("total_chunks"),
-                        "sheet_name": metadata.get("sheet_name"),
-                    }
-                )
-
-            return source_data
+            return normalize_source_payload(
+                sequence_id=idx,
+                source_type="rag",
+                document_name=document_name,
+                relevance=normalized_score,
+                content_preview=content_preview,
+                metadata=source_metadata,
+            )
         except Exception as e:
             logger.warning(
                 "소스 포맷팅 실패",
@@ -1816,18 +1805,34 @@ class RAGPipeline:
             row_preview = self.privacy_masker.mask_text(row_preview)
 
         document_name = f"[{category}] {entity_name}" if category else str(entity_name)
-
-        return {
-            "id": source_id,
-            "document": document_name,
-            "page": None,
-            "chunk": None,
-            "relevance": 100.0,
-            "content_preview": row_preview[:200] if row_preview else "SQL 쿼리 결과",
-            "source_type": "sql",
-            "sql_query": sql_query,
-            "sql_result_summary": row_preview,
+        metadata = {
+            "category": category,
+            "entity_name": entity_name,
+            "document_id": (
+                row["document_id"]
+                if row.get("document_id") is not None and row.get("document_id") != ""
+                else row["id"]
+                if row.get("id") is not None and row.get("id") != ""
+                else row.get("entity_id")
+            ),
         }
+
+        source_data = normalize_source_payload(
+            sequence_id=source_id,
+            source_type="sql",
+            document_name=document_name,
+            relevance=100.0,
+            content_preview=row_preview[:200] if row_preview else "SQL 쿼리 결과",
+            metadata={key: value for key, value in metadata.items() if value is not None},
+            additional_metadata={"row_keys": sorted(str(key) for key in row.keys())},
+        )
+        source_data.update(
+            {
+                "sql_query": sql_query,
+                "sql_result_summary": row_preview,
+            }
+        )
+        return source_data
 
     def _add_multi_query_sql_sources(
         self, sources: list[Any], sql_search_result: SQLSearchResult, max_sources: int

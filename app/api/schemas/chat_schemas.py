@@ -33,14 +33,23 @@ class Source(BaseModel):
     """소스 정보 모델 - 확장된 메타데이터 지원"""
 
     id: int
+    source_id: str | None = Field(
+        default=None,
+        description="Stable provider-neutral citation identifier",
+    )
     document: str
+    document_id: str | None = None
+    document_name: str | None = None
     page: int | None = None
     chunk: int | None = None
+    section: str | None = None
     relevance: float
+    score: float | None = None
     content_preview: str
+    source_uri: str | None = None
 
     # 소스 타입 구분 (rag: 벡터/BM25 검색, sql: SQL 메타데이터 검색)
-    source_type: str = "rag"  # "rag" | "sql"
+    source_type: str = "rag"  # "rag" | "sql" | "grok" | ...
 
     # SQL 검색 관련 필드 (source_type="sql"인 경우)
     sql_query: str | None = None  # 실행된 SQL 쿼리
@@ -63,6 +72,9 @@ class Source(BaseModel):
     # 리랭킹 관련 메타데이터
     rerank_method: str | None = None
     original_score: float | None = None
+
+    # 표준화된 provider-neutral 메타데이터
+    metadata: dict[str, Any] | None = Field(default_factory=dict)
 
     # 추가 메타데이터 (동적 필드)
     additional_metadata: dict[str, Any] | None = Field(default_factory=dict)

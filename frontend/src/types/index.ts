@@ -106,11 +106,17 @@ export interface SourceAdditionalMetadata {
 
 export interface Source {
   id: number;
+  source_id?: string | null;
   document: string;
+  document_id?: string | null;
+  document_name?: string | null;
   page?: number | null;
   chunk?: number | null;
+  section?: string | null;
   relevance: number;
+  score?: number | null;
   content_preview: string;
+  source_uri?: string | null;
   file_type?: string | null;
   file_path?: string | null;
   file_size?: number | null;
@@ -123,6 +129,7 @@ export interface Source {
   item_index?: number | null;
   rerank_method?: string | null;
   original_score?: number | null;
+  metadata?: Record<string, unknown> | null;
   additional_metadata?: SourceAdditionalMetadata | null;
 }
 

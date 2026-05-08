@@ -1536,6 +1536,113 @@ class TestFormatSources:
         assert sources.sources[0].document == "문서1.md"
         assert sources.sources[0].source_type == "rag"
 
+    def test_format_sources_normalizes_source_contract_fields(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """
+        Provider-specific metadata names are normalized into the Source contract.
+        """
+        docs = [
+            MagicMock(
+                id="doc1",
+                metadata={
+                    "source_file": "report.pdf",
+                    "document_id": "doc-123",
+                    "page_number": "7",
+                    "chunk_index": "2",
+                    "section": "Summary",
+                    "source_uri": "s3://bucket/report.pdf",
+                    "file_type": "pdf",
+                },
+                content="핵심 내용",
+                score=0.95,
+            ),
+        ]
+
+        sources = pipeline.format_sources(docs)
+        source = sources.sources[0]
+
+        assert source.document == "report.pdf"
+        assert source.document_name == "report.pdf"
+        assert source.document_id == "doc-123"
+        assert source.page == 7
+        assert source.chunk == 2
+        assert source.section == "Summary"
+        assert source.source_uri == "s3://bucket/report.pdf"
+        assert source.source_id == "rag:doc-123:7:2"
+        assert source.score == source.relevance
+        assert source.metadata["page_number"] == "7"
+
+    def test_format_grok_citations_normalizes_string_and_object_payloads(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """
+        Grok managed citations keep compatibility while exposing normalized fields.
+        """
+        sources = pipeline._format_grok_citations(
+            [
+                "collections://collection_1/files/file_1",
+                {
+                    "title": "Policy Guide",
+                    "file_id": "file_2",
+                    "url": "https://example.com/policy",
+                    "page_number": 4,
+                    "chunk_index": 1,
+                    "snippet": "정책 요약",
+                },
+            ]
+        )
+
+        assert sources[0].document == "collections://collection_1/files/file_1"
+        assert sources[0].source_uri == "collections://collection_1/files/file_1"
+        assert sources[0].source_type == "grok"
+        assert sources[0].additional_metadata["citation"] == (
+            "collections://collection_1/files/file_1"
+        )
+
+        assert sources[1].document == "Policy Guide"
+        assert sources[1].document_id == "file_2"
+        assert sources[1].page == 4
+        assert sources[1].chunk == 1
+        assert sources[1].source_uri == "https://example.com/policy"
+        assert sources[1].content_preview == "정책 요약"
+
+    def test_format_sql_row_uses_baseline_source_contract(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """SQL sources receive the same stable source fields as RAG sources."""
+        source_data = pipeline._format_sql_row(
+            {"id": "row-1", "entity_name": "요금제", "price": 1000},
+            row_idx=0,
+            source_id=3,
+            sql_query="SELECT * FROM plans",
+            category="billing",
+        )
+        source = pipeline.Source(**source_data)
+
+        assert source.source_type == "sql"
+        assert source.document == "[billing] 요금제"
+        assert source.document_id == "row-1"
+        assert source.source_id == "sql:row-1:na:3"
+        assert source.score == 100.0
+        assert source.metadata["category"] == "billing"
+        assert source.sql_query == "SELECT * FROM plans"
+
+    def test_format_sql_row_preserves_zero_document_id(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """Falsy but valid source identifiers should not be dropped."""
+        source_data = pipeline._format_sql_row(
+            {"id": 0, "entity_name": "무료 플랜"},
+            row_idx=0,
+            source_id=0,
+            sql_query=None,
+        )
+        source = pipeline.Source(**source_data)
+
+        assert source.document_id == "0"
+        assert source.source_id == "sql:0:na:0"
+
 
 class TestBuildResult:
     """build_result 메서드 테스트"""
