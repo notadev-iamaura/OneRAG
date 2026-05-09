@@ -91,6 +91,9 @@ class LightweightBoundLogger:
     def error(self, event: str, *args: Any, **kwargs: Any) -> None:
         self._log(logging.ERROR, event, *args, **kwargs)
 
+    def critical(self, event: str, *args: Any, **kwargs: Any) -> None:
+        self._log(logging.CRITICAL, event, *args, **kwargs)
+
     def exception(self, event: str, *args: Any, **kwargs: Any) -> None:
         kwargs["exc_info"] = True
         self._log(logging.ERROR, event, *args, **kwargs)

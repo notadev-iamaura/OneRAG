@@ -225,8 +225,9 @@ class GrokRetriever:
         self,
         filters: dict[str, Any] | None,
     ) -> list[str]:
-        if filters and isinstance(filters.get("collection_ids"), list):
-            return filters["collection_ids"]
+        collection_ids = filters.get("collection_ids") if filters else None
+        if isinstance(collection_ids, list):
+            return [str(collection_id) for collection_id in collection_ids]
         return self.collection_ids
 
     def _build_search_payload(
@@ -334,7 +335,7 @@ class GrokRetriever:
                     "Content-Type": "application/json",
                 },
             )
-            return response.status_code == 200
+            return bool(response.status_code == 200)
         except Exception:
             return False
 

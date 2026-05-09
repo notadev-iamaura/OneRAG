@@ -65,8 +65,8 @@ class TestDIContainerStructure:
             if isinstance(attr, di_providers.Provider):
                 provider_count += 1
 
-        # Provider가 너무 많으면 경고 (50개 이상은 분리 검토 필요)
-        assert provider_count <= 60, (
+        # Provider가 너무 많으면 경고 (Grok managed RAG provider 포함)
+        assert provider_count <= 65, (
             f"Provider 수가 너무 많습니다: {provider_count}개. "
             f"모듈별 분리를 검토하세요."
         )

@@ -90,6 +90,11 @@ class GrokCollectionManager:
                 status_code=response.status_code,
             ) from exc
 
+    @staticmethod
+    def _json_object(response: Any) -> dict[str, Any]:
+        data = response.json()
+        return data if isinstance(data, dict) else {"data": data}
+
     async def create_collection(
         self,
         collection_name: str,
@@ -114,7 +119,7 @@ class GrokCollectionManager:
             headers=headers,
         )
         self._raise_for_status(response, "create_collection")
-        return response.json()
+        return self._json_object(response)
 
     async def list_collections(
         self,
@@ -140,7 +145,7 @@ class GrokCollectionManager:
             headers=headers,
         )
         self._raise_for_status(response, "list_collections")
-        return response.json()
+        return self._json_object(response)
 
     async def get_collection(self, collection_id: str) -> dict[str, Any]:
         """Get metadata for one xAI Collection."""
@@ -151,7 +156,7 @@ class GrokCollectionManager:
             headers=headers,
         )
         self._raise_for_status(response, "get_collection")
-        return response.json()
+        return self._json_object(response)
 
     async def delete_collection(self, collection_id: str) -> dict[str, Any]:
         """Delete an xAI Collection."""
@@ -162,7 +167,7 @@ class GrokCollectionManager:
             headers=headers,
         )
         self._raise_for_status(response, "delete_collection")
-        return response.json() if response.content else {"deleted": True}
+        return self._json_object(response) if response.content else {"deleted": True}
 
     async def upload_file(
         self,
@@ -181,7 +186,7 @@ class GrokCollectionManager:
             headers=headers,
         )
         self._raise_for_status(response, "upload_file")
-        return response.json()
+        return self._json_object(response)
 
     async def add_file_to_collection(
         self,
@@ -207,7 +212,7 @@ class GrokCollectionManager:
             **kwargs,
         )
         self._raise_for_status(response, "add_file_to_collection")
-        return response.json() if response.content else {"file_id": file_id}
+        return self._json_object(response) if response.content else {"file_id": file_id}
 
     async def upload_document(
         self,
@@ -256,7 +261,7 @@ class GrokCollectionManager:
             headers=headers,
         )
         self._raise_for_status(response, "list_documents")
-        return response.json()
+        return self._json_object(response)
 
     async def get_document(
         self,
@@ -271,7 +276,7 @@ class GrokCollectionManager:
             headers=headers,
         )
         self._raise_for_status(response, "get_document")
-        return response.json()
+        return self._json_object(response)
 
     async def remove_document(
         self,
@@ -286,7 +291,7 @@ class GrokCollectionManager:
             headers=headers,
         )
         self._raise_for_status(response, "remove_document")
-        return response.json() if response.content else {"removed": True, "id": file_id}
+        return self._json_object(response) if response.content else {"removed": True, "id": file_id}
 
     async def wait_for_document_processed(
         self,

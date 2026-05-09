@@ -26,6 +26,7 @@ Multi-LLM 지원 답변 생성 시스템
 """
 
 from importlib import import_module
+from typing import Any
 
 __all__ = [
     # Generation
@@ -42,7 +43,7 @@ _LAZY_EXPORTS = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name not in _LAZY_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
