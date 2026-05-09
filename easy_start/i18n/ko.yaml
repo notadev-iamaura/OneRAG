@@ -99,7 +99,7 @@ run:
   env_warning: ".env 파일을 열어 API 키를 하나 설정하세요!"
   env_option1: "Option 1: GOOGLE_API_KEY - https://aistudio.google.com/apikey (무료)"
   env_option2: "Option 2: OPENROUTER_API_KEY - https://openrouter.ai/keys"
-  env_not_found: "easy_start/.env.local 파일을 찾을 수 없습니다"
+  env_not_found: "easy_start/.env.local 또는 easy_start/.env.example 파일을 찾을 수 없습니다"
   step2_ok: "[2/3] .env 파일 확인 완료"
   step3_loading: "[3/3] 샘플 데이터 로드 중..."
   load_failed: "데이터 로드 실패"

@@ -1,0 +1,39 @@
+# Project-scoped Codex configuration for the OneRAG engineering harness.
+# This layer loads only when the project is trusted in Codex.
+
+model_reasoning_effort = "xhigh"
+plan_mode_reasoning_effort = "high"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+project_doc_max_bytes = 65536
+project_doc_fallback_filenames = ["CLAUDE.md"]
+
+[features]
+codex_hooks = true
+
+[[hooks.SessionStart]]
+matcher = "startup|resume"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '/usr/bin/python3 "$(git rev-parse --show-toplevel)/.codex/hooks/onerag_harness_session.py"'
+timeout = 5
+statusMessage = "Loading OneRAG harness context"
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '/usr/bin/python3 "$(git rev-parse --show-toplevel)/.codex/hooks/onerag_harness_guard.py"'
+timeout = 5
+statusMessage = "Checking OneRAG command policy"
+
+[[hooks.PermissionRequest]]
+matcher = "^Bash$"
+
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command = '/usr/bin/python3 "$(git rev-parse --show-toplevel)/.codex/hooks/onerag_harness_guard.py"'
+timeout = 5
+statusMessage = "Checking OneRAG approval policy"

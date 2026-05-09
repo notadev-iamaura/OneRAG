@@ -123,9 +123,11 @@ def main() -> None:
     if not check_env_file():
         print(t("run.step2_create"))
         local_env = project_root / "easy_start" / ".env.local"
-        if local_env.exists():
+        example_env = project_root / "easy_start" / ".env.example"
+        env_template = local_env if local_env.exists() else example_env
+        if env_template.exists():
             import shutil
-            shutil.copy(str(local_env), ENV_FILE_PATH)
+            shutil.copy(str(env_template), ENV_FILE_PATH)
             print(f"  ✅ {t('run.env_copied')}")
             print(f"  ⚠️  {t('run.env_warning')}")
             print(f"     {t('run.env_option1')}")

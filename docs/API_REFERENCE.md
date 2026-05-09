@@ -51,12 +51,23 @@ RAG 기반 채팅 요청. 질문에 대해 문서 검색 및 AI 답변을 생성
   "sources": [
     {
       "id": 1,
+      "source_id": "rag:doc-123:5:3",
       "document": "investment_report.pdf",
+      "document_id": "doc-123",
+      "document_name": "investment_report.pdf",
       "page": 5,
       "chunk": 3,
+      "section": "2026 Outlook",
       "relevance": 0.95,
+      "score": 0.95,
       "content_preview": "삼성전자 2026년 실적 전망...",
-      "source_type": "rag"
+      "source_type": "rag",
+      "source_uri": "s3://reports/investment_report.pdf",
+      "metadata": {
+        "source_file": "investment_report.pdf",
+        "page_number": 5,
+        "chunk_index": 3
+      }
     }
   ],
   "session_id": "abc123",

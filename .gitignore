@@ -27,6 +27,7 @@ ENV/
 .env
 .env.*
 !.env.example
+!**/.env.example
 !quickstart/.env.quickstart
 API_KEYS.txt
 
@@ -117,6 +118,23 @@ tmp/
 # ===================================
 .claude/
 GEMINI.md
+
+# Codex harness local runtime
+.codex/logs/
+.codex/tmp/
+.codex/cache/
+.codex/sessions/
+.codex/shell_snapshots/
+.codex/*.local.*
+.codex/*.override.*
+AGENTS.override.md
+!AGENTS.md
+!.codex/
+!.codex/config.toml
+!.codex/hooks/
+!.codex/hooks/*.py
+!.codex/rules/
+!.codex/rules/*.rules
 
 # ===================================
 # Frontend (React/Vite)

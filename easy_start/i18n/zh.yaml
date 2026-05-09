@@ -99,7 +99,7 @@ run:
   env_warning: "请打开 .env 文件设置一个 API 密钥！"
   env_option1: "选项 1: GOOGLE_API_KEY - https://aistudio.google.com/apikey (免费)"
   env_option2: "选项 2: OPENROUTER_API_KEY - https://openrouter.ai/keys"
-  env_not_found: "找不到 easy_start/.env.local 文件"
+  env_not_found: "找不到 easy_start/.env.local 或 easy_start/.env.example 文件"
   step2_ok: "[2/3] .env 文件确认完成"
   step3_loading: "[3/3] 正在加载样本数据..."
   load_failed: "数据加载失败"

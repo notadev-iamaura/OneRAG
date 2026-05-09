@@ -1,0 +1,38 @@
+# OneRAG project-local exec policy.
+# These rules apply only when the trusted project `.codex/` layer is active.
+
+prefix_rule(
+    pattern = ["git", "push"],
+    decision = "prompt",
+    justification = "Publishing OneRAG changes should be confirmed by the user.",
+)
+
+prefix_rule(
+    pattern = ["gh", "pr"],
+    decision = "prompt",
+    justification = "PR operations affect remote project state and should be reviewed first.",
+)
+
+prefix_rule(
+    pattern = ["npm", "ci"],
+    decision = "prompt",
+    justification = "Dependency installation may need network access and can rewrite local install state.",
+)
+
+prefix_rule(
+    pattern = ["npm", "install"],
+    decision = "prompt",
+    justification = "Dependency changes should be intentional and reviewed.",
+)
+
+prefix_rule(
+    pattern = ["uv", "sync"],
+    decision = "prompt",
+    justification = "Dependency synchronization may need network access and can change the local environment.",
+)
+
+prefix_rule(
+    pattern = ["docker"],
+    decision = "prompt",
+    justification = "Docker commands can affect local containers, volumes, and ports.",
+)
