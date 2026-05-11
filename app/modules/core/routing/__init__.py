@@ -1,41 +1,38 @@
-"""
-Routing Module - 쿼리 라우팅 및 복잡도 분석 모듈
+"""Routing Module lazy compatibility exports."""
 
-쿼리의 복잡도를 분석하고 적절한 처리 전략을 결정하는 모듈들:
-- LLM 기반 쿼리 라우터 (LLMQueryRouter)
-- 규칙 기반 라우터 (RuleBasedRouter)
-- 복잡도 계산기 (ComplexityCalculator)
-
-사용 예시:
-    from app.modules.core.routing import LLMQueryRouter, ComplexityCalculator
-
-    # 복잡도 계산
-    calculator = ComplexityCalculator()
-    complexity = calculator.calculate(query="복잡한 질문")
-
-    # LLM 라우터
-    router = LLMQueryRouter(config)
-    await router.initialize()
-    routing_decision = await router.route_query(query="질문", context={})
-"""
-
-# LLM Query Router
-# Complexity Calculator
-from .complexity_calculator import ComplexityCalculator, ComplexityResult
-from .llm_query_router import LLMQueryRouter, QueryProfile, RoutingDecision
-
-# Rule-Based Router
-from .rule_based_router import RuleBasedRouter, RuleMatch
+from importlib import import_module
+from typing import Any
 
 __all__ = [
-    # LLM Router
     "LLMQueryRouter",
     "QueryProfile",
     "RoutingDecision",
-    # Rule-Based Router
     "RuleBasedRouter",
     "RuleMatch",
-    # Complexity Calculator
     "ComplexityCalculator",
     "ComplexityResult",
 ]
+
+_EXPORTS = {
+    "LLMQueryRouter": ("app.modules.core.routing.llm_query_router", "LLMQueryRouter"),
+    "QueryProfile": ("app.modules.core.routing.llm_query_router", "QueryProfile"),
+    "RoutingDecision": ("app.modules.core.routing.llm_query_router", "RoutingDecision"),
+    "RuleBasedRouter": ("app.modules.core.routing.rule_based_router", "RuleBasedRouter"),
+    "RuleMatch": ("app.modules.core.routing.rule_based_router", "RuleMatch"),
+    "ComplexityCalculator": (
+        "app.modules.core.routing.complexity_calculator",
+        "ComplexityCalculator",
+    ),
+    "ComplexityResult": (
+        "app.modules.core.routing.complexity_calculator",
+        "ComplexityResult",
+    ),
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _EXPORTS:
+        module_name, attr_name = _EXPORTS[name]
+        module = import_module(module_name)
+        return getattr(module, attr_name)
+    raise AttributeError(f"module 'app.modules.core.routing' has no attribute {name!r}")

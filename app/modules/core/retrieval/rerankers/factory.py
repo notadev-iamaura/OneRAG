@@ -26,12 +26,6 @@ from typing import Any
 
 from .....lib.logger import get_logger
 from ..interfaces import IReranker
-from .cohere_reranker import CohereReranker
-from .colbert_reranker import ColBERTRerankerConfig, JinaColBERTReranker
-from .gemini_reranker import GeminiFlashReranker
-from .jina_reranker import JinaReranker
-from .openai_llm_reranker import OpenAILLMReranker
-from .openrouter_reranker import OpenRouterReranker
 
 logger = get_logger(__name__)
 
@@ -61,7 +55,7 @@ APPROACH_REGISTRY: dict[str, dict[str, Any]] = {
 
 PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
     "google": {
-        "class": GeminiFlashReranker,
+        "class": "GeminiFlashReranker",
         "api_key_env": "GOOGLE_API_KEY",
         "default_config": {
             "model": "gemini-flash-lite-latest",
@@ -70,7 +64,7 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "openai": {
-        "class": OpenAILLMReranker,
+        "class": "OpenAILLMReranker",
         "api_key_env": "OPENAI_API_KEY",
         "default_config": {
             "model": "gpt-5-nano",
@@ -81,8 +75,8 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "jina": {
-        "class_cross_encoder": JinaReranker,
-        "class_late_interaction": JinaColBERTReranker,
+        "class_cross_encoder": "JinaReranker",
+        "class_late_interaction": "JinaColBERTReranker",
         "api_key_env": "JINA_API_KEY",
         "default_config": {
             "model": "jina-reranker-v2-base-multilingual",
@@ -98,7 +92,7 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "cohere": {
-        "class": CohereReranker,
+        "class": "CohereReranker",
         "api_key_env": "COHERE_API_KEY",
         "default_config": {
             "model": "rerank-multilingual-v3.0",
@@ -107,7 +101,7 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
         },
     },
     "openrouter": {
-        "class": OpenRouterReranker,
+        "class": "OpenRouterReranker",
         "api_key_env": "OPENROUTER_API_KEY",
         "default_config": {
             "model": "google/gemini-2.5-flash-lite",
@@ -214,6 +208,8 @@ class RerankerFactoryV2:
 
         reranker: IReranker
         if provider == "google":
+            from .gemini_reranker import GeminiFlashReranker
+
             reranker = GeminiFlashReranker(
                 api_key=api_key,
                 model=provider_config.get("model", defaults["model"]),
@@ -223,6 +219,8 @@ class RerankerFactoryV2:
                 timeout=provider_config.get("timeout", defaults["timeout"]),
             )
         elif provider == "openai":
+            from .openai_llm_reranker import OpenAILLMReranker
+
             reranker = OpenAILLMReranker(
                 api_key=api_key,
                 model=provider_config.get("model", defaults["model"]),
@@ -236,6 +234,8 @@ class RerankerFactoryV2:
                 ),
             )
         elif provider == "openrouter":
+            from .openrouter_reranker import OpenRouterReranker
+
             reranker = OpenRouterReranker(
                 api_key=api_key,
                 model=provider_config.get("model", defaults["model"]),
@@ -271,12 +271,16 @@ class RerankerFactoryV2:
 
         reranker: IReranker
         if provider == "jina":
+            from .jina_reranker import JinaReranker
+
             reranker = JinaReranker(
                 api_key=api_key,
                 model=provider_config.get("model", defaults["model"]),
                 timeout=provider_config.get("timeout", defaults.get("timeout", 30)),
             )
         elif provider == "cohere":
+            from .cohere_reranker import CohereReranker
+
             reranker = CohereReranker(
                 api_key=api_key,
                 model=provider_config.get("model", defaults["model"]),
@@ -310,6 +314,8 @@ class RerankerFactoryV2:
         )
 
         if provider == "jina":
+            from .colbert_reranker import ColBERTRerankerConfig, JinaColBERTReranker
+
             colbert_config = ColBERTRerankerConfig(
                 enabled=True,
                 api_key=api_key,

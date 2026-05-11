@@ -127,7 +127,7 @@ class ChromaVectorStore(IVectorStore):
                 # Chroma 메타데이터는 기본 타입만 허용
                 metadata: dict[str, str | int | float | bool] = {
                     k: v for k, v in raw_metadata.items()
-                    if isinstance(v, (str, int, float, bool))
+                    if isinstance(v, str | int | float | bool)
                 }
                 if not metadata:
                     metadata = {"_source": "chroma_store"}
@@ -144,7 +144,7 @@ class ChromaVectorStore(IVectorStore):
             col.upsert(
                 ids=ids,
                 embeddings=embeddings,
-                metadatas=metadatas,  # type: ignore[arg-type]
+                metadatas=metadatas,
             )
 
             return len(ids)

@@ -6,16 +6,34 @@ gemini-embedding-001 모델로 1536차원 벡터 생성 및 L2 정규화 수행
 """
 
 import asyncio
-from typing import Literal
+import math
+from typing import TYPE_CHECKING, Any, Literal
 
-import google.generativeai as genai
-import numpy as np
-from langchain.embeddings.base import Embeddings
+if TYPE_CHECKING:
+    class Embeddings:  # pragma: no cover - type-checking shim
+        pass
+else:
+    from langchain.embeddings.base import Embeddings
 
 from ....lib.logger import get_logger
 from .interfaces import BaseEmbedder
 
 logger = get_logger(__name__)
+
+genai: Any | None = None
+
+
+def _l2_norm(vector: list[float]) -> float:
+    return math.sqrt(sum(value * value for value in vector))
+
+
+def _get_genai() -> Any:
+    global genai
+    if genai is None:
+        import google.generativeai as _genai
+
+        genai = _genai
+    return genai
 
 
 class GeminiEmbedder(BaseEmbedder, Embeddings):
@@ -52,7 +70,7 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
         )
 
         # Gemini API 설정
-        genai.configure(api_key=google_api_key)
+        _get_genai().configure(api_key=google_api_key)
 
         self.batch_size = batch_size
         self.default_task_type = task_type or "RETRIEVAL_DOCUMENT"
@@ -71,12 +89,10 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
         Returns:
             L2 정규화된 벡터
         """
-        arr = np.array(vector)
-        norm = np.linalg.norm(arr)
+        norm = _l2_norm(vector)
 
         if norm > 0:
-            normalized = arr / norm
-            return normalized.tolist()  # type: ignore[no-any-return]
+            return [value / norm for value in vector]
 
         logger.warning("Zero norm vector encountered, returning as-is")
         return vector
@@ -100,7 +116,7 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
 
             try:
                 # Gemini API 호출
-                result = genai.embed_content(  # type: ignore[arg-type]
+                result = _get_genai().embed_content(
                     model=self.model_name,
                     content=batch,
                     task_type=task_type,
@@ -172,7 +188,7 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
 
         try:
             # 단일 쿼리 임베딩
-            result = genai.embed_content(
+            result = _get_genai().embed_content(
                 model=self.model_name,
                 content=text,
                 task_type="RETRIEVAL_QUERY",
@@ -238,7 +254,7 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
             return False
 
         # L2 norm 확인 (정규화 여부)
-        norm = np.linalg.norm(np.array(embedding))
+        norm = _l2_norm(embedding)
         if abs(norm - 1.0) > 0.01:  # 허용 오차
             logger.warning(f"Vector not normalized: norm={norm}")
             return False

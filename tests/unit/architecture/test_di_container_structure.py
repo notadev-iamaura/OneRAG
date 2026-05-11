@@ -104,9 +104,9 @@ class TestDIContainerStructure:
         for name in expected_singletons:
             provider = getattr(container, name, None)
             # Singleton, Configuration 모두 허용
-            assert isinstance(
-                provider, (di_providers.Singleton, di_providers.Configuration)
-            ), f"'{name}'는 Singleton Provider여야 합니다"
+            assert isinstance(provider, di_providers.Singleton | di_providers.Configuration), (
+                f"'{name}'는 Singleton Provider여야 합니다"
+            )
 
 
 class TestDIContainerDocumentation:

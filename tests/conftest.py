@@ -16,6 +16,14 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+RUN_OPTIONAL_PROVIDER_TESTS_ENV = "ONERAG_RUN_OPTIONAL_PROVIDER_TESTS"
+OPTIONAL_PROVIDER_TEST_PATHS = (
+    Path("tests/unit/infrastructure/storage/vector"),
+    Path("tests/unit/retrieval/bm25_engine"),
+    Path("tests/unit/retrieval/rerankers"),
+    Path("tests/unit/retrieval/retrievers"),
+)
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """
@@ -29,6 +37,29 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ["LANGCHAIN_TRACING_V2"] = "false"
     # 테스트 환경임을 명시
     os.environ["ENVIRONMENT"] = "test"
+
+
+def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
+    """
+    Skip optional provider tests by default.
+
+    These tests import heavyweight/native provider packages at collection or execution time.
+    Keep the default release gate deterministic; run them explicitly with
+    ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1 when validating optional providers.
+    """
+    if os.getenv(RUN_OPTIONAL_PROVIDER_TESTS_ENV) == "1":
+        return None
+
+    try:
+        relative_path = Path(str(collection_path)).resolve().relative_to(project_root.resolve())
+    except ValueError:
+        return None
+
+    for optional_path in OPTIONAL_PROVIDER_TEST_PATHS:
+        if relative_path == optional_path or optional_path in relative_path.parents:
+            return True
+
+    return None
 
 
 @pytest.fixture(scope="session")

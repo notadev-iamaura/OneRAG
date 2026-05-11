@@ -76,3 +76,50 @@ class TestProductionAuthBypass:
         # 인증 스킵되어 정상 처리
         response = await auth.authenticate_request(request, mock_call_next)
         assert response.status_code == 200
+
+    def test_v1_paths_are_protected_without_blocking_browser_chat_by_default(self) -> None:
+        """OpenAI-compatible /v1 경로는 보호하되 브라우저 채팅 경로는 전역 차단하지 않음"""
+        from app.lib.auth import APIKeyAuth
+
+        auth = APIKeyAuth(api_key="test-key")
+
+        assert not auth.is_protected_path("/api/chat")
+        assert not auth.is_protected_path("/api/chat/session")
+        assert auth.is_protected_path("/v1/models")
+        assert auth.is_protected_path("/v1/chat/completions")
+
+    @pytest.mark.asyncio
+    async def test_v1_request_requires_api_key_when_configured(self) -> None:
+        """API Key가 설정되면 /v1 요청도 인증 없이 통과하면 안 됨"""
+        from app.lib.auth import APIKeyAuth
+
+        auth = APIKeyAuth(api_key="test-key")
+
+        request = AsyncMock(spec=Request)
+        request.url.path = "/v1/models"
+        request.method = "GET"
+        request.headers = {}
+        request.client = None
+
+        async def mock_call_next(req: Request) -> AsyncMock:
+            return AsyncMock(status_code=200)
+
+        response = await auth.authenticate_request(request, mock_call_next)
+
+        assert response.status_code == 401
+
+    def test_websocket_session_token_is_bound_to_session_and_expiry(self) -> None:
+        """WebSocket 세션 토큰은 세션 ID와 만료 시간에 묶여야 함"""
+        from app.lib.auth import create_websocket_session_token, verify_websocket_session_token
+
+        token = create_websocket_session_token(
+            session_id="session-a",
+            secret="test-key",
+            ttl_seconds=60,
+            now=1000,
+        )
+
+        assert verify_websocket_session_token("session-a", token, "test-key", now=1010)
+        assert not verify_websocket_session_token("session-b", token, "test-key", now=1010)
+        assert not verify_websocket_session_token("session-a", token, "wrong-key", now=1010)
+        assert not verify_websocket_session_token("session-a", token, "test-key", now=1061)

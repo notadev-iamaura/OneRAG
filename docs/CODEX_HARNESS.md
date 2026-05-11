@@ -86,7 +86,7 @@ cd frontend && npm run test:warning-gate
 Docker/quickstart:
 
 ```bash
-docker compose config
+docker compose config --quiet
 docker compose --profile fullstack build frontend
 ```
 

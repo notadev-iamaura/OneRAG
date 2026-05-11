@@ -132,21 +132,17 @@
 
 ---
 
-### 6. Service Worker 구현 (PWA) ✅
-**목표**: 오프라인 지원 및 캐싱 전략
+### 6. Service Worker 구현 (PWA) 제거됨
+**목표**: 안정적인 프로덕션 빌드 및 런타임 단순화
 
-#### 구현 내용
-- **파일**: `vite.config.ts`
-- **플러그인**: VitePWA + Workbox
-- **캐싱 전략**:
-  - Google Fonts: CacheFirst (1년)
-  - API 요청: NetworkFirst (5분, 10초 타임아웃)
-- **PWA 매니페스트**: Sendbird Purple 브랜드
+#### 현재 상태
+- `vite-plugin-pwa` 및 `workbox-window` 의존성 제거
+- `vite.config.ts`는 React 플러그인만 사용
+- 서비스 워커와 PWA 매니페스트는 현재 빌드 산출물에 포함하지 않음
 
 #### 결과
-- 오프라인에서도 기본 기능 사용 가능
-- 네트워크 실패 시 캐시 폴백
-- 빠른 재방문 로딩 속도
+- 프로덕션 빌드/테스트 게이트 안정화
+- 캐시 무효화와 서비스 워커 업데이트 리스크 제거
 
 ---
 
@@ -231,8 +227,6 @@ Overall Score: 98/100
 - **axe-core**: latest - Accessibility testing
 - **@axe-core/react**: latest - React integration
 - **jest-axe**: latest - Jest matchers
-- **vite-plugin-pwa**: latest - PWA support
-- **workbox-window**: latest - Service Worker utilities
 - **@testing-library/user-event**: latest - User interaction testing
 
 ---
@@ -254,7 +248,7 @@ Overall Score: 98/100
 1. ✅ axe-core 통합
 2. ✅ 이미지 최적화 (WebP, 반응형)
 3. ✅ Code Splitting 개선
-4. ✅ Service Worker (PWA)
+4. ✅ 빌드 안정화 및 PWA 제거
 5. ✅ 테스트 인프라 완성
 6. ✅ 최종 문서화
 
@@ -287,7 +281,7 @@ Overall Score: 98/100
 1. **MSW를 사용한 API 모킹**: 독립적인 프론트엔드 테스트 환경 구축
 2. **JWT 토큰 자동 갱신**: 사용자 경험을 해치지 않는 보안 구현
 3. **WCAG 준수**: 실제 접근성 기준 적용 및 자동화
-4. **PWA 구현**: Service Worker와 Workbox를 활용한 오프라인 지원
+4. **빌드 안정화**: 서비스 워커와 Workbox 의존성을 제거해 프로덕션 빌드 경로 단순화
 5. **ChunkLoadError 처리**: 프로덕션 환경에서 발생할 수 있는 실제 문제 대응
 
 ### 개선 효과
@@ -331,7 +325,6 @@ Date: 2025-01-13
 - Claude Code (SuperClaude) for systematic implementation
 - React Testing Library & MSW for excellent testing experience
 - axe-core team for accessibility automation
-- Workbox team for PWA excellence
 
 ---
 

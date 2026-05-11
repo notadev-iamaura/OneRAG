@@ -273,15 +273,10 @@ class TestEnrichBatch:
         result = await service.enrich_batch(docs)
         assert result == [None, None, None]
 
-    @pytest.mark.xfail(
-        reason="알려진 버그: 실패 배치의 None 개수가 batch_size 고정값 사용 (line 214)"
-    )
     @pytest.mark.asyncio
-    async def test_실패_배치_None_개수_버그(self) -> None:
+    async def test_실패_배치_None_개수는_실제_배치_크기를_따른다(self) -> None:
         """batch_size=3, 문서 7개 → 배치 [3,3,1], 마지막 배치 실패 시
 
-        현재 코드는 line 214에서 `[None] * batch_size` (=3)를 사용하지만,
-        마지막 배치의 실제 크기는 1이므로 결과가 7이 아닌 9가 됩니다.
         올바른 동작은 결과 길이가 입력 문서 수(7)와 같아야 합니다.
         """
         config = _make_config(enabled=True, batch_size=3, batch_concurrency=3)
@@ -307,7 +302,6 @@ class TestEnrichBatch:
         results = await service.enrich_batch(docs)
 
         # 결과 길이는 입력 문서 수와 동일해야 함
-        # 현재 버그: batch_size(3) 고정으로 9개가 나옴
         assert len(results) == 7
 
 

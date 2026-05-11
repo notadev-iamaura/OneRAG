@@ -5,7 +5,6 @@
 API_BASE_URL="${VITE_API_BASE_URL:-}"
 WS_BASE_URL="${VITE_WS_BASE_URL:-}"
 ACCESS_CODE="${VITE_ACCESS_CODE:-1127}"
-API_KEY="${VITE_API_KEY:-}"
 NODE_ENV="${NODE_ENV:-production}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
 
@@ -18,34 +17,16 @@ window.RUNTIME_CONFIG = {
   "NODE_ENV": "${NODE_ENV}",
   "TIMESTAMP": "${TIMESTAMP}",
   "RAILWAY_ENVIRONMENT": "${RAILWAY_ENVIRONMENT}",
-  "ACCESS_CODE": "${ACCESS_CODE}",
-  "API_KEY": "${API_KEY}"
+  "ACCESS_CODE": "${ACCESS_CODE}"
 };
 
-// 런타임 설정 로드 확인 (보안을 위해 API Key 마스킹)
-const maskedConfig = {
-  ...window.RUNTIME_CONFIG,
-  API_KEY: window.RUNTIME_CONFIG.API_KEY
-    ? window.RUNTIME_CONFIG.API_KEY.substring(0, 8) + '...' + window.RUNTIME_CONFIG.API_KEY.substring(window.RUNTIME_CONFIG.API_KEY.length - 4)
-    : 'NOT_SET'
-};
-console.log('🚀 Railway Runtime Config Loaded:', maskedConfig);
-console.log('🔐 API Key Status:', window.RUNTIME_CONFIG.API_KEY ? '✅ Loaded' : '❌ NOT SET');
+console.log('🚀 Railway Runtime Config Loaded:', window.RUNTIME_CONFIG);
 EOF
-
-# API Key 마스킹 처리
-if [ -n "$API_KEY" ]; then
-  MASKED_API_KEY="${API_KEY:0:8}...${API_KEY: -4}"
-  API_KEY_STATUS="✅ Loaded ($MASKED_API_KEY)"
-else
-  API_KEY_STATUS="❌ NOT SET"
-fi
 
 echo "========================================="
 echo "✅ Railway Runtime Config Generated"
 echo "========================================="
 echo "📋 ACCESS_CODE: ${ACCESS_CODE}"
-echo "🔐 API_KEY: ${API_KEY_STATUS}"
 echo "🌐 API_BASE_URL: ${API_BASE_URL}"
 echo "========================================="
 

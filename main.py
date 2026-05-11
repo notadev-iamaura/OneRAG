@@ -428,7 +428,7 @@ app = FastAPI(
 # Swagger UI에 API Key 인증 추가 (Authorize 버튼)
 api_key_auth = get_api_key_auth()
 custom_openapi = api_key_auth.get_custom_openapi_func(app)
-app.openapi = custom_openapi  # type: ignore[method-assign]
+app.openapi = custom_openapi
 
 # Rate limiting 설정
 app.state.limiter = limiter

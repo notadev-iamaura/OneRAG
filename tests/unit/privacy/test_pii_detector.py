@@ -14,6 +14,8 @@ HybridPIIDetector의 Regex 및 NER 탐지 기능 검증.
 구현일: 2025-12-01
 """
 
+import os
+
 import pytest
 
 from app.modules.core.privacy.review import (
@@ -219,6 +221,9 @@ class TestHybridPIIDetector:
 
 def _check_spacy_available() -> bool:
     """spaCy 및 한국어 모델 가용성 체크"""
+    if os.getenv("ONERAG_RUN_OPTIONAL_PROVIDER_TESTS") != "1":
+        return False
+
     try:
         import spacy
 

@@ -101,7 +101,7 @@ export function createChatAPIService(config: ChatAPIConfig): IChatAPIService {
      *
      * @returns 새 세션 ID
      */
-    startNewSession(): Promise<AxiosResponse<{ session_id: string }>> {
+    startNewSession(): Promise<AxiosResponse<{ session_id: string; ws_token?: string | null }>> {
       return axiosInstance.post('/api/chat/session', {}, { timeout: 30000 });
     },
 

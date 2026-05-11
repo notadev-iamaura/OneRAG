@@ -4,6 +4,8 @@
 의존성 확인 및 실행 흐름을 테스트합니다.
 """
 
+from unittest.mock import patch
+
 
 class TestCheckDependencies:
     """의존성 확인 테스트"""
@@ -18,10 +20,32 @@ class TestCheckDependencies:
         """
         from easy_start.run import check_dependencies
 
-        ok, missing = check_dependencies()
+        with patch("easy_start.run.importlib.util.find_spec", return_value=object()):
+            ok, missing = check_dependencies()
 
         assert ok is True
         assert len(missing) == 0
+
+    def test_missing_required_dependency(self):
+        """
+        필수 의존성이 누락된 경우
+
+        Given: sentence_transformers 미설치
+        When: check_dependencies() 호출
+        Then: 누락 패키지 목록에 포함
+        """
+        from easy_start.run import check_dependencies
+
+        def fake_find_spec(package_name: str):
+            if package_name == "sentence_transformers":
+                return None
+            return object()
+
+        with patch("easy_start.run.importlib.util.find_spec", side_effect=fake_find_spec):
+            ok, missing = check_dependencies()
+
+        assert ok is False
+        assert missing == ["sentence_transformers"]
 
     def test_optional_dependencies_returns_list(self):
         """

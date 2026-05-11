@@ -46,7 +46,7 @@ class PostgresMetadataStore(IMetadataStore):
         # JSON 필드 자동 변환
         processed_data = {}
         for k, v in data.items():
-            if isinstance(v, (dict, list)):
+            if isinstance(v, dict | list):
                 processed_data[k] = json.dumps(v, ensure_ascii=False)
             else:
                 processed_data[k] = v

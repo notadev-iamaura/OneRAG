@@ -1,27 +1,12 @@
 """
-Reranker Module - 검색 결과 리랭킹 모듈
+Reranker Module lazy compatibility exports.
 
-구현체:
-- JinaReranker: Jina AI HTTP API 기반 리랭커
-- JinaColBERTReranker: Jina ColBERT v2 기반 토큰 수준 리랭커
-- CohereReranker: Cohere Rerank API 기반 리랭커 (cross-encoder 방식)
-- OpenAILLMReranker: OpenAI 모델 기반 LLM 리랭커 (모델 설정 가능)
-- GeminiFlashReranker: Google Gemini 2.5 Flash Lite 기반 LLM 리랭커
-- OpenRouterReranker: OpenRouter API 기반 다중 LLM 리랭커
-- RerankerChain: 다중 리랭커 순차 실행 체인
-- RerankerFactory: 설정 기반 리랭커 자동 선택 팩토리 (레거시)
-- RerankerFactoryV2: 3단계 계층 구조 기반 리랭커 팩토리 (권장)
+Keep package import cheap. Some optional rerankers import heavyweight model
+runtime packages, so concrete implementations are loaded only when requested.
 """
 
-from ..interfaces import IReranker  # 상위 디렉토리의 interfaces.py에서 import
-from .cohere_reranker import CohereReranker
-from .colbert_reranker import ColBERTRerankerConfig, JinaColBERTReranker
-from .factory import SUPPORTED_RERANKERS, RerankerFactory, RerankerFactoryV2
-from .gemini_reranker import GeminiFlashReranker
-from .jina_reranker import JinaReranker
-from .openai_llm_reranker import OpenAILLMReranker
-from .openrouter_reranker import OpenRouterReranker
-from .reranker_chain import RerankerChain, RerankerChainConfig
+from importlib import import_module
+from typing import Any
 
 __all__ = [
     "IReranker",
@@ -37,12 +22,60 @@ __all__ = [
     "RerankerFactory",
     "RerankerFactoryV2",
     "SUPPORTED_RERANKERS",
+    "LocalReranker",
 ]
 
-# 조건부 import (선택적 의존성)
-try:
-    from .local_reranker import LocalReranker
+_EXPORTS = {
+    "IReranker": ("app.modules.core.retrieval.interfaces", "IReranker"),
+    "JinaReranker": ("app.modules.core.retrieval.rerankers.jina_reranker", "JinaReranker"),
+    "JinaColBERTReranker": (
+        "app.modules.core.retrieval.rerankers.colbert_reranker",
+        "JinaColBERTReranker",
+    ),
+    "ColBERTRerankerConfig": (
+        "app.modules.core.retrieval.rerankers.colbert_reranker",
+        "ColBERTRerankerConfig",
+    ),
+    "CohereReranker": (
+        "app.modules.core.retrieval.rerankers.cohere_reranker",
+        "CohereReranker",
+    ),
+    "OpenAILLMReranker": (
+        "app.modules.core.retrieval.rerankers.openai_llm_reranker",
+        "OpenAILLMReranker",
+    ),
+    "GeminiFlashReranker": (
+        "app.modules.core.retrieval.rerankers.gemini_reranker",
+        "GeminiFlashReranker",
+    ),
+    "OpenRouterReranker": (
+        "app.modules.core.retrieval.rerankers.openrouter_reranker",
+        "OpenRouterReranker",
+    ),
+    "RerankerChain": (
+        "app.modules.core.retrieval.rerankers.reranker_chain",
+        "RerankerChain",
+    ),
+    "RerankerChainConfig": (
+        "app.modules.core.retrieval.rerankers.reranker_chain",
+        "RerankerChainConfig",
+    ),
+    "RerankerFactory": ("app.modules.core.retrieval.rerankers.factory", "RerankerFactory"),
+    "RerankerFactoryV2": ("app.modules.core.retrieval.rerankers.factory", "RerankerFactoryV2"),
+    "SUPPORTED_RERANKERS": (
+        "app.modules.core.retrieval.rerankers.factory",
+        "SUPPORTED_RERANKERS",
+    ),
+    "LocalReranker": (
+        "app.modules.core.retrieval.rerankers.local_reranker",
+        "LocalReranker",
+    ),
+}
 
-    __all__.append("LocalReranker")
-except ImportError:
-    pass  # local-reranker 의존성 미설치
+
+def __getattr__(name: str) -> Any:
+    if name in _EXPORTS:
+        module_name, attr_name = _EXPORTS[name]
+        module = import_module(module_name)
+        return getattr(module, attr_name)
+    raise AttributeError(f"module 'app.modules.core.retrieval.rerankers' has no attribute {name!r}")

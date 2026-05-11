@@ -6,7 +6,6 @@ interface RuntimeConfig {
   ACCESS_CODE?: string;
   API_BASE_URL?: string;
   WS_BASE_URL?: string;
-  API_KEY?: string; // 백엔드 API 인증 키
   NODE_ENV?: string;
   TIMESTAMP?: string;
   RAILWAY_ENVIRONMENT?: string | null;

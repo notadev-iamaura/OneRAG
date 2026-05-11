@@ -10,11 +10,16 @@ from collections.abc import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.api.demo.demo_pipeline import DemoPipeline
-from app.api.demo.demo_router import limiter, router, set_demo_services
+from app.api.demo.demo_router import (
+    _validate_mime_type,
+    limiter,
+    router,
+    set_demo_services,
+)
 from app.api.demo.session_manager import DemoSession, DemoSessionManager, DemoStats
 from app.lib.errors.codes import ErrorCode
 
@@ -147,6 +152,18 @@ class TestSessionEndpoints:
 
 class TestUploadEndpoint:
     """문서 업로드 관련 테스트"""
+
+    def test_텍스트_파일_시그니처_검증(self) -> None:
+        """텍스트 계열 파일은 UTF-8 텍스트 시그니처로 허용"""
+        _validate_mime_type(b"Test document content\n", "txt")
+
+    def test_pdf_확장자_위장_차단(self) -> None:
+        """PDF 확장자에 텍스트 내용을 넣으면 400 차단"""
+        with pytest.raises(HTTPException) as exc_info:
+            _validate_mime_type(b"Test document content\n", "pdf")
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.detail == ErrorCode.DEMO_006.value
 
     def test_문서_업로드_성공(self, client: TestClient) -> None:
         """POST /sessions/{id}/upload → 업로드 성공"""

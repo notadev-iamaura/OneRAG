@@ -117,6 +117,29 @@ const getWSBaseURL = (): string => {
   return 'ws://localhost:8000';
 };
 
+const getSessionWebSocketToken = (sessionId: string): string | null => {
+  const storage =
+    typeof localStorage !== 'undefined'
+      ? localStorage
+      : typeof globalThis !== 'undefined'
+        ? globalThis.localStorage
+        : null;
+
+  if (!storage) {
+    return null;
+  }
+
+  try {
+    return (
+      storage.getItem(`chatWsToken:${sessionId}`) ||
+      storage.getItem('chatWsToken')
+    );
+  } catch (error) {
+    logger.warn('WebSocket 세션 토큰 조회 실패:', error);
+    return null;
+  }
+};
+
 /**
  * ChatWebSocketService 팩토리 함수
  *
@@ -245,8 +268,16 @@ export function createChatWebSocketService(
       state = 'connecting';
 
       const wsBaseUrl = getWSBaseURL();
-      const wsUrl = `${wsBaseUrl}/chat-ws?session_id=${encodeURIComponent(newSessionId)}`;
-      logger.log('🔗 Chat WebSocket 연결 시도:', wsUrl);
+      const query = new URLSearchParams({ session_id: newSessionId });
+      const wsToken = getSessionWebSocketToken(newSessionId);
+      if (wsToken) {
+        query.set('ws_token', wsToken);
+      }
+      const wsUrl = `${wsBaseUrl}/chat-ws?${query.toString()}`;
+      logger.log(
+        '🔗 Chat WebSocket 연결 시도:',
+        `${wsBaseUrl}/chat-ws?session_id=${encodeURIComponent(newSessionId)}${wsToken ? '&ws_token=***' : ''}`
+      );
 
       try {
         // DI 핵심: 주입된 팩토리로 WebSocket 생성

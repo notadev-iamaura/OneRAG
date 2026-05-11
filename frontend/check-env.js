@@ -10,9 +10,7 @@ const requiredEnvVars = [
   'VITE_API_BASE_URL',
 ];
 
-// 선택적 환경변수 목록 (VITE_API_KEY: 데모 모드에서는 인증 불필요)
 const optionalEnvVars = [
-  'VITE_API_KEY',
   'VITE_ACCESS_CODE',
   'VITE_DEV_API_BASE_URL',
   'VITE_DEV_WS_BASE_URL',
@@ -24,13 +22,7 @@ console.log('📋 필수 환경변수:');
 requiredEnvVars.forEach((varName) => {
   const value = process.env[varName];
   if (value) {
-    // API Key는 마스킹 처리
-    if (varName === 'VITE_API_KEY') {
-      const masked = value.substring(0, 8) + '...' + value.substring(value.length - 4);
-      console.log(`  ✅ ${varName}: ${masked}`);
-    } else {
-      console.log(`  ✅ ${varName}: ${value}`);
-    }
+    console.log(`  ✅ ${varName}: ${value}`);
   } else {
     console.error(`  ❌ ${varName}: NOT SET`);
     hasErrors = true;

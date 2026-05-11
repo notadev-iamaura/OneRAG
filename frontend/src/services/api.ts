@@ -124,41 +124,13 @@ api.interceptors.request.use(
       config.baseURL = runtimeBaseURL;
     }
 
-    // 0. API Key 추가 (/api/* 경로에만 적용, /health는 제외)
-    const isApiEndpoint = config.url?.startsWith('/api/');
-    const isHealthEndpoint = config.url === '/health';
-
-    if (isApiEndpoint && !isHealthEndpoint) {
-      // 환경변수 우선 (빌드 타임)
-      let apiKey = import.meta.env.VITE_API_KEY;
-
-      // 런타임 설정 폴백 (Railway 배포 시 동적 설정)
-      if (!apiKey && typeof window !== 'undefined' && window.RUNTIME_CONFIG?.API_KEY) {
-        apiKey = window.RUNTIME_CONFIG.API_KEY;
-      }
-
-      if (apiKey) {
-        config.headers['X-API-Key'] = apiKey;
-      } else {
-        logger.warn('API Key가 설정되지 않았습니다. /api/* 요청이 실패할 수 있습니다.');
-        // 세션 생성 요청인 경우 더 자세한 경고
-        if (config.url === '/api/chat/session') {
-          logger.error('세션 생성 실패 원인: API Key가 설정되지 않았습니다.', {
-            envKey: import.meta.env.VITE_API_KEY ? '있음' : '없음',
-            runtimeKey: typeof window !== 'undefined' && window.RUNTIME_CONFIG?.API_KEY ? '있음' : '없음',
-          });
-        }
-      }
-    }
-
-    // 세션 생성 API 호출 시 상세 로깅 (API Key 설정 후)
+    // 세션 생성 API 호출 시 상세 로깅
     if (config.url === '/api/chat/session') {
       logger.log('세션 생성 요청 상세 정보:', {
         url: `${config.baseURL}${config.url}`,
         method: config.method,
         data: config.data,
         headers: {
-          'X-API-Key': config.headers['X-API-Key'] ? `${config.headers['X-API-Key'].substring(0, 8)}...` : '없음',
           'Authorization': config.headers.Authorization ? '설정됨' : '없음',
           'X-Session-Id': config.headers['X-Session-Id'] || '없음 (새 세션 생성이므로 정상)',
           'Content-Type': config.headers['Content-Type'] || '없음',
@@ -458,7 +430,7 @@ export const chatAPI = {
       endpoint: '/api/chat/session',
     });
 
-    return api.post<{ session_id: string }>('/api/chat/session', {}, {
+    return api.post<{ session_id: string; ws_token?: string | null }>('/api/chat/session', {}, {
       timeout: 30000, // 30초 타임아웃
     });
   },

@@ -777,7 +777,7 @@ class TestNeo4jGraphStoreHealthCheck:
         assert isinstance(result, dict)
         assert result["connected"] is True
         assert "response_time_ms" in result
-        assert isinstance(result["response_time_ms"], (int, float))
+        assert isinstance(result["response_time_ms"], int | float)
         assert "pool_size" in result
 
     @pytest.mark.asyncio

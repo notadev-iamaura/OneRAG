@@ -110,6 +110,7 @@ class SessionResponse(BaseModel):
     session_id: str
     message: str
     timestamp: str
+    ws_token: str | None = None
 
 
 class ChatHistoryResponse(BaseModel):

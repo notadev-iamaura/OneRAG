@@ -64,6 +64,19 @@ function generateFallbackSessionId(): string {
   return `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 }
 
+function persistWebSocketToken(sessionId: string, token?: string | null): void {
+  if (!token || typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    localStorage.setItem(`chatWsToken:${sessionId}`, token);
+    localStorage.setItem('chatWsToken', token);
+  } catch (error) {
+    logger.warn('WebSocket 세션 토큰 저장 실패:', error);
+  }
+}
+
 /**
  * 세션 관리 핵심 훅
  *
@@ -187,6 +200,7 @@ export function useChatSessionCore(
 
             setSessionId(validSessionId);
             localStorage.setItem('chatSessionId', validSessionId);
+            persistWebSocketToken(validSessionId, newSessionResponse.data.ws_token);
             setIsSessionInitialized(true);
 
             showToast({
@@ -253,6 +267,7 @@ export function useChatSessionCore(
 
           setSessionId(newSessionId);
           localStorage.setItem('chatSessionId', newSessionId);
+          persistWebSocketToken(newSessionId, response.data.ws_token);
           setIsSessionInitialized(true);
         } catch (error: unknown) {
           const duration = Date.now() - startTime;
@@ -312,6 +327,7 @@ export function useChatSessionCore(
 
       setSessionId(newSessionId);
       localStorage.setItem('chatSessionId', newSessionId);
+      persistWebSocketToken(newSessionId, response.data.ws_token);
       setMessages([]);
       setSessionInfo(null);
 

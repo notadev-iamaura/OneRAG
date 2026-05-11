@@ -116,9 +116,6 @@ dependencies = [
     "tavily-python>=0.7.18",
     "duckduckgo-search>=8.1.1",
     "rouge-score>=0.1.2",
-    # Local Embedding (API 키 없이 사용 가능)
-    "sentence-transformers>=3.0.0",
-    "torch>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -134,6 +131,11 @@ dev = [
 
 monitoring = [
     "prometheus-client>=0.19.0",
+]
+
+local-embedding = [
+    "sentence-transformers>=3.0.0",
+    "torch>=2.0.0",
 ]
 
 security = [
@@ -221,6 +223,12 @@ extend-exclude = '''
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = [
+    "frontend/node_modules",
+    "frontend/dist",
+    "frontend/coverage",
+    "notebooks",
+]
 
 [tool.ruff.lint]
 select = [
@@ -254,7 +262,16 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
-exclude = ["scripts/"]
+follow_imports = "skip"  # 프로젝트 파일은 mypy . 대상으로 직접 검사하고, heavy third-party stub graph는 건너뜀
+incremental = false  # 오래된 third-party stub 캐시가 release gate를 장기 실행시키지 않도록 함
+exclude = [
+    "\\.venv/",
+    "scripts/",
+    "frontend/node_modules",
+    "frontend/dist",
+    "frontend/coverage",
+    "notebooks/",
+]
 # 엄격 모드 설정 (2025-11-29 활성화)
 check_untyped_defs = true
 disallow_untyped_defs = true  # 모든 함수에 타입 힌트 필수
@@ -276,13 +293,6 @@ module = [
     "app.modules.core.retrieval.orchestrator",
 ]
 check_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = [
-    "legacy.*",
-    "archive.*",
-]
-ignore_errors = true
 
 # 엄격 모드 제외 모듈: 외부 인터페이스 및 설정 관련 (2025-12-01)
 # 이 모듈들은 외부 라이브러리 의존성이 높아 타입 추론이 어려움
@@ -354,7 +364,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-ra -q --strict-markers --tb=short"
+addopts = "-ra -q --strict-markers --tb=short -p no:cacheprovider -p no:respx -p no:anyio -p no:pytest_cov"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -401,4 +411,3 @@ exclude_lines = [
 ]
 show_missing = true
 precision = 2
-

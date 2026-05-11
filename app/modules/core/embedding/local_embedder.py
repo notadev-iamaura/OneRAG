@@ -19,11 +19,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sentence_transformers import SentenceTransformer
-
 from app.modules.core.embedding.interfaces import BaseEmbedder
 
 logger = logging.getLogger(__name__)
+SentenceTransformer: Any | None = None
 
 
 # 지원 모델 정보
@@ -100,6 +99,12 @@ class LocalEmbedder(BaseEmbedder):
         # 모델 로드 (첫 실행 시 자동 다운로드)
         logger.info(f"🔄 로컬 임베딩 모델 로딩 중: {model_name}")
         try:
+            global SentenceTransformer
+            if SentenceTransformer is None:
+                from sentence_transformers import SentenceTransformer as _SentenceTransformer
+
+                SentenceTransformer = _SentenceTransformer
+
             self._model = SentenceTransformer(
                 model_name,
                 device=device,

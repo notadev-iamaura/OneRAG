@@ -13,11 +13,15 @@ OpenRouter 지원 임베딩 모델:
 """
 
 import asyncio
+import math
 import os
+from typing import TYPE_CHECKING
 
-import numpy as np
-from langchain.embeddings.base import Embeddings
-from openai import OpenAI
+if TYPE_CHECKING:
+    class Embeddings:  # pragma: no cover - type-checking shim
+        pass
+else:
+    from langchain.embeddings.base import Embeddings
 
 from ....lib.logger import get_logger
 from .interfaces import BaseEmbedder
@@ -26,6 +30,19 @@ logger = get_logger(__name__)
 
 # OpenRouter API 기본 URL
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def _l2_norm(vector: list[float]) -> float:
+    return math.sqrt(sum(value * value for value in vector))
+
+
+def _normalize_vector_values(vector: list[float]) -> list[float]:
+    norm = _l2_norm(vector)
+    if norm <= 0:
+        return vector
+    if abs(norm - 1.0) < 0.01:
+        return vector
+    return [value / norm for value in vector]
 
 
 class OpenAIEmbedder(BaseEmbedder, Embeddings):
@@ -63,6 +80,8 @@ class OpenAIEmbedder(BaseEmbedder, Embeddings):
         self.client = None
         if openai_api_key:
             try:
+                from openai import OpenAI
+
                 self.client = OpenAI(api_key=openai_api_key)
                 logger.info(
                     f"✅ Initialized OpenAIEmbedder: model={model_name}, dim={output_dimensionality}"
@@ -88,20 +107,12 @@ class OpenAIEmbedder(BaseEmbedder, Embeddings):
         Returns:
             L2 정규화된 벡터
         """
-        arr = np.array(vector)
-        norm = np.linalg.norm(arr)
-
-        if norm > 0:
-            # 이미 정규화되어 있는지 확인 (허용 오차 0.01)
-            if abs(norm - 1.0) < 0.01:
-                return vector  # 이미 정규화됨
-
-            # 정규화 필요
-            normalized = arr / norm
-            return normalized.tolist()  # type: ignore[no-any-return]
-
-        logger.warning("Zero norm vector encountered, returning as-is")
-        return vector
+        normalized = _normalize_vector_values(vector)
+        if normalized is vector:
+            norm = _l2_norm(vector)
+            if norm <= 0:
+                logger.warning("Zero norm vector encountered, returning as-is")
+        return normalized
 
     def _batch_embed(self, texts: list[str]) -> list[list[float]]:
         """
@@ -247,7 +258,7 @@ class OpenAIEmbedder(BaseEmbedder, Embeddings):
             return False
 
         # L2 norm 확인 (정규화 여부)
-        norm = np.linalg.norm(np.array(embedding))
+        norm = _l2_norm(embedding)
         if abs(norm - 1.0) > 0.01:  # 허용 오차
             logger.warning(f"Vector not normalized: norm={norm}")
             return False
@@ -315,6 +326,8 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
         self.client = None
         if resolved_api_key:
             try:
+                from openai import OpenAI
+
                 self.client = OpenAI(
                     base_url=resolved_base_url,
                     api_key=resolved_api_key,
@@ -345,20 +358,12 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
         Returns:
             L2 정규화된 벡터
         """
-        arr = np.array(vector)
-        norm = np.linalg.norm(arr)
-
-        if norm > 0:
-            # 이미 정규화되어 있는지 확인 (허용 오차 0.01)
-            if abs(norm - 1.0) < 0.01:
-                return vector  # 이미 정규화됨
-
-            # 정규화 필요
-            normalized = arr / norm
-            return normalized.tolist()  # type: ignore[no-any-return]
-
-        logger.warning("Zero norm vector encountered, returning as-is")
-        return vector
+        normalized = _normalize_vector_values(vector)
+        if normalized is vector:
+            norm = _l2_norm(vector)
+            if norm <= 0:
+                logger.warning("Zero norm vector encountered, returning as-is")
+        return normalized
 
     def _batch_embed(self, texts: list[str]) -> list[list[float]]:
         """
@@ -511,7 +516,7 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
             return False
 
         # L2 norm 확인 (정규화 여부)
-        norm = np.linalg.norm(np.array(embedding))
+        norm = _l2_norm(embedding)
         if abs(norm - 1.0) > 0.01:  # 허용 오차
             logger.warning(f"Vector not normalized: norm={norm}")
             return False

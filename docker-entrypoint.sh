@@ -28,13 +28,17 @@ if [ -z "$GOOGLE_API_KEY" ] && [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_
     echo ""
 fi
 
-# 2. 배치 크롤러 백그라운드 실행 (배포 시 자동 크롤링)
-echo "🚀 Starting batch crawler in background..."
-# stdout과 파일에 동시 출력 (Railway 로그에서도 확인 가능)
-python -m app.batch.main 2>&1 | tee /app/logs/batch-startup.log &
-BATCH_PID=$!
-echo "✅ Batch crawler started (PID: $BATCH_PID)"
-echo "📋 Batch logs: /app/logs/batch-startup.log"
+# 2. 배치 크롤러 백그라운드 실행 (명시적 opt-in)
+if [ "${START_BATCH_CRAWLER:-false}" = "true" ]; then
+    echo "🚀 Starting batch crawler in background..."
+    # stdout과 파일에 동시 출력 (Railway 로그에서도 확인 가능)
+    python -m app.batch.main 2>&1 | tee /app/logs/batch-startup.log &
+    BATCH_PID=$!
+    echo "✅ Batch crawler started (PID: $BATCH_PID)"
+    echo "📋 Batch logs: /app/logs/batch-startup.log"
+else
+    echo "ℹ️  Batch crawler disabled. Set START_BATCH_CRAWLER=true to enable it."
+fi
 
 # 3. FastAPI 서버 시작
 echo "🌐 Starting FastAPI server..."

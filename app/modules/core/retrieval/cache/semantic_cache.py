@@ -14,7 +14,7 @@ Semantic Cache Manager
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import numpy as np
 from cachetools import LRUCache
@@ -304,7 +304,7 @@ class InMemorySemanticCache:
             else:
                 embedding_list = result
 
-            return np.array(embedding_list, dtype=np.float32)
+            return cast(np.ndarray, np.array(embedding_list, dtype=np.float32))
 
         except Exception as e:
             logger.warning(f"임베딩 생성 오류: {e}")

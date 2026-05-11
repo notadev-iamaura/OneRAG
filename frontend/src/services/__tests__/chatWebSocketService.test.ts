@@ -10,6 +10,18 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 
+function createLocalStorageMock(): Storage {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => { store[key] = value; },
+    removeItem: (key: string) => { delete store[key]; },
+    clear: () => { store = {}; },
+    get length() { return Object.keys(store).length; },
+    key: (index: number) => Object.keys(store)[index] ?? null,
+  };
+}
+
 // MSW WebSocket 핸들러 비활성화를 위해 먼저 설정
 // 전역 WebSocket Mock을 vi.stubGlobal 대신 클래스로 구현
 class MockWebSocket {
@@ -74,16 +86,38 @@ class MockWebSocket {
 
 // 원본 WebSocket 저장
 const OriginalWebSocket = globalThis.WebSocket;
+const OriginalLocalStorage = window.localStorage;
 
 describe('ChatWebSocketService', () => {
+  let mockLocalStorage: Storage;
+
   beforeAll(() => {
     // 전역 WebSocket을 Mock으로 교체
-    globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    Object.defineProperty(globalThis, 'WebSocket', {
+      value: MockWebSocket as unknown as typeof WebSocket,
+      writable: true,
+      configurable: true,
+    });
+    mockLocalStorage = createLocalStorageMock();
+    Object.defineProperty(window, 'localStorage', {
+      value: mockLocalStorage,
+      writable: true,
+      configurable: true,
+    });
   });
 
   afterAll(() => {
     // 원본 WebSocket 복원
-    globalThis.WebSocket = OriginalWebSocket;
+    Object.defineProperty(globalThis, 'WebSocket', {
+      value: OriginalWebSocket,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, 'localStorage', {
+      value: OriginalLocalStorage,
+      writable: true,
+      configurable: true,
+    });
   });
 
   // 싱글톤이므로 각 테스트에서 새 인스턴스 필요
@@ -99,6 +133,7 @@ describe('ChatWebSocketService', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     MockWebSocket.clearInstances();
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -126,6 +161,23 @@ describe('ChatWebSocketService', () => {
       expect(service.isConnected).toBe(true);
 
       // 정리
+      service.disconnect();
+    });
+
+    it('저장된 WebSocket 세션 토큰을 연결 URL에 포함해야 함', async () => {
+      const service = await createFreshService();
+      const sessionId = 'test-session-001';
+      localStorage.setItem(`chatWsToken:${sessionId}`, 'signed-session-token');
+
+      const connectPromise = service.connect(sessionId);
+
+      const ws = MockWebSocket.getLastInstance();
+      expect(ws?.url).toContain('chat-ws?session_id=test-session-001');
+      expect(ws?.url).toContain('ws_token=signed-session-token');
+
+      ws?.simulateOpen();
+      await connectPromise;
+
       service.disconnect();
     });
 

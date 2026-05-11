@@ -81,7 +81,7 @@ export interface FeatureConfig {
 
 /**
  * 기본 Feature Flag 설정
- * 모든 기능이 활성화된 상태
+ * 브라우저에 서버 API key를 노출하지 않는 운영 가능한 기본값
  */
 export const DEFAULT_FEATURES: FeatureConfig = {
   chatbot: {
@@ -92,31 +92,31 @@ export const DEFAULT_FEATURES: FeatureConfig = {
     markdown: true,
   },
   documentManagement: {
-    enabled: true,
-    upload: true,
-    bulkDelete: true,
-    search: true,
-    pagination: true,
-    dragAndDrop: true,
-    preview: true,
+    enabled: false,
+    upload: false,
+    bulkDelete: false,
+    search: false,
+    pagination: false,
+    dragAndDrop: false,
+    preview: false,
   },
   admin: {
-    enabled: true,
-    userManagement: true,
-    systemStats: true,
-    qdrantManagement: true,
-    accessControl: true,
+    enabled: false,
+    userManagement: false,
+    systemStats: false,
+    qdrantManagement: false,
+    accessControl: false,
   },
   prompts: {
-    enabled: true,
-    templates: true,
-    history: true,
+    enabled: false,
+    templates: false,
+    history: false,
   },
   analysis: {
-    enabled: true,
-    realtime: true,
-    export: true,
-    visualization: true,
+    enabled: false,
+    realtime: false,
+    export: false,
+    visualization: false,
   },
   privacy: {
     enabled: true,
@@ -136,46 +136,44 @@ function parseBooleanEnv(value: string | undefined, defaultValue: boolean): bool
  * 환경변수에서 Feature Flag 로드
  */
 function loadFeaturesFromEnv(): Partial<FeatureConfig> {
-  const env = import.meta.env;
-
   return {
     chatbot: {
-      enabled: parseBooleanEnv(env.VITE_FEATURE_CHATBOT, true),
-      streaming: parseBooleanEnv(env.VITE_FEATURE_CHATBOT_STREAMING, true),
-      history: parseBooleanEnv(env.VITE_FEATURE_CHATBOT_HISTORY, true),
-      sessionManagement: parseBooleanEnv(env.VITE_FEATURE_CHATBOT_SESSION, true),
-      markdown: parseBooleanEnv(env.VITE_FEATURE_CHATBOT_MARKDOWN, true),
+      enabled: parseBooleanEnv(import.meta.env.VITE_FEATURE_CHATBOT, true),
+      streaming: parseBooleanEnv(import.meta.env.VITE_FEATURE_CHATBOT_STREAMING, true),
+      history: parseBooleanEnv(import.meta.env.VITE_FEATURE_CHATBOT_HISTORY, true),
+      sessionManagement: parseBooleanEnv(import.meta.env.VITE_FEATURE_CHATBOT_SESSION, true),
+      markdown: parseBooleanEnv(import.meta.env.VITE_FEATURE_CHATBOT_MARKDOWN, true),
     },
     documentManagement: {
-      enabled: parseBooleanEnv(env.VITE_FEATURE_DOCUMENTS, true),
-      upload: parseBooleanEnv(env.VITE_FEATURE_DOCUMENTS_UPLOAD, true),
-      bulkDelete: parseBooleanEnv(env.VITE_FEATURE_DOCUMENTS_BULK_DELETE, true),
-      search: parseBooleanEnv(env.VITE_FEATURE_DOCUMENTS_SEARCH, true),
-      pagination: parseBooleanEnv(env.VITE_FEATURE_DOCUMENTS_PAGINATION, true),
-      dragAndDrop: parseBooleanEnv(env.VITE_FEATURE_DOCUMENTS_DND, true),
-      preview: parseBooleanEnv(env.VITE_FEATURE_DOCUMENTS_PREVIEW, true),
+      enabled: parseBooleanEnv(import.meta.env.VITE_FEATURE_DOCUMENTS, false),
+      upload: parseBooleanEnv(import.meta.env.VITE_FEATURE_DOCUMENTS_UPLOAD, false),
+      bulkDelete: parseBooleanEnv(import.meta.env.VITE_FEATURE_DOCUMENTS_BULK_DELETE, false),
+      search: parseBooleanEnv(import.meta.env.VITE_FEATURE_DOCUMENTS_SEARCH, false),
+      pagination: parseBooleanEnv(import.meta.env.VITE_FEATURE_DOCUMENTS_PAGINATION, false),
+      dragAndDrop: parseBooleanEnv(import.meta.env.VITE_FEATURE_DOCUMENTS_DND, false),
+      preview: parseBooleanEnv(import.meta.env.VITE_FEATURE_DOCUMENTS_PREVIEW, false),
     },
     admin: {
-      enabled: parseBooleanEnv(env.VITE_FEATURE_ADMIN, true),
-      userManagement: parseBooleanEnv(env.VITE_FEATURE_ADMIN_USERS, true),
-      systemStats: parseBooleanEnv(env.VITE_FEATURE_ADMIN_STATS, true),
-      qdrantManagement: parseBooleanEnv(env.VITE_FEATURE_ADMIN_QDRANT, true),
-      accessControl: parseBooleanEnv(env.VITE_FEATURE_ADMIN_ACCESS, true),
+      enabled: parseBooleanEnv(import.meta.env.VITE_FEATURE_ADMIN, false),
+      userManagement: parseBooleanEnv(import.meta.env.VITE_FEATURE_ADMIN_USERS, false),
+      systemStats: parseBooleanEnv(import.meta.env.VITE_FEATURE_ADMIN_STATS, false),
+      qdrantManagement: parseBooleanEnv(import.meta.env.VITE_FEATURE_ADMIN_QDRANT, false),
+      accessControl: parseBooleanEnv(import.meta.env.VITE_FEATURE_ADMIN_ACCESS, false),
     },
     prompts: {
-      enabled: parseBooleanEnv(env.VITE_FEATURE_PROMPTS, true),
-      templates: parseBooleanEnv(env.VITE_FEATURE_PROMPTS_TEMPLATES, true),
-      history: parseBooleanEnv(env.VITE_FEATURE_PROMPTS_HISTORY, true),
+      enabled: parseBooleanEnv(import.meta.env.VITE_FEATURE_PROMPTS, false),
+      templates: parseBooleanEnv(import.meta.env.VITE_FEATURE_PROMPTS_TEMPLATES, false),
+      history: parseBooleanEnv(import.meta.env.VITE_FEATURE_PROMPTS_HISTORY, false),
     },
     analysis: {
-      enabled: parseBooleanEnv(env.VITE_FEATURE_ANALYSIS, true),
-      realtime: parseBooleanEnv(env.VITE_FEATURE_ANALYSIS_REALTIME, true),
-      export: parseBooleanEnv(env.VITE_FEATURE_ANALYSIS_EXPORT, true),
-      visualization: parseBooleanEnv(env.VITE_FEATURE_ANALYSIS_VIZ, true),
+      enabled: parseBooleanEnv(import.meta.env.VITE_FEATURE_ANALYSIS, false),
+      realtime: parseBooleanEnv(import.meta.env.VITE_FEATURE_ANALYSIS_REALTIME, false),
+      export: parseBooleanEnv(import.meta.env.VITE_FEATURE_ANALYSIS_EXPORT, false),
+      visualization: parseBooleanEnv(import.meta.env.VITE_FEATURE_ANALYSIS_VIZ, false),
     },
     privacy: {
-      enabled: parseBooleanEnv(env.VITE_FEATURE_PRIVACY, true),
-      maskPhoneNumbers: parseBooleanEnv(env.VITE_FEATURE_PRIVACY_MASK_PHONE, true),
+      enabled: parseBooleanEnv(import.meta.env.VITE_FEATURE_PRIVACY, true),
+      maskPhoneNumbers: parseBooleanEnv(import.meta.env.VITE_FEATURE_PRIVACY_MASK_PHONE, true),
     },
   };
 }

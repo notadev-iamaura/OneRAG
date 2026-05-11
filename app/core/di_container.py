@@ -19,8 +19,6 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from dependency_injector import containers, providers
 
-from app.api.services.rag_pipeline import RAGPipeline
-
 # Core modules
 from app.lib.auth import get_api_key_auth
 from app.lib.circuit_breaker import CircuitBreakerFactory
@@ -32,7 +30,6 @@ from app.lib.metrics import CostTracker, PerformanceMetrics
 
 # Phase 5: Agent 모듈 (Agentic RAG Orchestrator)
 from app.modules.core.agent import AgentFactory
-from app.modules.core.documents.document_processing import DocumentProcessor
 
 # Phase 9: 평가 시스템 모듈 (Evaluation System)
 from app.modules.core.evaluation import EvaluatorFactory
@@ -75,26 +72,12 @@ from app.modules.core.retrieval.grok_answer_provider import GrokAnswerProvider
 from app.modules.core.retrieval.orchestrator import RetrievalOrchestrator
 from app.modules.core.retrieval.query_expansion.gpt5_engine import GPT5QueryExpansionEngine
 
-# Phase 6: 고급 리랭킹 모듈 (ColBERT, RerankerChain)
-from app.modules.core.retrieval.rerankers.colbert_reranker import (
-    ColBERTRerankerConfig,
-    JinaColBERTReranker,
-)
-from app.modules.core.retrieval.rerankers.gemini_reranker import GeminiFlashReranker
-from app.modules.core.retrieval.rerankers.jina_reranker import JinaReranker
-from app.modules.core.retrieval.rerankers.reranker_chain import (
-    RerankerChain,
-    RerankerChainConfig,
-)
-
 # Retriever Factory (다중 벡터 DB 지원 - Factory 패턴 적용)
 from app.modules.core.retrieval.retrievers.factory import RetrieverFactory
 from app.modules.core.routing.complexity_calculator import ComplexityCalculator
 from app.modules.core.routing.llm_query_router import LLMQueryRouter
 from app.modules.core.self_rag.evaluator import LLMQualityEvaluator
 from app.modules.core.self_rag.orchestrator import SelfRAGOrchestrator
-from app.modules.core.session.facade import EnhancedSessionModule
-from app.modules.core.session.services.memory_service import MemoryService
 from app.modules.core.sql_search import SQLSearchService
 
 # Phase 4: Tools 모듈 (Tool Use / Function Calling)
@@ -110,6 +93,14 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from app.lib.llm_client import LLMClientFactory
+    from app.modules.core.retrieval.rerankers.colbert_reranker import (
+        JinaColBERTReranker,
+    )
+    from app.modules.core.retrieval.rerankers.gemini_reranker import (
+        GeminiFlashReranker,
+    )
+    from app.modules.core.retrieval.rerankers.jina_reranker import JinaReranker
+    from app.modules.core.retrieval.rerankers.reranker_chain import RerankerChain
 
 # TypeVar for generic type parameters
 T = TypeVar("T")
@@ -120,6 +111,34 @@ def _create_chat_service(*args: Any, **kwargs: Any) -> Any:
     from app.api.services.chat_service import ChatService
 
     return ChatService(*args, **kwargs)
+
+
+def _create_rag_pipeline(*args: Any, **kwargs: Any) -> Any:
+    """Create RAGPipeline lazily so optional tracing imports stay off import path."""
+    from app.api.services.rag_pipeline import RAGPipeline
+
+    return RAGPipeline(*args, **kwargs)
+
+
+def _create_document_processor(*args: Any, **kwargs: Any) -> Any:
+    """Create DocumentProcessor lazily so local embedding imports stay optional."""
+    from app.modules.core.documents.document_processing import DocumentProcessor
+
+    return DocumentProcessor(*args, **kwargs)
+
+
+def _create_memory_service(*args: Any, **kwargs: Any) -> Any:
+    """Create MemoryService lazily so MongoDB clients stay off import path."""
+    from app.modules.core.session.services.memory_service import MemoryService
+
+    return MemoryService(*args, **kwargs)
+
+
+def _create_enhanced_session_module(*args: Any, **kwargs: Any) -> Any:
+    """Create EnhancedSessionModule lazily so session storage imports stay optional."""
+    from app.modules.core.session.facade import EnhancedSessionModule
+
+    return EnhancedSessionModule(*args, **kwargs)
 
 
 def _create_notion_client(api_key: str | None = None) -> Any | None:
@@ -309,6 +328,10 @@ async def create_reranker_instance(
         google_api_key = os.getenv("GOOGLE_API_KEY")
         if google_api_key:
             try:
+                from app.modules.core.retrieval.rerankers.gemini_reranker import (
+                    GeminiFlashReranker,
+                )
+
                 reranker = GeminiFlashReranker(
                     api_key=google_api_key,
                     max_documents=_get_provider_config(config, "gemini_flash", "max_documents", 10)
@@ -328,6 +351,8 @@ async def create_reranker_instance(
     jina_api_key = os.getenv("JINA_API_KEY")
     if jina_api_key:
         try:
+            from app.modules.core.retrieval.rerankers.jina_reranker import JinaReranker
+
             reranker = JinaReranker(  # type: ignore[assignment]
                 api_key=jina_api_key,
                 model=_get_provider_config(
@@ -536,6 +561,11 @@ async def create_colbert_reranker_instance(
         return None
 
     try:
+        from app.modules.core.retrieval.rerankers.colbert_reranker import (
+            ColBERTRerankerConfig,
+            JinaColBERTReranker,
+        )
+
         reranker_config = ColBERTRerankerConfig(
             enabled=True,
             api_key=jina_api_key,
@@ -610,6 +640,11 @@ async def create_reranker_chain_instance(
         return None
 
     try:
+        from app.modules.core.retrieval.rerankers.reranker_chain import (
+            RerankerChain,
+            RerankerChainConfig,
+        )
+
         chain = RerankerChain(
             rerankers=rerankers,
             config=RerankerChainConfig(
@@ -1571,17 +1606,17 @@ class AppContainer(containers.DeclarativeContainer):
     # )
 
     memory_service = providers.Singleton(
-        MemoryService,
+        _create_memory_service,
         max_exchanges=config.session.max_exchanges,
         config=config,
         mongodb_client=None,  # MemoryService는 MongoDB 사용하지 않음 (세션은 PostgreSQL)
     )
 
     session = providers.Singleton(
-        EnhancedSessionModule, config=config, memory_service=memory_service
+        _create_enhanced_session_module, config=config, memory_service=memory_service
     )
 
-    document_processor = providers.Singleton(DocumentProcessor, config=config)
+    document_processor = providers.Singleton(_create_document_processor, config=config)
 
     # ----------------------------------------
     # Phase 2: 개인정보 보호 모듈 (Generation 전에 정의)
@@ -1994,7 +2029,7 @@ class AppContainer(containers.DeclarativeContainer):
 
     # RAGPipeline Factory
     rag_pipeline = providers.Factory(
-        RAGPipeline,
+        _create_rag_pipeline,
         config=config,
         query_router=query_router,
         query_expansion=query_expansion,

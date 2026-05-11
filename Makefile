@@ -186,6 +186,10 @@ lint-imports: install-dev
 	@echo "🔍 Checking import dependencies..."
 	uv run lint-imports
 
+repair-venv-scripts: check-uv
+	@echo "🔧 Reinstalling console scripts for moved workspaces..."
+	uv sync --reinstall-package import-linter --reinstall-package mypy --reinstall-package pytest
+
 # 의존성 그래프 생성 (v3.1.0+)
 deps-graph: install-dev
 	@echo "📊 Generating dependency graph..."

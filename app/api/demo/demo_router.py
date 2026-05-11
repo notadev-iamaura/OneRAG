@@ -17,7 +17,9 @@ Rate Limit이 적용되어 API 비용을 보호합니다.
 import json
 import os
 import pathlib
+import zipfile
 from collections.abc import AsyncGenerator
+from io import BytesIO
 
 from fastapi import APIRouter, Body, File, HTTPException, Path, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -52,15 +54,8 @@ RATE_LIMIT_UPLOAD = os.getenv("DEMO_RATE_UPLOAD", "5/minute")
 RATE_LIMIT_CHAT = os.getenv("DEMO_RATE_CHAT", "5/minute")
 RATE_LIMIT_READ = os.getenv("DEMO_RATE_READ", "30/minute")
 
-# MIME 타입 → 허용 확장자 매핑
-_MIME_EXTENSION_MAP: dict[str, set[str]] = {
-    "application/pdf": {"pdf"},
-    "text/plain": {"txt", "md", "csv"},
-    "text/markdown": {"md"},
-    "text/csv": {"csv"},
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {"docx"},
-    "application/octet-stream": ALLOWED_EXTENSIONS,  # 알 수 없는 타입은 확장자로 재검증
-}
+_TEXT_EXTENSIONS = {"txt", "md", "csv"}
+_ALLOWED_TEXT_CONTROL_BYTES = {9, 10, 12, 13}
 
 # =============================================================================
 # 라우터 설정
@@ -119,41 +114,67 @@ def _get_limiter(request: Request) -> Limiter:
 
 def _validate_mime_type(file_bytes: bytes, file_ext: str) -> None:
     """
-    python-magic으로 실제 파일 MIME 타입 검증
+    허용 확장자별 파일 시그니처를 검증합니다.
 
-    확장자와 실제 파일 내용의 MIME 타입이 일치하는지 확인합니다.
+    외부 네이티브 MIME 라이브러리 없이 데모 업로드 경로에서
+    바이너리 위장 파일을 빠르게 차단합니다.
     """
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorCode.DEMO_006.value,
+        )
+
+    if file_ext == "pdf" and not file_bytes.startswith(b"%PDF-"):
+        logger.warning("파일 시그니처 불일치: 확장자=.pdf")
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorCode.DEMO_006.value,
+        )
+
+    if file_ext == "docx" and not _looks_like_docx(file_bytes):
+        logger.warning("파일 시그니처 불일치: 확장자=.docx")
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorCode.DEMO_006.value,
+        )
+
+    if file_ext in _TEXT_EXTENSIONS and not _looks_like_text(file_bytes):
+        logger.warning(f"파일 시그니처 불일치: 확장자=.{file_ext}")
+        raise HTTPException(
+            status_code=400,
+            detail=ErrorCode.DEMO_006.value,
+        )
+
+
+def _looks_like_docx(file_bytes: bytes) -> bool:
     try:
-        import magic
+        with zipfile.ZipFile(BytesIO(file_bytes)) as archive:
+            names = set(archive.namelist())
+    except zipfile.BadZipFile:
+        return False
 
-        detected_mime = magic.from_buffer(file_bytes[:8192], mime=True)
-    except ImportError:
-        # python-magic 미설치 시 확장자 검증만 수행
-        logger.warning("python-magic 미설치 — MIME 검증 건너뜀")
-        return
-    except Exception as e:
-        logger.warning(f"MIME 타입 감지 실패: {e}")
-        return
+    return "[Content_Types].xml" in names and "word/document.xml" in names
 
-    # 감지된 MIME 타입에서 허용되는 확장자 확인
-    allowed_exts = _MIME_EXTENSION_MAP.get(detected_mime)
-    if allowed_exts is None:
-        # 알려지지 않은 MIME 타입 → text/* 계열이면 텍스트 파일로 허용
-        if detected_mime.startswith("text/"):
-            return
-        raise HTTPException(
-            status_code=400,
-            detail=ErrorCode.DEMO_006.value,
-        )
 
-    if file_ext not in allowed_exts:
-        logger.warning(
-            f"MIME 불일치: 확장자=.{file_ext}, 감지={detected_mime}"
-        )
-        raise HTTPException(
-            status_code=400,
-            detail=ErrorCode.DEMO_006.value,
-        )
+def _looks_like_text(file_bytes: bytes) -> bool:
+    sample = file_bytes[:8192]
+    if not sample:
+        return True
+    if b"\x00" in sample:
+        return False
+
+    try:
+        sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+
+    control_count = sum(
+        1
+        for byte in sample
+        if byte < 32 and byte not in _ALLOWED_TEXT_CONTROL_BYTES
+    )
+    return control_count / len(sample) <= 0.05
 
 
 # =============================================================================

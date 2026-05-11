@@ -33,8 +33,15 @@ WORKDIR /app
 COPY . .
 
 # Install uv and dependencies (as root, WITHOUT Playwright browsers yet)
+ARG INSTALL_LOCAL_EMBEDDING_DEPS=false
 RUN pip install --no-cache-dir --upgrade pip uv && \
-    uv pip install --system --no-cache -e .
+    if [ "$INSTALL_LOCAL_EMBEDDING_DEPS" = "true" ]; then \
+        uv export --frozen --no-dev --extra local-embedding --format requirements.txt --no-hashes --output-file /tmp/requirements.txt; \
+    else \
+        uv export --frozen --no-dev --format requirements.txt --no-hashes --output-file /tmp/requirements.txt; \
+    fi && \
+    uv pip install --system --no-cache --requirement /tmp/requirements.txt && \
+    rm -f /tmp/requirements.txt
 
 # Create directories
 RUN mkdir -p logs uploads/temp
@@ -52,16 +59,30 @@ RUN chown -R app:app /app && \
 # Switch to non-root user
 USER app
 
+ENV HF_HOME=/home/app/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/home/app/.cache/huggingface
+ENV TORCHINDUCTOR_CACHE_DIR=/home/app/.cache/torchinductor
+
 # 로컬 임베딩 모델 사전 다운로드 (Qwen3-Embedding-0.6B)
 # app 사용자로 다운로드하여 런타임에 캐시 접근 가능
 # 약 1.2GB, HuggingFace Hub에서 다운로드
-RUN python -c "from sentence_transformers import SentenceTransformer; \
-    print('📥 로컬 임베딩 모델 다운로드 중 (Qwen3-Embedding-0.6B)...'); \
-    model = SentenceTransformer('Qwen/Qwen3-Embedding-0.6B', trust_remote_code=True); \
-    print('✅ 임베딩 모델 다운로드 완료!')"
+ARG PRELOAD_LOCAL_EMBEDDING_MODEL=false
+RUN if [ "$PRELOAD_LOCAL_EMBEDDING_MODEL" = "true" ]; then \
+    python -c "from sentence_transformers import SentenceTransformer; \
+        print('📥 로컬 임베딩 모델 다운로드 중 (Qwen3-Embedding-0.6B)...'); \
+        model = SentenceTransformer('Qwen/Qwen3-Embedding-0.6B', trust_remote_code=True); \
+        print('✅ 임베딩 모델 다운로드 완료!')"; \
+    else \
+        echo "Skipping local embedding model preload. Set PRELOAD_LOCAL_EMBEDDING_MODEL=true to enable."; \
+    fi
 
 # Install Playwright browsers as app user (in /home/app/.cache/ms-playwright/)
-RUN playwright install chromium
+ARG INSTALL_PLAYWRIGHT_BROWSERS=false
+RUN if [ "$INSTALL_PLAYWRIGHT_BROWSERS" = "true" ]; then \
+    playwright install chromium; \
+    else \
+        echo "Skipping Playwright browser install. Set INSTALL_PLAYWRIGHT_BROWSERS=true to enable."; \
+    fi
 
 # Set environment
 ENV PYTHONPATH=/app

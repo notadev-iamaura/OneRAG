@@ -14,9 +14,11 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app.api.routers import websocket_router
 from app.api.routers.websocket_router import router, set_chat_service, ws_manager
+from app.lib.auth import APIKeyAuth, create_websocket_session_token
 
 
 class TestWebSocketRouterEndpoint:
@@ -437,6 +439,42 @@ class TestWebSocketConnection:
         app.include_router(router)
         return app
 
+    @pytest.fixture
+    def require_ws_auth(self):
+        """WebSocket 인증을 강제하는 테스트용 auth singleton."""
+        import app.lib.auth as auth_module
+
+        original_auth = auth_module._auth_instance
+        auth_module._auth_instance = APIKeyAuth(api_key="test-ws-key")
+        yield "test-ws-key"
+        auth_module._auth_instance = original_auth
+
+    def test_missing_api_key_rejects_when_auth_configured(self, app, require_ws_auth):
+        """FASTAPI_AUTH_KEY가 설정된 경우 API Key 없는 WebSocket 연결 차단"""
+        with TestClient(app) as client:
+            with pytest.raises(WebSocketDisconnect):
+                with client.websocket_connect("/chat-ws?session_id=test-session"):
+                    pass
+
+    def test_wrong_api_key_rejects_when_auth_configured(self, app, require_ws_auth):
+        """잘못된 API Key로 WebSocket 연결 차단"""
+        with TestClient(app) as client:
+            with pytest.raises(WebSocketDisconnect):
+                with client.websocket_connect(
+                    "/chat-ws?session_id=test-session",
+                    headers={"x-api-key": "wrong-key"},
+                ):
+                    pass
+
+    def test_wrong_session_token_rejects_when_auth_configured(self, app, require_ws_auth):
+        """잘못된 세션 토큰으로 WebSocket 연결 차단"""
+        token = create_websocket_session_token("other-session", require_ws_auth)
+
+        with TestClient(app) as client:
+            with pytest.raises(WebSocketDisconnect):
+                with client.websocket_connect(f"/chat-ws?session_id=test-session&ws_token={token}"):
+                    pass
+
     def test_session_id_required(self, app):
         """session_id 쿼리 파라미터 필수 확인"""
         with TestClient(app) as client:
@@ -446,7 +484,7 @@ class TestWebSocketConnection:
                     pass
 
     @pytest.mark.asyncio
-    async def test_connection_registered_in_manager(self, app):
+    async def test_connection_registered_in_manager(self, app, require_ws_auth):
         """연결 시 WebSocketManager에 등록 확인"""
         mock_service = MagicMock()
 
@@ -455,9 +493,12 @@ class TestWebSocketConnection:
 
         mock_service.stream_rag_pipeline = MagicMock(return_value=mock_stream())
         set_chat_service(mock_service)
+        ws_token = create_websocket_session_token("unique-session-123", require_ws_auth)
 
         with TestClient(app) as client:
-            with client.websocket_connect("/chat-ws?session_id=unique-session-123"):
+            with client.websocket_connect(
+                f"/chat-ws?session_id=unique-session-123&ws_token={ws_token}"
+            ):
                 # Then: 연결이 등록되어야 함
                 assert ws_manager.is_connected("unique-session-123")
 

@@ -23,6 +23,7 @@ from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from ...lib.auth import create_websocket_session_token, get_api_key_auth
 from ...lib.errors import ErrorCode, GenerationError, RetrievalError, SessionError, wrap_exception
 from ...lib.logger import get_logger
 from ..schemas.chat_schemas import (
@@ -364,10 +365,16 @@ async def create_session(
                 "context_size": len(str(context)),
             },
         )
+        ws_token = None
+        auth = get_api_key_auth()
+        if auth.api_key:
+            ws_token = create_websocket_session_token(new_session["session_id"], auth.api_key)
+
         return SessionResponse(
             session_id=new_session["session_id"],
             message="Session created successfully",
             timestamp=datetime.now().isoformat(),
+            ws_token=ws_token,
         )
     except HTTPException:
         logger.error(f"❌ HTTPException 발생 ({(time.time() - start_time)*1000:.2f}ms)")

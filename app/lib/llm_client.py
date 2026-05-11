@@ -853,7 +853,7 @@ class OllamaLLMClient(BaseLLMClient):
         try:
             async with httpx.AsyncClient(timeout=5) as client:
                 response = await client.get(f"{self.base_url}/api/tags")
-                return response.status_code == 200
+                return bool(response.status_code == 200)
         except Exception:
             return False
 

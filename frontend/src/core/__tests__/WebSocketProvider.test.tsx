@@ -54,22 +54,32 @@ describe('WebSocketProvider', () => {
   it('기본 WebSocket 팩토리를 제공해야 함', () => {
     // 브라우저 WebSocket을 Mock으로 대체
     const originalWebSocket = globalThis.WebSocket;
-    globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    Object.defineProperty(globalThis, 'WebSocket', {
+      value: MockWebSocket as unknown as typeof WebSocket,
+      writable: true,
+      configurable: true,
+    });
 
-    render(
-      <WebSocketProvider>
-        <TestComponent />
-      </WebSocketProvider>
-    );
+    try {
+      render(
+        <WebSocketProvider>
+          <TestComponent />
+        </WebSocketProvider>
+      );
 
-    // 기본 설정값 검증
-    expect(screen.getByTestId('ws-url').textContent).toBe('ws://test.com');
-    expect(screen.getByTestId('max-reconnect').textContent).toBe('5');
-    expect(screen.getByTestId('reconnect-interval').textContent).toBe('3000');
-    expect(screen.getByTestId('connection-timeout').textContent).toBe('10000');
-
-    // 원래 WebSocket 복원
-    globalThis.WebSocket = originalWebSocket;
+      // 기본 설정값 검증
+      expect(screen.getByTestId('ws-url').textContent).toBe('ws://test.com');
+      expect(screen.getByTestId('max-reconnect').textContent).toBe('5');
+      expect(screen.getByTestId('reconnect-interval').textContent).toBe('3000');
+      expect(screen.getByTestId('connection-timeout').textContent).toBe('10000');
+    } finally {
+      // 원래 WebSocket 복원
+      Object.defineProperty(globalThis, 'WebSocket', {
+        value: originalWebSocket,
+        writable: true,
+        configurable: true,
+      });
+    }
   });
 
   it('커스텀 WebSocket 팩토리를 주입할 수 있어야 함', () => {

@@ -8,16 +8,93 @@ NetworkX 기반 인메모리 그래프 저장소
 - 빠른 그래프 연산 (NetworkX 최적화)
 """
 import logging
+import math
 from collections import deque
-from typing import Any
-
-import networkx as nx
-import numpy as np
+from collections.abc import Iterator
+from typing import Any, Literal, overload
 
 from ..interfaces import IGraphStore
 from ..models import Entity, GraphSearchResult, Relation
 
 logger = logging.getLogger(__name__)
+
+
+class _EdgeView:
+    """Small edge-data view compatible with the subset this store needs."""
+
+    def __init__(self, successors: dict[str, dict[str, dict[str, Any]]]) -> None:
+        self._successors = successors
+
+    def __getitem__(self, edge: tuple[str, str]) -> dict[str, Any]:
+        source_id, target_id = edge
+        return self._successors[source_id][target_id]
+
+
+class _SimpleDiGraph:
+    """Minimal directed graph used to avoid importing NetworkX at test collection time."""
+
+    def __init__(self) -> None:
+        self._nodes: dict[str, dict[str, Any]] = {}
+        self._successors: dict[str, dict[str, dict[str, Any]]] = {}
+        self._predecessors: dict[str, dict[str, dict[str, Any]]] = {}
+        self.edges = _EdgeView(self._successors)
+
+    def __contains__(self, node_id: str) -> bool:
+        return node_id in self._nodes
+
+    def add_node(self, node_id: str, **attributes: Any) -> None:
+        self._nodes.setdefault(node_id, {}).update(attributes)
+        self._successors.setdefault(node_id, {})
+        self._predecessors.setdefault(node_id, {})
+
+    def add_edge(self, source_id: str, target_id: str, **attributes: Any) -> None:
+        if source_id not in self._nodes:
+            self.add_node(source_id)
+        if target_id not in self._nodes:
+            self.add_node(target_id)
+
+        edge_data = dict(attributes)
+        self._successors[source_id][target_id] = edge_data
+        self._predecessors[target_id][source_id] = edge_data
+
+    def successors(self, node_id: str) -> Iterator[str]:
+        return iter(self._successors.get(node_id, {}))
+
+    def predecessors(self, node_id: str) -> Iterator[str]:
+        return iter(self._predecessors.get(node_id, {}))
+
+    @overload
+    def nodes(self, data: Literal[False] = False) -> Iterator[str]: ...
+
+    @overload
+    def nodes(self, data: Literal[True]) -> Iterator[tuple[str, dict[str, Any]]]: ...
+
+    def nodes(self, data: bool = False) -> Iterator[str] | Iterator[tuple[str, dict[str, Any]]]:
+        if data:
+            return iter(self._nodes.items())
+        return iter(self._nodes.keys())
+
+    def clear(self) -> None:
+        self._nodes.clear()
+        self._successors.clear()
+        self._predecessors.clear()
+
+    def number_of_nodes(self) -> int:
+        return len(self._nodes)
+
+    def number_of_edges(self) -> int:
+        return sum(len(targets) for targets in self._successors.values())
+
+
+def _cosine_similarity(vector_a: list[float], vector_b: list[float]) -> float:
+    if len(vector_a) != len(vector_b):
+        return 0.0
+
+    dot_product = sum(a * b for a, b in zip(vector_a, vector_b, strict=True))
+    norm_a = math.sqrt(sum(a * a for a in vector_a))
+    norm_b = math.sqrt(sum(b * b for b in vector_b))
+
+    return dot_product / (norm_a * norm_b) if norm_a > 0 and norm_b > 0 else 0.0
 
 
 class NetworkXGraphStore(IGraphStore):
@@ -31,7 +108,7 @@ class NetworkXGraphStore(IGraphStore):
 
     def __init__(self) -> None:
         """그래프 초기화"""
-        self._graph = nx.DiGraph()  # 방향 그래프
+        self._graph = _SimpleDiGraph()  # 방향 그래프
         self._entities: dict[str, Entity] = {}
         self._embedder: Any = None  # 임베딩 모델 (선택적)
 
@@ -205,9 +282,9 @@ class NetworkXGraphStore(IGraphStore):
         # 1. 벡터 검색 시도 (임베더가 설정된 경우)
         if self._embedder:
             try:
-                query_vec = np.array(await self._embedder.embed_query(query))
+                query_vec = await self._embedder.embed_query(query)
 
-                scored_entities = []
+                scored_entities: list[tuple[Entity, float]] = []
                 for node_id, node_data in self._graph.nodes(data=True):
                     # 타입 필터링
                     if entity_types and node_data.get("type") not in entity_types:
@@ -218,12 +295,7 @@ class NetworkXGraphStore(IGraphStore):
                         continue
 
                     # 코사인 유사도 계산
-                    node_vec_np = np.array(node_vec)
-                    dot_product = np.dot(query_vec, node_vec_np)
-                    norm_a = np.linalg.norm(query_vec)
-                    norm_b = np.linalg.norm(node_vec_np)
-
-                    similarity = dot_product / (norm_a * norm_b) if norm_a > 0 and norm_b > 0 else 0.0
+                    similarity = _cosine_similarity(query_vec, node_vec)
 
                     if similarity > 0:
                         entity = self._entities.get(node_id)
@@ -240,7 +312,7 @@ class NetworkXGraphStore(IGraphStore):
                     return GraphSearchResult(
                         entities=matched_entities,
                         relations=[],
-                        score=best_score
+                        score=best_score,
                     )
             except Exception as e:
                 logger.warning(f"Vector search failed, falling back to string match: {e}")

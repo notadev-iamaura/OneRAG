@@ -16,6 +16,7 @@ Weaviate 연결 및 관리 모듈
 from __future__ import annotations
 
 import weaviate
+from weaviate.classes.init import Auth
 from weaviate.client import WeaviateClient as WeaviateClientSDK
 from weaviate.collections.collection import Collection
 from weaviate.connect import ConnectionParams
@@ -70,7 +71,8 @@ class WeaviateClient:
             url = self._config.get("url", "http://localhost:8080")
             grpc_host = self._config.get("grpc_host", "localhost")
             grpc_port = self._config.get("grpc_port", 50051)
-            self._config.get("api_key")
+            api_key = self._config.get("api_key")
+            auth_credentials = Auth.api_key(api_key) if api_key else None
             timeout = self._config.get("timeout", 30)
 
             # 연결 파라미터 구성
@@ -81,17 +83,17 @@ class WeaviateClient:
                     host=grpc_host,
                     port=int(url.split(":")[-1]),
                     grpc_port=grpc_port,
+                    auth_credentials=auth_credentials,
                 )
             else:
                 # 커스텀 연결 (프로덕션) - Railway 환경
                 logger.info(f"Weaviate 커스텀 연결 시도: {url}")
                 connection_params = ConnectionParams.from_url(url, grpc_port)
 
-                # Railway 환경에서는 인증 비활성화 (AUTHENTICATION_APIKEY_ENABLED=false)
-                # API 키 인증 없이 연결
                 # skip_init_checks=True: gRPC health check 건너뛰기 (로컬에서 프로덕션 접속 시 필요)
                 self._client = weaviate.WeaviateClient(
                     connection_params=connection_params,
+                    auth_client_secret=auth_credentials,
                     skip_init_checks=True,
                 )
 
@@ -104,6 +106,7 @@ class WeaviateClient:
                     extra={
                         "url": url,
                         "grpc_port": grpc_port,
+                        "api_key_configured": bool(api_key),
                         "timeout": timeout,
                     },
                 )

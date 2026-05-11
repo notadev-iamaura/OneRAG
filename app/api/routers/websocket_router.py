@@ -24,11 +24,12 @@ WebSocket 기반 실시간 RAG 스트리밍 채팅 엔드포인트를 제공합�
 """
 
 import json
+import secrets
 import time
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from pydantic import ValidationError
 
 from app.api.schemas.websocket import (
@@ -40,6 +41,7 @@ from app.api.schemas.websocket import (
     WSStreamErrorEvent,
 )
 from app.api.services.websocket_manager import WebSocketManager
+from app.lib.auth import get_api_key_auth, verify_websocket_session_token
 from app.lib.logger import get_logger
 
 router = APIRouter()
@@ -67,6 +69,48 @@ def set_chat_service(service: Any) -> None:
         logger.info("ChatService 주입 완료")
     else:
         logger.debug("ChatService 해제됨")
+
+
+def _extract_websocket_api_key(websocket: WebSocket) -> str | None:
+    """Extract API key from header or OpenAI-style bearer token."""
+    header_key = websocket.headers.get("x-api-key")
+    if header_key:
+        return header_key
+
+    authorization = websocket.headers.get("authorization")
+    if authorization and authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+
+    return None
+
+
+async def _authenticate_websocket(
+    websocket: WebSocket,
+    session_id: str,
+    ws_token: str | None,
+) -> bool:
+    """Validate WebSocket auth with the existing FASTAPI_AUTH_KEY singleton."""
+    try:
+        auth = get_api_key_auth()
+    except RuntimeError:
+        logger.critical("WebSocket 인증 설정 오류: FASTAPI_AUTH_KEY 누락")
+        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        return False
+
+    if not auth.api_key:
+        logger.warning("FASTAPI_AUTH_KEY 미설정으로 WebSocket 인증 스킵")
+        return True
+
+    supplied_key = _extract_websocket_api_key(websocket)
+    if supplied_key and secrets.compare_digest(supplied_key, auth.api_key):
+        return True
+
+    if verify_websocket_session_token(session_id, ws_token, auth.api_key):
+        return True
+
+    logger.warning("WebSocket 인증 실패: API Key 또는 세션 토큰 없음/불일치")
+    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    return False
 
 
 async def _send_error(
@@ -99,6 +143,7 @@ async def _send_error(
 async def websocket_chat(
     websocket: WebSocket,
     session_id: str = Query(..., description="세션 ID"),
+    ws_token: str | None = Query(None, description="Session-scoped WebSocket token"),
 ) -> None:
     """
     WebSocket 실시간 채팅 엔드포인트
@@ -115,6 +160,9 @@ async def websocket_chat(
         2. 클라이언트 → 서버: ClientMessage (JSON)
         3. 서버 → 클라이언트: StreamStartEvent, StreamTokenEvent, StreamSourcesEvent, StreamEndEvent
     """
+    if not await _authenticate_websocket(websocket, session_id, ws_token):
+        return
+
     # WebSocket 연결 수락 및 등록
     await ws_manager.connect(session_id, websocket)
 

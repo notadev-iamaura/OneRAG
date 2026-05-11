@@ -207,11 +207,11 @@ class EnrichmentService:
 
             # 결과 평탄화
             results: list[EnrichmentResult | None] = []
-            for batch_result in batch_results:
+            for batch, batch_result in zip(batches, batch_results, strict=True):
                 if isinstance(batch_result, Exception):
                     logger.error(f"Batch processing error: {batch_result}")
                     # 실패한 배치는 None으로 채우기
-                    results.extend([None] * batch_size)
+                    results.extend([None] * len(batch))
                 else:
                     results.extend(batch_result)
 

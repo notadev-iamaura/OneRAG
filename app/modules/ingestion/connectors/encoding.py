@@ -49,10 +49,10 @@ def detect_file_encoding(
 
         # chardet으로 인코딩 감지
         result = chardet.detect(raw_data)
-        encoding = result['encoding']
-        confidence = result['confidence']
+        encoding = result.get('encoding')
+        confidence = float(result.get('confidence') or 0.0)
 
-        if encoding is None:
+        if not isinstance(encoding, str):
             logger.warning(
                 f"⚠️ 인코딩 감지 실패 (파일: {file_path.name}). UTF-8로 fallback."
             )

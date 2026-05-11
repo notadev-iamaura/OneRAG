@@ -8,7 +8,7 @@ GET  /v1/models            - 사용 가능한 모델 목록
 외부 도구(LangChain, Cursor, Open WebUI 등)가 OpenAI SDK로
 OneRAG에 바로 연결할 수 있도록 표준 형식을 제공합니다.
 
-인증: 없음 (Ollama 방식 — 로컬 서비스 전제)
+인증: 전역 API Key 미들웨어 적용 (/v1/*)
 """
 
 from __future__ import annotations

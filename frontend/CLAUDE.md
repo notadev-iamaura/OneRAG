@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 프로젝트 개요
 
-React 19 + TypeScript + Material-UI로 구현된 RAG(Retrieval-Augmented Generation) 챗봇 프론트엔드 애플리케이션입니다. 사용자는 문서를 업로드하고, 업로드된 문서를 기반으로 AI 챗봇과 대화할 수 있으며, 문서 관리 및 시스템 통계를 확인할 수 있습니다. PWA를 지원하며 오프라인에서도 기본 기능을 사용할 수 있습니다.
+React 19 + TypeScript + Material-UI로 구현된 RAG(Retrieval-Augmented Generation) 챗봇 프론트엔드 애플리케이션입니다. 사용자는 문서를 업로드하고, 업로드된 문서를 기반으로 AI 챗봇과 대화할 수 있으며, 문서 관리 및 시스템 통계를 확인할 수 있습니다.
 
 ## 📚 주요 개발 문서
 
@@ -57,7 +57,7 @@ npm run test:coverage     # 테스트 커버리지 리포트 생성
 VITE_API_BASE_URL=http://localhost:8000
 VITE_DEV_API_BASE_URL=http://localhost:8000
 VITE_DEV_WS_BASE_URL=ws://localhost:8000
-VITE_API_KEY=your-api-key
+VITE_ACCESS_CODE=1127
 ```
 
 ## 아키텍처 및 주요 설계 결정사항

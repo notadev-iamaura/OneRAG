@@ -9,7 +9,7 @@
 """
 import logging
 import os
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -331,7 +331,7 @@ def validate_config_section(
     try:
         validated = model.model_validate(config_data)
         logger.debug(f"✅ {section_name} 설정 검증 성공")
-        return validated.model_dump()
+        return cast(dict[str, Any], validated.model_dump())
     except ValidationError as e:
         error_msg = f"❌ {section_name} 설정 검증 실패:\n{e}"
         logger.error(error_msg)
