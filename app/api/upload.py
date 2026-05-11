@@ -251,6 +251,7 @@ async def process_document_background(job_id: str, file_path: Path, filename: st
         docs = await document_processor.load_document(
             str(file_path),
             {
+                "document_id": job_id,
                 "source_file": masked_filename,
                 "file_type": file_type,
                 "original_file_size": file_size,
@@ -270,7 +271,31 @@ async def process_document_background(job_id: str, file_path: Path, filename: st
             {"progress": 90, "message": f"벡터 DB에 저장 중... ({len(embedded_chunks)}개 임베딩)"}
         )
         save_upload_jobs(upload_jobs)
-        await retrieval_module.add_documents(embedded_chunks)
+        index_result = await retrieval_module.add_documents(embedded_chunks)
+        if isinstance(index_result, dict):
+            success_count = int(index_result.get("success_count", 0))
+            error_count = int(index_result.get("error_count", 0))
+            total_count = int(index_result.get("total_count", len(embedded_chunks)))
+            if error_count > 0 or success_count != total_count:
+                if success_count > 0 and hasattr(retrieval_module, "delete_document"):
+                    try:
+                        await retrieval_module.delete_document(job_id)
+                    except Exception as cleanup_error:
+                        logger.warning(
+                            f"Partial upload cleanup failed for job_id={job_id}: {cleanup_error}"
+                        )
+                errors = index_result.get("errors") or ["unknown error"]
+                first_error = errors[0] if isinstance(errors, list) else str(errors)
+                raise RuntimeError(
+                    "Vector DB 저장 실패: "
+                    f"성공 {success_count}/{total_count}, 실패 {error_count}. "
+                    f"첫 번째 오류: {first_error}"
+                )
+        elif isinstance(index_result, int) and index_result != len(embedded_chunks):
+            raise RuntimeError(
+                "Vector DB 저장 실패: "
+                f"성공 {index_result}/{len(embedded_chunks)}, 실패 {len(embedded_chunks) - index_result}"
+            )
         try:
             os.unlink(file_path)
         except Exception as e:

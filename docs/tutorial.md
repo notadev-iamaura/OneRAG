@@ -360,7 +360,7 @@ docker logs onerag-weaviate-1
 
 ```bash
 # .env 파일 확인
-cat .env | grep API_KEY
+awk -F= '/API_KEY/ { print $1"=<redacted>" }' .env
 ```
 
 ### "메모리 부족"
