@@ -3306,7 +3306,7 @@ requires-dist = [
     { name = "slowapi", specifier = "==0.1.9" },
     { name = "spacy", specifier = ">=3.7.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.0.23" },
-    { name = "structlog", specifier = "==23.2.0" },
+    { name = "structlog", specifier = "==25.5.0" },
     { name = "tavily-python", specifier = ">=0.7.18" },
     { name = "tiktoken", specifier = ">=0.7.0" },
     { name = "torch", marker = "extra == 'local-embedding'", specifier = ">=2.0.0" },
@@ -5390,11 +5390,11 @@ wheels = [
 
 [[package]]
 name = "structlog"
-version = "23.2.0"
+version = "25.5.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/99/4c/67e8cc235bbeb0a87053739c4c9d0619e3f284730ebdb2b34349488d9e8a/structlog-23.2.0.tar.gz", hash = "sha256:334666b94707f89dbc4c81a22a8ccd34449f0201d5b1ee097a030b577fa8c858", size = 749288, upload-time = "2023-10-09T14:56:18.602Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ef/52/9ba0f43b686e7f3ddfeaa78ac3af750292662284b3661e91ad5494f21dbc/structlog-25.5.0.tar.gz", hash = "sha256:098522a3bebed9153d4570c6d0288abf80a031dfdb2048d59a49e9dc2190fc98", size = 1460830, upload-time = "2025-10-27T08:28:23.028Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/26/0f5f842dea4e93e28f7d4ed020021cf41ebd79572a06f12e273c8eac4db9/structlog-23.2.0-py3-none-any.whl", hash = "sha256:16a167e87b9fa7fae9a972d5d12805ef90e04857a93eba479d4be3801a6a1482", size = 62875, upload-time = "2023-10-09T14:56:16.76Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/45/a132b9074aa18e799b891b91ad72133c98d8042c70f6240e4c5f9dabee2f/structlog-25.5.0-py3-none-any.whl", hash = "sha256:a8453e9b9e636ec59bd9e79bbd4a72f025981b3ba0f5837aebf48f02f37a7f9f", size = 72510, upload-time = "2025-10-27T08:28:21.535Z" },
 ]
 
 [[package]]
