@@ -12,6 +12,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { PromptTable } from '../PromptTable';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { Prompt } from '../../../types/prompt';
+import { checkA11y } from '../../../test/axeHelper';
 
 const mockPrompts: Prompt[] = [
   {
@@ -76,5 +77,18 @@ describe('PromptTable', () => {
   it('활성 프롬프트에 ACTIVE 뱃지를 표시해야 한다', () => {
     renderWithTooltip(<PromptTable {...defaultProps} />);
     expect(screen.getByText('ACTIVE')).toBeInTheDocument();
+  });
+
+  it('행 액션과 활성 토글에 접근 가능한 이름을 제공해야 한다', async () => {
+    const { container } = renderWithTooltip(<PromptTable {...defaultProps} />);
+
+    expect(screen.getByRole('switch', { name: '시스템 기본 활성 상태 전환' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '시스템 기본 상세 보기' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '시스템 기본 수정' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '시스템 기본 복제' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '시스템 기본 삭제' })).toBeInTheDocument();
+
+    const results = await checkA11y(container);
+    expect(results.violations).toHaveLength(0);
   });
 });

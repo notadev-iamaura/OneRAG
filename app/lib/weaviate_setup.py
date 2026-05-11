@@ -282,8 +282,8 @@ async def create_schema() -> bool:
         client.collections.create(
             name=collection_name,
             description="RAG 챗봇을 위한 문서 저장소",
-            # 벡터화 설정 (OpenAI Embedding 직접 사용)
-            vectorizer_config=None,  # 수동 벡터 입력
+            # 벡터화 설정 (외부 임베딩 직접 입력)
+            vector_config=Configure.Vectors.self_provided(),
             # 속성 정의 (Flat structure - nested object 제거)
             properties=_document_schema_properties(),
             # 인덱싱 설정

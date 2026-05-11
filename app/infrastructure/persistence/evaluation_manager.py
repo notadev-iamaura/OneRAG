@@ -312,6 +312,8 @@ class EvaluationDataManager:
 
             # 업데이트 적용
             update_dict = update_data.model_dump(exclude_unset=True)
+            if "metadata" in update_dict:
+                update_dict["extra_metadata"] = update_dict.pop("metadata")
             for key, value in update_dict.items():
                 if hasattr(evaluation, key):
                     setattr(evaluation, key, value)

@@ -371,6 +371,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return None
 
+    @staticmethod
+    def _restore_request_body(request: Request, body: bytes) -> None:
+        """
+        Reattach a consumed request body for downstream middleware and handlers.
+
+        Starlette request bodies are a receive stream. If rate limiting reads the
+        body to inspect session_id, later handlers must still see the same body
+        even when no session_id is present.
+        """
+        sent = False
+
+        async def receive() -> dict[str, Any]:
+            nonlocal sent
+            if sent:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request._receive = receive
+
     async def _get_session_id(self, request: Request) -> str | None:
         """
         Session ID 추출
@@ -401,6 +421,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             try:
                 # body를 읽기 (한 번만 읽을 수 있으므로 주의)
                 body = await request.body()
+                self._restore_request_body(request, body)
 
                 # JSON 파싱
                 if body:
@@ -410,11 +431,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         data = json.loads(body)
                         session_id = data.get("session_id")
                         if session_id:
-                            # body를 다시 사용할 수 있도록 복원
-                            async def receive():
-                                return {"type": "http.request", "body": body}
-
-                            request._receive = receive
                             return cast(str | None, session_id)
                     except json.JSONDecodeError:
                         pass
