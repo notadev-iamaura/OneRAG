@@ -7,11 +7,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/youngouk/OneRAG/actions/workflows/ci.yml"><img src="https://github.com/youngouk/OneRAG/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/notadev-iamaura/OneRAG/actions/workflows/ci.yml"><img src="https://github.com/notadev-iamaura/OneRAG/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="https://demo-frontend-production-3c93.up.railway.app"><img src="https://img.shields.io/badge/Live_Demo-Railway-blueviolet.svg" alt="Live Demo"></a>
-  <a href="https://github.com/youngouk/OneRAG/stargazers"><img src="https://img.shields.io/github/stars/youngouk/OneRAG?style=social" alt="GitHub Stars"></a>
+  <a href="https://github.com/notadev-iamaura/OneRAG/stargazers"><img src="https://img.shields.io/github/stars/notadev-iamaura/OneRAG?style=social" alt="GitHub Stars"></a>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 ## TL;DR
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git && cd OneRAG && uv sync
+git clone https://github.com/notadev-iamaura/OneRAG.git && cd OneRAG && uv sync
 ```
 
 ```bash
@@ -59,7 +59,7 @@ ollama pull llama3.2 && make easy-start
 - **설정만 바꾸면 끝** — 검색 Provider(7모드: Vector DB 6종 + Grok), LLM(5종), Reranker(6종), Cache(3종) 모두 `.env` 또는 YAML로 교체
 - **API 키 없이 시작** — Ollama 로컬 LLM으로 인터넷 없이도 완전 동작
 - **OpenAI SDK 호환** — 기존 OpenAI 코드 그대로 OneRAG에 연결 (`/v1/chat/completions`)
-- **2,200+ 테스트** — 프로덕션 검증된 안정성, CI/CD 완비
+- **광범위한 테스트 스위트** — Pytest/Vitest 기반 회귀 검증과 CI/CD 게이트
 - **PoC에서 프로덕션까지** — 동일한 코드베이스로 확장, 재구축 불필요
 
 > **[라이브 데모](https://demo-frontend-production-3c93.up.railway.app)에서 바로 체험해보세요** (접근코드: `1127`)
@@ -85,7 +85,7 @@ ollama pull llama3.2 && make easy-start
 ### 방법 A: Full API 서버 (Docker)
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git
+git clone https://github.com/notadev-iamaura/OneRAG.git
 cd OneRAG && uv sync
 
 cp quickstart/.env.quickstart .env
@@ -106,13 +106,13 @@ make start-down  # 종료
 Docker 설치 없이 터미널에서 바로 RAG 검색 + AI 답변을 체험할 수 있습니다.
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git
+git clone https://github.com/notadev-iamaura/OneRAG.git
 cd OneRAG && uv sync
 
 make easy-start
 ```
 
-샘플 데이터 25개가 자동 적재되고, 하이브리드 검색(Dense + BM25)이 바로 작동합니다.
+`.env`가 없으면 `easy_start/.env.example` 템플릿으로 자동 생성됩니다. 샘플 데이터 25개가 자동 적재되고, 하이브리드 검색(Dense + BM25)이 바로 작동합니다.
 AI 답변 생성을 사용하려면 API 키를 하나 설정하세요:
 
 ```bash
@@ -279,7 +279,7 @@ make easy-start            # 한국어 (기본)
 
 ```bash
 make dev-reload   # 개발 서버 (자동 리로드)
-make test         # 테스트 실행 (2,200+)
+make test         # 테스트 실행
 make lint         # 린트 검사
 make type-check   # 타입 체크
 ```
@@ -307,7 +307,7 @@ MIT License
 </p>
 
 <p align="center">
-  <a href="https://github.com/youngouk/OneRAG/issues">Report Bug</a> ·
-  <a href="https://github.com/youngouk/OneRAG/issues">Request Feature</a> ·
-  <a href="https://github.com/youngouk/OneRAG/discussions">Discussions</a>
+  <a href="https://github.com/notadev-iamaura/OneRAG/issues">Report Bug</a> ·
+  <a href="https://github.com/notadev-iamaura/OneRAG/issues">Request Feature</a> ·
+  <a href="https://github.com/notadev-iamaura/OneRAG/discussions">Discussions</a>
 </p>

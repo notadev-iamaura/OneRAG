@@ -124,17 +124,6 @@ async def create_evaluation(
         raise HTTPException(status_code=500, detail="평가 생성 중 오류가 발생했습니다") from e
 
 
-@router.get("/{evaluation_id}", response_model=EvaluationResponse)
-async def get_evaluation(
-    evaluation_id: str, evaluation_module: EvaluationDataManager = Depends(get_evaluation_module)
-):
-    """특정 평가 조회"""
-    evaluation = await evaluation_module.get_evaluation(evaluation_id)
-    if not evaluation:
-        raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
-    return evaluation
-
-
 @router.get("/message/{message_id}", response_model=EvaluationResponse)
 async def get_evaluation_by_message(
     message_id: str, evaluation_module: EvaluationDataManager = Depends(get_evaluation_module)
@@ -163,41 +152,6 @@ async def get_session_evaluations(
     except Exception as e:
         logger.error(f"세션 평가 조회 실패: {str(e)}")
         raise HTTPException(status_code=500, detail="평가 조회 중 오류가 발생했습니다") from e
-
-
-@router.put("/{evaluation_id}", response_model=EvaluationResponse)
-async def update_evaluation(
-    evaluation_id: str,
-    update_data: EvaluationUpdate,
-    evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
-):
-    """평가 정보 업데이트"""
-    try:
-        evaluation = await evaluation_module.update_evaluation(evaluation_id, update_data)
-        if not evaluation:
-            raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
-        logger.info(f"평가 업데이트 완료: {evaluation_id}")
-        return evaluation
-    except ValueError as e:
-        logger.error(f"평가 업데이트 실패 - 유효성 검증 오류: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"평가 업데이트 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="평가 업데이트 중 오류가 발생했습니다") from e
-
-
-@router.delete("/{evaluation_id}", status_code=204)
-async def delete_evaluation(
-    evaluation_id: str, evaluation_module: EvaluationDataManager = Depends(get_evaluation_module)
-):
-    """평가 삭제"""
-    success = await evaluation_module.delete_evaluation(evaluation_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
-    logger.info(f"평가 삭제 완료: {evaluation_id}")
-    return Response(status_code=204)
 
 
 @router.get("/stats/summary", response_model=EvaluationStatistics)
@@ -440,3 +394,49 @@ async def get_recent_evaluations(
     except Exception as e:
         logger.error(f"최근 평가 조회 실패: {str(e)}")
         raise HTTPException(status_code=500, detail="최근 평가 조회 중 오류가 발생했습니다") from e
+
+
+@router.get("/{evaluation_id}", response_model=EvaluationResponse)
+async def get_evaluation(
+    evaluation_id: str, evaluation_module: EvaluationDataManager = Depends(get_evaluation_module)
+):
+    """특정 평가 조회"""
+    evaluation = await evaluation_module.get_evaluation(evaluation_id)
+    if not evaluation:
+        raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
+    return evaluation
+
+
+@router.put("/{evaluation_id}", response_model=EvaluationResponse)
+async def update_evaluation(
+    evaluation_id: str,
+    update_data: EvaluationUpdate,
+    evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
+):
+    """평가 정보 업데이트"""
+    try:
+        evaluation = await evaluation_module.update_evaluation(evaluation_id, update_data)
+        if not evaluation:
+            raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
+        logger.info(f"평가 업데이트 완료: {evaluation_id}")
+        return evaluation
+    except ValueError as e:
+        logger.error(f"평가 업데이트 실패 - 유효성 검증 오류: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"평가 업데이트 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail="평가 업데이트 중 오류가 발생했습니다") from e
+
+
+@router.delete("/{evaluation_id}", status_code=204)
+async def delete_evaluation(
+    evaluation_id: str, evaluation_module: EvaluationDataManager = Depends(get_evaluation_module)
+):
+    """평가 삭제"""
+    success = await evaluation_module.delete_evaluation(evaluation_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
+    logger.info(f"평가 삭제 완료: {evaluation_id}")
+    return Response(status_code=204)

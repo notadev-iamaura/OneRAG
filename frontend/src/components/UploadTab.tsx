@@ -281,6 +281,17 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
     }
   };
 
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleUploadAreaKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openFilePicker();
+    }
+  };
+
   const formatFileSize = useCallback((bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -376,6 +387,9 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
 
       {/* 업로드 영역 */}
       <div
+        role="button"
+        tabIndex={0}
+        aria-label="업로드할 파일 선택"
         className={cn(
           "relative group cursor-pointer transition-all duration-300",
           "border-2 border-dashed rounded-[32px] p-12 text-center",
@@ -386,7 +400,8 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={openFilePicker}
+        onKeyDown={handleUploadAreaKeyDown}
       >
         <div className="flex flex-col items-center gap-4 transition-transform duration-300 group-hover:scale-105">
           <div className="w-20 h-20 rounded-3xl bg-primary/5 flex items-center justify-center text-primary transition-all group-hover:bg-primary group-hover:text-white group-hover:rotate-6">
@@ -401,19 +416,22 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
               <span className="text-xs opacity-60">(파일당 최대 50MB 지원)</span>
             </p>
           </div>
-          <Button variant="outline" className="rounded-full font-bold px-8 mt-2 border-border/60 transition-all hover:border-primary hover:text-primary">
+          <span className="inline-flex h-9 items-center justify-center rounded-full border border-border/60 bg-background px-8 mt-2 text-sm font-bold transition-all group-hover:border-primary group-hover:text-primary">
             파일 선택하기
-          </Button>
+          </span>
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept=".pdf,.txt,.md,.markdown,.doc,.docx,.xls,.xlsx,.html,.htm,.json"
-          className="hidden"
-          onChange={handleFileSelect}
-        />
       </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        aria-label="업로드 파일"
+        multiple
+        accept=".pdf,.txt,.md,.markdown,.doc,.docx,.xls,.xlsx,.html,.htm,.json"
+        className="hidden"
+        hidden
+        tabIndex={-1}
+        onChange={handleFileSelect}
+      />
 
       {/* 업로드 파일 목록 */}
       {files.length > 0 && (
@@ -455,6 +473,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                             className="h-8 w-8 rounded-lg text-muted-foreground/40 hover:text-destructive transition-all"
                             onClick={() => removeFile(file.id)}
                             disabled={['uploading', 'processing'].includes(file.status)}
+                            aria-label={`${file.file.name} 제거`}
                           >
                             <X className="w-4 h-4" />
                           </Button>

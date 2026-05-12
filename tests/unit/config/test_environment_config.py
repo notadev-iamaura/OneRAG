@@ -56,6 +56,34 @@ class TestEnvironmentConfigSeparation:
                 f"실제값: {config.get('reranking', {}).get('min_score')}"
             )
 
+    def test_empty_weaviate_api_key_resolves_to_empty_string(self):
+        """Weaviate API 키가 없으면 placeholder가 남지 않아야 함"""
+        with patch.dict(
+            os.environ,
+            {"ENVIRONMENT": "test", "WEAVIATE_API_KEY": ""},
+            clear=False,
+        ):
+            from app.lib.config_loader import ConfigLoader
+
+            loader = ConfigLoader()
+            loader.environment = "test"
+            config = loader.load_config(validate=False)
+
+            assert config.get("weaviate", {}).get("api_key") == ""
+
+    def test_missing_weaviate_api_key_resolves_to_empty_string(self):
+        """Weaviate API 키 환경변수가 없어도 기본값은 빈 문자열이어야 함"""
+        with patch.dict(os.environ, {"ENVIRONMENT": "test"}, clear=False):
+            os.environ.pop("WEAVIATE_API_KEY", None)
+
+            from app.lib.config_loader import ConfigLoader
+
+            loader = ConfigLoader()
+            loader.environment = "test"
+            config = loader.load_config(validate=False)
+
+            assert config.get("weaviate", {}).get("api_key") == ""
+
 
 class TestProductionScoringConfig:
     """프로덕션 환경 스코어링 설정 테스트"""

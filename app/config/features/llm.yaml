@@ -29,8 +29,8 @@ llm:
     api_key: "${OPENROUTER_API_KEY:-}"
     base_url: "https://openrouter.ai/api/v1"
 
-    # 기본 모델 - Gemini 3 Pro Preview (최신 성능)
-    default_model: "google/gemini-3-pro-preview"
+    # 기본 모델 - 빠르고 안정적인 OpenRouter 모델
+    default_model: "google/gemini-2.5-flash"
 
     # 공통 설정
     temperature: 0.3
@@ -48,25 +48,19 @@ llm:
 
   models:
     # === Anthropic Claude 시리즈 ===
-    "anthropic/claude-sonnet-4-5":
+    "anthropic/claude-sonnet-4.5":
       description: "Claude Sonnet 4.5 - 균형잡힌 성능과 비용"
       temperature: 0.2
       max_tokens: 20000
       timeout: 120
 
-    "anthropic/claude-3-5-haiku-20241022":
+    "anthropic/claude-3.5-haiku":
       description: "Claude 3.5 Haiku - Fallback 모델 (빠르고 저렴)"
       temperature: 0.3
       max_tokens: 8000
       timeout: 60
 
     # === Google Gemini 시리즈 ===
-    "google/gemini-3-pro-preview":
-      description: "Gemini 3 Pro Preview - 기본 모델 (최신 성능)"
-      temperature: 0.2
-      max_tokens: 20000
-      timeout: 120
-
     "google/gemini-2.5-flash-lite":
       description: "Gemini 2.5 Flash Lite - 초경량 빠른 응답"
       temperature: 0.3
@@ -100,7 +94,7 @@ llm:
   # ========================================
   # 기본 모델 실패 시 Claude 3.5 Haiku로 폴백
   fallback_models:
-    - "anthropic/claude-3-5-haiku-20241022"  # 1순위: Claude 3.5 Haiku (빠르고 저렴)
+    - "anthropic/claude-3.5-haiku"  # 1순위: Claude 3.5 Haiku (빠르고 저렴)
 
   # ========================================
   # Ollama 로컬 LLM 설정
@@ -130,7 +124,7 @@ llm:
     max_tokens: 20000
 
   anthropic:
-    model: "anthropic/claude-sonnet-4-5"  # OpenRouter 형식
+    model: "anthropic/claude-sonnet-4.5"  # OpenRouter 형식
     api_key: "${OPENROUTER_API_KEY:-}"
     temperature: 0.3
     max_tokens: 20000

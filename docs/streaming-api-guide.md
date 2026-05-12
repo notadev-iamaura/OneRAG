@@ -2,7 +2,7 @@
 
 ## 개요
 
-RAG_Standard는 SSE(Server-Sent Events) 기반 스트리밍 API를 제공합니다.
+OneRAG는 SSE(Server-Sent Events) 기반 스트리밍 API를 제공합니다.
 LLM 응답을 실시간으로 수신하여 사용자 경험을 대폭 개선할 수 있습니다.
 
 ### 주요 특징

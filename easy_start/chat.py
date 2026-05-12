@@ -20,6 +20,7 @@ FastAPI 서버 없이 직접 검색 파이프라인과 LLM을 호출합니다.
 
 import asyncio
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -39,9 +40,9 @@ from easy_start.load_data import (  # noqa: E402
 TOP_K = 5
 
 # LLM Provider 설정
-GEMINI_MODEL = "gemini-3-flash-preview"
+GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-OPENROUTER_MODEL = "google/gemini-3-flash-preview"
+OPENROUTER_MODEL = "google/gemini-2.5-flash"
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
 OLLAMA_DEFAULT_MODEL = "llama3.2"
 OLLAMA_BASE_URL = "http://localhost:11434"
@@ -56,10 +57,10 @@ def _get_system_prompt() -> str:
     """
     prompt = load_prompt("system_prompt")
     if prompt:
-        return prompt
+        return str(prompt)
 
     # 폴백: 다국어 기본 프롬프트 (프롬프트 파일 누락 시)
-    return t("chat.prompt.system_fallback")
+    return str(t("chat.prompt.system_fallback"))
 
 
 def build_user_prompt(query: str, documents: list[dict[str, Any]]) -> str:
@@ -256,18 +257,18 @@ def _format_llm_error(error: Exception, provider_name: str = "Gemini") -> str:
 
     # API 할당량 초과 (429)
     if "429" in error_str or "quota" in error_str.lower():
-        return t("chat.errors.quota_exceeded", url=key_url)
+        return str(t("chat.errors.quota_exceeded", url=key_url))
 
     # 인증 실패 (401/403)
     if "401" in error_str or "403" in error_str or "auth" in error_str.lower():
-        return t("chat.errors.auth_failed", env=key_env)
+        return str(t("chat.errors.auth_failed", env=key_env))
 
     # 타임아웃
     if "timeout" in error_str.lower() or "timed out" in error_str.lower():
-        return t("chat.errors.timeout")
+        return str(t("chat.errors.timeout"))
 
     # 기타 에러
-    return t("chat.errors.generation_error", error_type=type(error).__name__)
+    return str(t("chat.errors.generation_error", error_type=type(error).__name__))
 
 
 async def search_documents(
@@ -353,6 +354,23 @@ def initialize_components() -> tuple[Any, Any | None, Any | None]:
     )
 
     return retriever, bm25_index, merger
+
+
+def ensure_data_current() -> None:
+    """직접 CLI 실행 시에도 stale easy-start 캐시를 자동 갱신."""
+    from easy_start.load_data import is_manifest_current
+
+    if is_manifest_current():
+        return
+
+    load_script = project_root / "easy_start" / "load_data.py"
+    result = subprocess.run(
+        [sys.executable, str(load_script)],
+        cwd=str(project_root),
+        env=os.environ.copy(),
+    )
+    if result.returncode != 0:
+        sys.exit(result.returncode)
 
 
 def _check_llm_available() -> tuple[bool, str]:
@@ -577,6 +595,7 @@ async def chat_loop() -> None:
 
 def main() -> None:
     """메인 진입점"""
+    ensure_data_current()
     asyncio.run(chat_loop())
 
 

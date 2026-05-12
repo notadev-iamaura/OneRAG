@@ -2,7 +2,7 @@
 Gemini Embedding 구현체
 
 Google Gemini Embedding API를 사용한 임베딩 생성
-gemini-embedding-001 모델로 1536차원 벡터 생성 및 L2 정규화 수행
+models/gemini-embedding-001 모델로 벡터 생성 및 L2 정규화 수행
 """
 
 import asyncio
@@ -97,6 +97,16 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
         logger.warning("Zero norm vector encountered, returning as-is")
         return vector
 
+    def _normalize_and_validate(self, embedding: list[float]) -> list[float]:
+        """임베딩을 정규화하고 기대 차원과 일치하는지 확인."""
+        normalized = self._normalize_vector(embedding)
+        if len(normalized) != self.output_dimensionality:
+            raise RuntimeError(
+                f"Unexpected embedding dimension: {len(normalized)} != "
+                f"{self.output_dimensionality}"
+            )
+        return normalized
+
     def _batch_embed(self, texts: list[str], task_type: str) -> list[list[float]]:
         """
         배치 단위로 임베딩 생성 (동기 버전)
@@ -128,28 +138,29 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
                     # 배치가 1개인 경우와 여러 개인 경우 구분
                     if len(batch) == 1:
                         # 단일 텍스트 처리
-                        normalized = self._normalize_vector(result["embedding"])
+                        normalized = self._normalize_and_validate(result["embedding"])
                         embeddings.append(normalized)
                     else:
                         # 여러 텍스트를 한 번에 처리한 경우
                         # result['embedding']은 리스트의 리스트
                         for embedding in result["embedding"]:
                             if isinstance(embedding, list):
-                                normalized = self._normalize_vector(embedding)
+                                normalized = self._normalize_and_validate(embedding)
                                 embeddings.append(normalized)
                 elif "embeddings" in result:
                     # 이 경우는 실제로 발생하지 않지만 안전을 위해 유지
                     for embedding in result["embeddings"]:
-                        normalized = self._normalize_vector(embedding)
+                        normalized = self._normalize_and_validate(embedding)
                         embeddings.append(normalized)
                 else:
-                    logger.error(f"Unexpected result format: {result.keys()}")
+                    raise RuntimeError(f"Unexpected result format: {result.keys()}")
 
             except Exception as e:
                 logger.error(f"Error generating embeddings for batch {i//self.batch_size}: {e}")
-                # 오류 발생 시 빈 벡터 추가
-                for _ in batch:
-                    embeddings.append([0.0] * self.output_dimensionality)
+                raise RuntimeError(
+                    f"Google Gemini embedding generation failed for batch "
+                    f"{i // self.batch_size}"
+                ) from e
 
         return embeddings
 
@@ -197,20 +208,11 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
 
             # L2 정규화 수행
             embedding = result.get("embedding", [])
-            normalized = self._normalize_vector(embedding)
-
-            # 차원 확인
-            if len(normalized) != self.output_dimensionality:
-                logger.warning(
-                    f"Unexpected embedding dimension: {len(normalized)} != {self.output_dimensionality}"
-                )
-
-            return normalized
+            return self._normalize_and_validate(embedding)
 
         except Exception as e:
             logger.error(f"Error generating query embedding: {e}")
-            # 오류 발생 시 영벡터 반환
-            return [0.0] * self.output_dimensionality
+            raise RuntimeError("Google Gemini query embedding generation failed") from e
 
     async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
         """

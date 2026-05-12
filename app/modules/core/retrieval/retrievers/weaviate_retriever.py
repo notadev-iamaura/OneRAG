@@ -28,6 +28,7 @@ Weaviate Retriever - 하이브리드 검색 (Dense + Sparse BM25)
 """
 
 import asyncio
+import json
 from datetime import UTC
 from typing import Any
 
@@ -51,6 +52,47 @@ except ImportError:
     UserDictionary = None  # type: ignore
 
 logger = get_logger(__name__)
+
+_TEXT_PROPERTIES = {
+    "content",
+    "created_at",
+    "document_id",
+    "entity_name",
+    "capacity",
+    "content_key",
+    "file_hash",
+    "file_name",
+    "file_path",
+    "file_type",
+    "filename",
+    "format",
+    "json_loader",
+    "json_type",
+    "jq_schema",
+    "location",
+    "metadata_json",
+    "numeric_value",
+    "price",
+    "rating",
+    "sheet_name",
+    "source",
+    "source_file",
+    "splitter_type",
+}
+_INT_PROPERTIES = {
+    "char_count",
+    "chunk_index",
+    "file_size",
+    "item_index",
+    "original_file_size",
+    "page",
+    "page_number",
+    "total_chunks",
+    "total_items",
+    "word_count",
+}
+_NUMBER_PROPERTIES = {"load_timestamp"}
+_TEXT_ARRAY_PROPERTIES = {"keys"}
 
 
 class WeaviateRetriever:
@@ -564,6 +606,7 @@ class WeaviateRetriever:
                 {
                     "content": str,           # 필수: 문서 내용
                     "embedding": list[float], # 필수: 임베딩 벡터
+                                               # dense_embedding도 호환 입력으로 허용
                     "metadata": dict,         # 선택: 메타데이터 (source, file_type 등)
                 }
 
@@ -609,7 +652,7 @@ class WeaviateRetriever:
                 # 1. 필수 필드 검증
                 if "content" not in doc:
                     raise ValueError("문서에 'content' 필드가 없습니다.")
-                if "embedding" not in doc:
+                if "embedding" not in doc and "dense_embedding" not in doc:
                     raise ValueError("문서에 'embedding' 필드가 없습니다.")
 
                 # 2. properties 준비 (embedding 제외)
@@ -619,11 +662,7 @@ class WeaviateRetriever:
 
                 # 3. metadata 병합 (있는 경우)
                 if "metadata" in doc and isinstance(doc["metadata"], dict):
-                    # 모든 메타데이터 필드를 properties로 병합
-                    # (스키마에 정의되지 않은 필드는 Weaviate가 무시하거나 에러를 발생시킬 수 있음)
-                    for key, value in doc["metadata"].items():
-                        if value is not None:
-                            properties[key] = value
+                    properties.update(self._prepare_metadata_properties(doc["metadata"]))
 
                 # 4. created_at 기본값 설정 (없는 경우)
                 if "created_at" not in properties:
@@ -631,8 +670,10 @@ class WeaviateRetriever:
 
                     properties["created_at"] = datetime.now(UTC).isoformat()
 
-                # 5. embedding 추출
-                vector = doc["embedding"]
+                # 5. embedding 추출 (DocumentProcessor의 이전 dense_embedding 키도 허용)
+                vector = doc.get("embedding", doc.get("dense_embedding"))
+                if not isinstance(vector, list) or not vector:
+                    raise ValueError("문서의 'embedding' 필드는 비어 있지 않은 list여야 합니다.")
 
                 # 6. Weaviate에 업로드 (안전한 방식: properties와 vector 분리)
                 await asyncio.to_thread(
@@ -666,6 +707,58 @@ class WeaviateRetriever:
         )
 
         return result
+
+    def _prepare_metadata_properties(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        """Normalize metadata to declared Weaviate properties and preserve extras."""
+        properties: dict[str, Any] = {}
+        extra_metadata: dict[str, Any] = {}
+
+        for key, value in metadata.items():
+            if value is None or key == "content":
+                continue
+
+            normalized = self._normalize_metadata_property(key, value)
+            if normalized is None:
+                extra_metadata[key] = value
+            else:
+                properties[key] = normalized
+
+        if extra_metadata:
+            properties["metadata_json"] = json.dumps(
+                extra_metadata, ensure_ascii=False, default=str
+            )
+
+        return properties
+
+    def _normalize_metadata_property(self, key: str, value: Any) -> Any | None:
+        """Return a value compatible with the declared Weaviate property type."""
+        if key in _TEXT_PROPERTIES:
+            if isinstance(value, str):
+                return value
+            return json.dumps(value, ensure_ascii=False, default=str)
+
+        if key in _INT_PROPERTIES:
+            if isinstance(value, bool):
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        if key in _NUMBER_PROPERTIES:
+            if isinstance(value, bool):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        if key in _TEXT_ARRAY_PROPERTIES:
+            if isinstance(value, list):
+                return [str(item) for item in value]
+            return [str(value)]
+
+        return None
 
     async def cleanup(self) -> None:
         """

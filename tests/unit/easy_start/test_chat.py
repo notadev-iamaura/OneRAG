@@ -156,6 +156,70 @@ class TestSearchDocuments:
         assert results[0]["metadata"] == {}
 
 
+class TestEnsureDataCurrent:
+    """easy-start-chat 직접 실행 시 캐시 최신성 확인 테스트"""
+
+    def test_noop_when_manifest_current(self):
+        """
+        매니페스트가 최신이면 loader를 실행하지 않음
+
+        Given: is_manifest_current()가 True
+        When: ensure_data_current() 호출
+        Then: subprocess.run 미호출
+        """
+        from easy_start.chat import ensure_data_current
+
+        with (
+            patch("easy_start.load_data.is_manifest_current", return_value=True),
+            patch("easy_start.chat.subprocess.run") as mock_run,
+        ):
+            ensure_data_current()
+
+        mock_run.assert_not_called()
+
+    def test_runs_loader_when_manifest_stale(self):
+        """
+        매니페스트가 오래되었으면 loader 실행
+
+        Given: is_manifest_current()가 False
+        When: ensure_data_current() 호출
+        Then: easy_start/load_data.py를 실행
+        """
+        from easy_start.chat import ensure_data_current
+
+        mock_result = MagicMock(returncode=0)
+        with (
+            patch("easy_start.load_data.is_manifest_current", return_value=False),
+            patch("easy_start.chat.subprocess.run", return_value=mock_result) as mock_run,
+        ):
+            ensure_data_current()
+
+        mock_run.assert_called_once()
+        args = mock_run.call_args.args[0]
+        assert args[0]
+        assert str(args[1]).endswith("easy_start/load_data.py")
+
+    def test_exits_when_loader_fails(self):
+        """
+        loader 실패 시 같은 코드로 종료
+
+        Given: load_data.py가 실패
+        When: ensure_data_current() 호출
+        Then: SystemExit 발생
+        """
+        from easy_start.chat import ensure_data_current
+
+        mock_result = MagicMock(returncode=2)
+        with (
+            patch("easy_start.load_data.is_manifest_current", return_value=False),
+            patch("easy_start.chat.subprocess.run", return_value=mock_result),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            ensure_data_current()
+
+        assert exc_info.value.code == 2
+
+
 @patch("easy_start.chat._check_ollama_available", return_value=False)
 class TestResolveLlmProviders:
     """LLM provider 결정 로직 테스트"""

@@ -175,6 +175,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                 <Switch
                   checked={prompt.is_active}
                   onCheckedChange={() => handleToggleWithAnimation(prompt)}
+                  aria-label={`${prompt.name} 활성 상태 전환`}
                   className="data-[state=checked]:bg-primary h-5 w-9 scale-90"
                 />
               </TableCell>
@@ -191,7 +192,13 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                 <div className="flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => onView(prompt)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-lg"
+                        onClick={() => onView(prompt)}
+                        aria-label={`${prompt.name} 상세 보기`}
+                      >
                         <Eye className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
@@ -200,7 +207,13 @@ export const PromptTable: React.FC<PromptTableProps> = ({
 
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => onEdit(prompt)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-lg"
+                        onClick={() => onEdit(prompt)}
+                        aria-label={`${prompt.name} 수정`}
+                      >
                         <Edit2 className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
@@ -209,7 +222,13 @@ export const PromptTable: React.FC<PromptTableProps> = ({
 
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => onDuplicate(prompt)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 rounded-lg"
+                        onClick={() => onDuplicate(prompt)}
+                        aria-label={`${prompt.name} 복제`}
+                      >
                         <Copy className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
@@ -224,6 +243,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                         className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10"
                         onClick={() => onDelete(prompt)}
                         disabled={prompt.category === 'system' && prompt.name === 'system'}
+                        aria-label={`${prompt.name} 삭제`}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
