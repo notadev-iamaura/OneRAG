@@ -164,10 +164,11 @@ def load_sample_data() -> None:
                 Property(name="source", data_type=DataType.TEXT),
             ],
             # 외부 임베딩 사용 (로컬 Qwen3 모델)
-            vectorizer_config=Configure.Vectorizer.none(),
-            # 벡터 인덱스 설정 (1024차원, 코사인 유사도)
-            vector_index_config=Configure.VectorIndex.hnsw(
-                distance_metric=VectorDistances.COSINE,
+            vector_config=Configure.Vectors.self_provided(
+                # 벡터 인덱스 설정 (1024차원, 코사인 유사도)
+                vector_index_config=Configure.VectorIndex.hnsw(
+                    distance_metric=VectorDistances.COSINE,
+                )
             ),
             # BM25 설정 (하이브리드 검색용)
             inverted_index_config=Configure.inverted_index(

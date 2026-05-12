@@ -1,6 +1,6 @@
-# 설치 및 환경 설정 (Setup) - v1.0.0
+# 설치 및 환경 설정 (Setup)
 
-이 문서는 Blank RAG 시스템을 로컬 환경에 설치하고 실행하는 방법을 안내합니다.
+이 문서는 OneRAG를 로컬 환경에 설치하고 실행하는 방법을 안내합니다.
 
 ---
 
@@ -16,36 +16,33 @@
 
 ### 2.1 저장소 복제 및 의존성 설치
 ```bash
-git clone <repository-url>
-cd RAG_Standard
+git clone https://github.com/notadev-iamaura/OneRAG.git
+cd OneRAG
 
-# uv를 사용하여 가상환경 생성 및 모든 의존성 설치
-# v1.0.0부터 spaCy 한국어 모델(ko_core_news_sm)도 자동으로 설치됩니다.
 uv sync
 ```
 
 ### 2.2 환경 변수 설정
-`.env.example` 파일을 복사하여 `.env` 파일을 생성하고 필수 값을 입력합니다.
+Docker 기반 API 서버를 실행하려면 quickstart 템플릿을 복사해 `.env` 파일을 생성합니다.
 
 ```bash
-cp .env.example .env
+cp quickstart/.env.quickstart .env
 ```
 
-**필수 입력 항목:**
-- `FASTAPI_AUTH_KEY`: 관리자 API 보안 키 (X-API-Key 헤더에 사용)
-- `GOOGLE_API_KEY`: Gemini API 키
-- `WEAVIATE_URL`: Weaviate 서버 주소
-- `DATABASE_URL`: PostgreSQL 연결 주소 (프롬프트 관리 및 감사 로그용)
+최소 입력 항목:
+- `GOOGLE_API_KEY`: Gemini API 키. AI 답변 생성에 필요합니다.
+- `FASTAPI_AUTH_KEY`: 관리자/업로드 API 보안 키. 로컬 기본값은 템플릿에 포함되어 있지만 외부 노출 전 반드시 변경하세요.
+
+Docker 없이 CLI 체험만 할 경우에는 `.env`를 미리 만들 필요가 없습니다. `.env`가 없을 때 `make easy-start`가 `easy_start/.env.example`에서 자동 생성합니다.
 
 ---
 
 ## 3. 인프라 실행 (Docker)
 
-로컬 개발을 위한 필수 컨테이너들을 실행합니다.
+Full API 서버는 Docker Compose로 Weaviate와 API 서버를 함께 실행합니다.
 
 ```bash
-# Weaviate 및 DB 실행
-docker compose -f docker-compose.weaviate.yml up -d
+make start
 ```
 
 ---
@@ -53,22 +50,24 @@ docker compose -f docker-compose.weaviate.yml up -d
 ## 4. 애플리케이션 실행
 
 ```bash
-# 개발 서버 실행 (Auto-reload 활성화)
+# Docker 없이 CLI 챗봇 실행
+make easy-start
+
+# 개발 서버 실행 (Auto-reload 활성화, 포트 8001)
 make dev-reload
 
-# 전체 테스트 실행 (1080+ 테스트)
-# 테스트 환경에서는 Langfuse 로그 노이즈가 자동으로 차단됩니다.
+# 전체 테스트 실행
 make test
 ```
 
-서버가 실행되면 `http://localhost:8000/docs`에서 Swagger UI를 확인할 수 있습니다. 관리자 API 호출 시 상단의 `Authorize` 버튼을 눌러 `FASTAPI_AUTH_KEY`를 입력하세요.
+`make start`로 서버를 실행하면 `http://localhost:8000/docs`에서 Swagger UI를 확인할 수 있습니다. `make dev-reload`는 `http://localhost:8001/docs`를 사용합니다. 관리자/업로드 API 호출 시 상단의 `Authorize` 버튼을 눌러 `FASTAPI_AUTH_KEY`를 입력하세요.
 
 ---
 
 ## 5. 모듈별 추가 설정
 
 ### 5.1 PII (개인정보 보호)
-`ko_core_news_sm` 모델이 `uv sync` 시 설치되지 않았다면 수동으로 설치할 수 있습니다:
+한국어 PII 기능에서 spaCy 한국어 모델이 필요하고 로컬 환경에 없다면 수동으로 설치할 수 있습니다:
 ```bash
 uv pip install https://github.com/explosion/spacy-models/releases/download/ko_core_news_sm-3.7.0/ko_core_news_sm-3.7.0-py3-none-any.whl
 ```

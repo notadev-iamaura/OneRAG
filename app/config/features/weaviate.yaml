@@ -13,7 +13,7 @@ weaviate:
   grpc_port: "${WEAVIATE_GRPC_PORT:-50051}"
 
   # API Key (프로덕션 환경에서만 필요, 로컬은 비워둠)
-  api_key: "${WEAVIATE_API_KEY:}"
+  api_key: "${WEAVIATE_API_KEY:-}"
 
   # Collection name (기본 Documents)
   collection_name: "${WEAVIATE_COLLECTION:-Documents}"

@@ -22,20 +22,20 @@
 ### 필수 조건
 
 - Python 3.11 이상
-- Docker & Docker Compose
+- Docker & Docker Compose (`make start`로 Full API 서버를 실행할 때 필요)
 - Git
 
 ### 설치
 
 ```bash
 # 1. 레포지토리 클론
-git clone https://github.com/youngouk/OneRAG.git
+git clone https://github.com/notadev-iamaura/OneRAG.git
 cd OneRAG
 
 # 2. 의존성 설치 (uv 사용)
 uv sync
 
-# 3. 환경 변수 설정
+# 3. Full API 서버용 환경 변수 설정
 cp quickstart/.env.quickstart .env
 ```
 
@@ -74,7 +74,7 @@ make start
 
 이 명령어 하나로:
 - Weaviate (Vector DB) 컨테이너 시작
-- OneRAG 서버 시작
+- OneRAG API 서버 시작
 - 샘플 문서 인덱싱
 
 ### API 테스트
@@ -85,21 +85,33 @@ make start
 
 ```bash
 # 문서 업로드
-curl -X POST "http://localhost:8000/api/v1/documents/upload" \
+curl -X POST "http://localhost:8000/api/upload" \
+  -H "X-API-Key: local-dev-only-change-me" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@your_document.pdf"
 
 # 질문하기
-curl -X POST "http://localhost:8000/api/v1/chat" \
+curl -X POST "http://localhost:8000/api/chat" \
+  -H "X-API-Key: local-dev-only-change-me" \
   -H "Content-Type: application/json" \
-  -d '{"query": "문서 내용에 대해 알려줘"}'
+  -d '{"message": "문서 내용에 대해 알려줘"}'
 ```
+
+OpenAI SDK 호환 경로를 테스트하려면 `POST /v1/chat/completions`를 사용할 수 있습니다.
 
 ### 종료
 
 ```bash
 make start-down
 ```
+
+### Docker 없이 CLI로 체험하기
+
+```bash
+make easy-start
+```
+
+`.env`가 없으면 Easy Start가 `easy_start/.env.example`에서 자동 생성합니다. API 키 없이도 검색 체험은 가능하며, AI 답변 생성을 원하면 `GOOGLE_API_KEY`, `OPENROUTER_API_KEY`, 또는 로컬 Ollama를 설정하세요.
 
 ---
 
@@ -321,7 +333,7 @@ LANGFUSE_SECRET_KEY=your_secret
 
 ```bash
 curl http://localhost:8000/health
-# {"status": "healthy"}
+# {"status": "OK", ...}
 ```
 
 ### 모니터링 (Langfuse)
@@ -339,8 +351,8 @@ docker-compose -f docker-compose.langfuse.yml up -d
 
 - [상세 설정 가이드](SETUP.md)
 - [API 레퍼런스](http://localhost:8000/docs)
-- [아키텍처 문서](TECHNICAL_DEBT_ANALYSIS.md)
-- [GitHub Issues](https://github.com/youngouk/OneRAG/issues)
+- [아키텍처 문서](ARCHITECTURE.md)
+- [GitHub Issues](https://github.com/notadev-iamaura/OneRAG/issues)
 
 ---
 
@@ -369,4 +381,4 @@ Docker 설정에서 메모리 할당량을 늘려주세요. (최소 4GB 권장)
 
 ---
 
-질문이나 문제가 있으면 [GitHub Issues](https://github.com/youngouk/OneRAG/issues)에 남겨주세요!
+질문이나 문제가 있으면 [GitHub Issues](https://github.com/notadev-iamaura/OneRAG/issues)에 남겨주세요!

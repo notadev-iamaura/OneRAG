@@ -1,14 +1,15 @@
-# Simple RAG Chat Frontend
+# OneRAG Frontend
 
-React + TypeScript + Material-UI로 구현된 RAG 챗봇 프론트엔드입니다.
+React + TypeScript + Vite로 구현된 OneRAG 웹 UI입니다.
 
 ## 주요 기능
 
 ### 🔧 기술 스택
-- **React 18** + **TypeScript** - 타입 안전성과 개발 생산성
-- **Material-UI (MUI)** - 모던하고 일관된 디자인 시스템
+- **React 19** + **TypeScript** - 타입 안전성과 개발 생산성
+- **Vite 6** - 빠른 개발 환경
+- **Radix UI + Tailwind CSS** - 접근성 기반 UI 컴포넌트와 스타일링
 - **Axios** - HTTP 클라이언트
-- **Vite** - 빠른 개발 환경
+- **Vitest + Playwright** - 단위/브라우저 테스트
 
 ### 📋 주요 기능
 
@@ -51,6 +52,8 @@ npm ci
 npm run dev
 ```
 
+기본 개발 서버 URL은 `http://localhost:5173`입니다.
+
 ### 빌드
 ```bash
 npm run build:warning-gate
@@ -66,8 +69,10 @@ npm run test:warning-gate
 `.env` 파일에 다음 변수를 설정하세요:
 
 ```
-VITE_API_BASE_URL=http://localhost:3000
+VITE_API_BASE_URL=http://localhost:8000
 ```
+
+로컬 개발에서는 변수를 생략해도 프론트엔드가 기본값으로 `http://localhost:8000` 백엔드에 연결합니다.
 
 ## 추가된 문서 삭제 기능
 

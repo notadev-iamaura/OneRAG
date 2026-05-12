@@ -323,7 +323,7 @@ start-load:
 # =============================================================================
 
 # Docker 없이 간편 실행 (LANG 파라미터로 언어 선택)
-easy-start: check-uv check-env
+easy-start: check-uv
 	@echo "🚀 Easy Start — Docker 없이 간편 실행..."
 	EASY_START_LANG=$(LANG) uv run python easy_start/run.py
 
