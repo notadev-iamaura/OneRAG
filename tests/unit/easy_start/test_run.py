@@ -129,9 +129,27 @@ class TestCheckDataLoaded:
 
     def test_directory_with_files(self, tmp_path):
         """
-        파일이 있는 디렉토리일 때 True
+        파일이 있어도 매니페스트가 오래되었으면 False
 
         Given: 파일이 포함된 디렉토리
+        When: check_data_loaded() 호출
+        Then: False 반환
+        """
+        from easy_start.run import check_data_loaded
+
+        data_dir = tmp_path / "chroma"
+        data_dir.mkdir()
+        (data_dir / "chroma.sqlite3").write_text("data")
+
+        with patch("easy_start.load_data.is_manifest_current", return_value=False):
+            result = check_data_loaded(str(data_dir))
+        assert result is False
+
+    def test_directory_with_current_manifest(self, tmp_path):
+        """
+        파일이 있고 매니페스트가 현재 샘플과 일치하면 True
+
+        Given: 파일이 포함된 디렉토리와 최신 매니페스트
         When: check_data_loaded() 호출
         Then: True 반환
         """
@@ -141,5 +159,6 @@ class TestCheckDataLoaded:
         data_dir.mkdir()
         (data_dir / "chroma.sqlite3").write_text("data")
 
-        result = check_data_loaded(str(data_dir))
+        with patch("easy_start.load_data.is_manifest_current", return_value=True):
+            result = check_data_loaded(str(data_dir))
         assert result is True

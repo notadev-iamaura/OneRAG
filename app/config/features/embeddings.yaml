@@ -39,7 +39,7 @@
 # Provider 선택
 # ============================================================
 # 지원 제공자:
-#   - "local"     : 로컬 임베딩 (API 키 불필요 - Quickstart용)
+#   - "local"     : 로컬 임베딩 (API 키 불필요 - Easy Start/오프라인용)
 #   - "google"    : Google Gemini Embedding (직접 API)
 #   - "openai"    : OpenAI Embedding (직접 API)
 #   - "openrouter": OpenRouter 통합 게이트웨이 (권장 - 다양한 모델 지원)
@@ -47,7 +47,7 @@ embeddings:
   provider: "openrouter"
 
   # ============================================================
-  # Local 설정 (API 키 불필요 - Quickstart용)
+  # Local 설정 (API 키 불필요 - Easy Start/오프라인용)
   # ============================================================
   # 첫 실행 시 HuggingFace에서 모델 자동 다운로드 (~1.2GB)
   # Docker 빌드 시 이미지에 포함됨
@@ -106,9 +106,9 @@ embeddings:
   google:
     # ⚠️ 모델 변경 시 기존 문서 재인덱싱 필수!
     # 지원 모델:
-    #   - gemini-embedding-001: 3072차원, 한국어 최적화
+    #   - models/gemini-embedding-001: 3072차원, 한국어 최적화
     #   - models/embedding-001: 768차원, 기본 모델
-    model: "gemini-embedding-001"
+    model: "models/gemini-embedding-001"
     output_dimensionality: 3072
     batch_size: 100
 

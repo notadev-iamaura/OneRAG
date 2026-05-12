@@ -4,7 +4,7 @@ Generation Module 폴백 체인 테스트
 테스트 범위:
 1. 단일 모델 실패 시 다음 모델로 폴백
 2. 모든 모델 실패 시 GenerationError 발생
-3. 폴백 체인 순서 검증 (claude → gemini → gpt → haiku)
+3. 폴백 체인 순서 검증 (sonnet → gemini → gpt → haiku)
 """
 from unittest.mock import MagicMock, patch
 
@@ -23,8 +23,8 @@ class TestGeneratorFallback:
         """Generator 인스턴스 생성"""
         config = {
             "generation": {
-                "default_model": "claude-sonnet-4-5",
-                "fallback_models": ["gemini-2.5-flash", "gpt-4.1", "claude-haiku-4"],
+                "default_model": "anthropic/claude-sonnet-4.5",
+                "fallback_models": ["google/gemini-2.5-flash", "openai/gpt-4.1", "anthropic/claude-3.5-haiku"],
                 "timeout": 30.0,
             }
         }
@@ -37,9 +37,9 @@ class TestGeneratorFallback:
         """
         첫 번째 모델 실패 시 두 번째 모델로 폴백
 
-        Given: claude-sonnet-4-5 모델이 실패
+        Given: anthropic/claude-sonnet-4.5 모델이 실패
         When: generate_answer() 호출
-        Then: gemini-2.5-flash로 폴백하여 성공
+        Then: google/gemini-2.5-flash로 폴백하여 성공
         """
         # Mock: 첫 번째 모델 실패, 두 번째 모델 성공
         with patch.object(generator, "_generate_with_model") as mock_gen:
@@ -47,7 +47,7 @@ class TestGeneratorFallback:
             mock_gen.side_effect = [
                 GenerationError(ErrorCode.GENERATION_TIMEOUT),
                 # 두 번째 호출(gemini) 성공
-                MagicMock(answer="폴백 성공", model_used="gemini-2.5-flash"),
+                MagicMock(answer="폴백 성공", model_used="google/gemini-2.5-flash"),
             ]
 
             result = await generator.generate_answer(
@@ -58,7 +58,7 @@ class TestGeneratorFallback:
 
             # 검증: gemini 모델로 성공
             assert result.answer == "폴백 성공"
-            assert result.model_used == "gemini-2.5-flash"
+            assert result.model_used == "google/gemini-2.5-flash"
             assert mock_gen.call_count == 2  # claude 실패 → gemini 성공
 
     @pytest.mark.asyncio

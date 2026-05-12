@@ -1,7 +1,7 @@
 """
 OpenAI 호환 API 모델 리졸버
 
-슬래시 구분 모델 문자열(예: "openrouter/google/gemini-2.0-flash")을
+슬래시 구분 모델 문자열(예: "openrouter/google/gemini-2.5-flash")을
 내부 LLMClientFactory의 provider/model 설정으로 변환합니다.
 
 사용 예:
@@ -28,8 +28,8 @@ PROVIDER_ALIASES: dict[str, str] = {
 DEFAULT_MODELS: dict[str, str] = {
     "google": "gemini-2.0-flash",
     "openai": "gpt-4o",
-    "anthropic": "claude-sonnet-4-5",
-    "openrouter": "google/gemini-2.0-flash",
+    "anthropic": "claude-sonnet-4-20250514",
+    "openrouter": "google/gemini-2.5-flash",
     "ollama": "llama3.2",
 }
 
@@ -41,9 +41,11 @@ AVAILABLE_MODELS = [
     {"id": "ollama/qwen2.5:3b", "description": "Ollama Qwen 2.5 3B"},
     {"id": "ollama/llama3.2", "description": "Ollama LLaMA 3.2"},
     {"id": "openrouter", "description": "OpenRouter (기본 모델)"},
-    {"id": "openrouter/google/gemini-2.0-flash", "description": "OpenRouter → Gemini 2.0 Flash"},
-    {"id": "openrouter/anthropic/claude-sonnet-4-5", "description": "OpenRouter → Claude Sonnet"},
+    {"id": "openrouter/google/gemini-2.5-flash", "description": "OpenRouter → Gemini 2.5 Flash"},
+    {"id": "openrouter/anthropic/claude-sonnet-4.5", "description": "OpenRouter → Claude Sonnet 4.5"},
+    {"id": "openrouter/anthropic/claude-3.5-haiku", "description": "OpenRouter → Claude 3.5 Haiku"},
     {"id": "claude", "description": "Anthropic Claude (기본 모델)"},
+    {"id": "claude/claude-sonnet-4-20250514", "description": "Anthropic Claude Sonnet 4"},
     {"id": "openai", "description": "OpenAI GPT (기본 모델)"},
 ]
 
@@ -64,7 +66,7 @@ def parse_model(model: str) -> tuple[str, str | None]:
     Examples:
         parse_model("gemini")                          → ("gemini", None)
         parse_model("ollama/qwen2.5:3b")               → ("ollama", "qwen2.5:3b")
-        parse_model("openrouter/google/gemini-2.0-flash") → ("openrouter", "google/gemini-2.0-flash")
+        parse_model("openrouter/google/gemini-2.5-flash") → ("openrouter", "google/gemini-2.5-flash")
     """
     if "/" in model:
         provider, sub_model = model.split("/", 1)

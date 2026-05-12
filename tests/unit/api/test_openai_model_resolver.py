@@ -31,17 +31,17 @@ class TestParseModel:
         """openrouter/vendor/model 형식 (슬래시 2개)"""
         from app.api.services.openai_model_resolver import parse_model
 
-        provider, sub_model = parse_model("openrouter/google/gemini-2.0-flash")
+        provider, sub_model = parse_model("openrouter/google/gemini-2.5-flash")
         assert provider == "openrouter"
-        assert sub_model == "google/gemini-2.0-flash"
+        assert sub_model == "google/gemini-2.5-flash"
 
     def test_openrouter_anthropic(self):
-        """openrouter/anthropic/claude-sonnet-4-5"""
+        """openrouter/anthropic/claude-sonnet-4.5"""
         from app.api.services.openai_model_resolver import parse_model
 
-        provider, sub_model = parse_model("openrouter/anthropic/claude-sonnet-4-5")
+        provider, sub_model = parse_model("openrouter/anthropic/claude-sonnet-4.5")
         assert provider == "openrouter"
-        assert sub_model == "anthropic/claude-sonnet-4-5"
+        assert sub_model == "anthropic/claude-sonnet-4.5"
 
     def test_google_alias(self):
         """google은 gemini의 별칭"""
@@ -82,9 +82,9 @@ class TestResolveModelConfig:
         """openrouter 벤더/모델 조합"""
         from app.api.services.openai_model_resolver import resolve_model_config
 
-        config = resolve_model_config("openrouter", "google/gemini-2.0-flash")
+        config = resolve_model_config("openrouter", "google/gemini-2.5-flash")
         assert config["provider"] == "openrouter"
-        assert config["model"] == "google/gemini-2.0-flash"
+        assert config["model"] == "google/gemini-2.5-flash"
 
 
 class TestListAvailableModels:

@@ -78,11 +78,17 @@ SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "description": "E5 Large V2 - 범용 임베딩",
     },
     # Google 직접 API 모델
-    "gemini-embedding-001": {
+    "models/gemini-embedding-001": {
         "provider": "google",
         "default_dimensions": 3072,
         "supports_dimensions_param": True,
         "description": "Google Gemini Embedding (직접 API)",
+    },
+    "gemini-embedding-001": {
+        "provider": "google",
+        "default_dimensions": 3072,
+        "supports_dimensions_param": True,
+        "description": "Google Gemini Embedding (직접 API, legacy alias)",
     },
     "models/embedding-001": {
         "provider": "google",
@@ -189,8 +195,10 @@ class EmbedderFactory:
         # 모델 설정
         model_name = google_config.get(
             "model",
-            embeddings_config.get("model", "gemini-embedding-001")
+            embeddings_config.get("model", "models/gemini-embedding-001")
         )
+        if model_name == "gemini-embedding-001":
+            model_name = "models/gemini-embedding-001"
 
         # 차원 설정 (모델별 기본값 적용)
         model_info = SUPPORTED_MODELS.get(model_name, {})
