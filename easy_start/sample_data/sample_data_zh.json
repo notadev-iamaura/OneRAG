@@ -21,7 +21,7 @@
     {
       "id": "faq-003",
       "title": "Weaviate 向量数据库",
-      "content": "Weaviate是一个开源向量数据库，原生支持混合检索。可以通过Docker轻松安装，并提供GraphQL和REST API。RAG_Standard将Weaviate作为默认向量数据库，并激活了中文分词器以提高中文检索质量。",
+      "content": "Weaviate是一个开源向量数据库，原生支持混合检索。可以通过Docker轻松安装，并提供GraphQL和REST API。OneRAG将Weaviate作为默认向量数据库，并激活了中文分词器以提高中文检索质量。",
       "metadata": {
         "category": "技术介绍",
         "tags": ["Weaviate", "向量数据库", "Docker"]
@@ -30,7 +30,7 @@
     {
       "id": "faq-004",
       "title": "LLM Fallback 策略",
-      "content": "RAG_Standard通过Multi-LLM Factory支持多个LLM提供商（Google Gemini、OpenAI GPT、Anthropic Claude、OpenRouter）。当主LLM发生故障时，系统会按照设定的顺序自动切换到其他LLM。例如，可以按Google Gemini → OpenAI GPT → Anthropic Claude的顺序进行故障转移。",
+      "content": "OneRAG通过Multi-LLM Factory支持多个LLM提供商（Google Gemini、OpenAI GPT、Anthropic Claude、OpenRouter）。当主LLM发生故障时，系统会按照设定的顺序自动切换到其他LLM。例如，可以按Google Gemini → OpenAI GPT → Anthropic Claude的顺序进行故障转移。",
       "metadata": {
         "category": "技术介绍",
         "tags": ["LLM", "Fallback", "高可用性"]
@@ -39,7 +39,7 @@
     {
       "id": "faq-005",
       "title": "GraphRAG 功能",
-      "content": "GraphRAG是一种通过将文档间的关系以图的形式表示来提高检索质量的技术。RAG_Standard的GraphRAG在基于NetworkX的图存储中集成了向量检索，可以通过英文查询'SAMSUNG'找到'三星电子'节点。通过这种方式，可以同时检索相关实体及其关系，提供更丰富的上下文。",
+      "content": "GraphRAG是一种通过将文档间的关系以图的形式表示来提高检索质量的技术。OneRAG的GraphRAG在基于NetworkX的图存储中集成了向量检索，可以通过英文查询'SAMSUNG'找到'三星电子'节点。通过这种方式，可以同时检索相关实体及其关系，提供更丰富的上下文。",
       "metadata": {
         "category": "技术介绍",
         "tags": ["GraphRAG", "知识图谱", "实体"]
@@ -47,8 +47,8 @@
     },
     {
       "id": "guide-start-001",
-      "title": "RAG_Standard 安装方法",
-      "content": "安装RAG_Standard分为3个步骤。\n\n**步骤 1: 克隆并安装依赖**\n```bash\ngit clone https://github.com/youngouk/RAG_Standard.git\ncd RAG_Standard\nuv sync\n```\n\n**步骤 2: 环境配置**\n```bash\ncp quickstart/.env.quickstart .env\n# 在 .env 文件中设置 GOOGLE_API_KEY\n```\n在 Google AI Studio 免费获取API密钥: https://aistudio.google.com/apikey\n\n**步骤 3: 运行**\n```bash\nmake start\n```\n\n完成后可在 http://localhost:8000/docs 测试API。\n\n**系统要求:**\n- Docker 20.10+\n- Docker Compose v2+\n- uv 包管理器 (自动安装)",
+      "title": "OneRAG 安装方法",
+      "content": "安装OneRAG分为3个步骤。\n\n**步骤 1: 克隆并安装依赖**\n```bash\ngit clone https://github.com/notadev-iamaura/OneRAG.git\ncd OneRAG\nuv sync\n```\n\n**步骤 2: 环境配置**\n```bash\ncp quickstart/.env.quickstart .env\n# 在 .env 文件中设置 GOOGLE_API_KEY\n```\n在 Google AI Studio 免费获取API密钥: https://aistudio.google.com/apikey\n\n**步骤 3: 运行**\n```bash\nmake start\n```\n\n完成后可在 http://localhost:8000/docs 测试API。\n\n**系统要求:**\n- Docker 20.10+\n- Docker Compose v2+\n- uv 包管理器 (自动安装)",
       "metadata": {
         "category": "快速开始",
         "tags": ["安装", "quickstart", "docker", "uv"]
@@ -57,7 +57,7 @@
     {
       "id": "guide-start-002",
       "title": "Start 与 Start Full 的区别",
-      "content": "RAG_Standard提供两种运行模式。\n\n**Start (仅后端)**\n```bash\nmake start\n```\n- 仅运行Weaviate（向量数据库）+ API服务器\n- 适用于API测试和后端开发\n- 在 http://localhost:8000/docs 提供Swagger UI\n\n**Start Full (包含前端)**\n```bash\nmake start-full\n```\n- Weaviate + API服务器 + React前端\n- 适用于完整用户体验测试\n- 在 http://localhost:5173 提供聊天UI\n\n**命令对比:**\n| 命令 | 服务 | 端口 |\n|------|------|------|\n| start | Weaviate, API | 8080, 8000 |\n| start-full | Weaviate, API, Frontend | 8080, 8000, 5173 |",
+      "content": "OneRAG提供两种运行模式。\n\n**Start (仅后端)**\n```bash\nmake start\n```\n- 仅运行Weaviate（向量数据库）+ API服务器\n- 适用于API测试和后端开发\n- 在 http://localhost:8000/docs 提供Swagger UI\n\n**Start Full (包含前端)**\n```bash\nmake start-full\n```\n- Weaviate + API服务器 + React前端\n- 适用于完整用户体验测试\n- 在 http://localhost:5173 提供聊天UI\n\n**命令对比:**\n| 命令 | 服务 | 端口 |\n|------|------|------|\n| start | Weaviate, API | 8080, 8000 |\n| start-full | Weaviate, API, Frontend | 8080, 8000, 5173 |",
       "metadata": {
         "category": "快速开始",
         "tags": ["start", "start-full", "对比"]
@@ -66,7 +66,7 @@
     {
       "id": "guide-start-003",
       "title": "必需环境变量设置",
-      "content": "运行RAG_Standard所需的环境变量。\n\n**最低要求 (Start)**\n```bash\n# LLM API密钥 (至少需要一个)\nGOOGLE_API_KEY=AIza...  # 推荐 (免费版)\n```\n\n**生产环境必需**\n```bash\n# 安全\nFASTAPI_AUTH_KEY=your-secret-key-32chars  # 管理员API认证\nENVIRONMENT=production\n\n# LLM (至少1个)\nGOOGLE_API_KEY=AIza...\nOPENAI_API_KEY=sk-...      # 可选\nANTHROPIC_API_KEY=sk-ant-...  # 可选\n```\n\n**向量数据库 (默认值自动设置)**\n```bash\nWEAVIATE_URL=http://localhost:8080\nVECTOR_DB_PROVIDER=weaviate\n```\n\n**LLM 选择**\n```bash\nLLM_PROVIDER=google          # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash   # 模型名称\n```",
+      "content": "运行OneRAG所需的环境变量。\n\n**最低要求 (Start)**\n```bash\n# LLM API密钥 (至少需要一个)\nGOOGLE_API_KEY=AIza...  # 推荐 (免费版)\n```\n\n**生产环境必需**\n```bash\n# 安全\nFASTAPI_AUTH_KEY=your-secret-key-32chars  # 管理员API认证\nENVIRONMENT=production\n\n# LLM (至少1个)\nGOOGLE_API_KEY=AIza...\nOPENAI_API_KEY=sk-...      # 可选\nANTHROPIC_API_KEY=sk-ant-...  # 可选\n```\n\n**向量数据库 (默认值自动设置)**\n```bash\nWEAVIATE_URL=http://localhost:8080\nVECTOR_DB_PROVIDER=weaviate\n```\n\n**LLM 选择**\n```bash\nLLM_PROVIDER=google          # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash   # 模型名称\n```",
       "metadata": {
         "category": "快速开始",
         "tags": ["环境变量", "配置", "API密钥"]
@@ -129,7 +129,7 @@
     {
       "id": "guide-config-001",
       "title": "LLM Provider 选择与更改",
-      "content": "RAG_Standard支持4种LLM Provider。\n\n**支持的Provider:**\n| Provider | 环境变量 | 特点 |\n|----------|---------|------|\n| Google Gemini | GOOGLE_API_KEY | 推荐，免费版 |\n| OpenAI GPT | OPENAI_API_KEY | GPT-4, GPT-3.5 |\n| Anthropic Claude | ANTHROPIC_API_KEY | Claude 3 |\n| OpenRouter | OPENROUTER_API_KEY | 多种模型 |\n\n**更改Provider:**\n```bash\n# 在 .env 文件中\nLLM_PROVIDER=google       # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash\n```\n\n**自动Fallback设置:**\n在 app/config/base.yaml 文件中设置 fallback_order:\n```yaml\nllm:\n  fallback_order:\n    - google\n    - openai\n    - anthropic\n```\n主LLM故障时会按顺序自动切换。\n\n**各模型推荐用途:**\n- gemini-2.0-flash: 快速响应，一般问题\n- gpt-4: 复杂推理\n- claude-3-opus: 长文档分析",
+      "content": "OneRAG支持4种LLM Provider。\n\n**支持的Provider:**\n| Provider | 环境变量 | 特点 |\n|----------|---------|------|\n| Google Gemini | GOOGLE_API_KEY | 推荐，免费版 |\n| OpenAI GPT | OPENAI_API_KEY | GPT-4, GPT-3.5 |\n| Anthropic Claude | ANTHROPIC_API_KEY | Claude 3 |\n| OpenRouter | OPENROUTER_API_KEY | 多种模型 |\n\n**更改Provider:**\n```bash\n# 在 .env 文件中\nLLM_PROVIDER=google       # google, openai, anthropic, openrouter\nLLM_MODEL=gemini-2.0-flash\n```\n\n**自动Fallback设置:**\n在 app/config/base.yaml 文件中设置 fallback_order:\n```yaml\nllm:\n  fallback_order:\n    - google\n    - openai\n    - anthropic\n```\n主LLM故障时会按顺序自动切换。\n\n**各模型推荐用途:**\n- gemini-2.0-flash: 快速响应，一般问题\n- gpt-4: 复杂推理\n- claude-3-opus: 长文档分析",
       "metadata": {
         "category": "配置指南",
         "tags": ["LLM", "配置", "Provider"]
@@ -138,7 +138,7 @@
     {
       "id": "guide-config-002",
       "title": "向量数据库选择与配置",
-      "content": "RAG_Standard支持6种向量数据库。\n\n**支持的数据库:**\n| 数据库 | 混合检索 | 特点 |\n|--------|---------|------|\n| Weaviate (默认) | Dense+BM25 | 自托管，推荐 |\n| Chroma | 仅Dense | 轻量，开发用 |\n| Pinecone | Dense+Sparse | 无服务器 |\n| Qdrant | Dense+Full-Text | 高性能 |\n| pgvector | 仅Dense | PostgreSQL |\n| MongoDB | 仅Dense | Atlas |\n\n**更改数据库:**\n```bash\n# .env\nVECTOR_DB_PROVIDER=weaviate  # weaviate, chroma, pinecone, qdrant, pgvector, mongodb\n```\n\n**Weaviate 配置 (推荐):**\n```bash\nWEAVIATE_URL=http://localhost:8080\nWEAVIATE_GRPC_HOST=localhost\nWEAVIATE_GRPC_PORT=50051\n```\n\n**Pinecone 配置:**\n```bash\nVECTOR_DB_PROVIDER=pinecone\nPINECONE_API_KEY=xxx\nPINECONE_ENVIRONMENT=us-east-1\nPINECONE_INDEX_NAME=rag-index\n```",
+      "content": "OneRAG支持6种向量数据库。\n\n**支持的数据库:**\n| 数据库 | 混合检索 | 特点 |\n|--------|---------|------|\n| Weaviate (默认) | Dense+BM25 | 自托管，推荐 |\n| Chroma | 仅Dense | 轻量，开发用 |\n| Pinecone | Dense+Sparse | 无服务器 |\n| Qdrant | Dense+Full-Text | 高性能 |\n| pgvector | 仅Dense | PostgreSQL |\n| MongoDB | 仅Dense | Atlas |\n\n**更改数据库:**\n```bash\n# .env\nVECTOR_DB_PROVIDER=weaviate  # weaviate, chroma, pinecone, qdrant, pgvector, mongodb\n```\n\n**Weaviate 配置 (推荐):**\n```bash\nWEAVIATE_URL=http://localhost:8080\nWEAVIATE_GRPC_HOST=localhost\nWEAVIATE_GRPC_PORT=50051\n```\n\n**Pinecone 配置:**\n```bash\nVECTOR_DB_PROVIDER=pinecone\nPINECONE_API_KEY=xxx\nPINECONE_ENVIRONMENT=us-east-1\nPINECONE_INDEX_NAME=rag-index\n```",
       "metadata": {
         "category": "配置指南",
         "tags": ["向量数据库", "Weaviate", "配置"]
@@ -156,7 +156,7 @@
     {
       "id": "guide-config-004",
       "title": "YAML 配置文件结构",
-      "content": "RAG_Standard使用基于YAML的配置。\n\n**配置文件位置:**\n```\napp/config/\n├── base.yaml            # 通用配置\n├── environments/\n│   ├── development.yaml # 开发环境\n│   ├── test.yaml       # 测试环境\n│   └── production.yaml  # 生产环境\n└── routing_rules_v2.yaml  # 动态路由\n```\n\n**环境自动检测:**\n根据ENVIRONMENT环境变量自动加载对应的配置文件:\n- development: debug=true, reload=true\n- test: 较短超时时间\n- production: 4个worker, 缓存启用\n\n**主要配置示例 (base.yaml):**\n```yaml\nllm:\n  default_provider: google\n  temperature: 0.7\n  max_tokens: 2048\n\nretrieval:\n  enable_hybrid_search: true\n  enable_reranking: true\n  top_k: 5\n```\n\n**配置优先级:**\n环境变量 > environments/*.yaml > base.yaml",
+      "content": "OneRAG使用基于YAML的配置。\n\n**配置文件位置:**\n```\napp/config/\n├── base.yaml            # 通用配置\n├── environments/\n│   ├── development.yaml # 开发环境\n│   ├── test.yaml       # 测试环境\n│   └── production.yaml  # 生产环境\n└── routing_rules_v2.yaml  # 动态路由\n```\n\n**环境自动检测:**\n根据ENVIRONMENT环境变量自动加载对应的配置文件:\n- development: debug=true, reload=true\n- test: 较短超时时间\n- production: 4个worker, 缓存启用\n\n**主要配置示例 (base.yaml):**\n```yaml\nllm:\n  default_provider: google\n  temperature: 0.7\n  max_tokens: 2048\n\nretrieval:\n  enable_hybrid_search: true\n  enable_reranking: true\n  top_k: 5\n```\n\n**配置优先级:**\n环境变量 > environments/*.yaml > base.yaml",
       "metadata": {
         "category": "配置指南",
         "tags": ["YAML", "配置", "环境"]
@@ -165,7 +165,7 @@
     {
       "id": "guide-arch-001",
       "title": "项目目录结构",
-      "content": "RAG_Standard的代码结构。\n\n**主要目录:**\n```\napp/\n├── api/              # REST API 层\n│   ├── routers/      # 端点 (chat, admin, websocket)\n│   ├── services/     # 业务逻辑\n│   └── schemas/      # Pydantic 模型\n│\n├── modules/core/     # RAG 核心模块\n│   ├── retrieval/    # 检索 (Weaviate, GraphRAG, 重排序)\n│   ├── generation/   # 回答生成 (LLM, 提示词)\n│   ├── privacy/      # PII 脱敏\n│   └── session/      # 会话管理\n│\n├── core/             # 中央依赖\n│   └── di_container.py  # DI Container\n│\n└── lib/              # 公共工具\n    ├── llm_client.py # Multi-LLM Factory\n    └── auth.py       # 认证\n```\n\n**各模块职责:**\n- api/: HTTP 请求/响应处理\n- modules/core/: RAG 管道逻辑\n- core/: 依赖注入管理\n- lib/: 公共工具类",
+      "content": "OneRAG的代码结构。\n\n**主要目录:**\n```\napp/\n├── api/              # REST API 层\n│   ├── routers/      # 端点 (chat, admin, websocket)\n│   ├── services/     # 业务逻辑\n│   └── schemas/      # Pydantic 模型\n│\n├── modules/core/     # RAG 核心模块\n│   ├── retrieval/    # 检索 (Weaviate, GraphRAG, 重排序)\n│   ├── generation/   # 回答生成 (LLM, 提示词)\n│   ├── privacy/      # PII 脱敏\n│   └── session/      # 会话管理\n│\n├── core/             # 中央依赖\n│   └── di_container.py  # DI Container\n│\n└── lib/              # 公共工具\n    ├── llm_client.py # Multi-LLM Factory\n    └── auth.py       # 认证\n```\n\n**各模块职责:**\n- api/: HTTP 请求/响应处理\n- modules/core/: RAG 管道逻辑\n- core/: 依赖注入管理\n- lib/: 公共工具类",
       "metadata": {
         "category": "架构",
         "tags": ["结构", "目录", "模块"]
@@ -174,7 +174,7 @@
     {
       "id": "guide-arch-002",
       "title": "DI 容器模式",
-      "content": "RAG_Standard使用依赖注入（Dependency Injection）模式。\n\n**DI Container 位置:** app/core/di_container.py\n\n**主要Provider (80+个):**\n- Singleton: 70个 (配置、数据库连接等)\n- Factory: 10个 (动态创建)\n\n**8个主要Factory:**\n| Factory | 职责 |\n|---------|------|\n| LLMClientFactory | Multi-LLM 管理 |\n| VectorStoreFactory | 向量数据库选择 |\n| RetrieverFactory | 检索策略 |\n| AgentFactory | Agent 创建 |\n| EvaluatorFactory | 评估系统 |\n| GraphRAGFactory | 图检索 |\n\n**使用示例:**\n```python\nfrom app.core.di_container import get_container\n\ncontainer = get_container()\n\n# 获取LLM客户端\nllm = container.llm_factory()\n\n# 获取向量存储\nvector_store = container.vector_store_factory()\n```\n\n**优点:**\n- 测试时可轻松替换为Mock\n- 运行时可更改实现\n- 防止循环依赖",
+      "content": "OneRAG使用依赖注入（Dependency Injection）模式。\n\n**DI Container 位置:** app/core/di_container.py\n\n**主要Provider (80+个):**\n- Singleton: 70个 (配置、数据库连接等)\n- Factory: 10个 (动态创建)\n\n**8个主要Factory:**\n| Factory | 职责 |\n|---------|------|\n| LLMClientFactory | Multi-LLM 管理 |\n| VectorStoreFactory | 向量数据库选择 |\n| RetrieverFactory | 检索策略 |\n| AgentFactory | Agent 创建 |\n| EvaluatorFactory | 评估系统 |\n| GraphRAGFactory | 图检索 |\n\n**使用示例:**\n```python\nfrom app.core.di_container import get_container\n\ncontainer = get_container()\n\n# 获取LLM客户端\nllm = container.llm_factory()\n\n# 获取向量存储\nvector_store = container.vector_store_factory()\n```\n\n**优点:**\n- 测试时可轻松替换为Mock\n- 运行时可更改实现\n- 防止循环依赖",
       "metadata": {
         "category": "架构",
         "tags": ["DI", "依赖注入", "Container"]
@@ -183,7 +183,7 @@
     {
       "id": "guide-arch-003",
       "title": "RAG 管道流程",
-      "content": "RAG_Standard的问答流程。\n\n**管道步骤:**\n```\n1. 用户输入问题\n       ↓\n2. RetrievalOrchestrator (检索)\n   ├─ Weaviate 向量检索\n   ├─ BM25 关键词检索\n   ├─ GraphRAG 关系检索\n   └─ RRF 分数融合\n       ↓\n3. JinaColBERT 重排序\n       ↓\n4. GenerationModule (回答生成)\n   └─ LLMFactory → Gemini/GPT/Claude\n       ↓\n5. SelfRAGOrchestrator (质量评估)\n   └─ 质量不达标时重新检索/生成\n       ↓\n6. PIIProcessor (个人信息脱敏)\n       ↓\n7. 返回响应\n```\n\n**核心模块:**\n- RetrievalOrchestrator: 融合多种检索方法\n- GenerationModule: 提示词管理 + LLM调用\n- SelfRAGOrchestrator: 回答质量自动评估\n- PIIProcessor: 个人信息保护",
+      "content": "OneRAG的问答流程。\n\n**管道步骤:**\n```\n1. 用户输入问题\n       ↓\n2. RetrievalOrchestrator (检索)\n   ├─ Weaviate 向量检索\n   ├─ BM25 关键词检索\n   ├─ GraphRAG 关系检索\n   └─ RRF 分数融合\n       ↓\n3. JinaColBERT 重排序\n       ↓\n4. GenerationModule (回答生成)\n   └─ LLMFactory → Gemini/GPT/Claude\n       ↓\n5. SelfRAGOrchestrator (质量评估)\n   └─ 质量不达标时重新检索/生成\n       ↓\n6. PIIProcessor (个人信息脱敏)\n       ↓\n7. 返回响应\n```\n\n**核心模块:**\n- RetrievalOrchestrator: 融合多种检索方法\n- GenerationModule: 提示词管理 + LLM调用\n- SelfRAGOrchestrator: 回答质量自动评估\n- PIIProcessor: 个人信息保护",
       "metadata": {
         "category": "架构",
         "tags": ["管道", "RAG", "流程"]
@@ -192,7 +192,7 @@
     {
       "id": "guide-arch-004",
       "title": "添加新功能的方法",
-      "content": "在RAG_Standard中添加新功能的方法。\n\n**添加新API端点:**\n1. 在 app/api/schemas/ 中定义请求/响应模型\n2. 在 app/api/routers/ 中创建路由\n3. 在 main.py 中注册路由\n\n**添加新向量数据库:**\n1. 在 app/infrastructure/storage/vector/ 中创建类:\n```python\nclass MyVectorStore(VectorStore):\n    async def search(self, query, limit):\n        # 实现\n        pass\n```\n2. 在 VectorStoreFactory 中注册\n3. 设置环境变量 VECTOR_DB_PROVIDER=mydb\n\n**添加新LLM Provider:**\n1. 在 app/lib/llm_client.py 的 Factory 中添加\n2. 设置环境变量\n3. 添加到 llm.fallback_order\n\n**编写测试:**\n```python\n# tests/unit/test_my_feature.py\ndef test_my_feature():\n    # Given\n    # When\n    # Then\n    assert result == expected\n```\n\n**规则:**\n- 遵循现有接口(Protocol)\n- 通过DI Container进行依赖注入\n- 单元测试必须编写",
+      "content": "在OneRAG中添加新功能的方法。\n\n**添加新API端点:**\n1. 在 app/api/schemas/ 中定义请求/响应模型\n2. 在 app/api/routers/ 中创建路由\n3. 在 main.py 中注册路由\n\n**添加新向量数据库:**\n1. 在 app/infrastructure/storage/vector/ 中创建类:\n```python\nclass MyVectorStore(VectorStore):\n    async def search(self, query, limit):\n        # 实现\n        pass\n```\n2. 在 VectorStoreFactory 中注册\n3. 设置环境变量 VECTOR_DB_PROVIDER=mydb\n\n**添加新LLM Provider:**\n1. 在 app/lib/llm_client.py 的 Factory 中添加\n2. 设置环境变量\n3. 添加到 llm.fallback_order\n\n**编写测试:**\n```python\n# tests/unit/test_my_feature.py\ndef test_my_feature():\n    # Given\n    # When\n    # Then\n    assert result == expected\n```\n\n**规则:**\n- 遵循现有接口(Protocol)\n- 通过DI Container进行依赖注入\n- 单元测试必须编写",
       "metadata": {
         "category": "架构",
         "tags": ["扩展", "开发", "添加"]
@@ -201,7 +201,7 @@
     {
       "id": "guide-dev-001",
       "title": "测试运行方法",
-      "content": "RAG_Standard的测试运行方法。\n\n**全部测试 (1,370+个):**\n```bash\nmake test\n```\n\n**覆盖率报告:**\n```bash\nmake test-cov\n# 在 htmlcov/index.html 查看结果\n```\n\n**运行特定测试:**\n```bash\n# 按文件\nuv run pytest tests/unit/api/test_chat.py -v\n\n# 按函数\nuv run pytest tests/unit/api/test_chat.py::test_chat_endpoint -v\n\n# 按标记\nuv run pytest -m \"not slow\" -v  # 排除slow\n```\n\n**测试结构:**\n```\ntests/\n├── unit/           # 单元测试\n├── integration/    # 集成测试\n├── e2e/           # E2E测试\n└── fixtures/       # 测试数据\n```\n\n**测试编写规则:**\n- Given-When-Then 模式\n- 使用Mock时用 unittest.mock 或 pytest-mock\n- 异步测试: @pytest.mark.asyncio",
+      "content": "OneRAG的测试运行方法。\n\n**全部测试 (1,370+个):**\n```bash\nmake test\n```\n\n**覆盖率报告:**\n```bash\nmake test-cov\n# 在 htmlcov/index.html 查看结果\n```\n\n**运行特定测试:**\n```bash\n# 按文件\nuv run pytest tests/unit/api/test_chat.py -v\n\n# 按函数\nuv run pytest tests/unit/api/test_chat.py::test_chat_endpoint -v\n\n# 按标记\nuv run pytest -m \"not slow\" -v  # 排除slow\n```\n\n**测试结构:**\n```\ntests/\n├── unit/           # 单元测试\n├── integration/    # 集成测试\n├── e2e/           # E2E测试\n└── fixtures/       # 测试数据\n```\n\n**测试编写规则:**\n- Given-When-Then 模式\n- 使用Mock时用 unittest.mock 或 pytest-mock\n- 异步测试: @pytest.mark.asyncio",
       "metadata": {
         "category": "开发者指南",
         "tags": ["测试", "pytest", "覆盖率"]
@@ -210,7 +210,7 @@
     {
       "id": "guide-dev-002",
       "title": "代码质量管理",
-      "content": "RAG_Standard的代码质量工具。\n\n**代码检查 (Ruff):**\n```bash\nmake lint         # 仅检查\nmake lint-fix     # 自动修复\n```\n\n**类型检查 (Mypy):**\n```bash\nmake type-check   # 严格模式\n```\n\n**代码格式化 (Black):**\n```bash\nmake format\n```\n\n**依赖层级验证:**\n```bash\nmake lint-imports  # Import Linter\n```\n\n**CI/CD 检查清单:**\n所有PR必须通过以下检查:\n1. make lint - 无代码检查错误\n2. make type-check - 无类型错误\n3. make test - 测试100%通过\n4. make lint-imports - 无层级违规\n\n**pre-commit 设置:**\n```bash\npre-commit install\n# 提交时自动运行 lint, format\n```",
+      "content": "OneRAG的代码质量工具。\n\n**代码检查 (Ruff):**\n```bash\nmake lint         # 仅检查\nmake lint-fix     # 自动修复\n```\n\n**类型检查 (Mypy):**\n```bash\nmake type-check   # 严格模式\n```\n\n**代码格式化 (Black):**\n```bash\nmake format\n```\n\n**依赖层级验证:**\n```bash\nmake lint-imports  # Import Linter\n```\n\n**CI/CD 检查清单:**\n所有PR必须通过以下检查:\n1. make lint - 无代码检查错误\n2. make type-check - 无类型错误\n3. make test - 测试100%通过\n4. make lint-imports - 无层级违规\n\n**pre-commit 设置:**\n```bash\npre-commit install\n# 提交时自动运行 lint, format\n```",
       "metadata": {
         "category": "开发者指南",
         "tags": ["质量", "代码检查", "类型检查"]
@@ -219,7 +219,7 @@
     {
       "id": "guide-dev-003",
       "title": "贡献方法 (Contributing)",
-      "content": "向RAG_Standard贡献的方法。\n\n**贡献流程:**\n1. Fork → Clone\n2. 创建分支: git checkout -b feature/my-feature\n3. 编写代码 + 测试\n4. 质量检查: make lint && make test\n5. 提交: Udacity风格\n6. 创建PR\n\n**提交消息风格:**\n```\n功能: 添加新功能\n修复: 修复bug\n文档: 更新文档\n样式: 代码格式化\n重构: 代码重构\n测试: 添加/修改测试\n```\n\n**代码规范:**\n- 类型提示必需\n- 中文文档字符串\n- 单元测试必需\n- 禁止TODO注释 (发现后立即解决)\n\n**PR 检查清单:**\n- 添加/修改测试\n- 更新文档\n- 通过 make lint\n- 通过 make test\n- 处理代码审查意见\n\n**许可证:** MIT",
+      "content": "向OneRAG贡献的方法。\n\n**贡献流程:**\n1. Fork → Clone\n2. 创建分支: git checkout -b feature/my-feature\n3. 编写代码 + 测试\n4. 质量检查: make lint && make test\n5. 提交: Udacity风格\n6. 创建PR\n\n**提交消息风格:**\n```\n功能: 添加新功能\n修复: 修复bug\n文档: 更新文档\n样式: 代码格式化\n重构: 代码重构\n测试: 添加/修改测试\n```\n\n**代码规范:**\n- 类型提示必需\n- 中文文档字符串\n- 单元测试必需\n- 禁止TODO注释 (发现后立即解决)\n\n**PR 检查清单:**\n- 添加/修改测试\n- 更新文档\n- 通过 make lint\n- 通过 make test\n- 处理代码审查意见\n\n**许可证:** MIT",
       "metadata": {
         "category": "开发者指南",
         "tags": ["贡献", "PR", "开源"]

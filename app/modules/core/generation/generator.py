@@ -3,8 +3,8 @@ Generation module - OpenRouter 통합 버전
 모든 LLM 호출을 OpenRouter 단일 게이트웨이로 처리
 
 지원 모델 (OpenRouter 형식):
-- anthropic/claude-sonnet-4 (SQL 생성용)
-- anthropic/claude-3-5-haiku-20241022 (Fallback)
+- anthropic/claude-sonnet-4.5 (SQL 생성용)
+- anthropic/claude-3.5-haiku (Fallback)
 - google/gemini-2.5-flash (기본)
 - google/gemini-2.5-flash-lite (경량)
 - openai/gpt-4o (옵션)
@@ -123,23 +123,26 @@ class GenerationModule:
         # 기본 모델 (provider에 따라 다름)
         if self.provider == "google":
             self.default_model = self.provider_config.get(
-                "default_model", "gemini-2.0-flash"
+                "default_model",
+                self.gen_config.get("default_model", "gemini-2.0-flash"),
             )
         elif self.provider == "ollama":
             self.default_model = self.provider_config.get(
-                "default_model", "llama3.2"
+                "default_model",
+                self.gen_config.get("default_model", "llama3.2"),
             )
         else:
             self.default_model = self.openrouter_config.get(
-                "default_model", "anthropic/claude-sonnet-4-5"
+                "default_model",
+                self.gen_config.get("default_model", "google/gemini-2.5-flash"),
             )
         self.fallback_models = self.gen_config.get(
             "fallback_models",
             [
-                "anthropic/claude-sonnet-4-5",
+                "anthropic/claude-sonnet-4.5",
                 "google/gemini-2.5-flash",
                 "openai/gpt-4.1",
-                "anthropic/claude-haiku-4",
+                "anthropic/claude-3.5-haiku",
             ],
         )
         # auto_fallback: provider별 설정 우선, 없으면 전역 설정 사용
@@ -293,7 +296,7 @@ class GenerationModule:
             query: 사용자 질문
             context_documents: RAG 검색 결과 문서들
             options: 생성 옵션
-                - model: 사용할 모델 (OpenRouter 형식, 예: "anthropic/claude-sonnet-4-5")
+                - model: 사용할 모델 (OpenRouter 형식, 예: "anthropic/claude-sonnet-4.5")
                 - max_tokens: 최대 토큰 수
                 - temperature: 창의성 (0.0~1.0)
                 - style: 응답 스타일 (standard, detailed, concise 등)
@@ -389,7 +392,7 @@ class GenerationModule:
         특정 모델로 OpenRouter API 호출
 
         Args:
-            model: OpenRouter 모델 ID (예: "anthropic/claude-sonnet-4-5")
+            model: OpenRouter 모델 ID (예: "anthropic/claude-sonnet-4.5")
             query: 사용자 질문
             context_documents: 컨텍스트 문서
             options: 생성 옵션
@@ -681,7 +684,7 @@ class GenerationModule:
             query: 사용자 질문
             context_documents: RAG 검색 결과 문서들
             options: 생성 옵션
-                - model: 사용할 모델 (OpenRouter 형식, 예: "anthropic/claude-sonnet-4")
+                - model: 사용할 모델 (OpenRouter 형식, 예: "anthropic/claude-sonnet-4.5")
                 - max_tokens: 최대 토큰 수
                 - temperature: 창의성 (0.0~1.0)
                 - style: 응답 스타일
