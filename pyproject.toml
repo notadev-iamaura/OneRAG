@@ -89,7 +89,7 @@ dependencies = [
     # Validation and Serialization
     "pydantic-settings==2.1.0",
     # Logging and Monitoring
-    "structlog==23.2.0",
+    "structlog==25.5.0",
     # Rate Limiting
     "slowapi==0.1.9",
     # System monitoring
