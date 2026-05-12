@@ -17,6 +17,7 @@ BM25 인덱스도 함께 구축하여 하이브리드 검색을 준비합니다.
 """
 
 import asyncio
+import hashlib
 import json
 import pickle
 import sys
@@ -32,7 +33,9 @@ from easy_start.i18n import get_sample_data_path, t  # noqa: E402
 # 상수
 CHROMA_PERSIST_DIR = str(project_root / "easy_start" / ".chroma_data")
 BM25_INDEX_PATH = str(project_root / "easy_start" / ".bm25_index.pkl")
+MANIFEST_PATH = str(project_root / "easy_start" / ".load_manifest.json")
 COLLECTION_NAME = "documents"
+DATASET_VERSION = "2026-05-12"
 
 
 def _resolve_sample_data_path() -> Path:
@@ -52,6 +55,68 @@ def _resolve_sample_data_path() -> Path:
     # 폴백: 기존 경로
     fallback = project_root / "quickstart" / "sample_data.json"
     return fallback
+
+
+def _file_sha256(path: Path) -> str:
+    """파일 내용 SHA-256 해시 반환."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_load_manifest(sample_data_path: Path, document_count: int) -> dict[str, Any]:
+    """
+    현재 easy-start 샘플 데이터의 적재 매니페스트 생성.
+
+    ChromaDB/BM25 캐시가 오래된 샘플 데이터에서 생성되었는지 판별하는 데 사용합니다.
+    """
+    return {
+        "dataset_version": DATASET_VERSION,
+        "language": sample_data_path.stem.removeprefix("sample_data_"),
+        "sample_data_path": str(sample_data_path.relative_to(project_root)),
+        "sample_sha256": _file_sha256(sample_data_path),
+        "document_count": document_count,
+        "collection": COLLECTION_NAME,
+    }
+
+
+def load_manifest(path: str = MANIFEST_PATH) -> dict[str, Any] | None:
+    """저장된 easy-start 적재 매니페스트 로드."""
+    manifest_path = Path(path)
+    if not manifest_path.exists():
+        return None
+    with open(manifest_path, encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, dict) else None
+
+
+def save_manifest(manifest: dict[str, Any], path: str = MANIFEST_PATH) -> None:
+    """easy-start 적재 매니페스트 저장."""
+    manifest_path = Path(path)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+
+def expected_manifest() -> dict[str, Any]:
+    """현재 언어 설정 기준으로 기대되는 easy-start 매니페스트 반환."""
+    sample_data_path = _resolve_sample_data_path()
+    if not sample_data_path.exists():
+        return {}
+    with open(sample_data_path, encoding="utf-8") as f:
+        data = json.load(f)
+    raw_docs = data.get("documents", [])
+    document_count = len(raw_docs) if isinstance(raw_docs, list) else 0
+    return build_load_manifest(sample_data_path, document_count)
+
+
+def is_manifest_current(path: str = MANIFEST_PATH) -> bool:
+    """저장된 매니페스트가 현재 샘플 데이터와 일치하는지 확인."""
+    current = load_manifest(path)
+    expected = expected_manifest()
+    return bool(current and expected and current == expected)
 
 
 def prepare_documents(raw_docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -167,7 +232,25 @@ async def load_to_chroma(
         documents=chroma_docs,
     )
 
-    return count
+    return int(count)
+
+
+def reset_chroma_collection(
+    persist_dir: str = CHROMA_PERSIST_DIR,
+    collection_name: str = COLLECTION_NAME,
+) -> None:
+    """easy-start 샘플 컬렉션을 재생성할 수 있도록 기존 컬렉션을 제거."""
+    import chromadb
+    from chromadb.config import Settings
+
+    client = chromadb.PersistentClient(
+        path=persist_dir,
+        settings=Settings(anonymized_telemetry=False),
+    )
+    try:
+        client.delete_collection(collection_name)
+    except Exception:
+        return
 
 
 def save_bm25_index(index: Any, path: str = BM25_INDEX_PATH) -> None:
@@ -228,6 +311,7 @@ async def main() -> None:
 
     raw_docs = data.get("documents", [])
     print(f"📄 {t('load.docs_loaded', count=len(raw_docs))}")
+    manifest = build_load_manifest(sample_data_path, len(raw_docs))
 
     # 2. 문서 준비
     docs = prepare_documents(raw_docs)
@@ -253,11 +337,13 @@ async def main() -> None:
 
     # 4. ChromaDB 적재
     print(f"📥 {t('load.chroma_loading')}")
+    reset_chroma_collection()
     count = await load_to_chroma(docs, embeddings)
     print(f"✅ {t('load.chroma_done', count=count, path=CHROMA_PERSIST_DIR)}")
 
     # 5. BM25 인덱스 구축
     print(f"🔍 {t('load.bm25_building')}")
+    Path(BM25_INDEX_PATH).unlink(missing_ok=True)
     try:
         bm25_index = build_bm25_index(docs)
         save_bm25_index(bm25_index)
@@ -266,6 +352,7 @@ async def main() -> None:
         print(f"⚠️  {t('load.bm25_missing')}")
         print(f"   {t('load.bm25_install')}")
 
+    save_manifest(manifest)
     print()
     print(f"🎉 {t('load.complete')}")
 

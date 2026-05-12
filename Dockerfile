@@ -29,39 +29,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy all files
-COPY . .
-
 # Install uv and dependencies (as root, WITHOUT Playwright browsers yet)
 ARG INSTALL_LOCAL_EMBEDDING_DEPS=false
+COPY pyproject.toml uv.lock ./
 RUN pip install --no-cache-dir --upgrade pip uv && \
     if [ "$INSTALL_LOCAL_EMBEDDING_DEPS" = "true" ]; then \
-        uv export --frozen --no-dev --extra local-embedding --format requirements.txt --no-hashes --output-file /tmp/requirements.txt; \
+        uv export --frozen --no-dev --no-emit-project --extra local-embedding --format requirements.txt --no-hashes --output-file /tmp/requirements.txt; \
     else \
-        uv export --frozen --no-dev --format requirements.txt --no-hashes --output-file /tmp/requirements.txt; \
+        uv export --frozen --no-dev --no-emit-project --format requirements.txt --no-hashes --output-file /tmp/requirements.txt; \
     fi && \
     uv pip install --system --no-cache --requirement /tmp/requirements.txt && \
     rm -f /tmp/requirements.txt
 
-# Create directories
-RUN mkdir -p logs uploads/temp
-
-# Create non-root user for running the application
-RUN useradd --create-home --shell /bin/bash app
-
-# Copy entrypoint script (as root for proper permissions)
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-
-# Set proper file permissions and ownership (after all installations)
-RUN chown -R app:app /app && \
-    chmod +x /app/docker-entrypoint.sh
-
-# Switch to non-root user
-USER app
+# Create runtime directories and non-root user
+RUN mkdir -p logs uploads/temp && \
+    useradd --create-home --shell /bin/bash app && \
+    chown -R app:app /app
 
 ENV HF_HOME=/home/app/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/home/app/.cache/huggingface
 ENV TORCHINDUCTOR_CACHE_DIR=/home/app/.cache/torchinductor
+
+# Switch to non-root user before optional runtime cache downloads
+USER app
 
 # 로컬 임베딩 모델 사전 다운로드 (Qwen3-Embedding-0.6B)
 # app 사용자로 다운로드하여 런타임에 캐시 접근 가능
@@ -83,6 +73,11 @@ RUN if [ "$INSTALL_PLAYWRIGHT_BROWSERS" = "true" ]; then \
     else \
         echo "Skipping Playwright browser install. Set INSTALL_PLAYWRIGHT_BROWSERS=true to enable."; \
     fi
+
+# Copy application source after dependency and optional cache layers.
+# Source-only changes should not invalidate dependency downloads.
+COPY --chown=app:app . .
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Set environment
 ENV PYTHONPATH=/app

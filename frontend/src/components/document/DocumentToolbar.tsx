@@ -88,6 +88,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
+                aria-label="문서 검색"
                 placeholder="문서 검색..."
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
@@ -96,7 +97,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
             </div>
             <div className="w-40 shrink-0">
               <Select value={sortField} onValueChange={(v: string) => onSortFieldChange(v as SortField)}>
-                <SelectTrigger className="rounded-xl border-border/60 font-bold">
+                <SelectTrigger aria-label="정렬 기준" className="rounded-xl border-border/60 font-bold">
                   <SelectValue placeholder="정렬 기준" />
                 </SelectTrigger>
                 <SelectContent>
@@ -111,6 +112,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
               variant="ghost"
               size="icon"
               onClick={onSortDirectionToggle}
+              aria-label={sortDirection === 'asc' ? '오름차순 정렬' : '내림차순 정렬'}
               className="rounded-xl border border-border/60 shrink-0 hover:bg-muted"
               data-testid="sort-direction-button"
             >
@@ -125,6 +127,8 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
                 variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                 size="icon"
                 onClick={() => onViewModeChange('list')}
+                aria-label="목록 보기"
+                aria-pressed={viewMode === 'list'}
                 className={cn("h-8 w-8 rounded-lg", viewMode === 'list' && "shadow-sm bg-background")}
                 data-testid="view-mode-list"
               >
@@ -134,6 +138,8 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
                 variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
                 size="icon"
                 onClick={() => onViewModeChange('grid')}
+                aria-label="격자 보기"
+                aria-pressed={viewMode === 'grid'}
                 className={cn("h-8 w-8 rounded-lg", viewMode === 'grid' && "shadow-sm bg-background")}
                 data-testid="view-mode-grid"
               >
@@ -168,6 +174,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
                 variant="ghost"
                 size="icon"
                 onClick={onRefresh}
+                aria-label={loading ? '문서 새로고침 중' : '문서 새로고침'}
                 className="rounded-xl h-9 w-9 text-primary hover:bg-primary/10"
                 data-testid="refresh-button"
               >

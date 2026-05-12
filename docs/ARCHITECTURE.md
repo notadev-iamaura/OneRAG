@@ -518,14 +518,14 @@ Level 3 (확장)
 
 | 항목 | 수치 |
 |------|------|
-| **소스 코드** | 260+ Python 파일 |
-| **테스트** | 1,943개 통과 / 0 실패 |
+| **소스 코드** | 270+ tracked Python 파일 |
+| **테스트** | Backend Pytest + Frontend Vitest 회귀 스위트 |
 | **DI Provider** | 80+ (Singleton 70 + Factory 10) |
 | **API 엔드포인트** | 15+ 라우터 (REST + SSE + WebSocket) |
 | **검색 Provider** | Vector DB 6종 + Grok Collections |
-| **LLM Provider** | 4종 (Gemini, OpenAI, Claude, OpenRouter) |
+| **LLM Provider** | 5종 (Gemini, OpenAI, Claude, OpenRouter, Ollama) |
 | **Reranker** | 4 approach x 6 provider |
 | **파일 로더** | 8종 (PDF, DOCX, XLSX, CSV, JSON, MD, HTML, TXT) |
 | **PII 패턴** | 5종 (SSN, 전화번호, 이메일, 여권번호, 운전면허번호) |
 | **에러 시스템** | 양언어 (한/영) 자동 전환 |
-| **완성도** | 100/100 |
+| **릴리스 상태** | 로컬 품질 게이트와 CI 기반으로 지속 검증 |

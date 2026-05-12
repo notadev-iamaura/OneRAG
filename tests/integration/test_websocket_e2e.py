@@ -21,6 +21,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+
+@pytest.fixture(autouse=True)
+def disable_websocket_auth_for_mock_e2e():
+    """Keep these mock WebSocket tests independent from local FASTAPI_AUTH_KEY."""
+    from app.lib.auth import get_api_key_auth
+
+    auth = get_api_key_auth()
+    original_key = auth.api_key
+    auth.api_key = None
+
+    yield
+
+    auth.api_key = original_key
+
+
 # =============================================================================
 # Mock 기반 WebSocket E2E 테스트
 # =============================================================================

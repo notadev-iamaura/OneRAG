@@ -1,4 +1,4 @@
-# RAG_Standard API 참조
+# OneRAG API 참조
 
 > 모든 API는 http://localhost:8000/docs (Swagger UI)에서 대화형으로 테스트 가능합니다.
 

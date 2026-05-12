@@ -48,7 +48,7 @@
     {
       "id": "guide-start-001",
       "title": "OneRAG 설치 방법",
-      "content": "OneRAG를 설치하는 방법은 3단계입니다.\n\n**Step 1: 클론 및 의존성 설치**\n```bash\ngit clone https://github.com/youngouk/OneRAG.git\ncd OneRAG\nuv sync\n```\n\n**Step 2: 환경 설정**\n```bash\ncp quickstart/.env.quickstart .env\n# .env 파일에서 GOOGLE_API_KEY 설정\n```\nGoogle AI Studio에서 무료 API 키 발급: https://aistudio.google.com/apikey\n\n**Step 3: 실행**\n```bash\nmake start\n```\n\n완료 후 http://localhost:8000/docs 에서 API 테스트 가능합니다.\n\n**필수 요구사항:**\n- Docker 20.10+\n- Docker Compose v2+\n- uv 패키지 매니저 (자동 설치됨)",
+      "content": "OneRAG를 설치하는 방법은 3단계입니다.\n\n**Step 1: 클론 및 의존성 설치**\n```bash\ngit clone https://github.com/notadev-iamaura/OneRAG.git\ncd OneRAG\nuv sync\n```\n\n**Step 2: 환경 설정**\n```bash\ncp quickstart/.env.quickstart .env\n# .env 파일에서 GOOGLE_API_KEY 설정\n```\nGoogle AI Studio에서 무료 API 키 발급: https://aistudio.google.com/apikey\n\n**Step 3: 실행**\n```bash\nmake start\n```\n\n완료 후 http://localhost:8000/docs 에서 API 테스트 가능합니다.\n\n**필수 요구사항:**\n- Docker 20.10+\n- Docker Compose v2+\n- uv 패키지 매니저 (자동 설치됨)",
       "metadata": {
         "category": "시작하기",
         "tags": ["설치", "quickstart", "docker", "uv"]
