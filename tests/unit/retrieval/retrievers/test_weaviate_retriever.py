@@ -642,6 +642,84 @@ class TestWeaviateRetrieverAddDocuments:
         assert mock_collection.data.insert.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_add_documents_accepts_document_processor_dense_embedding(
+        self, mock_embedder: MagicMock, mock_collection: MagicMock
+    ) -> None:
+        """
+        DocumentProcessor의 이전 dense_embedding 키를 호환 입력으로 허용한다.
+        """
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        retriever = WeaviateRetriever(
+            embedder=mock_embedder,
+            weaviate_client=MagicMock(),
+            collection_name="Documents",
+        )
+        retriever.collection = mock_collection
+
+        documents = [
+            {
+                "content": "테스트 문서",
+                "dense_embedding": [0.3] * 3072,
+                "metadata": {
+                    "document_id": "doc-1",
+                    "source_file": "test.md",
+                    "file_type": "MARKDOWN",
+                },
+            }
+        ]
+
+        result = await retriever.add_documents(documents)
+
+        assert result["success_count"] == 1
+        assert result["error_count"] == 0
+        assert mock_collection.data.insert.call_args.kwargs["vector"] == [0.3] * 3072
+
+    @pytest.mark.asyncio
+    async def test_add_documents_normalizes_known_metadata_and_preserves_extras(
+        self, mock_embedder: MagicMock, mock_collection: MagicMock
+    ) -> None:
+        """스키마에 맞는 메타데이터만 property로 쓰고 나머지는 JSON으로 보존한다."""
+        import json
+
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        retriever = WeaviateRetriever(
+            embedder=mock_embedder,
+            weaviate_client=MagicMock(),
+            collection_name="Documents",
+        )
+        retriever.collection = mock_collection
+
+        documents = [
+            {
+                "content": "테스트 문서",
+                "embedding": [0.4] * 3072,
+                "metadata": {
+                    "document_id": "doc-1",
+                    "chunk_index": "2",
+                    "load_timestamp": "123.5",
+                    "keys": ["a", "b"],
+                    "custom": {"nested": True},
+                },
+            }
+        ]
+
+        result = await retriever.add_documents(documents)
+
+        properties = mock_collection.data.insert.call_args.kwargs["properties"]
+        assert result["success_count"] == 1
+        assert properties["document_id"] == "doc-1"
+        assert properties["chunk_index"] == 2
+        assert properties["load_timestamp"] == 123.5
+        assert properties["keys"] == ["a", "b"]
+        assert json.loads(properties["metadata_json"]) == {"custom": {"nested": True}}
+
+    @pytest.mark.asyncio
     async def test_add_documents_missing_content(
         self, mock_embedder: MagicMock, mock_collection: MagicMock
     ) -> None:

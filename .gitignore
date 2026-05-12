@@ -148,6 +148,7 @@ frontend/.turbo/
 # ===================================
 easy_start/.chroma_data/
 easy_start/.bm25_index.pkl
+easy_start/.load_manifest.json
 # ===================================
 # Internal Analysis (로컬 전용)
 # ===================================

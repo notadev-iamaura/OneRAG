@@ -43,7 +43,7 @@ dependencies = [
     # PostgreSQL Support (평가 시스템용)
     "sqlalchemy[asyncio]==2.0.23",
     "asyncpg>=0.29.0,<1",
-    "alembic==1.13.0",
+    "alembic==1.18.4",
     # MongoDB Support (검색 및 문서 저장용)
     "pymongo>=4.0.0",
     "motor>=3.0.0",

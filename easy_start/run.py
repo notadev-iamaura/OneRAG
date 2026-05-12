@@ -88,7 +88,15 @@ def check_data_loaded(chroma_dir: str = CHROMA_DATA_DIR) -> bool:
     if not chroma_path.exists():
         return False
     # ChromaDB는 sqlite3 파일을 생성함
-    return any(chroma_path.iterdir())
+    if not any(chroma_path.iterdir()):
+        return False
+
+    try:
+        from easy_start.load_data import is_manifest_current
+    except ImportError:
+        return False
+
+    return bool(is_manifest_current())
 
 
 def main() -> None:

@@ -145,3 +145,20 @@ class TestEvaluationsEndpointAuth:
         assert response.status_code == 404, (
             f"유효한 API Key로 접근 시 인증을 통과해야 합니다. 실제: {response.status_code}"
         )
+
+    def test_static_routes_are_registered_before_id_catchall(self):
+        """정적 평가 라우트가 /{evaluation_id}보다 먼저 등록되는지 확인"""
+        from app.api.evaluations import router
+
+        route_paths = [route.path for route in router.routes]
+        catchall_index = route_paths.index("/{evaluation_id}")
+
+        for static_path in (
+            "/message/{message_id}",
+            "/session/{session_id}",
+            "/stats/summary",
+            "/export/{format}",
+            "/batch",
+            "/recent/list",
+        ):
+            assert route_paths.index(static_path) < catchall_index

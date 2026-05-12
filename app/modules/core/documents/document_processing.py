@@ -505,6 +505,8 @@ class DocumentProcessor:
             ):
                 chunk_data = {
                     "content": chunk.page_content,
+                    "embedding": dense_embedding,
+                    # Backward-compatible alias for older call sites.
                     "dense_embedding": dense_embedding,
                     "metadata": chunk.metadata,
                 }
@@ -597,6 +599,8 @@ class DocumentProcessor:
             ):
                 chunk_data = {
                     "content": chunk.page_content,
+                    "embedding": dense_embedding,
+                    # Backward-compatible alias for older call sites.
                     "dense_embedding": dense_embedding,
                     "metadata": chunk.metadata,
                 }

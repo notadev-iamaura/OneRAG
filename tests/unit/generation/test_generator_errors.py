@@ -23,8 +23,8 @@ class TestGeneratorErrors:
         """Generator 인스턴스 생성"""
         config = {
             "generation": {
-                "default_model": "claude-sonnet-4-5",
-                "fallback_models": ["gemini-2.5-flash", "gpt-4.1", "claude-haiku-4"],
+                "default_model": "anthropic/claude-sonnet-4.5",
+                "fallback_models": ["google/gemini-2.5-flash", "openai/gpt-4.1", "anthropic/claude-3.5-haiku"],
                 "timeout": 2.0,  # 짧은 타임아웃 (테스트용)
             }
         }
@@ -45,7 +45,7 @@ class TestGeneratorErrors:
             # Mock: 첫 번째 모델 타임아웃 → 두 번째 모델 성공
             mock_gen.side_effect = [
                 GenerationError(ErrorCode.GENERATION_TIMEOUT, timeout_seconds=2),
-                MagicMock(answer="타임아웃 후 폴백 성공", model_used="gemini-2.5-flash"),
+                MagicMock(answer="타임아웃 후 폴백 성공", model_used="google/gemini-2.5-flash"),
             ]
 
             result = await generator.generate_answer(
@@ -56,7 +56,7 @@ class TestGeneratorErrors:
 
             # 검증: 타임아웃 후 폴백 성공
             assert result.answer == "타임아웃 후 폴백 성공"
-            assert result.model_used == "gemini-2.5-flash"
+            assert result.model_used == "google/gemini-2.5-flash"
             assert mock_gen.call_count == 2  # 타임아웃 → 폴백
 
     @pytest.mark.asyncio
@@ -78,7 +78,7 @@ class TestGeneratorErrors:
                     response=MagicMock(status_code=429),
                     body=None,
                 ),
-                MagicMock(answer="재시도 성공", model_used="claude-sonnet-4-5"),
+                MagicMock(answer="재시도 성공", model_used="anthropic/claude-sonnet-4.5"),
             ]
 
             result = await generator.generate_answer(

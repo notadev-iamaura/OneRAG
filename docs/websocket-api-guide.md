@@ -2,7 +2,7 @@
 
 ## 개요
 
-RAG_Standard는 WebSocket 기반 양방향 실시간 채팅 API를 제공합니다.
+OneRAG는 WebSocket 기반 양방향 실시간 채팅 API를 제공합니다.
 SSE(Server-Sent Events) 방식과 달리 완전한 양방향 통신을 지원하며, 토큰 단위 스트리밍으로 더욱 부드러운 사용자 경험을 제공합니다.
 
 ### SSE vs WebSocket 비교
