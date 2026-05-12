@@ -3,7 +3,7 @@
 샘플 데이터 로드 스크립트
 
 Quickstart 샘플 FAQ 데이터를 Weaviate에 직접 적재합니다.
-로컬 임베딩 모델(Qwen3-Embedding-0.6B)을 사용하여 벡터를 생성합니다.
+애플리케이션 설정과 동일한 임베딩 모델을 사용하여 벡터를 생성합니다.
 make start-load 또는 make start 명령어에서 자동 실행됩니다.
 """
 
@@ -12,13 +12,14 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.modules.core.embedding.interfaces import IEmbedder
 
 # 프로젝트 루트를 Python 경로에 추가
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-# 임베딩 설정 상수
-DEFAULT_EMBEDDING_DIM = 1024  # Qwen3-Embedding-0.6B 기본 차원
 
 
 def wait_for_weaviate(url: str, max_retries: int = 30, delay: float = 2.0) -> bool:
@@ -57,27 +58,25 @@ def wait_for_weaviate(url: str, max_retries: int = 30, delay: float = 2.0) -> bo
     return False
 
 
-def initialize_embedder() -> "LocalEmbedder | None":  # type: ignore[name-defined]  # noqa: F821
+def initialize_embedder() -> "IEmbedder | None":
     """
-    로컬 임베딩 모델 초기화
+    애플리케이션 설정과 동일한 임베딩 모델 초기화
 
     Returns:
-        LocalEmbedder 인스턴스 또는 None (실패 시)
+        IEmbedder 인스턴스 또는 None (실패 시)
     """
     try:
-        from app.modules.core.embedding.local_embedder import LocalEmbedder
+        from app.lib.config_loader import ConfigLoader
+        from app.modules.core.embedding.factory import EmbedderFactory
 
-        print("🤖 로컬 임베딩 모델 초기화 중...")
-        print("   (첫 실행 시 모델 다운로드에 1-2분 소요)")
+        config = ConfigLoader().load_config()
+        embedder = EmbedderFactory.create(config)
+        embeddings_config = config.get("embeddings", {})
+        provider = embeddings_config.get("provider", "unknown")
 
-        embedder = LocalEmbedder(
-            model_name="Qwen/Qwen3-Embedding-0.6B",
-            output_dimensionality=DEFAULT_EMBEDDING_DIM,
-            batch_size=32,
-            normalize=True,
-        )
+        print("🤖 임베딩 모델 초기화 완료!")
+        print(f"   provider={provider}, model={embedder.model_name}, dim={embedder.output_dimensionality}")
 
-        print("✅ 임베딩 모델 로드 완료!")
         return embedder
 
     except ImportError as e:
@@ -116,7 +115,7 @@ def load_sample_data() -> None:
     documents = data.get("documents", [])
     print(f"📄 {len(documents)}개 문서 로드 중...")
 
-    # 로컬 임베딩 모델 초기화
+    # 애플리케이션과 동일한 임베딩 모델 초기화
     embedder = initialize_embedder()
     if embedder is None:
         print("❌ 임베딩 모델 없이는 문서를 적재할 수 없습니다.")
@@ -163,9 +162,9 @@ def load_sample_data() -> None:
                 # 추가 메타데이터 (선택적)
                 Property(name="source", data_type=DataType.TEXT),
             ],
-            # 외부 임베딩 사용 (로컬 Qwen3 모델)
+            # 외부 임베딩 사용 (애플리케이션 설정과 동일한 모델)
             vector_config=Configure.Vectors.self_provided(
-                # 벡터 인덱스 설정 (1024차원, 코사인 유사도)
+                # 벡터 인덱스 설정 (애플리케이션 임베딩 차원, 코사인 유사도)
                 vector_index_config=Configure.VectorIndex.hnsw(
                     distance_metric=VectorDistances.COSINE,
                 )
