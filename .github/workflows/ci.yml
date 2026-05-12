@@ -158,7 +158,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run Tests with Coverage
-        run: uv run pytest --cov=app --cov-report=html --cov-report=xml --tb=short -q --timeout=60 --ignore=tests/integration
+        run: uv run pytest -p pytest_cov --cov=app --cov-report=html --cov-report=xml --tb=short -q --timeout=60 --ignore=tests/integration
 
       - name: Upload coverage
         if: always()

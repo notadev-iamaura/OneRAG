@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { UploadTab } from '../UploadTab';
+import { checkA11y } from '../../test/axeHelper';
 
 // Mock api
 vi.mock('../../services/api', () => ({
@@ -52,6 +53,22 @@ describe('UploadTab', () => {
 
         expect(screen.getByText('파일을 여기에 드래그하거나 클릭하세요')).toBeInTheDocument();
         expect(screen.getByText('파일 선택하기')).toBeInTheDocument();
+    });
+
+    it('업로드 영역은 키보드로 접근 가능하고 axe 위반이 없어야 함', async () => {
+        const { container } = render(<UploadTab showToast={mockShowToast} />);
+
+        const uploadArea = screen.getByRole('button', { name: '업로드할 파일 선택' });
+        uploadArea.focus();
+        expect(uploadArea).toHaveFocus();
+
+        const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+        const clickSpy = vi.spyOn(input, 'click').mockImplementation(() => undefined);
+        fireEvent.keyDown(uploadArea, { key: 'Enter', code: 'Enter' });
+        expect(clickSpy).toHaveBeenCalled();
+
+        const results = await checkA11y(container);
+        expect(results.violations).toHaveLength(0);
     });
 
     it('retryFailedFile이 최신 state를 참조해야 함', async () => {

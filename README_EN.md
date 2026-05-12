@@ -7,11 +7,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/youngouk/OneRAG/actions/workflows/ci.yml"><img src="https://github.com/youngouk/OneRAG/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/notadev-iamaura/OneRAG/actions/workflows/ci.yml"><img src="https://github.com/notadev-iamaura/OneRAG/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="https://demo-frontend-production-3c93.up.railway.app"><img src="https://img.shields.io/badge/Live_Demo-Railway-blueviolet.svg" alt="Live Demo"></a>
-  <a href="https://github.com/youngouk/OneRAG/stargazers"><img src="https://img.shields.io/github/stars/youngouk/OneRAG?style=social" alt="GitHub Stars"></a>
+  <a href="https://github.com/notadev-iamaura/OneRAG/stargazers"><img src="https://img.shields.io/github/stars/notadev-iamaura/OneRAG?style=social" alt="GitHub Stars"></a>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 ## TL;DR
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git && cd OneRAG && uv sync
+git clone https://github.com/notadev-iamaura/OneRAG.git && cd OneRAG && uv sync
 ```
 
 ```bash
@@ -59,7 +59,7 @@ ollama pull llama3.2 && make easy-start
 - **Just change the config** — Vector DB (6), LLM (5), Reranker (6), Cache (3) — all swappable via `.env` or YAML
 - **Start without API keys** — Fully functional offline with Ollama local LLM
 - **OpenAI SDK compatible** — Connect existing OpenAI code directly to OneRAG (`/v1/chat/completions`)
-- **2,200+ tests** — Production-verified stability with full CI/CD
+- **Broad test suite** — Pytest/Vitest regression coverage with CI/CD gates
 - **PoC to Production** — Scale with the same codebase, no rebuilding needed
 
 > **[Try the live demo](https://demo-frontend-production-3c93.up.railway.app)** (access code: `1127`)
@@ -85,7 +85,7 @@ ollama pull llama3.2 && make easy-start
 ### Option A: Full API Server (Docker)
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git
+git clone https://github.com/notadev-iamaura/OneRAG.git
 cd OneRAG && uv sync
 
 cp quickstart/.env.quickstart .env
@@ -106,13 +106,13 @@ make start-down  # Stop
 Experience RAG search + AI answers directly in your terminal without Docker.
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git
+git clone https://github.com/notadev-iamaura/OneRAG.git
 cd OneRAG && uv sync
 
 make easy-start
 ```
 
-25 sample documents are auto-loaded with hybrid search (Dense + BM25) ready to go.
+If `.env` does not exist, Easy Start creates it from `easy_start/.env.example`. 25 sample documents are auto-loaded with hybrid search (Dense + BM25) ready to go.
 To enable AI answer generation, set one API key:
 
 ```bash
@@ -279,7 +279,7 @@ UI text, system prompts, and sample data are fully localized for each language.
 
 ```bash
 make dev-reload   # Dev server (auto-reload)
-make test         # Run tests (2,200+)
+make test         # Run tests
 make lint         # Lint check
 make type-check   # Type check
 ```
@@ -307,7 +307,7 @@ MIT License
 </p>
 
 <p align="center">
-  <a href="https://github.com/youngouk/OneRAG/issues">Report Bug</a> ·
-  <a href="https://github.com/youngouk/OneRAG/issues">Request Feature</a> ·
-  <a href="https://github.com/youngouk/OneRAG/discussions">Discussions</a>
+  <a href="https://github.com/notadev-iamaura/OneRAG/issues">Report Bug</a> ·
+  <a href="https://github.com/notadev-iamaura/OneRAG/issues">Request Feature</a> ·
+  <a href="https://github.com/notadev-iamaura/OneRAG/discussions">Discussions</a>
 </p>

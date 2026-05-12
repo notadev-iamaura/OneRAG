@@ -6,6 +6,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { DocumentToolbar } from '../DocumentToolbar';
+import { checkA11y } from '../../../test/axeHelper';
 
 describe('DocumentToolbar', () => {
   const defaultProps = {
@@ -27,6 +28,19 @@ describe('DocumentToolbar', () => {
   it('검색 입력 필드를 렌더링합니다', () => {
     render(<DocumentToolbar {...defaultProps} />);
     expect(screen.getByPlaceholderText('문서 검색...')).toBeInTheDocument();
+  });
+
+  it('아이콘 전용 컨트롤에 접근 가능한 이름을 제공합니다', async () => {
+    const { container } = render(<DocumentToolbar {...defaultProps} />);
+
+    expect(screen.getByRole('textbox', { name: '문서 검색' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '내림차순 정렬' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '목록 보기' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: '격자 보기' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: '문서 새로고침' })).toBeInTheDocument();
+
+    const results = await checkA11y(container);
+    expect(results.violations).toHaveLength(0);
   });
 
   it('검색어 입력 시 onSearchChange를 호출합니다', () => {
