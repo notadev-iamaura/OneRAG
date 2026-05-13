@@ -78,7 +78,8 @@ from app.core.di_container import (
 from app.infrastructure.persistence.connection import db_manager  # PostgreSQL 연결 관리자
 from app.lib.auth import get_api_key_auth  # API Key 인증
 from app.lib.config_loader import ConfigLoader
-from app.lib.env_validator import EnvValidator, validate_all_env
+from app.lib.env_validator import EnvValidator, validate_all_env, validate_provider_env
+from app.lib.environment import is_production_environment
 from app.lib.logger import get_logger
 
 # Phase 1.3: 신규 Retrieval Architecture (Orchestrator Pattern)
@@ -113,8 +114,8 @@ class RAGChatbotApp:
             # 환경 변수 USE_MODULAR_SCHEMA=true로 설정하면 신규 스키마 사용
             use_modular_schema = os.getenv("USE_MODULAR_SCHEMA", "false").lower() == "true"
 
-            # 개발 환경에서는 검증 실패 시 명확한 에러 (프로덕션에서는 Graceful Degradation)
-            is_development = os.getenv("NODE_ENV", "development") == "development"
+            # 개발/테스트 환경에서는 config 검증 실패를 빠르게 드러냅니다.
+            is_development = not is_production_environment()
 
             config_loader = ConfigLoader()
             self.config = config_loader.load_config(
@@ -122,6 +123,23 @@ class RAGChatbotApp:
                 use_modular_schema=use_modular_schema,
                 raise_on_validation_error=is_development,  # 개발 환경에서만 에러 발생
             )
+
+            provider_validation_strict = (
+                is_production_environment()
+                or os.getenv("STRICT_PROVIDER_VALIDATION", "false").lower() == "true"
+            )
+            provider_validation = validate_provider_env(
+                self.config,
+                strict=provider_validation_strict,
+            )
+            if not provider_validation.is_valid:
+                missing = ", ".join(provider_validation.missing_vars)
+                raise RuntimeError(
+                    "Invalid provider/environment configuration. "
+                    f"Missing or unsupported settings: {missing}"
+                )
+            for warning in provider_validation.warnings:
+                logger.warning(f"⚠️ {warning}")
 
             # Container에 설정 주입
             self.container.config.from_dict(self.config)
@@ -147,6 +165,7 @@ class RAGChatbotApp:
             logger.info("=" * 60)
 
         except Exception as e:
+            health.set_startup_state(False, "failed", {"error": str(e)})
             logger.error(f"❌ Module initialization failed: {e}", exc_info=True)
             raise
 
@@ -245,7 +264,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("✅ 환경 변수 검증 완료")
 
         # 🚨 보안 강화: 프로덕션 환경에서 필수 환경 변수 추가 검증
-        from app.lib.environment import is_production_environment, validate_required_env_vars
+        from app.lib.environment import validate_required_env_vars
 
         if is_production_environment():
             logger.info("🔒 프로덕션 환경 감지 - 필수 환경 변수 검증...")
@@ -326,6 +345,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         admin.set_dependencies(modules_dict, rag_app.config)
         # Phase 1-3 개선: retrieval 모듈을 health API에 전달
         health.set_retrieval_module(modules_dict["retrieval"])
+        health.set_startup_state(True, "ready", {"modules": "initialized"})
         # 평가 라우터 초기화
         evaluations.init_evaluation_router(modules_dict["evaluation"])
         # Admin 평가 라우터에 설정 주입
@@ -388,8 +408,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # Weaviate 연결 종료 (이슈 #2 수정: 싱글톤 명시적 종료)
         try:
-            from app.lib.weaviate_client import weaviate_client
-            weaviate_client.close()
+            from app.lib.weaviate_client import close_weaviate_client
+
+            close_weaviate_client()
             logger.info("✅ Weaviate client closed")
         except Exception as e:
             logger.warning(f"⚠️ Weaviate close warning: {e}")
@@ -574,6 +595,7 @@ app.add_middleware(
     rate_limiter=rate_limiter,
     excluded_paths=[
         "/health",
+        "/ready",
         "/api/health",
         # ✅ P0 보안 패치: Chat API는 전용 ChatRateLimitMiddleware에서 처리
         # (기존에는 body 읽기 충돌로 제외했으나, 전용 미들웨어로 해결)

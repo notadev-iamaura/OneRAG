@@ -27,6 +27,7 @@ from app.lib.config_validator import get_env_int, get_env_url
 # from app.lib.ip_geolocation import IPGeolocationModule  # 비활성화: 세션 생성 타임아웃 원인
 from app.lib.logger import get_logger
 from app.lib.metrics import CostTracker, PerformanceMetrics
+from app.lib.startup_policy import is_retrieval_required
 
 # Phase 5: Agent 모듈 (Agentic RAG Orchestrator)
 from app.modules.core.agent import AgentFactory
@@ -1306,7 +1307,9 @@ def create_retriever_via_factory(
     config: dict,
     embedder: Any,
     vector_store: Any | None = None,
+    vector_store_provider: Any | None = None,
     weaviate_client: Any | None = None,
+    weaviate_client_provider: Any | None = None,
     synonym_manager: Any | None = None,
     stopword_filter: Any | None = None,
     user_dictionary: Any | None = None,
@@ -1321,7 +1324,9 @@ def create_retriever_via_factory(
         config: 설정 딕셔너리
         embedder: 임베딩 모델 인스턴스
         vector_store: VectorStore 인스턴스 (Weaviate/Grok 외 provider용)
+        vector_store_provider: VectorStore provider (필요할 때만 지연 생성)
         weaviate_client: Weaviate 클라이언트 (Weaviate provider용)
+        weaviate_client_provider: Weaviate provider (필요할 때만 지연 생성)
         synonym_manager: 동의어 관리자 (하이브리드 지원 provider용)
         stopword_filter: 불용어 필터 (하이브리드 지원 provider용)
         user_dictionary: 사용자 사전 (하이브리드 지원 provider용)
@@ -1339,6 +1344,20 @@ def create_retriever_via_factory(
     - grok: 관리형 검색 (VectorStore 불필요)
     """
     provider = config.get("vector_db", {}).get("provider", "weaviate")
+
+    def resolve_vector_store() -> Any:
+        if vector_store is not None:
+            return vector_store
+        if vector_store_provider is not None:
+            return vector_store_provider()
+        return create_vector_store_via_factory(config)
+
+    def resolve_weaviate_client() -> Any:
+        if weaviate_client is not None:
+            return weaviate_client
+        if weaviate_client_provider is not None:
+            return weaviate_client_provider()
+        return None
 
     # Provider별 설정 매핑
     retriever_config: dict[str, Any] = {}
@@ -1393,10 +1412,11 @@ def create_retriever_via_factory(
             }
 
     if provider == "weaviate":
+        resolved_weaviate_client = resolve_weaviate_client()
         # Weaviate: weaviate_client 사용 (store 대신)
         weaviate_config = config.get("weaviate", {})
         retriever_config = {
-            "weaviate_client": weaviate_client,
+            "weaviate_client": resolved_weaviate_client,
             "collection_name": weaviate_config.get("collection_name", "Documents"),
             "alpha": weaviate_config.get("hybrid_search", {}).get("default_alpha", 0.6),
             "additional_collections": weaviate_config.get("additional_collections", []),
@@ -1405,44 +1425,49 @@ def create_retriever_via_factory(
             ),
         }
     elif provider == "chroma":
+        resolved_vector_store = resolve_vector_store()
         # Chroma: BM25 엔진이 있으면 하이브리드 검색 지원
         chroma_config = config.get("chroma", {})
         retriever_config = {
-            "store": vector_store,
+            "store": resolved_vector_store,
             "collection_name": chroma_config.get("collection_name", "documents"),
             "top_k": chroma_config.get("retrieval", {}).get("default_top_k", 10),
         }
     elif provider == "pinecone":
+        resolved_vector_store = resolve_vector_store()
         # Pinecone: 하이브리드 지원
         pinecone_config = config.get("pinecone", {})
         retriever_config = {
-            "store": vector_store,
+            "store": resolved_vector_store,
             "namespace": pinecone_config.get("namespace", "default"),
             "top_k": pinecone_config.get("retrieval", {}).get("default_top_k", 10),
             "hybrid_alpha": pinecone_config.get("hybrid", {}).get("default_alpha", 0.6),
         }
     elif provider == "qdrant":
+        resolved_vector_store = resolve_vector_store()
         # Qdrant: 하이브리드 지원
         qdrant_config = config.get("qdrant", {})
         retriever_config = {
-            "store": vector_store,
+            "store": resolved_vector_store,
             "collection_name": qdrant_config.get("collection_name", "documents"),
             "top_k": qdrant_config.get("retrieval", {}).get("default_top_k", 10),
             "hybrid_alpha": qdrant_config.get("hybrid_search", {}).get("default_alpha", 0.6),
         }
     elif provider == "pgvector":
+        resolved_vector_store = resolve_vector_store()
         # pgvector: Dense 전용
         pgvector_config = config.get("pgvector", {})
         retriever_config = {
-            "store": vector_store,
+            "store": resolved_vector_store,
             "table_name": pgvector_config.get("table_name", "documents"),
             "top_k": pgvector_config.get("retrieval", {}).get("default_top_k", 10),
         }
     elif provider == "mongodb":
+        resolved_vector_store = resolve_vector_store()
         # MongoDB Atlas: Dense 전용
         mongodb_config = config.get("mongodb", {}).get("vector_search", {})
         retriever_config = {
-            "store": vector_store,
+            "store": resolved_vector_store,
             "collection_name": mongodb_config.get("collection_name", "documents"),
             "top_k": mongodb_config.get("retrieval", {}).get("default_top_k", 10),
         }
@@ -1733,8 +1758,8 @@ class AppContainer(containers.DeclarativeContainer):
         create_retriever_via_factory,
         config=config,
         embedder=document_processor.provided.embedder,
-        vector_store=vector_store,  # Weaviate 외 provider용
-        weaviate_client=weaviate_client,  # Weaviate provider용
+        vector_store_provider=vector_store.provider,  # Weaviate 외 provider용, 지연 생성
+        weaviate_client_provider=weaviate_client.provider,  # Weaviate provider용, 지연 생성
         synonym_manager=synonym_manager,  # 하이브리드 지원 provider용
         stopword_filter=stopword_filter,
         user_dictionary=user_dictionary,
@@ -2080,6 +2105,7 @@ async def initialize_async_resources(container: AppContainer) -> None:
     """
 
     logger.info("Async 리소스 초기화 시작")
+    retrieval_required = is_retrieval_required()
 
     # Phase 3 병렬 초기화 태스크
     init_tasks = {
@@ -2151,7 +2177,11 @@ async def initialize_async_resources(container: AppContainer) -> None:
             extra={"error": str(e)},
             exc_info=True
         )
-        # Phase 1 MVP: Weaviate를 사용할 수 없으면 다른 검색 방법으로 대체
+        if retrieval_required:
+            raise RuntimeError(
+                "Retrieval provider initialization failed and RETRIEVAL_STARTUP_POLICY=required"
+            ) from e
+        # Phase 1 MVP: Weaviate를 사용할 수 없으면 제한 모드로 계속 실행
 
     # Reranker와 Cache를 먼저 await (async factory이므로)
     reranker = container.reranker()
@@ -2168,8 +2198,17 @@ async def initialize_async_resources(container: AppContainer) -> None:
     orchestrator = container.retrieval_orchestrator()
     if asyncio.iscoroutine(orchestrator) or isinstance(orchestrator, asyncio.Future):
         orchestrator = await orchestrator
-    await orchestrator.initialize()
-    logger.info("Retrieval Orchestrator 초기화 성공")
+    try:
+        await orchestrator.initialize()
+        logger.info("Retrieval Orchestrator 초기화 성공")
+    except Exception as e:
+        if retrieval_required:
+            raise
+        logger.warning(
+            "Retrieval Orchestrator 초기화 실패 (Degraded Startup)",
+            extra={"error": str(e)},
+            exc_info=True,
+        )
 
     # Self-RAG (retrieval과 generation에 의존, 초기화 후 override 필요)
     self_rag = container.self_rag()
@@ -2209,6 +2248,7 @@ async def initialize_async_resources_graceful(container: AppContainer) -> None:
     )
 
     logger.info("Graceful 모듈 초기화 시작 (Graceful Degradation)")
+    retrieval_required = is_retrieval_required()
 
     initializer = GracefulInitializer()
 
@@ -2245,20 +2285,23 @@ async def initialize_async_resources_graceful(container: AppContainer) -> None:
             retry_count=2,
         ),
         ModuleConfig(
-            name="RetrievalOrchestrator",
-            priority=ModulePriority.CRITICAL,
-            initializer=container.retrieval_orchestrator().initialize,
-            dependencies=["WeaviateRetriever"],
-            timeout=15.0,  # 30초 → 15초 (healthcheck 여유 5초 남김)
-            retry_count=1,  # 3회 → 1회 (타임아웃 내 빠른 실패)
-        ),
-        ModuleConfig(
             name="DocumentProcessor",
             priority=ModulePriority.CRITICAL,
             initializer=_no_op_init,  # Singleton, 초기화 불필요
             timeout=5.0,
         ),
     ]
+
+    retrieval_orchestrator_module = ModuleConfig(
+        name="RetrievalOrchestrator",
+        priority=ModulePriority.CRITICAL if retrieval_required else ModulePriority.IMPORTANT,
+        initializer=container.retrieval_orchestrator().initialize,
+        dependencies=["WeaviateRetriever"],
+        timeout=15.0,  # 30초 → 15초 (healthcheck 여유 5초 남김)
+        retry_count=1,  # 3회 → 1회 (타임아웃 내 빠른 실패)
+    )
+    if retrieval_required:
+        critical_modules.append(retrieval_orchestrator_module)
 
     # IMPORTANT 모듈: 핵심 기능이지만 제한 모드로 동작 가능
     important_modules = [
@@ -2292,6 +2335,8 @@ async def initialize_async_resources_graceful(container: AppContainer) -> None:
             retry_count=1,  # 2회 → 1회 (1회 실패 후 즉시 Optional로 전환)
         ),
     ]
+    if not retrieval_required:
+        important_modules.append(retrieval_orchestrator_module)
 
     # OPTIONAL 모듈: 선택적 기능 (실패 시 무시 가능)
     optional_modules = [

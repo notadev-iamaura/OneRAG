@@ -126,6 +126,7 @@ class APIKeyAuth:
             "/redoc",  # ReDoc
             "/openapi.json",  # OpenAPI 스키마
             "/health",  # Health check
+            "/ready",  # Readiness check
         ]
 
         logger.info("🔐 API Key 인증 초기화 완료")

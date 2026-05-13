@@ -16,9 +16,11 @@ BM25 인덱스도 함께 구축하여 하이브리드 검색을 준비합니다.
     - kiwipiepy, rank-bm25: BM25 인덱스 (선택적)
 """
 
+import argparse
 import asyncio
 import hashlib
 import json
+import os
 import pickle
 import sys
 from pathlib import Path
@@ -36,6 +38,7 @@ BM25_INDEX_PATH = str(project_root / "easy_start" / ".bm25_index.pkl")
 MANIFEST_PATH = str(project_root / "easy_start" / ".load_manifest.json")
 COLLECTION_NAME = "documents"
 DATASET_VERSION = "2026-05-12"
+RESET_ENV_VAR = "ONERAG_EASY_START_RESET"
 
 
 def _resolve_sample_data_path() -> Path:
@@ -64,6 +67,11 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def env_flag_enabled(value: str | None) -> bool:
+    """Parse common truthy env/CLI flag values."""
+    return bool(value and value.strip().lower() in {"1", "true", "yes", "y", "on"})
 
 
 def build_load_manifest(sample_data_path: Path, document_count: int) -> dict[str, Any]:
@@ -249,8 +257,14 @@ def reset_chroma_collection(
     )
     try:
         client.delete_collection(collection_name)
-    except Exception:
-        return
+    except Exception as e:
+        message = str(e).lower()
+        if "does not exist" in message or "not found" in message:
+            return
+        raise RuntimeError(
+            f"easy-start Chroma 컬렉션 초기화 실패: {collection_name}. "
+            "컬렉션이 잠겨 있거나 손상되었을 수 있습니다."
+        ) from e
 
 
 def save_bm25_index(index: Any, path: str = BM25_INDEX_PATH) -> None:
@@ -295,10 +309,11 @@ def load_bm25_index(path: str = BM25_INDEX_PATH) -> Any:
     return index
 
 
-async def main() -> None:
+async def main(reset: bool | None = None) -> None:
     """메인 실행 함수"""
     print(f"🚀 {t('load.title')}")
     print()
+    reset = env_flag_enabled(os.getenv(RESET_ENV_VAR)) if reset is None else reset
 
     # 1. 샘플 데이터 로드
     sample_data_path = _resolve_sample_data_path()
@@ -337,7 +352,11 @@ async def main() -> None:
 
     # 4. ChromaDB 적재
     print(f"📥 {t('load.chroma_loading')}")
-    reset_chroma_collection()
+    if reset:
+        print("🗑️  --reset 요청: 기존 easy-start Chroma 컬렉션 삭제 중...")
+        reset_chroma_collection()
+    else:
+        print("📦 기존 easy-start Chroma 컬렉션이 있으면 재사용합니다. (삭제하지 않음)")
     count = await load_to_chroma(docs, embeddings)
     print(f"✅ {t('load.chroma_done', count=count, path=CHROMA_PERSIST_DIR)}")
 
@@ -357,5 +376,20 @@ async def main() -> None:
     print(f"🎉 {t('load.complete')}")
 
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Load OneRAG easy-start sample data.")
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="Delete and recreate the easy-start Chroma collection before loading samples.",
+    )
+    return parser.parse_args(argv)
+
+
+def cli(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    asyncio.run(main(reset=True if args.reset else None))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    cli()
