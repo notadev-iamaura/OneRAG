@@ -528,4 +528,4 @@ Level 3 (확장)
 | **파일 로더** | 8종 (PDF, DOCX, XLSX, CSV, JSON, MD, HTML, TXT) |
 | **PII 패턴** | 5종 (SSN, 전화번호, 이메일, 여권번호, 운전면허번호) |
 | **에러 시스템** | 양언어 (한/영) 자동 전환 |
-| **릴리스 상태** | 로컬 품질 게이트와 CI 기반으로 지속 검증 |
+| **릴리스 상태** | `docs/STATUS.md` 기준. CI, Runtime Smoke, `/ready` readiness로 지속 검증 |

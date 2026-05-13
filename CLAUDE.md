@@ -1,13 +1,14 @@
-# CLAUDE.md (v1.0.7)
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 프로젝트 개요
-도메인 범용화된 완벽한 오픈소스 RAG 시스템. 2026년 기준 가장 진보된 RAG 기술들을 하나의 표준 파이프라인으로 통합한 엔터프라이즈급 솔루션입니다.
+도메인 범용화된 오픈소스 RAG 시스템. FastAPI 백엔드, React/Vite 프론트엔드, 모듈형 검색/생성/평가 파이프라인을 하나의 코드베이스로 제공합니다.
 
-- **버전**: 1.0.7
-- **상태**: ✅ **2,200+ 테스트 통과**, ✅ **보안 완비**, ✅ **DI 패턴 완성**, ✅ **Streaming API**, ✅ **WebSocket**
-- **주요 개선**: Reranker 확장 - Cohere, Local(sentence-transformers), OpenRouter 추가 (v1.2.1)
+- **패키지 버전**: `pyproject.toml` 기준 1.0.7
+- **현재 운영 상태**: `docs/STATUS.md`를 기준으로 확인
+- **현재 CI 게이트**: Ruff, Mypy, Import Linter, backend pytest+coverage, Runtime Smoke, frontend build/lint/test
+- **주요 개선**: `/health` liveness와 `/ready` readiness 분리, retrieval startup policy, quickstart 데이터 안전화, runtime smoke CI
 
 ## 🚀 시작하기
 
@@ -24,7 +25,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 방법 A: Full API 서버 (Docker)
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git
+git clone https://github.com/notadev-iamaura/OneRAG.git
 cd OneRAG && uv sync
 cp quickstart/.env.quickstart .env  # GOOGLE_API_KEY만 설정
 make start                           # → http://localhost:8000/docs
@@ -33,7 +34,7 @@ make start                           # → http://localhost:8000/docs
 ### 방법 B: 로컬 CLI 챗봇 (Docker 불필요)
 
 ```bash
-git clone https://github.com/youngouk/OneRAG.git
+git clone https://github.com/notadev-iamaura/OneRAG.git
 cd OneRAG && uv sync
 make easy-start                      # → 터미널에서 바로 대화
 ```
@@ -50,7 +51,7 @@ quickstart/                  # Docker 기반
 └── load_sample_data.py      # Weaviate 데이터 로드
 
 easy_start/                  # Docker-Free
-├── .env.local               # 로컬 설정 템플릿
+├── .env.example             # 로컬 설정 템플릿
 ├── chat.py                  # CLI 챗봇 (Rich UI)
 ├── load_data.py             # ChromaDB 데이터 로드
 └── run.py                   # 원클릭 실행 오케스트레이터
@@ -70,7 +71,8 @@ uv sync
 
 # 개발 서버 및 테스트
 make dev-reload         # 자동 리로드 (uvicorn --reload)
-make test               # 2,200+ 테스트 실행 (외부 로그 차단 격리 환경)
+make test               # 백엔드 테스트 실행
+make test-operational-smoke # readiness/compose/quickstart smoke 검증
 make test-cov           # 테스트 커버리지 리포트
 
 # 코드 품질 관리 (CI/CD 통과 필수)
@@ -89,7 +91,7 @@ make lint-imports       # 아키텍처 계층 검증 (Import Linter)
   - **provider**: google, openai, jina, cohere, openrouter, sentence-transformers (6종)
   - **v1.2.1 신규**: Cohere (100+ 언어), Local (API 키 불필요), OpenRouter (다양한 LLM 모델 지원)
 
-### 2. 완벽한 보안 (Unified Security)
+### 2. 통합 보안 (Unified Security)
 - **PII Facade**: `PIIProcessor`가 단순 마스킹과 고도화된 AI 리뷰(`PIIReviewProcessor`)를 통합 관리.
 - **Admin Auth**: `/api/admin` 하위의 모든 엔드포인트에 `X-API-Key` 인증 전역 적용.
 
@@ -228,11 +230,12 @@ app/config/environments/
 
 상세 문서: `docs/config_management_improvements.md`
 
-## 시스템 완성도 (Current Score: 100/100)
+## 시스템 상태 요약
 
 | 항목 | 현황 | 비고 |
 |------|------|------|
-| **전체 테스트** | 2,200+ Pass | 단위/통합/안정성 테스트 완비 |
+| **CI 게이트** | 통과 | Ruff, Mypy, Import Linter, backend pytest+coverage, Runtime Smoke, Frontend |
+| **운영 안정성** | 통과 | `/ready`, retrieval startup policy, Docker healthcheck, quickstart safety |
 | **Deprecated 함수** | 0건 | Phase 1,2,3 완료, 모든 deprecated 함수 제거/리팩토링 |
 | **보안 인증** | 완료 | 관리자 API 및 PII 보호 통합 |
 | **GraphRAG 지능** | 완료 | 벡터 검색 기반 엔티티 탐색 |
@@ -265,7 +268,7 @@ app/config/environments/
 상세 계획: `docs/plans/2026-02-25-feature-roadmap.md`
 
 ---
-**Claude Note**: 본 프로젝트는 이미 "완벽"한 상태이므로, 코드 수정 시 기존의 추상화 인터페이스(Protocol)와 DI 패턴을 엄격히 준수하십시오.
+**Claude Note**: 상태와 검증 근거는 `docs/STATUS.md`와 최신 CI 결과를 기준으로 판단하십시오. 코드 수정 시 기존의 추상화 인터페이스(Protocol)와 DI 패턴을 엄격히 준수하십시오.
 - **에러**: 반드시 `ErrorCode` 기반 새 형식 사용
 - **LLM**: 반드시 `llm_factory`를 통해 호출
 - **검색 Provider**: 새 VectorStore DB는 `VectorStoreFactory`, 새 검색 모드는 `RetrieverFactory`에 등록

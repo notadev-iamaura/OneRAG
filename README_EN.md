@@ -113,6 +113,7 @@ make easy-start
 ```
 
 If `.env` does not exist, Easy Start creates it from `easy_start/.env.example`. 25 sample documents are auto-loaded with hybrid search (Dense + BM25) ready to go.
+Sample-data loaders do not delete existing collections by default; use `--reset` or the reset environment variables only when an intentional reset is needed.
 To enable AI answer generation, set one API key:
 
 ```bash
@@ -282,6 +283,7 @@ make dev-reload   # Dev server (auto-reload)
 make test         # Run tests
 make lint         # Lint check
 make type-check   # Type check
+make test-operational-smoke # Operational stability smoke check
 ```
 
 ---

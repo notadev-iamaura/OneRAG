@@ -113,6 +113,7 @@ make easy-start
 ```
 
 `.env`가 없으면 `easy_start/.env.example` 템플릿으로 자동 생성됩니다. 샘플 데이터 25개가 자동 적재되고, 하이브리드 검색(Dense + BM25)이 바로 작동합니다.
+샘플 데이터 로더는 기존 컬렉션을 기본 삭제하지 않으며, 초기화가 필요할 때만 `--reset` 또는 reset 환경 변수를 사용합니다.
 AI 답변 생성을 사용하려면 API 키를 하나 설정하세요:
 
 ```bash
@@ -282,6 +283,7 @@ make dev-reload   # 개발 서버 (자동 리로드)
 make test         # 테스트 실행
 make lint         # 린트 검사
 make type-check   # 타입 체크
+make test-operational-smoke # 운영 안정성 smoke 검증
 ```
 
 ---

@@ -1,5 +1,7 @@
 # 🚨 Railway 재배포 필요
 
+> 상태 검토: 2026-05-13. 이 문서는 과거 Railway 배포 조치 기록입니다. 현재 배포 전 검증은 `npm run build:warning-gate`, `npm run lint`, `npm run test:warning-gate` 및 `docs/STATUS.md`의 CI 상태를 기준으로 합니다.
+
 ## 현재 상황
 - ✅ 환경 변수 `VITE_API_BASE_URL`이 Railway에서 올바르게 설정됨
 - ✅ 코드 개선사항 모두 완료

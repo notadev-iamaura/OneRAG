@@ -1,5 +1,7 @@
 # 🚂 Railway 배포 최적화 가이드
 
+> 상태 검토: 2026-05-13. 이 문서는 Railway 배포 가이드로 유지하되, 현재 release-readiness 판단은 `docs/STATUS.md`와 GitHub Actions `Frontend` job을 기준으로 합니다.
+
 ## 📋 개선 사항 요약
 
 ### 🔥 주요 문제점 및 해결책
@@ -211,6 +213,6 @@ railway logs --since=1h
 
 ---
 
-**최종 업데이트**: 2025-01-01  
+**최종 업데이트**: 2026-05-13
 **버전**: Railway Optimized 1.0  
-**상태**: 프로덕션 배포 준비 완료 ✅
+**상태**: 가이드 유지. 현재 검증 기준은 `docs/STATUS.md`.

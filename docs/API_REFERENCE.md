@@ -229,7 +229,7 @@ RAG 기반 채팅 요청. 질문에 대해 문서 검색 및 AI 답변을 생성
 ## Health Check API
 
 ### GET /health
-기본 헬스 체크
+기본 liveness 체크. API 프로세스가 살아 있으면 응답합니다.
 
 **Response:**
 ```json
@@ -241,6 +241,45 @@ RAG 기반 채팅 요청. 질문에 대해 문서 검색 및 AI 답변을 생성
   "environment": "production"
 }
 ```
+
+---
+
+### GET /ready
+배포 readiness 체크. startup 상태와 검색 모듈 상태를 함께 확인합니다.
+Docker API healthcheck와 운영 배포 readiness probe는 이 엔드포인트를 사용합니다.
+
+**Response:**
+```json
+{
+  "status": "ready",
+  "timestamp": "2026-05-13T09:00:00",
+  "uptime": 3600.5,
+  "environment": "production",
+  "checks": {
+    "startup": {
+      "ready": true,
+      "status": "ready",
+      "details": {}
+    },
+    "retrieval": {
+      "status": "checked",
+      "components": {
+        "weaviate": {
+          "healthy": true
+        }
+      }
+    }
+  }
+}
+```
+
+**Status semantics:**
+
+| HTTP | `status` | 의미 |
+|---|---|---|
+| 200 | `ready` | startup 및 필수 retrieval 의존성이 준비됨 |
+| 200 | `degraded` | retrieval 일부가 비정상이지만 `RETRIEVAL_STARTUP_POLICY=degraded`라서 degraded 운영 허용 |
+| 503 | `not_ready` | startup 미완료 또는 `RETRIEVAL_STARTUP_POLICY=required`에서 retrieval 비정상 |
 
 ---
 
@@ -687,7 +726,8 @@ Circuit Breaker 상태 조회
 | 메서드 | 경로 | 설명 | 인증 |
 |--------|------|------|------|
 | **Health** ||||
-| GET | /health | 기본 헬스 체크 | - |
+| GET | /health | liveness 체크 | - |
+| GET | /ready | readiness 체크 | - |
 | GET | /stats | 시스템 통계 | - |
 | GET | /ping | 연결 확인 | - |
 | GET | /cache-stats | 캐시 통계 | - |

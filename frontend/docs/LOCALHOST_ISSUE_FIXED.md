@@ -1,5 +1,7 @@
 # 🚨 Railway localhost 호출 문제 해결 완료
 
+> 상태 검토: 2026-05-13. 이 문서는 과거 Railway localhost 이슈 해결 기록입니다. 현재 배포 전 검증은 프론트엔드 CI와 `docs/STATUS.md`를 기준으로 합니다.
+
 ## 📋 문제 요약
 
 **문제**: Railway에 배포된 프론트엔드가 `localhost:8000`을 호출하여 API 연결 실패
@@ -154,8 +156,9 @@ git push origin main
 ---
 
 **해결 완료일**: 2025-09-01  
+**상태 검토**: 2026-05-13
 **버전**: Railway Fix 1.0  
-**상태**: 프로덕션 배포 준비 완료 ✅
+**상태**: 과거 조치 완료. 현재 검증 기준은 `docs/STATUS.md`.
 
 ### 다음 단계
 1. Railway 대시보드에서 `VITE_API_BASE_URL` 환경 변수 설정

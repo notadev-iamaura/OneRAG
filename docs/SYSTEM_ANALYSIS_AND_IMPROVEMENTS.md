@@ -2,34 +2,36 @@
 
 > **문서 버전**: 1.0.0
 > **분석 일자**: 2026-01-24
+> **상태 검토**: 2026-05-13
 > **분석 도구**: Claude Code Systematic Debugging
-> **대상 버전**: OneRAG v1.2.1
+> **대상**: OneRAG `main` after PR #48
 
 ---
 
 ## 1. Executive Summary
 
-### 현재 상태: ✅ **안정적 (Production Ready)**
+### 현재 상태: ✅ **운영 안정성 게이트 통과**
+
+이 문서는 2026-01 시스템 분석을 보존합니다. 최신 배포 판단과 CI 상태는 [STATUS.md](STATUS.md)를 우선합니다.
 
 | 영역 | 점수 | 상태 |
 |------|------|------|
-| **코드 품질** | 98/100 | ✅ 우수 |
-| **테스트** | 99/100 | ✅ 우수 (1,672 통과) |
-| **보안** | 98/100 | ✅ 패치 완료 |
-| **설정 관리** | 95/100 | ✅ 양호 |
-| **안정성** | 85/100 | ⚠️ 개선 가능 |
-| **코드 위생** | 95/100 | ✅ 양호 |
-| **종합** | 95/100 | ✅ **안정적** |
+| **코드 품질** | 통과 | ✅ Ruff, Mypy, Import Linter CI 통과 |
+| **테스트** | 통과 | ✅ Backend pytest+coverage, Frontend Vitest CI 통과 |
+| **운영 안정성** | 통과 | ✅ Runtime Smoke CI 통과 |
+| **Readiness** | 통과 | ✅ `/ready`와 retrieval startup policy 반영 |
+| **Quickstart 안전성** | 통과 | ✅ 샘플 데이터 기본 삭제 방지 |
+| **종합** | 승인 | ✅ 현재 발견된 P0/P1 운영 블로커 없음 |
 
 ---
 
 ## 2. 검증 완료 항목 (Pass)
 
 ### 2.1 코드 품질 ✅
-- **Ruff 린트**: All checks passed (429개 소스 파일)
-- **Mypy 타입 체크**: No issues found (429개 소스 파일)
+- **Ruff 린트**: CI 통과
+- **Mypy 타입 체크**: CI 통과
 - **Import Linter**: 계층 구조 준수
-- **전체 테스트**: 1,672개 통과, 15개 스킵 (선택적 의존성)
+- **전체 테스트**: backend pytest+coverage, frontend warning-gated test, runtime smoke CI 통과
 
 ### 2.2 보안 패치 완료 ✅
 - **P0 Critical 4개**: Documents API, Ingest API 인증 추가
@@ -255,19 +257,19 @@ ResourceWarning: The connection to Weaviate was not closed properly.
 | 항목 | 이유 |
 |------|------|
 | 보안 패치 | ✅ P0, P1 모두 완료 |
-| 테스트 | ✅ 1,672개 통과 |
-| 린트/타입 | ✅ 모두 통과 |
+| 테스트 | ✅ Backend/Frontend/Runtime Smoke CI 통과 |
+| 린트/타입 | ✅ Ruff/Mypy/Import Linter CI 통과 |
 | 핵심 기능 | ✅ 정상 동작 |
 
 ### 5.2 P2 개선 권장 (1개월 내)
 
 | 항목 | 예상 소요 | 영향도 | 상태 |
 |------|-----------|--------|------|
-| Self-RAG 활성화 | 2일 | 답변 품질 향상 | ⏳ 대기 |
-| LLM Router 활성화 | 1일 | 라우팅 정확도 향상 | ⏳ 대기 |
+| Self-RAG 활성화 | 2일 | 답변 품질 향상 | ✅ 완료 |
+| LLM Router 활성화 | 1일 | 라우팅 정확도 향상 | ✅ 완료 |
 | ~~print → logger 교체~~ | - | 로깅 일관성 | ✅ 완료 |
-| 설정 환경 분리 | 1일 | 배포 안정성 | ⏳ 대기 |
-| Chat Rate Limit | 2일 | 보안 강화 | ⏳ 대기 |
+| 설정 환경 분리 | 1일 | 배포 안정성 | ✅ 완료 |
+| Chat Rate Limit | 2일 | 보안 강화 | ✅ 완료 |
 
 ### 5.3 P3 개선 선택적 (분기별)
 
@@ -288,8 +290,9 @@ make type-check     # mypy 타입 체크 ✅ No issues found
 make lint-imports   # 아키텍처 계층 검증
 
 # 테스트 실행
-make test           # 전체 테스트 ✅ 1,672 passed
+make test           # 백엔드 테스트
 make test-cov       # 커버리지 리포트
+make test-operational-smoke # readiness/compose/quickstart smoke 검증
 
 # 보안 검사 (추가 권장)
 uv run bandit -r app/  # Python 보안 검사
@@ -304,16 +307,15 @@ uv run safety check    # 의존성 취약점 검사
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  OneRAG v1.2.1 시스템 상태: ✅ 안정적 (Production Ready)     │
+│  OneRAG 현재 상태: ✅ 운영 안정성 게이트 통과                 │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  ✅ 코드 품질: 린트/타입 체크 100% 통과                      │
-│  ✅ 테스트: 1,672개 통과                                    │
+│  ✅ 테스트: Backend/Frontend/Runtime Smoke CI 통과            │
 │  ✅ 보안: P0 4개, P1 6개 모두 해결                          │
 │  ✅ DI 패턴: 80+ Provider, 9개 팩토리 완비                   │
 │  ✅ 코드 위생: print → logger 교체 완료                     │
 │                                                             │
-│  ⚠️ 개선 가능: Self-RAG, LLM Router 활성화 (P2)            │
 │  ⚠️ 개선 가능: 대형 파일 분리 (P3)                          │
 │                                                             │
 │  결론: 현재 상태로 프로덕션 배포 가능                        │
@@ -332,5 +334,5 @@ uv run safety check    # 의존성 취약점 검사
 ---
 
 **문서 작성자**: Claude Code (Systematic Debugging)
-**검증 일자**: 2026-01-24
+**검증 일자**: 2026-05-13
 **검토 필요**: Tech Lead, DevOps Team

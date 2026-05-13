@@ -1,10 +1,20 @@
-# RAG_Standard 개선 우선순위 로드맵
+# OneRAG 개선 우선순위 로드맵
 
 **작성일**: 2026-01-11
+**상태 검토**: 2026-05-13
 **기준**: 시급도(Urgency) × 난이도(Difficulty) × 수정 임팩트(Impact)
 **평가 방법론**: ROI 기반 우선순위 매트릭스
 
 ---
+
+> 이 문서는 2026-01 기준 우선순위 산정 기록입니다. 현재 운영 상태와 완료된 release-readiness 항목은 `docs/STATUS.md`와 `docs/release-readiness/2026-05-03-release-readiness-priorities.md`를 우선합니다.
+
+## 현재 반영 상태 (2026-05-13)
+
+- P0 오픈소스 기본 문서와 PR 템플릿은 반영됨.
+- 통합 Docker/quickstart 경로와 frontend/backend CI gate는 반영됨.
+- `make test-operational-smoke`가 readiness, compose, quickstart 안전성을 검증함.
+- E2E/nightly, strict dependency audit, 접근성 회귀 확대는 후속 품질 과제로 남아 있음.
 
 ## 📊 우선순위 평가 기준
 
@@ -314,7 +324,7 @@
   - Strategy Pattern 적용
 
 □ [#18] E2E 테스트 활성화
-  현재 상태: 마커만 있고 실행 안 됨
+  2026-01 당시 상태: 마커만 있고 실행 안 됨
 
   활성화:
   - Playwright 통합 (브라우저 자동화)
