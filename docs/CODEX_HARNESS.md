@@ -1,6 +1,6 @@
 # Codex Engineering Harness
 
-Last updated: 2026-05-07
+Last updated: 2026-05-13
 
 이 문서는 OneRAG에서 Codex를 하네스 기반으로 쓰기 위한 전역/프로젝트 설정과 운영 방법을 정리한다.
 
@@ -86,6 +86,7 @@ cd frontend && npm run test:warning-gate
 Docker/quickstart:
 
 ```bash
+make test-operational-smoke
 docker compose config --quiet
 docker compose --profile fullstack build frontend
 ```

@@ -1,5 +1,7 @@
 # 🚀 localhost:8000 하드코딩 제거 완료
 
+> 상태 검토: 2026-05-13. 이 문서는 과거 localhost 하드코딩 제거 기록입니다. 현재 프론트엔드 배포/품질 상태는 CI `Frontend` job과 `docs/STATUS.md`를 기준으로 확인합니다.
+
 ## 📋 개선 개요
 
 **목표**: Railway 배포 환경에서 localhost:8000 하드코딩 문제를 완전히 해결하고, 환경변수 기반의 유연한 URL 설정 시스템 구축
@@ -225,7 +227,8 @@ window.RUNTIME_CONFIG = {
 ---
 
 **완료일**: 2025-09-01  
+**상태 검토**: 2026-05-13
 **버전**: Environmental Variables 1.0  
-**상태**: 프로덕션 준비 완료 ✅
+**상태**: 과거 조치 완료. 현재 검증 기준은 `docs/STATUS.md`.
 
 이제 Railway에서 git push만 하면 환경변수가 자동으로 적용되어 localhost 호출 문제가 완전히 해결됩니다! 🎉

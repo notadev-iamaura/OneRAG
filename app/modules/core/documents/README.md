@@ -374,7 +374,7 @@ chunks = processor.process('data/FAQ.xlsx')
 
 ## 📚 추가 자료
 
-- [processingDocument.md](../../../../processingDocument.md) - RAG 문서 처리 전략 가이드
+- [INGESTION.md](../../../../docs/INGESTION.md) - 데이터 적재 및 문서 처리 가이드
 - [CLAUDE.md](../../../../CLAUDE.md) - 프로젝트 개발 가이드라인
 
 ## 🤝 기여

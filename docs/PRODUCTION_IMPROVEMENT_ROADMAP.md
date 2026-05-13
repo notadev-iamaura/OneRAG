@@ -2,8 +2,25 @@
 
 > **문서 버전**: 1.2.0
 > **작성 일자**: 2026-01-23
-> **최종 업데이트**: 2026-01-28 (Phase 5.2 불필요 확인, OpenRouter 버그 수정)
-> **대상 버전**: OneRAG v1.2.1 → v1.4.0
+> **최종 업데이트**: 2026-05-13 (운영 안정성 readiness/smoke 게이트 반영)
+> **대상**: OneRAG `main` after PR #48
+
+---
+
+## 현재 상태 요약 (2026-05-13)
+
+이 로드맵의 Phase 1-5 내용은 2026-01 기준 개선 계획을 보존합니다. 현재 운영 준비 상태는 [STATUS.md](STATUS.md)를 기준으로 확인합니다.
+
+최신 완료 항목:
+
+- `/health` liveness와 `/ready` readiness 분리
+- `RETRIEVAL_STARTUP_POLICY=required|degraded` 기반 startup 정책 도입
+- Docker API healthcheck를 `/ready`로 전환
+- Quickstart/easy-start 샘플 데이터 로더의 기본 삭제 동작 제거
+- `make test-operational-smoke` 및 GitHub Actions `Runtime Smoke` job 추가
+- PR #48에서 전체 CI 통과 후 merge 완료
+
+현재 발견된 P0/P1 운영 블로커는 없습니다.
 
 ---
 
@@ -649,7 +666,8 @@ async def stream_rag_pipeline(...) -> AsyncGenerator:
 - [x] `DELETE /api/documents/all` 401 응답 (인증 없이)
 - [x] `POST /ingest/web` 401 응답 (인증 없이)
 - [x] 개발 환경 + AUTH_KEY 설정 시 `is_production() == False`
-- [x] 모든 기존 테스트 통과 (1,672개 통과)
+- [x] 모든 기존 테스트 통과 (2026-01 스냅샷)
+- [x] 최신 CI 통과 (2026-05-13): backend pytest+coverage, frontend warning-gated test, runtime smoke
 
 ### ✅ Phase 2 완료 조건 (2026-01-23 검증 완료)
 
@@ -690,5 +708,5 @@ async def stream_rag_pipeline(...) -> AsyncGenerator:
 ---
 
 **문서 작성자**: Claude Code (Automated Planning)
-**최종 업데이트**: 2026-01-28 (Phase 5.2 불필요 확인 - 모든 리랭커 0~1 반환)
+**최종 업데이트**: 2026-05-13 (운영 안정성 readiness/smoke 게이트 반영)
 **검토 필요**: Tech Lead, Security Team

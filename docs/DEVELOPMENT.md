@@ -24,6 +24,7 @@
 - `make format`: 코드 자동 포맷팅
 - `make type-check`: MyPy 타입 체크
 - `make test`: 전체 유닛 테스트 실행
+- `make test-operational-smoke`: readiness, startup policy, Docker compose, quickstart 안전성 smoke 검증
 
 ---
 
@@ -37,6 +38,9 @@
 ```bash
 # 전체 테스트 실행
 make test
+
+# 운영 안정성 smoke 검증
+make test-operational-smoke
 ```
 
 **테스트 환경 격리 전략 (v1.0.0):**
@@ -48,6 +52,8 @@ make test
 - **LLM/DB 장애**: API 타임아웃 시 Fallback 체인 작동.
 - **Circuit Breaker**: 연속 실패 시 장애 격리 및 자동 복구.
 - **Race Condition**: 동시 세션 생성 시 데이터 일관성 유지 (asyncio.Lock).
+- **Readiness 계약**: `/health`는 liveness, `/ready`는 startup/retrieval readiness를 검증합니다.
+- **Quickstart 안전성**: 샘플 데이터 로더는 기본적으로 컬렉션을 삭제하지 않고 명시적 `--reset`에서만 초기화합니다.
 
 ---
 

@@ -35,6 +35,8 @@ cp quickstart/.env.quickstart .env
 
 Docker 없이 CLI 체험만 할 경우에는 `.env`를 미리 만들 필요가 없습니다. `.env`가 없을 때 `make easy-start`가 `easy_start/.env.example`에서 자동 생성합니다.
 
+샘플 데이터 로더는 기본적으로 기존 컬렉션을 삭제하지 않습니다. 초기화를 의도한 경우에만 `--reset`, `ONERAG_QUICKSTART_RESET=true`, 또는 `ONERAG_EASY_START_RESET=true`를 사용하세요.
+
 ---
 
 ## 3. 인프라 실행 (Docker)
@@ -61,6 +63,8 @@ make test
 ```
 
 `make start`로 서버를 실행하면 `http://localhost:8000/docs`에서 Swagger UI를 확인할 수 있습니다. `make dev-reload`는 `http://localhost:8001/docs`를 사용합니다. 관리자/업로드 API 호출 시 상단의 `Authorize` 버튼을 눌러 `FASTAPI_AUTH_KEY`를 입력하세요.
+
+운영/배포 healthcheck는 `/ready`를 기준으로 판단합니다. `/health`는 프로세스 liveness 확인용이고, `/ready`는 startup 및 retrieval readiness 확인용입니다.
 
 ---
 

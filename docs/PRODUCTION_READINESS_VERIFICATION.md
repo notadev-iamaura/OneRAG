@@ -1,28 +1,31 @@
 # OneRAG 프로덕션 준비 상태 검증 문서
 
 > **문서 버전**: 1.2.0
-> **검증 일자**: 2026-01-24
-> **최종 업데이트**: 2026-01-24 (시스템 전체 분석 완료)
-> **대상 버전**: OneRAG v1.2.1
+> **검증 일자**: 2026-05-13
+> **최종 업데이트**: 2026-05-13 (운영 안정성 smoke 및 readiness 정책 반영)
+> **대상**: OneRAG `main` after PR #48
 
 ---
 
 ## 📋 Executive Summary
 
-### 현재 상태: ✅ **프로덕션 준비 완료**
+### 현재 상태: ✅ **운영 안정성 게이트 통과**
+
+최신 운영 상태의 단일 기준은 [STATUS.md](STATUS.md)입니다. 이 문서의 2026-01 섹션은 당시의 상세 분석 기록으로 유지하되, 현재 배포 판단은 아래 2026-05-13 상태를 우선합니다.
 
 | 영역 | 점수 | 상태 |
 |------|------|------|
-| **코드 품질** | 98/100 | ✅ 우수 |
-| **테스트** | 99/100 | ✅ 우수 (1,672 통과) |
-| **보안** | 98/100 | ✅ **패치 완료** |
-| **설정 관리** | 95/100 | ✅ 양호 |
-| **안정성** | 85/100 | ⚠️ 개선 가능 |
-| **코드 위생** | 95/100 | ✅ 양호 |
-| **종합** | 95/100 | ✅ **승인** |
+| **코드 품질** | 통과 | ✅ Ruff, Mypy, Import Linter CI 통과 |
+| **테스트** | 통과 | ✅ Backend pytest+coverage, Frontend Vitest CI 통과 |
+| **운영 안정성** | 통과 | ✅ `make test-operational-smoke` CI 통과 |
+| **Readiness** | 통과 | ✅ `/health` liveness와 `/ready` readiness 분리 |
+| **Docker/Compose** | 통과 | ✅ API healthcheck `/ready`, compose config smoke 통과 |
+| **Quickstart 안전성** | 통과 | ✅ 기본 삭제 없음, 명시적 reset만 허용 |
+| **종합** | 승인 | ✅ 현재 발견된 P0/P1 운영 블로커 없음 |
 
 ### ✅ 보안 패치 완료 (2026-01-23): P0 4개, P1 6개 모두 해결
 ### ✅ 시스템 전체 분석 완료 (2026-01-24): 추가 개선 항목 문서화
+### ✅ 운영 안정성 보강 완료 (2026-05-13): PR #48 merge, 전체 CI 통과
 
 ---
 
@@ -32,24 +35,14 @@
 
 | 도구 | 결과 | 비고 |
 |------|------|------|
-| **Ruff (Lint)** | ✅ All checks passed | 429개 소스 파일 |
-| **Mypy (Type Check)** | ✅ No issues found | 429개 소스 파일 |
-| **Import Linter** | ✅ 통과 | 계층 구조 준수 |
+| **Ruff (Lint)** | ✅ CI 통과 | `uv run ruff check .` |
+| **Mypy (Type Check)** | ✅ CI 통과 | `uv run mypy .` |
+| **Import Linter** | ✅ CI 통과 | `uv run lint-imports` |
+| **Runtime Smoke** | ✅ CI 통과 | `make test-operational-smoke` |
 
 ### 1.2 테스트 현황
 
-```
-총 테스트: 1,687개 수집, 1,672개 통과
-├── Unit Tests: ~1,400개
-├── Integration Tests: ~200개
-└── E2E Tests: ~85개
-
-SKIPPED (15개, 선택적 의존성):
-- pgvector: psycopg[binary] 미설치
-- qdrant: qdrant-client 미설치
-- Neo4j: Docker/URI 설정 필요
-- E2E: 실제 서비스 연결 필요
-```
+현재 CI는 backend pytest+coverage, runtime smoke, frontend build/lint/test를 모두 실행합니다. 과거의 정확한 테스트 개수 표기는 2026-01 스냅샷으로 간주하고, 최신 통과 여부는 [STATUS.md](STATUS.md)의 CI Gates를 기준으로 확인합니다.
 
 ### 1.3 미완성 코드 분석
 
@@ -407,5 +400,5 @@ uv run safety check    # 의존성 취약점 검사
 ---
 
 **문서 작성자**: Claude Code (Systematic Debugging)
-**최종 검토**: 2026-01-24
+**최종 검토**: 2026-05-13
 **검토 필요**: DevOps, Security Team

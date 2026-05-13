@@ -44,6 +44,15 @@ npm run test:warning-gate
 Docker, quickstart, and integration changes should also include the relevant
 compose or smoke-test evidence in the pull request.
 
+Operational-readiness changes should normally include:
+
+```bash
+make test-operational-smoke
+```
+
+This target checks the current readiness/startup contracts, compose
+healthchecks, quickstart data safety, and entrypoint shell syntax.
+
 ## Architecture Expectations
 
 - Use the existing dependency-injection providers and factories.

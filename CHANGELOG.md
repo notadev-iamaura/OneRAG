@@ -7,6 +7,10 @@
 ## [Unreleased]
 
 ### 추가됨
+- 운영 안정성 smoke 게이트 추가: `make test-operational-smoke` 및 GitHub Actions `Runtime Smoke` job
+- `/ready` readiness 엔드포인트 추가 및 Docker API healthcheck를 `/ready`로 전환
+- `RETRIEVAL_STARTUP_POLICY=required|degraded` 기반 retrieval startup 정책 추가
+- 현재 운영 상태 문서 `docs/STATUS.md` 추가
 - BM25 하이브리드 검색 엔진 구현 (Phase 1 - ChromaDB + BM25 기반)
 - Docker-Free 로컬 퀵스타트 Phase 2 구현
 - 로컬 챗봇에 LLM 답변 생성 및 Rich UI 개선
@@ -14,16 +18,21 @@
 - 0% 커버리지 모듈 5개에 단위 테스트 56개 추가 (Phase 1)
 
 ### 변경됨
+- Quickstart/easy-start 샘플 데이터 로더가 기본적으로 기존 컬렉션을 삭제하지 않도록 변경
+- CI가 backend coverage artifact, frontend warning-gated build/test, runtime smoke를 모두 검증하도록 최신화
 - `GenerationConfig` max_tokens 범위 통일 (100-32000 -> 1-128000)
 - pyproject.toml 마이그레이션 및 .gitignore 개선
 - 약한 테스트 제거 및 유의미한 단위 테스트 79개 재작성
 
 ### 수정됨
+- Quickstart 샘플 데이터 적재를 deterministic ID 기반 갱신 방식으로 정리
+- CI 전체 mypy에서 발생하던 redundant cast 오류 수정
 - BM25 인덱스 직렬화 오류 해결 (Kiwi pickle 불가)
 - ChromaDB 코사인 메트릭 적용 및 검색 점수 정규화
 - 6-도메인 검증 결과 기반 1/2순위 개선 (13건)
 
 ### 문서
+- 상태성 문서를 2026-05-13 기준으로 갱신하고 역사적 문서와 현재 상태 문서를 분리
 - Rate Limiting 이중 계층 정책 가이드 추가
 - 프로젝트 검증 시스템 설계 문서 (verify-system)
 
@@ -210,12 +219,12 @@
 - Privacy 감사 로그 PII 노출 수정 (SHA-256 해시 저장, GDPR 준수)
 - Agent 모듈 타임아웃 구현 (무한 대기 방지, 기본 300초)
 
-[Unreleased]: https://github.com/youngouk/RAG_Standard/compare/v1.2.1...HEAD
-[1.2.1]: https://github.com/youngouk/RAG_Standard/compare/v1.2.0...v1.2.1
-[1.2.0]: https://github.com/youngouk/RAG_Standard/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/youngouk/RAG_Standard/compare/v1.0.9...v1.1.0
-[1.0.9]: https://github.com/youngouk/RAG_Standard/compare/v1.0.8...v1.0.9
-[1.0.8]: https://github.com/youngouk/RAG_Standard/compare/v1.0.7...v1.0.8
-[1.0.7]: https://github.com/youngouk/RAG_Standard/compare/v1.0.5...v1.0.7
-[1.0.5]: https://github.com/youngouk/RAG_Standard/compare/v1.0.0...v1.0.5
-[1.0.0]: https://github.com/youngouk/RAG_Standard/releases/tag/v1.0.0
+[Unreleased]: https://github.com/notadev-iamaura/OneRAG/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/notadev-iamaura/OneRAG/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/notadev-iamaura/OneRAG/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/notadev-iamaura/OneRAG/compare/v1.0.9...v1.1.0
+[1.0.9]: https://github.com/notadev-iamaura/OneRAG/compare/v1.0.8...v1.0.9
+[1.0.8]: https://github.com/notadev-iamaura/OneRAG/compare/v1.0.7...v1.0.8
+[1.0.7]: https://github.com/notadev-iamaura/OneRAG/compare/v1.0.5...v1.0.7
+[1.0.5]: https://github.com/notadev-iamaura/OneRAG/compare/v1.0.0...v1.0.5
+[1.0.0]: https://github.com/notadev-iamaura/OneRAG/releases/tag/v1.0.0

@@ -1,4 +1,4 @@
-# RAG_Standard Jupyter Notebooks
+# OneRAG Jupyter Notebooks
 
 Google Colab 또는 로컬 Jupyter에서 RAG 시스템을 체험할 수 있는 노트북 모음입니다.
 
@@ -6,9 +6,9 @@ Google Colab 또는 로컬 Jupyter에서 RAG 시스템을 체험할 수 있는 �
 
 | 노트북 | 설명 | Colab |
 |--------|------|-------|
-| [01_quickstart.ipynb](01_quickstart.ipynb) | 5분 만에 RAG 체험 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/youngouk/RAG_Standard/blob/main/notebooks/01_quickstart.ipynb) |
-| [02_api_exploration.ipynb](02_api_exploration.ipynb) | REST API 완전 가이드 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/youngouk/RAG_Standard/blob/main/notebooks/02_api_exploration.ipynb) |
-| [03_evaluation_demo.ipynb](03_evaluation_demo.ipynb) | 평가 시스템 탐방 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/youngouk/RAG_Standard/blob/main/notebooks/03_evaluation_demo.ipynb) |
+| [01_quickstart.ipynb](01_quickstart.ipynb) | 5분 만에 RAG 체험 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/notadev-iamaura/OneRAG/blob/main/notebooks/01_quickstart.ipynb) |
+| [02_api_exploration.ipynb](02_api_exploration.ipynb) | REST API 완전 가이드 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/notadev-iamaura/OneRAG/blob/main/notebooks/02_api_exploration.ipynb) |
+| [03_evaluation_demo.ipynb](03_evaluation_demo.ipynb) | 평가 시스템 탐방 | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/notadev-iamaura/OneRAG/blob/main/notebooks/03_evaluation_demo.ipynb) |
 
 ## 실행 방법
 
@@ -27,5 +27,5 @@ uv run jupyter notebook notebooks/
 
 ## 요구사항
 
-- RAG_Standard API 서버 실행 중 (`http://localhost:8000`)
+- OneRAG API 서버 실행 중 (`http://localhost:8000`)
 - Python 3.11+

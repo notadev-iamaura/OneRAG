@@ -7,6 +7,7 @@
 ## 🗺️ 문서 인덱스 (Table of Contents)
 
 ### 🚀 시작하기 (Get Started)
+- **[현재 프로젝트 상태 (STATUS.md)](STATUS.md)**: 최신 CI, 런타임 readiness, quickstart 안전 정책.
 - **[설치 및 환경 설정 (SETUP.md)](SETUP.md)**: 시스템 로컬 구축 및 필수 환경 변수 안내.
 - **[데이터 적재 가이드 (INGESTION.md)](INGESTION.md)**: Notion API를 통한 지식 베이스 구축 방법.
 
@@ -34,6 +35,8 @@
 
 ## 📁 디렉토리 구조
 - `docs/`: 필수 최신 문서 보관.
-- `docs/archive/`: 과거 계획서, PRD, 배포 이력 등 역사적 기록 보관.
+- `docs/plans/`: 과거 계획서와 설계 기록.
+- `docs/release-readiness/`: 릴리스 준비 작업의 역사적 실행 기록.
+- `docs/security/`, `docs/standards/`: 보안/운영 표준 문서.
 
-**최종 업데이트**: 2026-05-05
+**최종 업데이트**: 2026-05-13
