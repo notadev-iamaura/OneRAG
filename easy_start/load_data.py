@@ -24,7 +24,7 @@ import os
 import pickle
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 # 프로젝트 루트를 Python 경로에 추가
 project_root = Path(__file__).parent.parent
@@ -53,7 +53,7 @@ def _resolve_sample_data_path() -> Path:
     """
     path = get_sample_data_path()
     if path.exists():
-        return cast(Path, path)
+        return path
 
     # 폴백: 기존 경로
     fallback = project_root / "quickstart" / "sample_data.json"
