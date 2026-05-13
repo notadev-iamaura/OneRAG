@@ -331,6 +331,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Rate Limiting에서 제외할 경로 (Health Check 등)
         self.excluded_paths = excluded_paths or [
             "/health",
+            "/ready",
             "/api/health",
             "/docs",
             "/redoc",

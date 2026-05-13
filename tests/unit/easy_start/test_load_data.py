@@ -207,3 +207,117 @@ class TestBm25Index:
         assert hasattr(loaded, "search")
         results = loaded.search("설치", top_k=2)
         assert len(results) > 0
+
+
+class TestLoadSafety:
+    """easy-start 로더의 비파괴 기본 동작 테스트"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("reset", "expected_reset_calls"),
+        [
+            (False, 0),
+            (True, 1),
+        ],
+    )
+    async def test_main_resets_chroma_only_when_explicit(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        reset: bool,
+        expected_reset_calls: int,
+    ) -> None:
+        from app.modules.core.embedding import local_embedder
+        from easy_start import load_data
+
+        sample_path = tmp_path / "sample_data.json"
+        sample_path.write_text(
+            """
+            {
+              "documents": [
+                {
+                  "id": "faq-001",
+                  "title": "제목",
+                  "content": "본문",
+                  "metadata": {"category": "FAQ"}
+                }
+              ]
+            }
+            """,
+            encoding="utf-8",
+        )
+
+        reset_calls: list[bool] = []
+        loaded_counts: list[int] = []
+
+        class FakeEmbedder:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def embed_documents(self, texts: list[str]) -> list[list[float]]:
+                return [[0.1, 0.2] for _ in texts]
+
+        async def fake_load_to_chroma(docs, embeddings, **kwargs) -> int:
+            loaded_counts.append(len(docs))
+            return len(docs)
+
+        monkeypatch.setattr(load_data, "_resolve_sample_data_path", lambda: sample_path)
+        monkeypatch.setattr(load_data, "BM25_INDEX_PATH", str(tmp_path / "bm25.pkl"))
+        monkeypatch.setattr(
+            load_data,
+            "build_load_manifest",
+            lambda sample_data_path, document_count: {
+                "sample_data_path": str(sample_data_path),
+                "document_count": document_count,
+            },
+        )
+        monkeypatch.setattr(local_embedder, "LocalEmbedder", FakeEmbedder)
+        monkeypatch.setattr(load_data, "reset_chroma_collection", lambda: reset_calls.append(True))
+        monkeypatch.setattr(load_data, "load_to_chroma", fake_load_to_chroma)
+        monkeypatch.setattr(load_data, "build_bm25_index", lambda docs: object())
+        monkeypatch.setattr(load_data, "save_bm25_index", lambda index: None)
+        monkeypatch.setattr(load_data, "save_manifest", lambda manifest: None)
+
+        await load_data.main(reset=reset)
+
+        assert len(reset_calls) == expected_reset_calls
+        assert loaded_counts == [1]
+
+    def test_parse_args_accepts_explicit_reset(self) -> None:
+        from easy_start.load_data import parse_args
+
+        args = parse_args(["--reset"])
+
+        assert args.reset is True
+
+    def test_cli_allows_env_reset_when_cli_reset_absent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from easy_start import load_data
+
+        calls: list[bool | None] = []
+        monkeypatch.setattr(load_data.asyncio, "run", lambda coro: None)
+        monkeypatch.setattr(load_data, "main", lambda reset=None: calls.append(reset))
+
+        load_data.cli([])
+
+        assert calls == [None]
+
+    def test_reset_chroma_collection_raises_on_unexpected_delete_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from easy_start import load_data
+
+        class FakeClient:
+            def delete_collection(self, collection_name: str) -> None:
+                raise PermissionError("permission denied")
+
+        monkeypatch.setattr(
+            "chromadb.PersistentClient",
+            lambda path, settings: FakeClient(),
+        )
+
+        with pytest.raises(RuntimeError, match="Chroma 컬렉션 초기화 실패"):
+            load_data.reset_chroma_collection()

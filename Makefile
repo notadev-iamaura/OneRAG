@@ -1,4 +1,4 @@
-.PHONY: help install install-dev sync update run dev test lint format clean docker-build docker-run neo4j-up neo4j-down neo4j-logs test-neo4j start start-down start-logs start-load frontend-install frontend-dev frontend-build frontend-lint frontend-test frontend-warning-gate-self-test start-full start-full-down start-full-logs start-full-build easy-start easy-start-load easy-start-chat easy-start-clean
+.PHONY: help install install-dev sync update run dev test test-operational-smoke lint format clean docker-build docker-run neo4j-up neo4j-down neo4j-logs test-neo4j start start-down start-logs start-load frontend-install frontend-dev frontend-build frontend-lint frontend-test frontend-warning-gate-self-test start-full start-full-down start-full-logs start-full-build easy-start easy-start-load easy-start-chat easy-start-clean
 
 # 기본 타겟
 .DEFAULT_GOAL := help
@@ -28,6 +28,7 @@ help:
 	@echo ""
 	@echo "🧪 테스트:"
 	@echo "  test            - 테스트 실행"
+	@echo "  test-operational-smoke - 운영 안정성 smoke 테스트"
 	@echo "  test-cov        - 테스트 커버리지"
 	@echo "  test-eval       - 평가 테스트 (CI/CD 품질 게이트)"
 	@echo ""
@@ -146,6 +147,25 @@ test-basic:
 # 테스트 커버리지
 test-cov: install-dev
 	uv run pytest --cov=app --cov-report=html --cov-report=term
+
+# 운영 안정성 smoke 테스트 (CI와 로컬에서 동일하게 사용)
+test-operational-smoke:
+	ENVIRONMENT=test uv run pytest \
+		tests/unit/api/test_health_readiness.py \
+		tests/unit/lib/test_startup_policy.py \
+		tests/unit/lib/test_env_validator.py \
+		tests/unit/core/test_di_container_startup_policy.py \
+		tests/unit/test_compose_healthcheck_contract.py \
+		tests/unit/quickstart/test_load_sample_data.py \
+		tests/unit/easy_start/test_load_data.py \
+		tests/test_main_startup.py \
+		tests/lib/test_environment.py \
+		-q --tb=short --timeout=60
+	docker compose config --quiet
+	docker compose --profile fullstack config --quiet
+	WEAVIATE_API_KEY=dummy FASTAPI_AUTH_KEY=dummy VITE_API_BASE_URL=http://localhost:8000 VITE_WS_BASE_URL=ws://localhost:8000 VITE_ACCESS_CODE=dummy docker compose -f docker-compose.prod.yml config --quiet
+	sh -n docker-entrypoint.sh
+	sh -n frontend/entrypoint.sh
 
 # 평가 테스트 (CI/CD 품질 게이트)
 test-eval: install-dev

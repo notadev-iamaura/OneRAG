@@ -240,8 +240,7 @@ class WeaviateClient:
             self._client = None
 
 
-# 싱글톤 인스턴스 생성
-weaviate_client = WeaviateClient()
+weaviate_client: WeaviateClient | None = None
 
 
 def get_weaviate_client() -> WeaviateClient:
@@ -259,4 +258,15 @@ def get_weaviate_client() -> WeaviateClient:
         if documents:
             response = documents.query.hybrid(query="검색어", alpha=0.6)
     """
+    global weaviate_client
+    if weaviate_client is None:
+        weaviate_client = WeaviateClient()
     return weaviate_client
+
+
+def close_weaviate_client() -> None:
+    """전역 Weaviate 클라이언트가 생성된 경우에만 종료합니다."""
+    global weaviate_client
+    if weaviate_client is not None:
+        weaviate_client.close()
+        weaviate_client = None

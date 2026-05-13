@@ -45,6 +45,8 @@ services:
       WEAVIATE_GRPC_PORT: "50051"
       WEAVIATE_API_KEY: "${WEAVIATE_API_KEY:?Set WEAVIATE_API_KEY}"
       ENVIRONMENT: "production"
+      NODE_ENV: "production"
+      RETRIEVAL_STARTUP_POLICY: "${RETRIEVAL_STARTUP_POLICY:-required}"
       FASTAPI_AUTH_KEY: "${FASTAPI_AUTH_KEY:?Set FASTAPI_AUTH_KEY}"
       EMBEDDINGS_PROVIDER: "${EMBEDDINGS_PROVIDER:-openrouter}"
       LLM_PROVIDER: "${LLM_PROVIDER:-google}"
@@ -59,7 +61,7 @@ services:
       weaviate:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ready"]
       interval: 30s
       timeout: 10s
       retries: 3

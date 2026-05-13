@@ -12,6 +12,7 @@ from app.lib.env_validator import (
     EnvValidationResult,
     EnvValidator,
     validate_all_env,
+    validate_provider_env,
     validate_required_env,
     validate_tool_use_env,
 )
@@ -168,6 +169,104 @@ class TestValidateAll:
         assert result.missing_vars == []
         # Tool Use 경고는 포함
         assert len(result.warnings) == 2
+
+
+# ---------------------------------------------------------------------------
+# validate_provider_env (4개)
+# ---------------------------------------------------------------------------
+
+
+def _provider_config(
+    embeddings_provider: str = "openrouter",
+    generation_provider: str = "google",
+    llm_provider: str = "openrouter",
+) -> dict:
+    return {
+        "embeddings": {
+            "provider": embeddings_provider,
+            "openrouter": {"api_key": ""},
+            "google": {"api_key": ""},
+            "openai": {"api_key": ""},
+            "local": {},
+        },
+        "generation": {
+            "default_provider": generation_provider,
+            "google": {"api_key": ""},
+            "openrouter": {"api_key": ""},
+            "ollama": {},
+        },
+        "llm": {
+            "default_provider": llm_provider,
+            "google": {"api_key": ""},
+            "openai": {"api_key": ""},
+            "anthropic": {"api_key": ""},
+            "openrouter": {"api_key": ""},
+            "ollama": {},
+        },
+    }
+
+
+class TestValidateProviderEnv:
+    """선택 provider와 환경 변수 조합 검증 테스트"""
+
+    def test_strict_mode_requires_selected_provider_keys(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for key in ["GOOGLE_API_KEY", "OPENROUTER_API_KEY"]:
+            monkeypatch.delenv(key, raising=False)
+
+        result = EnvValidator.validate_provider_env(_provider_config(), strict=True)
+
+        assert result.is_valid is False
+        assert set(result.missing_vars) == {"GOOGLE_API_KEY", "OPENROUTER_API_KEY"}
+
+    def test_non_strict_mode_warns_for_missing_selected_provider_keys(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for key in ["GOOGLE_API_KEY", "OPENROUTER_API_KEY"]:
+            monkeypatch.delenv(key, raising=False)
+
+        result = EnvValidator.validate_provider_env(_provider_config(), strict=False)
+
+        assert result.is_valid is True
+        assert result.missing_vars == []
+        assert len(result.warnings) == 3
+
+    def test_local_and_ollama_providers_need_no_cloud_keys(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for key in ["GOOGLE_API_KEY", "OPENROUTER_API_KEY"]:
+            monkeypatch.delenv(key, raising=False)
+
+        result = validate_provider_env(
+            _provider_config(
+                embeddings_provider="local",
+                generation_provider="ollama",
+                llm_provider="ollama",
+            ),
+            strict=True,
+        )
+
+        assert result.is_valid is True
+        assert result.missing_vars == []
+
+    def test_unknown_provider_fails_even_when_non_strict(self) -> None:
+        result = EnvValidator.validate_provider_env(
+            _provider_config(generation_provider="unknown"),
+            strict=False,
+        )
+
+        assert result.is_valid is False
+        assert result.missing_vars == ["generation.unknown"]
+
+    def test_generation_openai_is_rejected_because_runtime_does_not_support_it(self) -> None:
+        result = EnvValidator.validate_provider_env(
+            _provider_config(generation_provider="openai"),
+            strict=False,
+        )
+
+        assert result.is_valid is False
+        assert result.missing_vars == ["generation.openai"]
 
 
 # ---------------------------------------------------------------------------

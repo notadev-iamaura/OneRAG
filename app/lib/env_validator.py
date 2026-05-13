@@ -59,6 +59,27 @@ class EnvValidator:
     # 선택적 환경 변수
     OPTIONAL_ENV_VARS: dict[str, dict[str, Any]] = {}
 
+    PROVIDER_ENV_REQUIREMENTS: dict[str, dict[str, tuple[str, ...]]] = {
+        "embeddings": {
+            "google": ("GOOGLE_API_KEY",),
+            "openai": ("OPENAI_API_KEY",),
+            "openrouter": ("OPENROUTER_API_KEY",),
+            "local": (),
+        },
+        "generation": {
+            "google": ("GOOGLE_API_KEY",),
+            "openrouter": ("OPENROUTER_API_KEY",),
+            "ollama": (),
+        },
+        "llm": {
+            "google": ("GOOGLE_API_KEY",),
+            "openai": ("OPENAI_API_KEY",),
+            "anthropic": ("ANTHROPIC_API_KEY",),
+            "openrouter": ("OPENROUTER_API_KEY",),
+            "ollama": (),
+        },
+    }
+
     @classmethod
     def validate_tool_use_env(cls) -> EnvValidationResult:
         """
@@ -157,6 +178,59 @@ class EnvValidator:
         )
 
     @classmethod
+    def validate_provider_env(
+        cls, config: dict[str, Any], strict: bool = False
+    ) -> EnvValidationResult:
+        """
+        선택된 runtime provider와 필요한 환경 변수가 일치하는지 검증합니다.
+
+        strict=False에서는 개발/테스트 quickstart를 막지 않도록 경고만 반환합니다.
+        provider 이름 자체가 지원 목록 밖이면 strict 여부와 무관하게 실패합니다.
+        """
+        missing_vars: list[str] = []
+        warnings: list[str] = []
+
+        selected_providers = {
+            "embeddings": config.get("embeddings", {}).get("provider", "openrouter"),
+            "generation": config.get("generation", {}).get("default_provider", "google"),
+            "llm": config.get("llm", {}).get("default_provider", "openrouter"),
+        }
+
+        for section, provider in selected_providers.items():
+            provider_name = str(provider).strip().lower()
+            requirements = cls.PROVIDER_ENV_REQUIREMENTS.get(section, {})
+
+            if provider_name not in requirements:
+                missing_vars.append(f"{section}.{provider_name}")
+                continue
+
+            for env_var in requirements[provider_name]:
+                provider_config = config.get(section, {}).get(provider_name, {})
+                configured_value = (
+                    provider_config.get("api_key") if isinstance(provider_config, dict) else None
+                )
+                if configured_value or os.getenv(env_var):
+                    continue
+
+                message = (
+                    f"{section} provider '{provider_name}' requires {env_var}. "
+                    f"Set {env_var} or choose a provider that does not require that key."
+                )
+                if strict:
+                    missing_vars.append(env_var)
+                else:
+                    warnings.append(message)
+
+        unique_missing = list(dict.fromkeys(missing_vars))
+        unique_warnings = list(dict.fromkeys(warnings))
+
+        return EnvValidationResult(
+            is_valid=len(unique_missing) == 0,
+            missing_vars=unique_missing,
+            warnings=unique_warnings,
+        )
+
+    @classmethod
     def get_missing_env_help(cls, missing_vars: list[str]) -> str:
         """
         누락된 환경 변수에 대한 도움말 생성
@@ -237,3 +311,17 @@ def validate_all_env(strict: bool = False) -> EnvValidationResult:
         EnvValidationResult: 통합 검증 결과
     """
     return EnvValidator.validate_all(strict=strict)
+
+
+def validate_provider_env(config: dict[str, Any], strict: bool = False) -> EnvValidationResult:
+    """
+    선택된 provider와 환경 변수 조합 검증 (편의 함수)
+
+    Args:
+        config: 로드된 애플리케이션 설정
+        strict: True이면 누락된 provider 환경 변수를 실패로 처리
+
+    Returns:
+        EnvValidationResult: 검증 결과
+    """
+    return EnvValidator.validate_provider_env(config=config, strict=strict)

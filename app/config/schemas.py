@@ -53,7 +53,7 @@ class LLMProviderConfig(BaseModel):
 class LLMConfig(BaseModel):
     """LLM 통합 설정"""
 
-    default_provider: Literal["google", "openai", "anthropic", "openrouter"] = "google"
+    default_provider: Literal["google", "openai", "anthropic", "openrouter", "ollama"] = "google"
     auto_fallback: bool = True  # 필드명 수정
     fallback_order: list[str] | None = None
     google: LLMProviderConfig
@@ -74,7 +74,7 @@ class EmbeddingsConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")  # output_dimensionality, batch_size 등 추가 필드 허용
 
-    provider: Literal["google", "openai", "openrouter"] = "google"
+    provider: Literal["google", "openai", "openrouter", "local"] = "google"
     model: str = Field(default="text-embedding-004")
     api_key: str | None = None
     dimension: int = Field(default=768, ge=1)
