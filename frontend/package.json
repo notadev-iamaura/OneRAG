@@ -68,7 +68,7 @@
     "vaul": "^1.1.2"
   },
   "devDependencies": {
-    "@axe-core/react": "^4.11.0",
+    "@axe-core/react": "^4.11.3",
     "@eslint/js": "^10.0.1",
     "@mswjs/data": "^0.16.2",
     "@playwright/test": "^1.50.0",
