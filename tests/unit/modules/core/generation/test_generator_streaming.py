@@ -85,8 +85,11 @@ class TestGenerationModuleStreaming:
 
     @pytest.mark.asyncio
     async def test_stream_answer_handles_empty_context(self):
-        """빈 컨텍스트로 스트리밍 시 에러 처리 확인"""
-        from app.modules.core.generation.generator import GenerationModule
+        """빈 컨텍스트 스트리밍은 graceful no-documents 청크를 반환"""
+        from app.modules.core.generation.generator import (
+            NO_DOCUMENTS_MESSAGE,
+            GenerationModule,
+        )
 
         # Mock PromptManager
         mock_prompt_manager = MagicMock()
@@ -108,13 +111,47 @@ class TestGenerationModuleStreaming:
         )
         generator.client = MagicMock()
 
-        # 빈 컨텍스트로 호출 시 ValueError 예상
-        with pytest.raises(ValueError, match="검색된 문서가 없습니다"):
-            async for _ in generator.stream_answer(
+        chunks = [
+            chunk
+            async for chunk in generator.stream_answer(
                 query="테스트 질문",
                 context_documents=[],
-            ):
-                pass
+            )
+        ]
+
+        assert chunks == [NO_DOCUMENTS_MESSAGE]
+        generator.client.chat.completions.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_generate_answer_empty_context_returns_graceful_response(self):
+        """빈 컨텍스트 비스트리밍 생성도 fallback 루프 실패 없이 정상 응답"""
+        from app.modules.core.generation.generator import (
+            NO_DOCUMENTS_MESSAGE,
+            GenerationModule,
+        )
+
+        mock_prompt_manager = MagicMock()
+        generator = GenerationModule(
+            config={
+                "generation": {
+                    "openrouter": {
+                        "api_key": "test-key",
+                    },
+                }
+            },
+            prompt_manager=mock_prompt_manager,
+        )
+        generator.client = MagicMock()
+
+        result = await generator.generate_answer(
+            query="테스트 질문",
+            context_documents=[],
+        )
+
+        assert result.answer == NO_DOCUMENTS_MESSAGE
+        assert result.model_used == "no_documents"
+        assert result.tokens_used == 0
+        generator.client.chat.completions.create.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_stream_answer_without_client_raises_error(self):
@@ -289,3 +326,91 @@ class TestGenerationModuleStreaming:
         assert call_kwargs.get("stream") is True
         # 모델 확인
         assert call_kwargs.get("model") == "anthropic/claude-sonnet-4"
+
+    @pytest.mark.asyncio
+    async def test_stream_answer_accepts_sync_openai_stream(self):
+        """OpenAI sync Stream 객체도 스트리밍 청크로 처리"""
+        from app.modules.core.generation.generator import GenerationModule
+
+        mock_prompt_manager = MagicMock()
+        mock_prompt_manager.get_prompt_content = AsyncMock(return_value="시스템 프롬프트")
+
+        generator = GenerationModule(
+            config={
+                "generation": {
+                    "openrouter": {
+                        "api_key": "test-key",
+                        "default_model": "test/model",
+                    },
+                }
+            },
+            prompt_manager=mock_prompt_manager,
+        )
+
+        mock_client = MagicMock()
+        generator.client = mock_client
+
+        def make_chunk(content: str | None):
+            mock_choice = MagicMock()
+            mock_choice.delta = MagicMock()
+            mock_choice.delta.content = content
+            mock_chunk = MagicMock()
+            mock_chunk.choices = [mock_choice]
+            return mock_chunk
+
+        mock_client.chat.completions.create.return_value = iter([
+            make_chunk("동기 "),
+            make_chunk("스트림"),
+            make_chunk(None),
+        ])
+
+        chunks = []
+        async for chunk in generator.stream_answer(
+            query="테스트",
+            context_documents=[{"content": "컨텍스트"}],
+        ):
+            chunks.append(chunk)
+
+        assert chunks == ["동기 ", "스트림"]
+
+    @pytest.mark.asyncio
+    async def test_stream_answer_times_out_sync_create_without_blocking_loop(self):
+        """동기 stream 생성 지연은 스트리밍 타임아웃 에러로 변환"""
+        import time
+
+        from app.lib.errors import GenerationError
+        from app.modules.core.generation.generator import GenerationModule
+
+        mock_prompt_manager = MagicMock()
+        mock_prompt_manager.get_prompt_content = AsyncMock(return_value="시스템 프롬프트")
+
+        generator = GenerationModule(
+            config={
+                "generation": {
+                    "openrouter": {
+                        "api_key": "test-key",
+                        "default_model": "test/model",
+                        "timeout": 0.001,
+                    },
+                }
+            },
+            prompt_manager=mock_prompt_manager,
+        )
+
+        mock_client = MagicMock()
+        generator.client = mock_client
+
+        def slow_create(**_kwargs):
+            time.sleep(0.05)
+            return iter([])
+
+        mock_client.chat.completions.create.side_effect = slow_create
+
+        with pytest.raises(GenerationError) as exc_info:
+            async for _ in generator.stream_answer(
+                query="테스트",
+                context_documents=[{"content": "컨텍스트"}],
+            ):
+                pass
+
+        assert exc_info.value.error_code == "LLM-008"

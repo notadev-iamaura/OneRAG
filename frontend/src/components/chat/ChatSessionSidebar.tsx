@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageSquare, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,7 @@ interface ChatSessionSidebarProps {
   sessionId: string;
   messages: ChatMessage[];
   onNewSession: () => Promise<void> | void;
+  onSelectSession: (sessionId: string) => Promise<void> | void;
 }
 
 const STORAGE_KEY = 'onerag_chat_sessions';
@@ -42,21 +43,39 @@ function createDefaultTitle(messages: ChatMessage[]) {
   return title.length > 28 ? `${title.slice(0, 28)}...` : title;
 }
 
-export function ChatSessionSidebar({ sessionId, messages, onNewSession }: ChatSessionSidebarProps) {
+export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelectSession }: ChatSessionSidebarProps) {
   const [sessions, setSessions] = useState<StoredChatSession[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const deletedSessionIdsRef = useRef<Set<string>>(new Set());
+  const sessionsHydratedRef = useRef(false);
 
   useEffect(() => {
     setSessions(readSessions());
   }, []);
 
+  // localStorage 영속화는 상태 업데이터(순수해야 하며 StrictMode에서 이중 호출됨)와
+  // 분리해 전용 effect에서 수행한다([41]/[47]).
+  useEffect(() => {
+    // 최초 마운트의 빈 초기값으로 저장소를 덮어쓰지 않도록 첫 렌더는 건너뛴다.
+    if (!sessionsHydratedRef.current) {
+      sessionsHydratedRef.current = true;
+      return;
+    }
+    writeSessions(sessions);
+  }, [sessions]);
+
   useEffect(() => {
     if (!sessionId) return;
+    if (deletedSessionIdsRef.current.has(sessionId)) return;
 
     setSessions((previous) => {
-      const now = new Date().toISOString();
       const existing = previous.find((session) => session.id === sessionId);
+      if (messages.length === 0) {
+        return previous;
+      }
+
+      const now = new Date().toISOString();
       const nextSession: StoredChatSession = {
         id: sessionId,
         title: existing?.title && existing.title !== '새 대화'
@@ -71,7 +90,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession }: ChatSe
         ...previous.filter((session) => session.id !== sessionId),
       ].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
-      writeSessions(next);
+      // 영속화는 위의 전용 effect가 담당한다(updater는 순수 유지).
       return next;
     });
   }, [sessionId, messages]);
@@ -83,14 +102,13 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession }: ChatSe
 
   const handleSelectSession = (targetSessionId: string) => {
     if (targetSessionId === sessionId) return;
-    localStorage.setItem('chatSessionId', targetSessionId);
-    window.location.reload();
+    onSelectSession(targetSessionId);
   };
 
   const handleDeleteSession = (targetSessionId: string) => {
+    deletedSessionIdsRef.current.add(targetSessionId);
     const next = sessions.filter((session) => session.id !== targetSessionId);
-    setSessions(next);
-    writeSessions(next);
+    setSessions(next);  // 영속화는 전용 effect가 처리
 
     if (targetSessionId === sessionId) {
       localStorage.removeItem('chatSessionId');
@@ -110,8 +128,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession }: ChatSe
         ? { ...session, title: editingTitle.trim() || '새 대화' }
         : session
     );
-    setSessions(next);
-    writeSessions(next);
+    setSessions(next);  // 영속화는 전용 effect가 처리
     setEditingId(null);
     setEditingTitle('');
   };

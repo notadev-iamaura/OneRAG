@@ -11,6 +11,7 @@ ChatService.stream_rag_pipeline() 메서드 구현을 위한 TDD 테스트.
 - error: 에러 이벤트
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -73,6 +74,7 @@ class TestChatServiceStreaming:
         mock_session.get_session = AsyncMock(return_value={"is_valid": True})
         mock_session.get_context_string = AsyncMock(return_value="")
         mock_session.create_session = AsyncMock(return_value={"session_id": "test-123"})
+        mock_session.add_conversation = AsyncMock()
 
         # Mock 생성 모듈 - 스트리밍
         mock_generation = MagicMock()
@@ -244,6 +246,8 @@ class TestChatServiceStreaming:
 
         # Mock 생성 모듈
         mock_generation = MagicMock()
+        mock_generation.provider = "openrouter"
+        mock_generation.default_model = "test/model"
 
         async def mock_stream(*args, **kwargs):
             yield "청크1"
@@ -253,7 +257,11 @@ class TestChatServiceStreaming:
 
         # Mock 검색 모듈
         mock_retrieval = MagicMock()
-        mock_retrieval.search = AsyncMock(return_value=[])
+        mock_doc = MagicMock()
+        mock_doc.metadata = {"source": "test.pdf", "score": 0.9}
+        mock_doc.content = "테스트"
+        mock_doc.page_content = "테스트"
+        mock_retrieval.search = AsyncMock(return_value=[mock_doc])
 
         modules = {
             "session": mock_session,
@@ -279,8 +287,107 @@ class TestChatServiceStreaming:
 
         data = done_event["data"]
         assert "session_id" in data, "session_id가 없습니다"
+        assert "message_id" in data, "message_id가 없습니다"
         assert "total_chunks" in data, "total_chunks가 없습니다"
+        assert "sources" in data, "sources가 없습니다"
+        assert "model_info" in data, "model_info가 없습니다"
         assert data["total_chunks"] == 2, f"청크 수가 2가 아닙니다: {data['total_chunks']}"
+        assert data["tokens_used"] > 0
+        assert data["model_info"]["provider"] == "openrouter"
+        mock_session.add_conversation.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_stream_rag_pipeline_no_results_returns_graceful_done(self):
+        """검색 0건은 error 대신 안내 chunk와 done 이벤트를 반환"""
+        from app.api.services.chat_service import ChatService
+
+        mock_session = MagicMock()
+        mock_session.get_session = AsyncMock(return_value={"is_valid": True})
+        mock_session.get_context_string = AsyncMock(return_value="")
+        mock_session.create_session = AsyncMock(return_value={"session_id": "test-123"})
+        mock_session.add_conversation = AsyncMock()
+
+        mock_generation = MagicMock()
+        mock_generation.stream_answer = MagicMock()
+
+        mock_retrieval = MagicMock()
+        mock_retrieval.search = AsyncMock(return_value=[])
+
+        service = ChatService(
+            {"session": mock_session, "generation": mock_generation, "retrieval": mock_retrieval},
+            {},
+        )
+
+        events = [
+            event
+            async for event in service.stream_rag_pipeline(
+                message="문서 없는 질문",
+                session_id="test-123",
+            )
+        ]
+
+        event_types = [event["event"] for event in events]
+        assert event_types == ["metadata", "chunk", "done"]
+        assert "관련 문서를 찾을 수 없습니다" in events[1]["data"]
+        assert events[-1]["data"]["total_chunks"] == 1
+        mock_generation.stream_answer.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stream_rag_pipeline_first_token_timeout_falls_back(self):
+        """첫 청크 지연 시 비스트리밍 fallback 답변을 chunk로 반환"""
+        from app.api.services.chat_service import ChatService
+        from app.modules.core.generation.generator import GenerationResult
+
+        mock_session = MagicMock()
+        mock_session.get_session = AsyncMock(return_value={"is_valid": True})
+        mock_session.get_context_string = AsyncMock(return_value="")
+        mock_session.create_session = AsyncMock(return_value={"session_id": "test-123"})
+        mock_session.add_conversation = AsyncMock()
+
+        mock_generation = MagicMock()
+
+        async def slow_stream(*args, **kwargs):
+            await asyncio.sleep(1)
+            yield "늦은 응답"
+
+        mock_generation.stream_answer = slow_stream
+        mock_generation.generate_answer = AsyncMock(
+            return_value=GenerationResult(
+                answer="비스트리밍 fallback 답변입니다.",
+                text="비스트리밍 fallback 답변입니다.",
+                tokens_used=17,
+                model_used="fallback-model",
+                provider="openrouter",
+                generation_time=0.2,
+            )
+        )
+
+        mock_doc = MagicMock()
+        mock_doc.metadata = {"source": "test.pdf"}
+        mock_doc.content = "테스트"
+        mock_doc.page_content = "테스트"
+        mock_retrieval = MagicMock()
+        mock_retrieval.search = AsyncMock(return_value=[mock_doc])
+
+        service = ChatService(
+            {"session": mock_session, "generation": mock_generation, "retrieval": mock_retrieval},
+            {},
+        )
+
+        events = [
+            event
+            async for event in service.stream_rag_pipeline(
+                message="느린 질문",
+                session_id="test-123",
+                options={"first_token_timeout": 0.01},
+            )
+        ]
+
+        assert [event["event"] for event in events] == ["metadata", "chunk", "done"]
+        assert events[1]["data"] == "비스트리밍 fallback 답변입니다."
+        assert events[-1]["data"]["tokens_used"] == 17
+        assert events[-1]["data"]["model_info"]["model"] == "fallback-model"
+        mock_generation.generate_answer.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_stream_rag_pipeline_error_handling(self):
@@ -418,3 +525,125 @@ class TestChatServiceStreaming:
         # 옵션이 전달되었는지 확인
         assert "temperature" in received_options
         assert received_options["temperature"] == 0.7
+
+    @pytest.mark.asyncio
+    async def test_stream_no_generation_module_emits_error(self):
+        """생성 모듈이 스트리밍 미지원이면 안내문을 저장/성공집계하지 않고 error로 종료(#7)"""
+        from app.api.services.chat_service import ChatService
+
+        mock_session = MagicMock()
+        mock_session.get_session = AsyncMock(return_value={"is_valid": True})
+        mock_session.get_context_string = AsyncMock(return_value="")
+        mock_session.create_session = AsyncMock(return_value={"session_id": "test-123"})
+        mock_session.add_conversation = AsyncMock()
+
+        # stream_answer가 없는 생성 모듈(else 분기 유도) + provider 메타데이터만 제공
+        mock_generation = MagicMock(spec=["provider", "default_model"])
+        mock_generation.provider = "openrouter"
+        mock_generation.default_model = "test/model"
+
+        # 검색은 문서를 반환해 no-docs 분기가 아닌 no-gen 분기로 진입시킨다.
+        mock_doc = MagicMock()
+        mock_doc.metadata = {"source": "test.pdf", "score": 0.9}
+        mock_doc.content = "테스트"
+        mock_doc.page_content = "테스트"
+        mock_retrieval = MagicMock()
+        mock_retrieval.search = AsyncMock(return_value=[mock_doc])
+
+        service = ChatService(
+            {"session": mock_session, "generation": mock_generation, "retrieval": mock_retrieval},
+            {},
+        )
+
+        events = [
+            event
+            async for event in service.stream_rag_pipeline(
+                message="테스트", session_id="test-123"
+            )
+        ]
+
+        event_types = [e.get("event") for e in events if isinstance(e, dict)]
+        assert "error" in event_types
+        assert "done" not in event_types  # 실패는 done으로 종료하지 않는다
+        assert events[-1]["event"] == "error"
+        mock_session.add_conversation.assert_not_called()
+        # 실패 턴은 성공 토큰으로 집계되지 않는다.
+        assert service.get_stats()["total_tokens"] == 0
+
+    @pytest.mark.asyncio
+    async def test_stream_no_results_tokens_zero_and_not_persisted(self):
+        """검색 0건 안내 응답은 tokens_used=0이고 저장/성공집계되지 않는다(#7/[28])"""
+        from app.api.services.chat_service import ChatService
+
+        mock_session = MagicMock()
+        mock_session.get_session = AsyncMock(return_value={"is_valid": True})
+        mock_session.get_context_string = AsyncMock(return_value="")
+        mock_session.create_session = AsyncMock(return_value={"session_id": "test-123"})
+        mock_session.add_conversation = AsyncMock()
+
+        mock_generation = MagicMock()
+        mock_generation.stream_answer = MagicMock()
+
+        mock_retrieval = MagicMock()
+        mock_retrieval.search = AsyncMock(return_value=[])
+
+        service = ChatService(
+            {"session": mock_session, "generation": mock_generation, "retrieval": mock_retrieval},
+            {},
+        )
+
+        events = [
+            event
+            async for event in service.stream_rag_pipeline(
+                message="문서 없는 질문", session_id="test-123"
+            )
+        ]
+
+        assert [e["event"] for e in events] == ["metadata", "chunk", "done"]
+        assert events[-1]["data"]["tokens_used"] == 0
+        mock_session.add_conversation.assert_not_called()
+        assert service.get_stats()["total_tokens"] == 0
+
+    def test_format_stream_sources_preserves_zero_score(self):
+        """관련도 0.0(유효값)이 falsy로 버려지지 않고 보존되는지 확인(#14)"""
+        from app.api.services.chat_service import ChatService
+
+        service = ChatService({}, {})
+
+        zero_doc = MagicMock()
+        zero_doc.score = 0.0
+        zero_doc.metadata = {"score": 0.5, "source": "a.pdf"}
+        zero_doc.page_content = "내용"
+
+        none_doc = MagicMock()
+        none_doc.score = None
+        none_doc.metadata = {"score": 0.0, "source": "b.pdf"}
+        none_doc.page_content = "내용"
+
+        sources = service._format_stream_sources([zero_doc, none_doc])
+
+        # document.score=0.0이 metadata score 0.5에 가려지지 않아야 한다.
+        assert sources[0]["relevance"] == 0.0
+        # document.score=None이면 metadata score 0.0이 그대로 보존돼야 한다.
+        assert sources[1]["relevance"] == 0.0
+
+    def test_format_stream_sources_excludes_context_expanded(self):
+        """인접 청크 확장으로 추가된 이웃 청크는 스트리밍 소스에서 제외돼야 한다(#4)"""
+        from app.api.services.chat_service import ChatService
+
+        service = ChatService({}, {})
+
+        hit = MagicMock()
+        hit.score = 0.9
+        hit.metadata = {"source": "real.md"}
+        hit.page_content = "실제 히트"
+
+        neighbor = MagicMock()
+        neighbor.score = 0.86
+        neighbor.metadata = {"source": "real.md", "context_expanded": True}
+        neighbor.page_content = "이웃 청크"
+
+        sources = service._format_stream_sources([hit, neighbor])
+
+        assert len(sources) == 1
+        assert sources[0]["document"] == "real.md"

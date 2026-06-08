@@ -20,13 +20,13 @@ window.RUNTIME_CONFIG = {
   "ACCESS_CODE": "${ACCESS_CODE}"
 };
 
-console.log('🚀 Railway Runtime Config Loaded:', window.RUNTIME_CONFIG);
+console.log('Railway Runtime Config Loaded');
 EOF
 
 echo "========================================="
 echo "✅ Railway Runtime Config Generated"
 echo "========================================="
-echo "📋 ACCESS_CODE: ${ACCESS_CODE}"
+echo "📋 ACCESS_CODE: configured"
 echo "🌐 API_BASE_URL: ${API_BASE_URL}"
 echo "========================================="
 

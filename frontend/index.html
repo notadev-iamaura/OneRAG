@@ -5,14 +5,14 @@
     <link rel="icon" type="image/svg+xml" href="/chatbot.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OneRAG</title>
+    <!-- Runtime config must load before bundled modules read window.RUNTIME_CONFIG. -->
+    <script src="/config.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>
-    <!-- 런타임 설정 파일 로드 -->
-    <script src="/config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

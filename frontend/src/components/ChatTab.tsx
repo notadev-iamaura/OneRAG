@@ -41,6 +41,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
     setSessionInfo,
     initialMessages,
     handleNewSession,
+    switchSession,
     synchronizeSessionId,
     refreshSessionInfo
   } = useChatSession({ showToast, setApiLogs });
@@ -138,6 +139,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
         sessionId={sessionId}
         messages={messages}
         onNewSession={handleNewSession}
+        onSelectSession={switchSession}
       />
 
       <ChatDevTools

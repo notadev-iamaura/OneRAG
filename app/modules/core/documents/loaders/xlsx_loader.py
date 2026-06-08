@@ -25,9 +25,14 @@ class XLSXLoader(DocumentLoaderStrategy):
             xl_file = pd.ExcelFile(file_path)
             for sheet_name in xl_file.sheet_names:
                 df = pd.read_excel(file_path, sheet_name=sheet_name)
-                content_parts = [f"시트: {sheet_name}", f"컬럼: {', '.join(df.columns.tolist())}"]
+                column_names = [str(col) for col in df.columns.tolist()]
+                content_parts = [f"시트: {sheet_name}", f"컬럼: {', '.join(column_names)}"]
                 for _idx, row in df.iterrows():
-                    row_text = [f"{col}: {value}" for col, value in row.items() if pd.notna(value)]
+                    row_text = [
+                        f"{str(col)}: {value}"
+                        for col, value in row.items()
+                        if pd.notna(value)
+                    ]
                     if row_text:
                         content_parts.append(" | ".join(row_text))
                 content = "\n".join(content_parts)

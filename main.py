@@ -221,10 +221,51 @@ rag_app = RAGChatbotApp()
 # Rate Limiter 인스턴스 (전역 생성 - lifespan에서 cleanup task 관리)
 from app.middleware.rate_limiter import RateLimiter
 
+
+def _get_int_env(name: str, default: int, *aliases: str) -> int:
+    """Read a positive integer environment variable with alias fallback."""
+    selected_name = name
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        for alias in aliases:
+            alias_value = os.getenv(alias)
+            if alias_value is not None:
+                selected_name = alias
+                raw_value = alias_value
+                break
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value)
+        if value <= 0:
+            raise ValueError
+        return value
+    except ValueError:
+        logger.warning(
+            "잘못된 정수 환경변수 값, 기본값 사용",
+            extra={"name": selected_name, "value": raw_value, "default": default},
+        )
+        return default
+
+
+RATE_LIMIT_IP = _get_int_env("ONERAG_RATE_LIMIT_IP_PER_MINUTE", 30, "RATE_LIMIT_IP")
+RATE_LIMIT_SESSION = _get_int_env(
+    "ONERAG_RATE_LIMIT_SESSION_PER_MINUTE", 10, "RATE_LIMIT_SESSION"
+)
+RATE_LIMIT_WINDOW_SECONDS = _get_int_env(
+    "ONERAG_RATE_LIMIT_WINDOW_SECONDS", 60, "RATE_LIMIT_WINDOW_SECONDS"
+)
+CHAT_RATE_LIMIT_IP = _get_int_env(
+    "ONERAG_CHAT_RATE_LIMIT_IP_PER_MINUTE", 20, "CHAT_RATE_LIMIT_IP"
+)
+CHAT_RATE_LIMIT_SESSION = _get_int_env(
+    "ONERAG_CHAT_RATE_LIMIT_SESSION_PER_MINUTE", 10, "CHAT_RATE_LIMIT_SESSION"
+)
+
 rate_limiter = RateLimiter(
-    ip_limit=30,  # IP 기반: 분당 30개
-    session_limit=10,  # Session 기반: 분당 10개
-    window_seconds=60,  # 1분 윈도우
+    ip_limit=RATE_LIMIT_IP,
+    session_limit=RATE_LIMIT_SESSION,
+    window_seconds=RATE_LIMIT_WINDOW_SECONDS,
 )
 
 
@@ -597,6 +638,7 @@ app.add_middleware(
         "/health",
         "/ready",
         "/api/health",
+        "/api/ready",
         # ✅ P0 보안 패치: Chat API는 전용 ChatRateLimitMiddleware에서 처리
         # (기존에는 body 읽기 충돌로 제외했으나, 전용 미들웨어로 해결)
         "/api/chat",  # ChatRateLimitMiddleware에서 처리
@@ -616,8 +658,8 @@ app.add_middleware(
 app.add_middleware(
     ChatRateLimitMiddleware,
     rate_limiter=rate_limiter,
-    ip_limit=20,  # Chat IP당 분당 20회 (일반 API 30회보다 엄격)
-    session_limit=10,  # Chat Session당 분당 10회
+    ip_limit=CHAT_RATE_LIMIT_IP,
+    session_limit=CHAT_RATE_LIMIT_SESSION,
 )
 
 # Error Logging Middleware 추가 (모든 에러 자동 로깅)

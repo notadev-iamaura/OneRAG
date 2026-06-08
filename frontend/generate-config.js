@@ -100,15 +100,20 @@ const config = {
   FEATURES: loadFeatureFlags(),
 };
 
+const redactedConfig = {
+  ...config,
+  ACCESS_CODE: config.ACCESS_CODE ? '***masked***' : null,
+};
+
 // config.js 파일 생성
 const configContent = `// Railway 런타임 설정 (자동 생성됨)
 window.RUNTIME_CONFIG = ${JSON.stringify(config, null, 2)};
 
-console.log('🚀 Railway Runtime Config Loaded:', window.RUNTIME_CONFIG);`;
+console.log('Railway Runtime Config Loaded');`;
 
 // public/config.js에 쓰기
 const outputPath = path.join(__dirname, 'dist', 'config.js');
 fs.writeFileSync(outputPath, configContent, 'utf8');
 
 console.log('✅ Runtime config generated:', outputPath);
-console.log('📋 Config:', config);
+console.log('📋 Config:', redactedConfig);

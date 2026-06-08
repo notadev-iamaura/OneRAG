@@ -14,6 +14,7 @@ Chroma는 경량 벡터 DB로, 로컬 개발과 테스트에 최적화되어 있
 """
 
 import asyncio
+import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -24,6 +25,25 @@ from app.core.interfaces.storage import IVectorStore
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _restore_metadata_json(item: dict[str, Any]) -> None:
+    """add_documents에서 metadata_json으로 직렬화된 비기본 메타데이터를 복원한다.
+
+    Chroma는 기본 타입만 저장하므로 list/dict 같은 값은 metadata_json 문자열로 보관된다.
+    읽기 시 이를 역직렬화해 원래 키를 복원하고, 불투명한 metadata_json 키는 제거해
+    클라이언트로 누출되지 않게 한다(검색/조회 라운드트립 정합).
+    """
+    raw = item.pop("metadata_json", None)
+    if not isinstance(raw, str):
+        return
+    try:
+        restored = json.loads(raw)
+    except (ValueError, TypeError):
+        return
+    if isinstance(restored, dict):
+        for key, value in restored.items():
+            item.setdefault(key, value)
 
 
 class ChromaVectorStore(IVectorStore):
@@ -110,13 +130,27 @@ class ChromaVectorStore(IVectorStore):
             ids: list[str] = []
             embeddings: list[Sequence[float]] = []
             metadatas: list[dict[str, str | int | float | bool]] = []
+            contents: list[str] = []
 
             for doc in documents:
                 doc_id = str(doc.get("id", ""))
-                vector: Sequence[float] = doc.get("vector", [])
+                # vector/embedding/dense_embedding 호환 입력 허용(JapanRAG 패턴)
+                vector: Sequence[float] = (
+                    doc.get("vector")
+                    or doc.get("embedding")
+                    or doc.get("dense_embedding")
+                    or []
+                )
                 raw_metadata: dict[str, Any] = doc.get("metadata", {})
+                # 검색이 본문을 반환할 수 있도록 content를 chroma documents로 저장한다.
+                content = str(
+                    doc.get("content")
+                    or doc.get("page_content")
+                    or raw_metadata.get("content")
+                    or ""
+                )
 
-                if not doc_id:
+                if not doc_id or not vector:
                     continue
 
                 # Chroma는 빈 메타데이터를 허용하지 않음
@@ -124,27 +158,31 @@ class ChromaVectorStore(IVectorStore):
                 if not raw_metadata:
                     raw_metadata = {"_source": "chroma_store"}
 
-                # Chroma 메타데이터는 기본 타입만 허용
+                # Chroma 메타데이터는 기본 타입만 허용. 비기본 타입은 metadata_json으로 보존.
                 metadata: dict[str, str | int | float | bool] = {
                     k: v for k, v in raw_metadata.items()
                     if isinstance(v, str | int | float | bool)
                 }
+                if any(not isinstance(v, str | int | float | bool) for v in raw_metadata.values()):
+                    metadata["metadata_json"] = json.dumps(raw_metadata, ensure_ascii=False, default=str)
                 if not metadata:
                     metadata = {"_source": "chroma_store"}
 
                 ids.append(doc_id)
                 embeddings.append(vector)
                 metadatas.append(metadata)
+                contents.append(content)
 
             if not ids:
                 return 0
 
-            # Upsert (추가 또는 업데이트)
+            # Upsert (추가 또는 업데이트). 본문(documents)도 함께 저장.
             # mypy와 chromadb 타입 시스템 간 호환성 문제로 ignore 처리
             col.upsert(
                 ids=ids,
                 embeddings=embeddings,
                 metadatas=metadatas,
+                documents=contents,
             )
 
             return len(ids)
@@ -199,6 +237,7 @@ class ChromaVectorStore(IVectorStore):
                 query_embeddings=[query_embedding],
                 n_results=top_k,
                 where=where_clause,
+                include=["metadatas", "documents", "distances"],
             )
 
             # 결과 변환
@@ -210,6 +249,7 @@ class ChromaVectorStore(IVectorStore):
             ids = results["ids"][0]
             distances_result = results.get("distances")
             metadatas_result = results.get("metadatas")
+            documents_result = results.get("documents")
 
             # 타입 안전하게 추출
             distances: list[float] = []
@@ -222,16 +262,23 @@ class ChromaVectorStore(IVectorStore):
                 if raw_metadatas:
                     metadatas = [dict(m) if m else {} for m in raw_metadatas]
 
+            documents: list[str] = []
+            if documents_result and len(documents_result) > 0:
+                documents = [str(d or "") for d in documents_result[0]]
+
             for i, doc_id in enumerate(ids):
                 item: dict[str, Any] = {}
 
                 # 메타데이터 복사
                 if i < len(metadatas) and metadatas[i]:
                     item.update(metadatas[i])
+                _restore_metadata_json(item)
 
                 # 표준 필드 추가
                 item["_id"] = doc_id
                 item["_distance"] = distances[i] if i < len(distances) else 0.0
+                # 본문(content)을 chroma documents에서 복원 (검색 결과에 포함)
+                item["content"] = documents[i] if i < len(documents) else ""
 
                 output.append(item)
 
@@ -331,6 +378,63 @@ class ChromaVectorStore(IVectorStore):
                 "2) 필터 형식을 확인하세요. "
                 "3) Chroma 로그를 확인하세요."
             ) from e
+
+    async def fetch_objects(
+        self,
+        collection: str,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """컬렉션 객체를 메타데이터 필터로 조회한다(문서관리/인접청크 확장용).
+
+        ChromaRetriever의 get_document_chunks/list_documents 등이 이 메서드에 위임한다
+        (JapanRAG ChromaVectorStore 파리티 백포트).
+        """
+
+        def _fetch_sync() -> list[dict[str, Any]]:
+            try:
+                col = self._client.get_collection(name=collection)
+            except Exception:
+                return []
+
+            filters_value = filters or {}
+            ids_filter: list[str] | None = None
+            if "id" in filters_value:
+                ids_filter = [str(filters_value["id"])]
+            elif "ids" in filters_value:
+                ids_filter = [str(value) for value in filters_value["ids"]]
+
+            where_clause = self._build_where_clause(filters_value)
+            results = col.get(
+                ids=ids_filter,
+                where=where_clause,
+                include=["metadatas", "documents"],
+            )
+            ids = [str(value) for value in results.get("ids", [])]
+            metadatas = [
+                dict(value) if value else {} for value in (results.get("metadatas") or [])
+            ]
+            documents = [str(value or "") for value in (results.get("documents") or [])]
+
+            output: list[dict[str, Any]] = []
+            for index, doc_id in enumerate(ids):
+                item: dict[str, Any] = {}
+                if index < len(metadatas):
+                    item.update(metadatas[index])
+                _restore_metadata_json(item)
+                item["_id"] = doc_id
+                item["content"] = documents[index] if index < len(documents) else ""
+                output.append(item)
+            return output
+
+        try:
+            return await asyncio.to_thread(_fetch_sync)
+        except Exception as e:
+            logger.error(f"ChromaVectorStore: 객체 조회 실패 - {e}")
+            return []
+
+    async def delete_objects(self, collection: str, object_ids: list[str]) -> int:
+        """ID 목록으로 객체를 삭제한다(문서관리용)."""
+        return await self.delete(collection=collection, filters={"ids": object_ids})
 
     def _build_where_clause(
         self, filters: dict[str, Any]

@@ -19,7 +19,7 @@ class DOCXLoader(DocumentLoaderStrategy):
 
     @property
     def supported_extensions(self) -> list[str]:
-        return [".docx", ".DOCX", ".doc", ".DOC"]
+        return [".docx", ".DOCX"]
 
     async def load(self, file_path: Path) -> list[Document]:
         """DOCX 파일 로드"""

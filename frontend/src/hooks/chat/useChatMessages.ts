@@ -10,6 +10,7 @@ import { ChatMessage, ApiLog, ToastMessage, SessionInfo } from '../../types';
 import { StreamingMessage } from '../../types/chatStreaming';
 import { chatAPI } from '../../services/api';
 import { logger } from '../../utils/logger';
+import { createClientId } from '../../utils/clientId';
 import { useIsFeatureEnabled } from '../../core/useFeature';
 import { useChatStreaming } from './useChatStreaming';
 
@@ -93,7 +94,7 @@ export const useChatMessages = ({
 
         // 에러 메시지 추가
         const errorMsg: ChatMessage = {
-            id: (Date.now() + 1).toString(),
+            id: createClientId('msg-error'),
             role: 'assistant',
             content: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
             timestamp: new Date().toISOString(),
@@ -144,7 +145,7 @@ export const useChatMessages = ({
     const sendViaRestAPI = async (messageContent: string) => {
         // API 요청 로그
         const requestLog: ApiLog = {
-            id: Date.now().toString(),
+            id: createClientId('api-request'),
             timestamp: new Date().toISOString(),
             type: 'request',
             method: 'POST',
@@ -167,7 +168,7 @@ export const useChatMessages = ({
 
             // API 응답 로그
             const responseLog: ApiLog = {
-                id: (Date.now() + 1).toString(),
+                id: createClientId('api-response'),
                 timestamp: new Date().toISOString(),
                 type: 'response',
                 method: 'POST',
@@ -179,7 +180,7 @@ export const useChatMessages = ({
             setApiLogs((prev) => [...prev, responseLog]);
 
             const assistantMessage: ChatMessage = {
-                id: (Date.now() + 1).toString(),
+                id: createClientId('msg-assistant'),
                 role: 'assistant',
                 content: response.data.answer,
                 timestamp: new Date().toISOString(),
@@ -223,7 +224,7 @@ export const useChatMessages = ({
 
             // API 에러 로그
             const errorLog: ApiLog = {
-                id: (Date.now() + 2).toString(),
+                id: createClientId('api-error'),
                 timestamp: new Date().toISOString(),
                 type: 'response',
                 method: 'POST',
@@ -243,7 +244,7 @@ export const useChatMessages = ({
 
             // 에러 메시지(UI용) 추가
             const errorMsg: ChatMessage = {
-                id: (Date.now() + 1).toString(),
+                id: createClientId('msg-error'),
                 role: 'assistant',
                 content: '죄송합니다. 오류가 발생했습니다. 다시 시도해주세요.',
                 timestamp: new Date().toISOString(),
@@ -260,7 +261,7 @@ export const useChatMessages = ({
         if (!input.trim() || loading) return;
 
         const userMessage: ChatMessage = {
-            id: Date.now().toString(),
+            id: createClientId('msg-user'),
             role: 'user',
             content: input,
             timestamp: new Date().toISOString(),
@@ -283,7 +284,7 @@ export const useChatMessages = ({
 
             // API 로그 (WebSocket)
             const wsRequestLog: ApiLog = {
-                id: Date.now().toString(),
+                id: createClientId('api-ws-request'),
                 timestamp: new Date().toISOString(),
                 type: 'request',
                 method: 'WS',

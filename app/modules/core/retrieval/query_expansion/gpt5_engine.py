@@ -31,6 +31,41 @@ from .interface import (
 
 logger = structlog.get_logger(__name__)
 
+_SIMPLE_QUERY_MAX_CHARS = 32
+_SIMPLE_QUERY_MAX_TOKENS = 3
+_QUERY_PUNCTUATION = ("?", "？", "!", "！")
+_KOREAN_JAPANESE_QUESTION_MARKERS = (
+    "어떻게",
+    "왜",
+    "무엇",
+    "뭐",
+    "언제",
+    "어디",
+    "누구",
+    "어느",
+    "얼마",
+    "몇",
+    "인가",
+    "인가요",
+    "하나요",
+    "나요",
+    "습니까",
+    "입니까",
+    "なぜ",
+    "どう",
+    "何",
+    "いつ",
+    "どこ",
+    "誰",
+    "どれ",
+    "ですか",
+    "ますか",
+)
+_ENGLISH_QUESTION_RE = re.compile(
+    r"\b(?:how|why|what|when|where|which|who|whom|whose)\b",
+    re.IGNORECASE,
+)
+
 
 class Stats(TypedDict):
     """GPT5QueryExpansionEngine 성능 통계 타입"""
@@ -257,18 +292,23 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
 
     def _is_simple_query(self, query: str) -> bool:
         """간단한 쿼리 판별 로직"""
-        # 짧은 키워드성 쿼리
-        if len(query.strip()) < 10:
+        normalized = query.strip()
+        if not normalized:
             return True
 
-        # 단순 명사구
-        simple_patterns = [
-            lambda q: len(q.split()) <= 2,  # 2단어 이하
-            lambda q: not any(char in q for char in "?!"),  # 질문/감탄문 아님
-            lambda q: not any(word in q for word in ["어떻게", "왜", "무엇", "언제", "어디서"]),
-        ]
+        has_question_signal = (
+            any(punctuation in normalized for punctuation in _QUERY_PUNCTUATION)
+            or any(marker in normalized for marker in _KOREAN_JAPANESE_QUESTION_MARKERS)
+            or _ENGLISH_QUESTION_RE.search(normalized) is not None
+        )
+        if has_question_signal:
+            return False
 
-        return sum(pattern(query) for pattern in simple_patterns) >= 2
+        token_count = len(normalized.split())
+        return (
+            len(normalized) <= _SIMPLE_QUERY_MAX_CHARS
+            and token_count <= _SIMPLE_QUERY_MAX_TOKENS
+        )
 
     async def _call_gpt5_nano(self, query: str) -> dict[str, Any] | None:
         """GPT-5-nano API 호출 (강화된 JSON 파싱)"""

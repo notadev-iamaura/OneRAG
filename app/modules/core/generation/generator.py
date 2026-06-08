@@ -39,6 +39,16 @@ logger = get_logger(__name__)
 # LLM Provider별 API URL
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GOOGLE_OPENAI_COMPAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+NO_DOCUMENTS_MESSAGE = (
+    "관련 문서를 찾지 못했습니다. 질문을 다르게 표현하시거나 잠시 후 다시 시도해주세요."
+)
+
+# 컨텍스트 문서 한도.
+# 기본값은 OneRAG의 비용 최적화 정책(상위 5개)을 유지한다. 인접 청크 확장이 켜져
+# 문서가 늘어나면 호출부가 max_context_documents를 올려, 실제 검색 히트가 이웃 청크에
+# 밀려 프롬프트에서 빠지지 않도록 한다(#3).
+DEFAULT_CONTEXT_DOCUMENT_LIMIT = 5
+MAX_CONTEXT_DOCUMENT_LIMIT = 20
 
 
 class Stats(TypedDict):
@@ -409,14 +419,18 @@ class GenerationModule:
             )
 
         # 컨텍스트 구성
-        context_text = self._build_context(context_documents)
+        context_text = self._build_context(context_documents, options=options)
 
-        # 빈 컨텍스트 검증
+        # 빈 컨텍스트 처리
         if not context_text:
-            raise ValueError(
-                "검색된 문서가 없습니다. " +
-                "해결 방법: 1) 검색어를 변경하거나, 2) 문서가 올바르게 인덱싱되었는지 확인하세요. " +
-                "관리자 대시보드에서 인덱스 상태를 확인할 수 있습니다."
+            logger.info("검색 0건/빈 컨텍스트: graceful no-documents 응답 반환")
+            return GenerationResult(
+                answer=NO_DOCUMENTS_MESSAGE,
+                text=NO_DOCUMENTS_MESSAGE,
+                tokens_used=0,
+                model_used="no_documents",
+                provider="rag",
+                generation_time=0.0,
             )
 
         # 프롬프트 구성
@@ -540,16 +554,37 @@ class GenerationModule:
 
         return settings
 
-    def _build_context(self, context_documents: list[Any]) -> str:
-        """컨텍스트 텍스트 구성"""
+    def _context_document_limit(self, options: dict[str, Any] | None) -> int:
+        """프롬프트에 포함할 컨텍스트 문서 수 한도 계산.
+
+        인접 청크 확장이 활성화되면 호출부가 max_context_documents를 올려
+        실제 검색 히트가 이웃 청크에 밀려 프롬프트에서 빠지지 않게 한다(#3).
+        """
+        options = options or {}
+        raw_limit = options.get("max_context_documents") or options.get("max_sources")
+        if raw_limit is None:
+            return DEFAULT_CONTEXT_DOCUMENT_LIMIT
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            return DEFAULT_CONTEXT_DOCUMENT_LIMIT
+        return max(1, min(limit, MAX_CONTEXT_DOCUMENT_LIMIT))
+
+    def _build_context(
+        self, context_documents: list[Any], options: dict[str, Any] | None = None
+    ) -> str:
+        """컨텍스트 텍스트 구성
+
+        기본 한도는 상위 5개(비용 최적화). 인접 청크 확장으로 문서가 늘어나면
+        호출부가 max_context_documents를 20으로 올려 실제 히트를 보존한다(#3).
+        """
         if not context_documents:
             return ""
 
-        # Phase 2: Top-k 최적화
-        # - 리랭킹 후 상위 5개 문서만 사용 (토큰 비용 절감)
-        # - 롤백 시: context_documents[:15]로 변경
+        # 동적 한도: 확장 시 이웃 청크가 상위 히트를 프롬프트에서 밀어내지 않도록 함
+        max_documents = self._context_document_limit(options)
         context_parts = []
-        for i, doc in enumerate(context_documents[:5]):
+        for i, doc in enumerate(context_documents[:max_documents]):
             content = ""
             if hasattr(doc, "content"):
                 content = doc.content
@@ -667,6 +702,21 @@ class GenerationModule:
     # 스트리밍 메서드
     # ========================================
 
+    async def _iterate_stream_chunks(self, stream: Any) -> AsyncGenerator[Any, None]:
+        """Yield chunks from either async or sync OpenAI-compatible streams."""
+        if hasattr(stream, "__aiter__"):
+            async for chunk in stream:
+                yield chunk
+            return
+
+        iterator = iter(stream)
+        sentinel = object()
+        while True:
+            chunk = await asyncio.to_thread(next, iterator, sentinel)
+            if chunk is sentinel:
+                break
+            yield chunk
+
     async def stream_answer(
         self,
         query: str,
@@ -694,7 +744,6 @@ class GenerationModule:
 
         Raises:
             RuntimeError: 클라이언트가 초기화되지 않은 경우
-            ValueError: 컨텍스트가 비어있는 경우
 
         Example:
             async for chunk in generator.stream_answer(query, docs):
@@ -719,14 +768,13 @@ class GenerationModule:
             )
 
         # 컨텍스트 구성
-        context_text = self._build_context(context_documents)
+        context_text = self._build_context(context_documents, options=options)
 
-        # 빈 컨텍스트 검증
+        # 빈 컨텍스트 처리
         if not context_text:
-            raise ValueError(
-                "검색된 문서가 없습니다. "
-                "해결 방법: 1) 검색어를 변경하거나, 2) 문서가 올바르게 인덱싱되었는지 확인하세요."
-            )
+            logger.info("스트리밍: 검색 0건/빈 컨텍스트 graceful 응답 반환")
+            yield NO_DOCUMENTS_MESSAGE
+            return
 
         # 프롬프트 구성
         system_content, user_content = await self._build_prompt(query, context_text, options)
@@ -765,14 +813,33 @@ class GenerationModule:
         )
 
         # 스트리밍 API 호출
-        stream = self.client.chat.completions.create(**api_params)
+        timeout = model_settings.get("timeout", 120)
+        try:
+            stream = cast(
+                Any,
+                await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.client.chat.completions.create,  # type: ignore[union-attr,arg-type]
+                        **api_params,
+                    ),
+                    timeout=float(timeout),
+                ),
+            )
+        except TimeoutError as e:
+            logger.error(f"OpenRouter 스트리밍 응답 시간 초과 ({timeout}s): {model}")
+            raise GenerationError(
+                message=f"AI 스트리밍 응답 시간이 초과되었습니다 ({timeout}초). 잠시 후 다시 시도해주세요.",
+                error_code=ErrorCode.LLM_008,
+                context={"model": model, "timeout_seconds": timeout},
+                original_error=e,
+            ) from e
 
         # Issue 2 수정: 통계 추적을 위한 청크 카운트 초기화
         chunk_count = 0
         self.stats["total_generations"] += 1
 
         # 청크 단위로 yield
-        async for chunk in stream:
+        async for chunk in self._iterate_stream_chunks(stream):
             if chunk.choices and len(chunk.choices) > 0:
                 delta = chunk.choices[0].delta
                 if hasattr(delta, "content") and delta.content:

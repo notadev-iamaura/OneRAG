@@ -22,46 +22,35 @@ const getAPIBaseURL = (): string => {
     return operatorApiUrl;
   }
 
-  // 개발 모드: 환경변수로 직접 백엔드 URL 사용 (프록시 대신)
-  if (import.meta.env.DEV) {
-    // 개발 환경에서도 직접 백엔드 URL 사용 (프록시 타임아웃 문제 해결)
-    // 기본값을 Railway 프로덕션 백엔드로 설정
-    const devApiUrl = import.meta.env.VITE_DEV_API_BASE_URL || 'http://localhost:8000';
-    logger.log('개발 모드: 직접 백엔드 URL 사용:', devApiUrl);
-    return devApiUrl;
+  // 1순위: 런타임 설정의 "비어있지 않은" 값만 인정한다(배포 후 동적 변경 가능).
+  // 빈 문자열(미설정)은 무시해 빌드 타임 설정(VITE_API_BASE_URL)을 가리지 않게 한다(#15).
+  // generate-config.js는 env 미설정 시 API_BASE_URL: ''를 항상 내보내므로, 과거처럼
+  // hasOwnProperty + (값 || '')로 처리하면 same-origin이 강제되어 백엔드 URL을 덮어썼다.
+  const runtimeUrl =
+    typeof window !== 'undefined' && window.RUNTIME_CONFIG
+      ? window.RUNTIME_CONFIG.API_BASE_URL
+      : undefined;
+  if (typeof runtimeUrl === 'string' && runtimeUrl.length > 0) {
+    logger.log('API URL 소스: 런타임 설정 (config.js)');
+    return runtimeUrl;
   }
 
-  // 1순위: Railway 환경변수 (VITE_API_BASE_URL)
+  // 2순위: 빌드 타임 환경변수 (VITE_API_BASE_URL)
   if (import.meta.env.VITE_API_BASE_URL) {
     logger.log('API URL 소스: Railway 환경변수 (VITE_API_BASE_URL)');
     return import.meta.env.VITE_API_BASE_URL;
   }
 
-  // 2순위: 런타임 설정 (동적 변경 가능)
-  if (typeof window !== 'undefined' && window.RUNTIME_CONFIG?.API_BASE_URL) {
-    logger.log('API URL 소스: 런타임 설정 (config.js)');
-    return window.RUNTIME_CONFIG.API_BASE_URL;
+  // 개발 모드: 환경변수로 직접 백엔드 URL 사용 (프록시 대신)
+  if (import.meta.env.DEV) {
+    const devApiUrl = import.meta.env.VITE_DEV_API_BASE_URL || 'http://localhost:8000';
+    logger.log('개발 모드: 직접 백엔드 URL 사용:', devApiUrl);
+    return devApiUrl;
   }
 
-  // 3순위: localhost 폴백 (개발용)
-  const fallbackUrl = 'http://localhost:8000';
-
-  // 프로덕션 환경 체크
-  const isProduction = import.meta.env.PROD ||
-    (typeof window !== 'undefined' && window.location.hostname !== 'localhost');
-
-  if (isProduction) {
-    logger.warn(
-      'Railway 배포 환경 설정 필요:\n' +
-      '1. Railway 대시보드에서 VITE_API_BASE_URL 환경변수 설정\n' +
-      '2. 또는 public/config.js에서 API_BASE_URL 설정\n' +
-      `현재 폴백 URL 사용 중: ${fallbackUrl}`
-    );
-  } else {
-    logger.log('로컬 개발 환경: localhost:8000 사용');
-  }
-
-  return fallbackUrl;
+  // 아무 것도 설정되지 않은 경우에만 same-origin 폴백
+  logger.log('API URL 소스: same-origin 폴백');
+  return '';
 };
 
 const API_BASE_URL = getAPIBaseURL();
@@ -82,6 +71,96 @@ const api = axios.create({
   },
   // CORS 설정 추가 - Railway 백엔드 호환성
   withCredentials: false, // CORS 이슈 해결을 위해 credentials 비활성화
+});
+
+const isBinaryResponseData = (data: unknown): boolean => {
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    return true;
+  }
+
+  if (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) {
+    return true;
+  }
+
+  return typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(data);
+};
+
+const shouldMaskResponseData = (response: {
+  data: unknown;
+  config?: { responseType?: string };
+}): boolean => {
+  if (!response.data || typeof response.data !== 'object') {
+    return false;
+  }
+
+  const responseType = response.config?.responseType;
+  if (responseType === 'blob' || responseType === 'arraybuffer' || responseType === 'stream') {
+    return false;
+  }
+
+  return !isBinaryResponseData(response.data);
+};
+
+const getHeaderValue = (headers: unknown, headerName: string): unknown => {
+  if (!headers || typeof headers !== 'object') {
+    return undefined;
+  }
+
+  const headerAccessor = headers as { get?: (name: string) => unknown };
+  if (typeof headerAccessor.get === 'function') {
+    const value = headerAccessor.get(headerName);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  const normalizedHeaderName = headerName.toLowerCase();
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (key.toLowerCase() === normalizedHeaderName) {
+      return value;
+    }
+  }
+
+  return undefined;
+};
+
+const summarizeSensitiveHeader = (headers: unknown, headerName: string): string => {
+  return getHeaderValue(headers, headerName) ? '설정됨' : '없음';
+};
+
+const summarizePayloadForLog = (payload: unknown): string | null => {
+  if (payload === undefined || payload === null) {
+    return null;
+  }
+
+  if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+    return 'FormData';
+  }
+
+  if (typeof Blob !== 'undefined' && payload instanceof Blob) {
+    return 'Blob';
+  }
+
+  if (isBinaryResponseData(payload)) {
+    return 'binary';
+  }
+
+  if (Array.isArray(payload)) {
+    return `array(${payload.length})`;
+  }
+
+  if (typeof payload === 'string') {
+    return `string(${payload.length})`;
+  }
+
+  return typeof payload;
+};
+
+const summarizeHeadersForLog = (headers: unknown) => ({
+  authorization: summarizeSensitiveHeader(headers, 'Authorization'),
+  csrfToken: summarizeSensitiveHeader(headers, 'X-XSRF-TOKEN'),
+  sessionId: summarizeSensitiveHeader(headers, 'X-Session-Id'),
+  contentType: getHeaderValue(headers, 'Content-Type') ? '설정됨' : '없음',
 });
 
 // Axios 재시도 설정
@@ -191,7 +270,7 @@ api.interceptors.response.use(
 
     // 전화번호 자동 마스킹 (응답 데이터에 적용)
     // 성능 최적화: response.data가 객체 또는 배열인 경우에만 처리
-    if (response.data && typeof response.data === 'object') {
+    if (shouldMaskResponseData(response)) {
       try {
         response.data = maskPhoneNumberDeep(response.data);
       } catch (maskingError) {
@@ -212,17 +291,17 @@ api.interceptors.response.use(
         code: error.code,
         status: error.response?.status,
         statusText: error.response?.statusText,
-        data: error.response?.data,
-        requestHeaders: originalRequest.headers,
-        requestData: originalRequest.data,
+        responseData: summarizePayloadForLog(error.response?.data),
+        requestHeaders: summarizeHeadersForLog(originalRequest.headers),
+        requestData: summarizePayloadForLog(originalRequest.data),
         config: {
-          url: `${originalRequest.baseURL}${originalRequest.url}`,
+          baseURL: originalRequest.baseURL,
+          url: originalRequest.url,
           method: originalRequest.method,
           timeout: originalRequest.timeout,
         },
       };
-      logger.error('세션 생성 응답 실패:', JSON.stringify(errorDetails, null, 2));
-      console.error('세션 생성 응답 실패 상세:', errorDetails);
+      logger.error('세션 생성 응답 실패:', errorDetails);
     }
 
     // 401 에러 처리: JWT 토큰 갱신 시도
@@ -267,7 +346,14 @@ api.interceptors.response.use(
     if (error.code === 'ERR_NETWORK' || error.message.includes('CORS')) {
       logger.warn('CORS 오류 감지:', {
         message: error.message,
-        config: error.config,
+        config: error.config ? {
+          baseURL: error.config.baseURL,
+          url: error.config.url,
+          method: error.config.method,
+          timeout: error.config.timeout,
+          headers: summarizeHeadersForLog(error.config.headers),
+          data: summarizePayloadForLog(error.config.data),
+        } : null,
         백엔드_URL: API_BASE_URL
       });
     }

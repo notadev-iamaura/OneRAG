@@ -50,7 +50,7 @@ cache:
 # 세션 설정 (프로덕션 환경)
 session:
   max_history: 10
-  cleanup_interval: 3600  # 1시간마다 정리
+  cleanup_interval_seconds: 3600  # 1시간마다 정리
 
 # 로깅 설정 (프로덕션 환경)
 logging:

@@ -14,6 +14,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { AxiosError } from 'axios';
 import { logger } from '../../utils/logger';
+import { createClientId } from '../../utils/clientId';
 import {
   ChatMessage,
   ApiLog,
@@ -53,6 +54,8 @@ export interface UseChatSessionCoreReturn {
   isSessionInitialized: boolean;
   /** 세션 ID 동기화 함수 */
   synchronizeSessionId: (newSessionId: string, context?: string) => boolean;
+  /** 기존 세션으로 전환하고 히스토리를 로드하는 함수 */
+  switchSession: (targetSessionId: string) => Promise<void>;
   /** 새 세션 시작 함수 */
   handleNewSession: () => Promise<void>;
 }
@@ -61,7 +64,7 @@ export interface UseChatSessionCoreReturn {
  * Fallback 세션 ID 생성
  */
 function generateFallbackSessionId(): string {
-  return `fallback-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  return createClientId('fallback');
 }
 
 function persistWebSocketToken(sessionId: string, token?: string | null): void {
@@ -122,6 +125,34 @@ export function useChatSessionCore(
     return false;
   }, [sessionId, showToast]);
 
+  const switchSession = useCallback(async (targetSessionId: string) => {
+    if (!targetSessionId || targetSessionId === sessionId) {
+      return;
+    }
+
+    logger.log('세션 사이드바 전환:', { from: sessionId, to: targetSessionId });
+    setMessages([]);
+    setSessionInfo(null);
+    setSessionId(targetSessionId);
+    localStorage.setItem('chatSessionId', targetSessionId);
+
+    try {
+      const response = await chatAPI.getChatHistory(targetSessionId);
+      const historyMessages = Array.isArray(response.data.messages)
+        ? response.data.messages.map((msg, index) => mapHistoryEntryToChatMessage(msg, index))
+        : [];
+      setMessages(historyMessages);
+      setIsSessionInitialized(true);
+    } catch (historyError) {
+      logger.warn('선택한 세션의 채팅 기록을 불러올 수 없습니다:', historyError);
+      setMessages([]);
+      showToast({
+        type: 'warning',
+        message: '선택한 대화 기록을 불러올 수 없습니다.',
+      });
+    }
+  }, [chatAPI, sessionId, setMessages, setSessionInfo, showToast]);
+
   /**
    * 세션 초기화
    * localStorage에 저장된 세션이 있으면 히스토리 로드, 없으면 새 세션 생성
@@ -170,7 +201,7 @@ export function useChatSessionCore(
           logger.log('세션 유효성 검증을 위해 새 세션 생성');
 
           const startTime = Date.now();
-          const requestLogId = `session-validate-${Date.now()}`;
+          const requestLogId = createClientId('session-validate');
           const requestLog: ApiLog = {
             id: requestLogId,
             timestamp: new Date().toISOString(),
@@ -187,7 +218,7 @@ export function useChatSessionCore(
             const validSessionId = newSessionResponse.data.session_id;
 
             const responseLog: ApiLog = {
-              id: `session-validate-res-${Date.now()}`,
+              id: createClientId('session-validate-res'),
               timestamp: new Date().toISOString(),
               type: 'response',
               method: 'POST',
@@ -210,7 +241,7 @@ export function useChatSessionCore(
           } catch (newSessionError: unknown) {
             const duration = Date.now() - startTime;
             const errorLog: ApiLog = {
-              id: `session-validate-err-${Date.now()}`,
+              id: createClientId('session-validate-err'),
               timestamp: new Date().toISOString(),
               type: 'response',
               method: 'POST',
@@ -239,7 +270,7 @@ export function useChatSessionCore(
         logger.log('새 세션 생성');
         const startTime = Date.now();
         const requestLog: ApiLog = {
-          id: `session-${Date.now()}`,
+          id: createClientId('session-request'),
           timestamp: new Date().toISOString(),
           type: 'request',
           method: 'POST',
@@ -254,7 +285,7 @@ export function useChatSessionCore(
           const newSessionId = response.data.session_id;
 
           const responseLog: ApiLog = {
-            id: `session-res-${Date.now()}`,
+            id: createClientId('session-response'),
             timestamp: new Date().toISOString(),
             type: 'response',
             method: 'POST',
@@ -272,7 +303,7 @@ export function useChatSessionCore(
         } catch (error: unknown) {
           const duration = Date.now() - startTime;
           const errorLog: ApiLog = {
-            id: `session-err-${Date.now()}`,
+            id: createClientId('session-error'),
             timestamp: new Date().toISOString(),
             type: 'response',
             method: 'POST',
@@ -353,6 +384,7 @@ export function useChatSessionCore(
     sessionId,
     isSessionInitialized,
     synchronizeSessionId,
+    switchSession,
     handleNewSession,
   };
 }

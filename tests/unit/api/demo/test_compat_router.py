@@ -654,3 +654,50 @@ class TestCleanupSessionHistory:
         cleanup_session_history("nonexistent-session")
 
 
+class TestCompatDeleteAllDocuments:
+    """DELETE /api/documents/all 확인 코드 검증"""
+
+    def test_delete_all_requires_confirm_code(self, client: TestClient) -> None:
+        from app.api.demo.compat_router import _documents
+
+        _documents.clear()
+        _documents["doc-1"] = {"id": "doc-1", "filename": "test.pdf"}
+
+        resp = client.request("DELETE", "/api/documents/all", json={})
+
+        assert resp.status_code == 422
+        assert "doc-1" in _documents
+        _documents.clear()
+
+    def test_delete_all_rejects_wrong_confirm_code(self, client: TestClient) -> None:
+        from app.api.demo.compat_router import _documents
+
+        _documents.clear()
+        _documents["doc-1"] = {"id": "doc-1", "filename": "test.pdf"}
+
+        resp = client.request(
+            "DELETE",
+            "/api/documents/all",
+            json={"confirm_code": "WRONG"},
+        )
+
+        assert resp.status_code == 400
+        assert "doc-1" in _documents
+        _documents.clear()
+
+    def test_delete_all_accepts_exact_confirm_code(self, client: TestClient) -> None:
+        from app.api.demo.compat_router import _documents
+
+        _documents.clear()
+        _documents["doc-1"] = {"id": "doc-1", "filename": "test.pdf"}
+
+        resp = client.request(
+            "DELETE",
+            "/api/documents/all",
+            json={"confirm_code": "DELETE_ALL_DOCUMENTS"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == 1
+        assert _documents == {}
+

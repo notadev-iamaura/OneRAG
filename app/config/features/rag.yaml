@@ -22,6 +22,13 @@ rag:
   # ⚠️ source_boost는 scoring.file_type_weights로 마이그레이션됨
   # 자세한 내용은 아래 'scoring' 섹션 참조
 
+  # 검색 hit 주변 청크를 생성 컨텍스트에 포함하는 opt-in 옵션
+  # 기본값은 비활성화하여 기존 검색/소스 동작을 유지
+  context_expansion:
+    enabled: false
+    window: 1
+    max_window: 3
+
   # RRF 점수 정규화 설정 (0~1 범위로 변환, 프론트엔드에서 ×100하여 % 표시)
   # 참고: RRF 공식 = weight / (rrf_k + rank)
   score_normalization:
@@ -41,7 +48,7 @@ document_processing:
   chunk_size: 1400
   chunk_overlap: 200
   splitter_type: "recursive"
-  file_types: ["pdf", "txt", "docx", "xlsx", "csv", "html", "md", "json"]
+  file_types: ["pdf", "txt", "docx", "pptx", "xlsx", "csv", "html", "md", "json"]
   semantic_threshold: 0.3
   target_chunk_size: 1400
   min_chunk_size: 1100

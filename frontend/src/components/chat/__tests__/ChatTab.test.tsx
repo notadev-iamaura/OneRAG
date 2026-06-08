@@ -16,6 +16,7 @@ const mockUseChatSession = {
     sessionId: 'test-session',
     isSessionInitialized: true,
     synchronizeSessionId: vi.fn(),
+    switchSession: vi.fn(),
     handleNewSession: vi.fn(),
 };
 
@@ -102,4 +103,3 @@ describe('ChatTab Integration', () => {
         expect(screen.getByText('개발자 도구')).toBeInTheDocument();
     });
 });
-

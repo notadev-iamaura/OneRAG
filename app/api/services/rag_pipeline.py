@@ -51,6 +51,260 @@ logger = get_logger(__name__)
 RuleBasedRouter: Any | None = None
 
 
+def _extract_fallback_document_preview(document: Any, max_chars: int = 300) -> str:
+    """Return user-safe document text for LLM outage fallback responses."""
+    for attr in ("page_content", "content", "text"):
+        value = getattr(document, attr, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:max_chars]
+
+    if isinstance(document, dict):
+        for key in ("page_content", "content", "text"):
+            value = document.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()[:max_chars]
+
+    return "문서 내용 요약을 표시할 수 없습니다"
+
+
+_RERANK_METADATA_KEYS = {"rerank_score", "rerank_method", "original_score"}
+_CONTEXT_EXPANSION_MAX_WINDOW = 3
+
+
+def _is_numeric_score(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _document_metadata(document: Any) -> dict[str, Any]:
+    metadata = (
+        document.get("metadata")
+        if isinstance(document, dict)
+        else getattr(document, "metadata", None)
+    )
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _ensure_document_metadata(document: Any) -> dict[str, Any]:
+    if isinstance(document, dict):
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            document["metadata"] = metadata
+        return metadata
+
+    metadata = getattr(document, "metadata", None)
+    if not isinstance(metadata, dict):
+        metadata = {}
+        try:
+            document.metadata = metadata
+        except Exception:
+            return {}
+    return metadata
+
+
+def _document_identity(document: Any) -> Any:
+    if isinstance(document, dict):
+        metadata = _document_metadata(document)
+        return (
+            document.get("id")
+            or document.get("document_id")
+            or metadata.get("document_id")
+            or metadata.get("source_id")
+            or metadata.get("source_file")
+            or id(document)
+        )
+
+    metadata = _document_metadata(document)
+    return (
+        getattr(document, "id", None)
+        or getattr(document, "document_id", None)
+        or metadata.get("document_id")
+        or metadata.get("source_id")
+        or metadata.get("source_file")
+        or id(document)
+    )
+
+
+def _document_score(document: Any) -> float | None:
+    score = document.get("score") if isinstance(document, dict) else getattr(document, "score", None)
+    if _is_numeric_score(score):
+        return float(score)
+
+    metadata = _document_metadata(document)
+    for key in ("score", "rerank_score", "retrieval_score"):
+        metadata_score = metadata.get(key)
+        if _is_numeric_score(metadata_score):
+            return float(metadata_score)
+    return None
+
+
+def _snapshot_rerank_inputs(documents: list[Any]) -> list[tuple[Any, float | None]]:
+    return [(_document_identity(document), _document_score(document)) for document in documents]
+
+
+def _has_rerank_metadata(document: Any) -> bool:
+    metadata = _document_metadata(document)
+    return any(key in metadata for key in _RERANK_METADATA_KEYS)
+
+
+def _same_score(left: float | None, right: float | None) -> bool:
+    if left is None or right is None:
+        return left is right
+    return abs(left - right) < 1e-12
+
+
+def _is_noop_rerank(
+    original_snapshot: list[tuple[Any, float | None]],
+    ranked_results: list[Any],
+) -> bool:
+    if len(original_snapshot) != len(ranked_results):
+        return False
+    if any(_has_rerank_metadata(document) for document in ranked_results):
+        return False
+
+    ranked_snapshot = _snapshot_rerank_inputs(ranked_results)
+    return all(
+        original_identity == ranked_identity and _same_score(original_score, ranked_score)
+        for (original_identity, original_score), (ranked_identity, ranked_score) in zip(
+            original_snapshot, ranked_snapshot, strict=True
+        )
+    )
+
+
+def _annotate_rerank_scores(
+    original_snapshot: list[tuple[Any, float | None]],
+    ranked_results: list[Any],
+    *,
+    reranked: bool,
+) -> None:
+    original_scores_by_identity = {
+        identity: score
+        for identity, score in original_snapshot
+        if score is not None
+    }
+    for document in ranked_results:
+        metadata = _ensure_document_metadata(document)
+        identity = _document_identity(document)
+        retrieval_score = original_scores_by_identity.get(identity)
+        if retrieval_score is not None:
+            metadata.setdefault("retrieval_score", retrieval_score)
+        if reranked:
+            rerank_score = _document_score(document)
+            if rerank_score is not None:
+                metadata.setdefault("rerank_score", rerank_score)
+
+
+def _coerce_bool(value: Any, *, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        return default
+    return bool(value)
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _document_value(document: Any, *keys: str) -> Any:
+    if isinstance(document, dict):
+        for key in keys:
+            value = document.get(key)
+            if value not in (None, ""):
+                return value
+
+    metadata = _document_metadata(document)
+    for key in keys:
+        value = metadata.get(key)
+        if value not in (None, ""):
+            return value
+
+    for key in keys:
+        value = getattr(document, key, None)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _document_content(document: Any) -> str:
+    value = _document_value(document, "content", "page_content", "text")
+    return value if isinstance(value, str) else ""
+
+
+def _context_document_id(document: Any) -> str | None:
+    value = _document_value(document, "document_id", "doc_id")
+    return str(value) if value not in (None, "") else None
+
+
+def _context_chunk_index(document: Any) -> int | None:
+    return _coerce_optional_int(_document_value(document, "chunk_index"))
+
+
+def _context_chunk_identity(document: Any) -> tuple[str, str, int] | tuple[str, str] | tuple[str, int]:
+    document_id = _context_document_id(document)
+    chunk_index = _context_chunk_index(document)
+    if document_id is not None and chunk_index is not None:
+        return ("chunk", document_id, chunk_index)
+
+    document_id = _document_value(document, "id")
+    if document_id not in (None, ""):
+        return ("id", str(document_id))
+    return ("object", id(document))
+
+
+def _chunk_to_search_result(
+    chunk: dict[str, Any],
+    *,
+    source_document: Any,
+    source_chunk_index: int,
+) -> SearchResult | None:
+    content = _document_content(chunk)
+    if not content.strip():
+        return None
+
+    metadata = dict(_document_metadata(chunk))
+    document_id = _context_document_id(chunk) or _context_document_id(source_document)
+    chunk_index = _context_chunk_index(chunk)
+    source_score = _document_score(source_document)
+    chunk_score = _document_score(chunk)
+    base_score = source_score if source_score is not None else (chunk_score or 0.0)
+    # 이웃 청크는 실제 히트가 아니므로 앵커 점수보다 약간 낮춰 정렬/표기 오염을 방지(#4)
+    score = base_score * 0.96 if base_score > 0 else 0.0
+
+    if document_id is not None:
+        metadata.setdefault("document_id", document_id)
+        metadata["context_expanded_from_document_id"] = document_id
+    if chunk_index is not None:
+        metadata.setdefault("chunk_index", chunk_index)
+    metadata.setdefault("score", score)
+    metadata.setdefault("retrieval_score", score)
+    metadata["context_expanded"] = True
+    metadata["context_expanded_from_chunk_index"] = source_chunk_index
+
+    chunk_id = _document_value(chunk, "id")
+    if chunk_id in (None, "") and document_id is not None and chunk_index is not None:
+        chunk_id = f"{document_id}:{chunk_index}"
+
+    return SearchResult(
+        id=str(chunk_id or id(chunk)),
+        content=content,
+        score=score,
+        metadata=metadata,
+    )
+
+
 @dataclass
 class RouteDecision:
     """
@@ -595,6 +849,182 @@ class RAGPipeline:
             )
             return None
 
+    def _build_retrieval_filters(self, options: dict[str, Any]) -> dict[str, Any] | None:
+        """요청 옵션에서 검색 메타데이터 필터를 구성한다(#12).
+
+        options['filters'](dict)를 그대로 사용하고, 비어있으면 None을 반환해
+        기존 무필터 동작과 100% 동일하게 동작한다(회귀 방지).
+        """
+        raw_filters = options.get("filters")
+        filters = dict(raw_filters) if isinstance(raw_filters, dict) else {}
+        return filters or None
+
+    def _resolve_context_expansion(self, options: dict[str, Any]) -> tuple[bool, int]:
+        """Resolve adjacent chunk expansion as an explicit opt-in feature."""
+        rag_config = self.config.get("rag", {})
+        configured = rag_config.get("context_expansion", {})
+        context_config = configured if isinstance(configured, dict) else {}
+
+        enabled = _coerce_bool(context_config.get("enabled"), default=False)
+        for option_key in ("expand_adjacent_chunks", "context_expansion_enabled"):
+            if option_key in options:
+                enabled = _coerce_bool(options.get(option_key), default=enabled)
+                break
+
+        configured_window = _coerce_optional_int(context_config.get("window"))
+        requested_window = _coerce_optional_int(
+            options.get("adjacent_chunk_window", options.get("context_expansion_window"))
+        )
+        # 설정값 0은 "명시적 비활성"이므로 None일 때만 기본값(1)을 사용한다([32]).
+        if requested_window is not None:
+            window = requested_window
+        elif configured_window is not None:
+            window = configured_window
+        else:
+            window = 1
+
+        configured_max_window = _coerce_optional_int(context_config.get("max_window"))
+        # max_window=0도 명시적 값으로 취급(아래 max(1, ...) 클램프가 최소 1 보장)([34]).
+        max_window = (
+            configured_max_window
+            if configured_max_window is not None
+            else _CONTEXT_EXPANSION_MAX_WINDOW
+        )
+        max_window = max(1, min(max_window, _CONTEXT_EXPANSION_MAX_WINDOW))
+        window = max(0, min(window, max_window))
+
+        return enabled and window > 0, window
+
+    async def expand_context_documents(
+        self,
+        ranked_results: list[Any],
+        options: dict[str, Any],
+    ) -> list[Any]:
+        """
+        Optionally add adjacent chunks around ranked hits before generation.
+
+        Default is off. When enabled, the method uses the existing
+        get_document_chunks(document_id) retriever capability and falls back to
+        the original ranked results if metadata or retriever support is absent.
+        """
+        enabled, window = self._resolve_context_expansion(options)
+        if not enabled or not ranked_results:
+            return ranked_results
+
+        retrieval_module = self.retrieval_module
+        if asyncio.iscoroutine(retrieval_module) or isinstance(retrieval_module, asyncio.Future):
+            retrieval_module = await retrieval_module
+
+        get_document_chunks = getattr(retrieval_module, "get_document_chunks", None)
+        if not callable(get_document_chunks):
+            logger.warning("인접 청크 확장 스킵 - get_document_chunks 미지원")
+            return ranked_results
+
+        original_by_identity: dict[tuple[Any, ...], Any] = {}
+        for document in ranked_results:
+            original_by_identity.setdefault(_context_chunk_identity(document), document)
+
+        chunk_cache: dict[str, list[dict[str, Any]]] = {}
+        expanded: list[Any] = []
+        seen: set[tuple[Any, ...]] = set()
+
+        def append_once(document: Any) -> None:
+            identity = _context_chunk_identity(document)
+            if identity in seen:
+                return
+            seen.add(identity)
+            expanded.append(document)
+
+        # 인접 청크가 필요한 distinct document_id를 먼저 수집해 동시 조회한다([16]).
+        distinct_doc_ids: list[str] = []
+        seen_doc_ids: set[str] = set()
+        for document in ranked_results:
+            doc_id = _context_document_id(document)
+            if (
+                doc_id is not None
+                and _context_chunk_index(document) is not None
+                and doc_id not in seen_doc_ids
+            ):
+                seen_doc_ids.add(doc_id)
+                distinct_doc_ids.append(doc_id)
+
+        async def _fetch_chunks(document_id: str) -> tuple[str, list[dict[str, Any]]]:
+            try:
+                chunks = await get_document_chunks(document_id)
+            except NotImplementedError:
+                logger.debug(
+                    "인접 청크 확장 스킵 - retriever 메서드 미구현",
+                    extra={"document_id": document_id},
+                )
+                chunks = []
+            except Exception as exc:
+                logger.warning(
+                    "인접 청크 조회 실패 - 원본 검색 결과 유지",
+                    extra={"document_id": document_id, "error": str(exc)},
+                    exc_info=True,
+                )
+                chunks = []
+            return document_id, chunks if isinstance(chunks, list) else []
+
+        if distinct_doc_ids:
+            fetched = await asyncio.gather(
+                *(_fetch_chunks(doc_id) for doc_id in distinct_doc_ids)
+            )
+            for doc_id, chunks in fetched:
+                chunk_cache[doc_id] = chunks
+
+        for document in ranked_results:
+            document_id = _context_document_id(document)
+            chunk_index = _context_chunk_index(document)
+            if document_id is None or chunk_index is None:
+                append_once(document)
+                continue
+
+            chunks = chunk_cache.get(document_id, [])
+            if not chunks:
+                append_once(document)
+                continue
+
+            chunks_by_index: dict[int, dict[str, Any]] = {}
+            for chunk in chunks:
+                index = _context_chunk_index(chunk)
+                if index is not None:
+                    chunks_by_index.setdefault(index, chunk)
+
+            for index in range(chunk_index - window, chunk_index + window + 1):
+                if index < 0:
+                    continue
+                if index == chunk_index:
+                    append_once(document)
+                    continue
+
+                identity: tuple[Any, ...] = ("chunk", document_id, index)
+                if identity in original_by_identity:
+                    append_once(original_by_identity[identity])
+                    continue
+
+                chunk = chunks_by_index.get(index)
+                if not chunk:
+                    continue
+                adjacent_document = _chunk_to_search_result(
+                    chunk,
+                    source_document=document,
+                    source_chunk_index=chunk_index,
+                )
+                if adjacent_document is not None:
+                    append_once(adjacent_document)
+
+        if len(expanded) != len(ranked_results):
+            logger.info(
+                "인접 청크 컨텍스트 확장 완료",
+                extra={
+                    "before_count": len(ranked_results),
+                    "after_count": len(expanded),
+                    "window": window,
+                }
+            )
+        return expanded
+
     def _resolve_rag_mode(self, options: dict[str, Any]) -> str:
         """Resolve local/grok_search/grok_answer without changing default local flow."""
         explicit_mode = options.get("rag_mode") or options.get("grok_mode")
@@ -778,8 +1208,16 @@ class RAGPipeline:
                     rerank_score = doc.metadata.get("rerank_score", 0.0) if hasattr(doc, "metadata") else 0.0
                     debug_trace_data["retrieved_documents"][i]["rerank_score"] = rerank_score
 
+        tracker.start_stage("expand_context")
+        context_documents = await self.expand_context_documents(rerank_results.documents, options)
+        tracker.end_stage("expand_context")
+
         tracker.start_stage("generate_answer")
         generation_options = {**options}
+        # 인접 청크 확장으로 문서가 늘어났을 때만 프롬프트 한도를 상향(20)해
+        # 실제 검색 히트가 이웃 청크에 밀려 프롬프트에서 빠지지 않게 한다(#3).
+        if len(context_documents) > len(rerank_results.documents):
+            generation_options.setdefault("max_context_documents", 20)
         if sql_search_result and sql_search_result.used:
             generation_options["sql_context"] = sql_search_result.formatted_context
             logger.debug(
@@ -787,7 +1225,7 @@ class RAGPipeline:
                 extra={"context_length": len(sql_search_result.formatted_context)}
             )
         generation_result = await self.generate_answer(
-            message, rerank_results.documents, prepared_context.session_context, generation_options
+            message, context_documents, prepared_context.session_context, generation_options
         )
         tracker.end_stage("generate_answer")
 
@@ -796,12 +1234,12 @@ class RAGPipeline:
         if enable_debug_trace:
             options_with_debug["_debug_trace_data"] = debug_trace_data
         generation_result = await self.self_rag_verify(
-            message, session_id, generation_result, rerank_results.documents, options_with_debug
+            message, session_id, generation_result, context_documents, options_with_debug
         )
         tracker.end_stage("self_rag_verify")
 
         tracker.start_stage("format_sources")
-        formatted_sources = self.format_sources(rerank_results.documents, sql_search_result)
+        formatted_sources = self.format_sources(context_documents, sql_search_result)
         tracker.end_stage("format_sources")
 
         tracker.start_stage("build_result")
@@ -813,7 +1251,12 @@ class RAGPipeline:
             topic=self.extract_topic_func(message),
             processing_time=time.time() - start_time,
             search_count=retrieval_results.count,
-            ranked_count=rerank_results.count,
+            # 인접 청크 확장으로 추가된 이웃 청크는 실제 히트가 아니므로 카운트에서 제외(#4)
+            ranked_count=sum(
+                1
+                for doc in context_documents
+                if not _document_metadata(doc).get("context_expanded")
+            ),
             model_info=generation_result.model_info,
             routing_metadata=route_decision.metadata,
             debug_trace=debug_trace,
@@ -1169,10 +1612,14 @@ class RAGPipeline:
 
         async def _search() -> list[SearchResult]:
             """실제 검색 로직 (Circuit Breaker 내부) - Multi-Query RRF"""
+            # ✅ #12 수정: 요청 옵션의 메타데이터 필터를 실제 검색에 연결한다.
+            # 필터가 없으면 None을 반환해 기존 무필터 동작과 100% 동일하다(회귀 방지).
+            retrieval_filters = self._build_retrieval_filters(options)
             search_options = {
                 "limit": options.get("limit", self.retrieval_limit),
                 "min_score": options.get("min_score", self.min_score),
                 "context": context,
+                "filters": retrieval_filters,
             }
 
             # Multi-Query 검색: IMultiQueryRetriever Protocol 체크
@@ -1181,7 +1628,7 @@ class RAGPipeline:
                 return await retrieval_module._search_and_merge(
                     queries=search_queries,
                     top_k=search_options["limit"],
-                    filters=None,  # 필터 미사용 (향후 확장 가능)
+                    filters=retrieval_filters,
                     weights=query_weights,
                     use_rrf=True,  # RRF 활성화
                 )
@@ -1193,12 +1640,14 @@ class RAGPipeline:
                     return await orchestrator._search_and_merge(
                         queries=search_queries,
                         top_k=search_options["limit"],
-                        filters=None,  # 필터 미사용 (향후 확장 가능)
+                        filters=retrieval_filters,
                         weights=query_weights,
                         use_rrf=True,  # RRF 활성화
                     )
 
             # Fallback: 단일 쿼리 검색 (기존 방식)
+            # orchestrator.search(query, options) 시그니처를 그대로 사용한다.
+            # search_options에 filters가 포함되며, 어댑터가 지원하면 활용한다.
             return cast(
                 list[SearchResult], await retrieval_module.search(search_queries[0], search_options)
             )
@@ -1275,6 +1724,7 @@ class RAGPipeline:
                 documents=search_results, count=len(search_results), reranked=False
             )
         try:
+            original_snapshot = _snapshot_rerank_inputs(search_results)
             logger.debug(
                 "리랭킹 실행",
                 extra={"document_count": len(search_results)}
@@ -1284,6 +1734,20 @@ class RAGPipeline:
                 results=search_results,
                 top_n=options.get("top_n", self.rerank_top_n),
             )
+            if _is_noop_rerank(original_snapshot, ranked_results):
+                _annotate_rerank_scores(original_snapshot, ranked_results, reranked=False)
+                logger.warning(
+                    "[5단계] 리랭커가 원본 결과를 그대로 반환 - 리랭킹 미수행 처리",
+                    extra={"document_count": len(ranked_results)}
+                )
+                return RerankResults(
+                    documents=ranked_results,
+                    count=len(ranked_results),
+                    reranked=False,
+                )
+
+            _annotate_rerank_scores(original_snapshot, ranked_results, reranked=True)
+
             # 리랭킹 후 min_score 필터링
             min_score = reranking_config.get("min_score", 0.05)
             if min_score > 0:
@@ -1389,7 +1853,7 @@ class RAGPipeline:
             """LLM 실패 시 Fallback 답변"""
             if context_documents:
                 top_doc = context_documents[0]
-                content = getattr(top_doc, "page_content", str(top_doc))[:300]
+                content = _extract_fallback_document_preview(top_doc)
                 return {
                     "answer": f"관련 정보를 찾았습니다:\n\n{content}...\n\n(현재 AI 서비스 일시 장애로 상세 답변이 어렵습니다. 잠시 후 다시 시도해주세요.)",
                     "tokens_used": 0,
@@ -1914,6 +2378,10 @@ class RAGPipeline:
 
         try:
             for idx, doc in enumerate(ranked_results):
+                # 인접 청크 확장으로 추가된 이웃 청크는 실제 검색 히트가 아니므로
+                # 사용자 인용 소스에서 제외한다(점수/카운트 오염 방지)(#4).
+                if _document_metadata(doc).get("context_expanded"):
+                    continue
                 source_data = self._format_rag_source(idx, doc)
                 if source_data:
                     sources.append(self.Source(**source_data))

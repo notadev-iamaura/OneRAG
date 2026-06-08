@@ -49,7 +49,7 @@ class DocumentProcessor:
         self.document_config = config.get("document_processing", {})
         self.embeddings_config = config.get("embeddings", {})
         self.supported_types = self.document_config.get(
-            "file_types", ["pdf", "txt", "docx", "xlsx", "csv", "html", "md", "json"]
+            "file_types", ["pdf", "txt", "docx", "pptx", "xlsx", "csv", "html", "md", "json"]
         )
         self.splitter_type = self.document_config.get("splitter_type", "recursive")
         self.chunk_size = self.document_config.get("chunk_size", 1250)
@@ -126,7 +126,7 @@ class DocumentProcessor:
             supported_extensions = ", ".join(sorted(self.supported_types))
             raise ValueError(
                 f"지원하지 않는 파일 형식입니다: {file_type}. "
-                f"해결 방법: 지원 형식은 PDF, DOCX, TXT, MD, CSV, XLSX, HTML입니다. "
+                f"해결 방법: 지원 형식은 PDF, DOCX, PPTX, TXT, MD, CSV, XLSX, HTML입니다. "
                 f"파일 형식을 변환하거나 지원 형식으로 저장하세요. "
                 f"지원 형식 목록: {supported_extensions}"
             )
@@ -171,6 +171,7 @@ class DocumentProcessor:
             "application/pdf": "pdf",
             "text/plain": "txt",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
             "text/csv": "csv",
             "text/html": "html",
@@ -237,14 +238,15 @@ class DocumentProcessor:
         xl_file = pd.ExcelFile(file_path)
         for sheet_name in xl_file.sheet_names:
             df = pd.read_excel(file_path, sheet_name=sheet_name)
+            column_names = [str(col) for col in df.columns.tolist()]
             content_parts = []
             content_parts.append(f"시트: {sheet_name}")
-            content_parts.append(f"컬럼: {', '.join(df.columns.tolist())}")
+            content_parts.append(f"컬럼: {', '.join(column_names)}")
             for _idx, row in df.iterrows():
                 row_text = []
                 for col, value in row.items():
                     if pd.notna(value):
-                        row_text.append(f"{col}: {value}")
+                        row_text.append(f"{str(col)}: {value}")
                 if row_text:
                     content_parts.append(" | ".join(row_text))
             content = "\n".join(content_parts)

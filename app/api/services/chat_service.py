@@ -12,6 +12,7 @@ Phase 3.2: chat.py에서 추출한 검증된 비즈니스 로직
 - RAG 파이프라인, 세션 처리, 통계 관리 등 핵심 기능 제공
 """
 
+import asyncio
 import time
 import uuid
 from collections.abc import AsyncGenerator
@@ -343,6 +344,105 @@ class ChatService:
             "timestamp": datetime.now().isoformat(),
         }
 
+    def _format_stream_sources(self, documents: list[Any]) -> list[dict[str, Any]]:
+        """Normalize retrieved documents for stream metadata and done events."""
+        sources: list[dict[str, Any]] = []
+        for index, document in enumerate(documents):
+            metadata = getattr(document, "metadata", None)
+            if not isinstance(metadata, dict) and isinstance(document, dict):
+                metadata = document.get("metadata", {})
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            # 인접 청크 확장으로 추가된 이웃 청크는 실제 검색 히트가 아니므로
+            # 사용자 인용 소스에서 제외한다(비스트리밍 format_sources와 정합)(#4).
+            if metadata.get("context_expanded"):
+                continue
+
+            content = (
+                getattr(document, "page_content", None)
+                or getattr(document, "content", None)
+                or (document.get("content") if isinstance(document, dict) else "")
+                or ""
+            )
+            # 점수 추출: 0.0도 유효한 값이므로 `or` 대신 명시적 None 검사를 사용한다(#14).
+            score_candidates = (
+                getattr(document, "score", None),
+                metadata.get("score"),
+                metadata.get("relevance"),
+            )
+            score = next(
+                (candidate for candidate in score_candidates if candidate is not None),
+                0.0,
+            )
+            source_name = (
+                metadata.get("source")
+                or metadata.get("source_file")
+                or metadata.get("file_name")
+                or metadata.get("filename")
+                or f"document-{index + 1}"
+            )
+
+            sources.append(
+                {
+                    "id": index,
+                    "document": str(source_name),
+                    "content_preview": str(content)[:200],
+                    "relevance": float(score) if isinstance(score, (int, float)) else 0.0,
+                }
+            )
+        return sources
+
+    def _get_stream_model_info(self, generation_module: Any | None) -> dict[str, Any]:
+        """Return best-effort model metadata for streaming completion events."""
+        if generation_module is None:
+            return {"provider": "none", "model": "none", "streaming": True}
+        return {
+            "provider": getattr(generation_module, "provider", "unknown"),
+            "model": getattr(generation_module, "default_model", "unknown"),
+            "streaming": True,
+        }
+
+    def _get_first_token_timeout(self, options: dict[str, Any]) -> float:
+        """Resolve the first-token watchdog timeout in seconds."""
+        timeout = options.get("first_token_timeout", options.get("stream_first_token_timeout"))
+        if timeout is None:
+            timeout = self.config.get("streaming", {}).get("first_token_timeout", 25.0)
+        try:
+            return max(float(timeout), 0.0)
+        except (TypeError, ValueError):
+            return 25.0
+
+    @staticmethod
+    def _estimate_stream_tokens(answer: str, chunk_count: int) -> int:
+        """Estimate token usage when providers do not expose streaming usage."""
+        if not answer:
+            return 0
+        return max(chunk_count * 5, len(answer) // 4)
+
+    @staticmethod
+    def _split_fallback_answer_into_chunks(text: str, target: int = 60) -> list[str]:
+        """Split a non-streaming fallback answer into SSE-sized chunks."""
+        if not text:
+            return []
+
+        sentence_boundaries = "。．.!?！？"
+        chunks: list[str] = []
+        current: list[str] = []
+        current_len = 0
+        for char in text:
+            current.append(char)
+            current_len += 1
+            is_boundary = char in sentence_boundaries or char == "\n"
+            if (current_len >= target and is_boundary) or current_len >= target * 2:
+                chunks.append("".join(current))
+                current = []
+                current_len = 0
+
+        if current:
+            chunks.append("".join(current))
+        return chunks
+
     async def stream_rag_pipeline(
         self, message: str, session_id: str | None, options: dict[str, Any] | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -375,6 +475,8 @@ class ChatService:
         start_time = time.time()
         chunk_index = 0
         final_session_id = session_id
+        message_id = str(uuid.uuid4())
+        answer_chunks: list[str] = []
 
         try:
             # 1. 세션 처리 (비스트리밍)
@@ -406,6 +508,12 @@ class ChatService:
 
             # 3. 문서 검색 (비스트리밍)
             retrieval_module = self.modules.get("retrieval")
+            # 일부 DI 구성에서 retrieval 모듈이 코루틴/Future로 지연 제공되므로 해소한다
+            # ('_asyncio.Future' object has no attribute 'search' 방지).
+            if asyncio.iscoroutine(retrieval_module) or isinstance(
+                retrieval_module, asyncio.Future
+            ):
+                retrieval_module = await retrieval_module
             search_results = []
 
             if retrieval_module:
@@ -418,51 +526,53 @@ class ChatService:
                 except Exception as e:
                     logger.warning(f"스트리밍: 검색 실패 - {e}")
 
-            # 4. 리랭킹 (비스트리밍)
+            # 4. 리랭킹 (비스트리밍) — 통짜 rerank_documents 재사용.
+            #    no-op 리랭커 감지(_is_noop_rerank), min_score 필터, 점수 주석은
+            #    모두 RAGPipeline.rerank_documents 내부에서 통짜(execute)와 동일하게
+            #    처리된다. 스트리밍이 인라인으로 중복 구현하면 no-op 폴백 리랭커가
+            #    전체 문서를 잘못 필터링해 검색 0건처럼 보이는 회귀가 발생한다(#2).
             reranked_documents = search_results  # 기본값: 원본 검색 결과
             reranking_applied = False
 
             if search_results:
-                reranking_config = self.config.get("reranking", {})
-                retrieval_config = self.config.get("retrieval", {})
-                reranking_enabled = reranking_config.get("enabled", False) or retrieval_config.get(
-                    "enable_reranking", False
-                )
+                try:
+                    rerank_results = await self.rag_pipeline.rerank_documents(
+                        message,
+                        search_results,
+                        options,
+                    )
+                    reranked_documents = rerank_results.documents
+                    reranking_applied = rerank_results.reranked
+                    logger.debug(
+                        f"스트리밍: 리랭킹 단계 완료 - {len(reranked_documents)}개 문서 "
+                        f"(reranked={reranking_applied})"
+                    )
+                except Exception as e:
+                    # rerank_documents는 내부에서 대부분의 실패를 흡수하지만,
+                    # 방어적으로 원본 검색 결과로 graceful 진행한다.
+                    logger.warning(f"스트리밍: 리랭킹 실패, 원본 사용 - {e}")
+                    reranked_documents = search_results
+                    reranking_applied = False
 
-                if reranking_enabled:
-                    retrieval_module = self.modules.get("retrieval")
-                    if retrieval_module and hasattr(retrieval_module, "rerank"):
-                        try:
-                            rerank_top_n = options.get("top_n", reranking_config.get("top_n", 8))
-                            reranked_documents = await retrieval_module.rerank(
-                                query=message,
-                                results=search_results,
-                                top_n=rerank_top_n,
-                            )
-
-                            # min_score 필터링
-                            min_score = reranking_config.get("min_score", 0.05)
-                            if min_score > 0:
-                                reranked_documents = [
-                                    doc
-                                    for doc in reranked_documents
-                                    if (hasattr(doc, "score") and doc.score >= min_score)
-                                    or (hasattr(doc, "metadata") and doc.metadata.get("score", 0) >= min_score)
-                                ]
-
-                            reranking_applied = True
-                            logger.debug(
-                                f"스트리밍: 리랭킹 완료 - {len(reranked_documents)}개 문서"
-                            )
-                        except Exception as e:
-                            logger.warning(f"스트리밍: 리랭킹 실패, 원본 사용 - {e}")
-                            reranked_documents = search_results
-                    else:
-                        logger.debug("스트리밍: 리랭킹 모듈 없음, 원본 사용")
-                else:
-                    logger.debug("스트리밍: 리랭킹 비활성화, 원본 사용")
+            # 4-1. 인접 청크 컨텍스트 확장 (opt-in) — 통짜(execute)와 동일하게
+            #     expand_context_documents를 호출해 SSE에서도 동일하게 동작시킨다.
+            #     기본값 off: config(rag.context_expansion.enabled) 또는 옵션
+            #     (expand_adjacent_chunks/context_expansion_enabled)이 켜졌을 때만
+            #     인접 청크를 추가한다. 미지원/메타데이터 부재 시 원본을 반환한다(#9).
+            context_expanded_grew = False
+            if reranked_documents:
+                pre_expand_count = len(reranked_documents)
+                try:
+                    reranked_documents = await self.rag_pipeline.expand_context_documents(
+                        reranked_documents, options
+                    )
+                    context_expanded_grew = len(reranked_documents) > pre_expand_count
+                except Exception as e:
+                    # 확장 실패는 비치명적 — 리랭킹 결과 그대로 진행.
+                    logger.warning(f"스트리밍: 컨텍스트 확장 실패, 원본 사용 - {e}")
 
             # 5. 메타데이터 이벤트 전송
+            stream_sources = self._format_stream_sources(reranked_documents)
             metadata_event = {
                 "event": "metadata",
                 "data": {
@@ -470,7 +580,8 @@ class ChatService:
                     "search_results": len(search_results),
                     "ranked_results": len(reranked_documents),
                     "reranking_applied": reranking_applied,
-                    "message_id": str(uuid.uuid4()),
+                    "message_id": message_id,
+                    "sources": stream_sources,
                     "timestamp": datetime.now().isoformat(),
                 },
             }
@@ -478,31 +589,126 @@ class ChatService:
 
             # 6. 스트리밍 답변 생성
             generation_module = self.modules.get("generation")
+            model_info = self._get_stream_model_info(generation_module)
+            stream_tokens_used = 0
+            # 안내성(문서 없음) 응답은 실제 답변이 아니므로 저장/성공 집계에서 제외한다(#7/[28]).
+            canned_no_answer = False
 
-            if generation_module and hasattr(generation_module, "stream_answer"):
+            if not reranked_documents:
+                canned_no_answer = True
+                no_context_answer = (
+                    "관련 문서를 찾을 수 없습니다. 문서를 업로드했는지 확인하거나 "
+                    "질문을 바꿔 다시 시도해주세요."
+                )
+                # answer_chunks에 추가하지 않아 answer_text를 비워둔다 → tokens_used=0,
+                # 영속화/성공 집계 스킵(안내 UX는 chunk+done으로 유지).
+                yield {
+                    "event": "chunk",
+                    "data": no_context_answer,
+                    "chunk_index": chunk_index,
+                }
+                chunk_index += 1
+            elif generation_module and hasattr(generation_module, "stream_answer"):
                 # 컨텍스트 문서 준비 (리랭킹된 문서 사용)
-                context_documents = reranked_documents if reranked_documents else []
+                context_documents = reranked_documents
 
                 # 생성 옵션 구성
                 generation_options = {
                     **options,
                     "session_context": session_context,
                 }
+                # 인접 청크 확장으로 문서가 늘었을 때만 프롬프트 한도를 상향(20)해
+                # 실제 히트가 이웃 청크에 밀려나지 않게 한다(비스트리밍 execute와 정합)(#3).
+                if context_expanded_grew:
+                    generation_options.setdefault("max_context_documents", 20)
 
                 # 스트리밍 호출
                 try:
-                    async for text_chunk in generation_module.stream_answer(
+                    stream = generation_module.stream_answer(
                         query=message,
                         context_documents=context_documents,
                         options=generation_options,
-                    ):
+                    )
+                    stream_iter = stream.__aiter__()
+                    timeout = self._get_first_token_timeout(options)
+                    fallback_reason: str | None = None
+
+                    skip_remaining_stream = False
+                    try:
+                        if timeout > 0:
+                            first_chunk = await asyncio.wait_for(
+                                anext(stream_iter), timeout=timeout
+                            )
+                        else:
+                            first_chunk = await anext(stream_iter)
+                    except StopAsyncIteration:
+                        first_chunk = ""
+                        skip_remaining_stream = True
+                    except TimeoutError:
+                        logger.warning(
+                            "스트리밍 첫 청크 타임아웃, 비스트리밍 fallback 진입",
+                            extra={"timeout": timeout, "session_id": final_session_id},
+                        )
+                        if hasattr(stream_iter, "aclose"):
+                            await stream_iter.aclose()
+                        first_chunk = ""
+                        fallback_reason = f"first_token_timeout:{timeout}"
+                        skip_remaining_stream = True
+
+                    if first_chunk:
+                        answer_chunks.append(str(first_chunk))
                         chunk_event = {
                             "event": "chunk",
-                            "data": text_chunk,
+                            "data": first_chunk,
                             "chunk_index": chunk_index,
                         }
                         yield chunk_event
                         chunk_index += 1
+
+                    if not skip_remaining_stream:
+                        async for text_chunk in stream_iter:
+                            answer_chunks.append(str(text_chunk))
+                            chunk_event = {
+                                "event": "chunk",
+                                "data": text_chunk,
+                                "chunk_index": chunk_index,
+                            }
+                            yield chunk_event
+                            chunk_index += 1
+
+                    if fallback_reason is not None:
+                        try:
+                            fallback_result = await generation_module.generate_answer(
+                                query=message,
+                                context_documents=context_documents,
+                                options=generation_options,
+                            )
+                        except Exception as fallback_error:
+                            logger.error(
+                                f"스트리밍 비스트리밍 fallback 실패: {fallback_error}",
+                                exc_info=True,
+                            )
+                            yield {
+                                "event": "error",
+                                "error_code": ErrorCode.GENERATION_REQUEST_FAILED.value,
+                                "message": "답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+                            }
+                            return
+
+                        fallback_answer = str(getattr(fallback_result, "answer", "") or "")
+                        stream_tokens_used = int(getattr(fallback_result, "tokens_used", 0) or 0)
+                        fallback_model_info = getattr(fallback_result, "model_info", None)
+                        if isinstance(fallback_model_info, dict):
+                            model_info = fallback_model_info
+
+                        for piece in self._split_fallback_answer_into_chunks(fallback_answer):
+                            answer_chunks.append(piece)
+                            yield {
+                                "event": "chunk",
+                                "data": piece,
+                                "chunk_index": chunk_index,
+                            }
+                            chunk_index += 1
 
                 except Exception as e:
                     logger.error(f"스트리밍 답변 생성 실패: {e}", exc_info=True)
@@ -513,24 +719,89 @@ class ChatService:
                     }
                     return
             else:
-                # 생성 모듈이 없거나 스트리밍을 지원하지 않는 경우
+                # 생성 모듈이 없거나 스트리밍을 미지원하면 실제 실패이므로 안내 청크를
+                # 답변으로 저장/성공 집계하지 않고 error 이벤트로 종료한다(#7).
                 logger.warning("스트리밍: 생성 모듈 없음 또는 스트리밍 미지원")
+                self.update_stats(
+                    {
+                        "tokens_used": 0,
+                        "latency": time.time() - start_time,
+                        "success": False,
+                    }
+                )
                 yield {
-                    "event": "chunk",
-                    "data": "답변을 생성할 수 없습니다.",
-                    "chunk_index": 0,
+                    "event": "error",
+                    "error_code": ErrorCode.GENERATION_REQUEST_FAILED.value,
+                    "message": "답변을 생성할 수 없습니다. 잠시 후 다시 시도해주세요.",
                 }
-                chunk_index = 1
+                return
 
             # 7. 완료 이벤트 전송
             processing_time = time.time() - start_time
+            answer_text = "".join(answer_chunks)
+            # 생성기가 컨텍스트 부재 시 반환하는 안내문구도 실제 답변이 아니므로
+            # 저장/성공 집계에서 제외한다(reranked_documents가 있으나 본문이 비는 경우).
+            from app.modules.core.generation.generator import NO_DOCUMENTS_MESSAGE
+
+            if answer_text.strip() == NO_DOCUMENTS_MESSAGE.strip():
+                canned_no_answer = True
+            # 안내성 응답(canned_no_answer)이거나 답변이 비면 토큰을 0으로 보고한다([28]).
+            if canned_no_answer or not answer_text:
+                tokens_used = 0
+            else:
+                tokens_used = stream_tokens_used or self._estimate_stream_tokens(
+                    answer_text, chunk_index
+                )
+
+            # 실제 답변이 있을 때만 저장하고 성공으로 집계한다(#7).
+            persisted_real_answer = bool(
+                final_session_id and answer_text and not canned_no_answer
+            )
+            if persisted_real_answer:
+                try:
+                    await self.add_conversation_to_session(
+                        final_session_id,
+                        message,
+                        answer_text,
+                        {
+                            "tokens_used": tokens_used,
+                            "processing_time": processing_time,
+                            "sources": stream_sources,
+                            "topic": self.extract_topic(message),
+                            "model_info": model_info,
+                            "message_id": message_id,
+                            "can_evaluate": True,
+                        },
+                    )
+                except Exception as persist_error:
+                    logger.warning(
+                        "스트리밍 대화 저장 실패",
+                        extra={
+                            "session_id": final_session_id,
+                            "error": str(persist_error),
+                        },
+                        exc_info=True,
+                    )
+
+            self.update_stats(
+                {
+                    "tokens_used": tokens_used,
+                    "latency": processing_time,
+                    "success": persisted_real_answer,
+                }
+            )
+
             done_event = {
                 "event": "done",
                 "data": {
                     "session_id": final_session_id,
+                    "message_id": message_id,
                     "total_chunks": chunk_index,
                     "processing_time": processing_time,
-                    "tokens_used": 0,  # 스트리밍에서는 정확한 토큰 계산 어려움
+                    "tokens_used": tokens_used,
+                    "sources": stream_sources,
+                    "model_info": model_info,
+                    "token_estimation": "estimated_from_stream",
                 },
             }
             yield done_event

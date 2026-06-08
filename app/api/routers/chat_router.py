@@ -13,6 +13,7 @@ Phase 3.3: chat.py에서 추출한 검증된 라우팅 로직
 """
 
 import json
+import os
 import time
 from datetime import datetime
 from typing import Any
@@ -43,6 +44,7 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["Chat"])
 limiter = Limiter(key_func=get_remote_address)
 chat_service: ChatService = None  # type: ignore[assignment]
+CHAT_STREAM_RATE_LIMIT = os.getenv("CHAT_STREAM_RATE_LIMIT", "100/15minutes")
 
 
 def set_chat_service(service: ChatService) -> None:
@@ -672,7 +674,7 @@ async def process_feedback(feedback_request: FeedbackRequest) -> FeedbackRespons
 
 
 @router.post("/chat/stream")
-@limiter.limit("100/15minutes")
+@limiter.limit(CHAT_STREAM_RATE_LIMIT)
 async def chat_stream(request: Request, chat_request: StreamChatRequest) -> StreamingResponse:
     """
     스트리밍 채팅 엔드포인트 (SSE)
@@ -739,6 +741,7 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest) -> Stre
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "Content-Encoding": "identity",
             "X-Accel-Buffering": "no",
         },
     )

@@ -55,6 +55,17 @@ describe('UploadTab', () => {
         expect(screen.getByText('파일 선택하기')).toBeInTheDocument();
     });
 
+    it('지원 형식 안내문구와 accept 속성에 PPTX가 포함되어야 함', () => {
+        render(<UploadTab showToast={mockShowToast} />);
+
+        // 안내문구에 PPTX 표기 (accept/validation과 일관)
+        expect(screen.getByText(/PPTX/)).toBeInTheDocument();
+
+        // input accept 속성에 .pptx 포함
+        const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+        expect(input.getAttribute('accept')).toContain('.pptx');
+    });
+
     it('업로드 영역은 키보드로 접근 가능하고 axe 위반이 없어야 함', async () => {
         const { container } = render(<UploadTab showToast={mockShowToast} />);
 

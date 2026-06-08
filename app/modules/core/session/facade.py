@@ -121,11 +121,15 @@ class EnhancedSessionModule:
         # Service 인스턴스 생성/주입
         self.session_service = SessionService(config)
         self.memory_service = memory_service  # DI 주입
-        self.admin_service = AdminService(ttl=session_config.get("ttl", 7200))
+        self.admin_service = AdminService(
+            ttl=session_config.get("ttl_seconds", session_config.get("ttl", 7200))
+        )
         self.cleanup_service = CleanupService(
             session_service=self.session_service,
             memory_service=self.memory_service,
-            cleanup_interval=session_config.get("cleanup_interval", 600),
+            cleanup_interval=session_config.get(
+                "cleanup_interval_seconds", session_config.get("cleanup_interval", 600)
+            ),
         )
 
         # 하위 호환성: 기존 코드에서 직접 접근하는 속성들
@@ -234,29 +238,34 @@ class EnhancedSessionModule:
 
         session = session_result["session"]
 
-        # MemoryService로 위임
+        # 메시지 메타데이터 저장 (L217-228)
+        # metadata가 없는 턴이라도 timestamp만 가진 최소 dict를 만들어 messages_metadata가
+        # 교환과 항상 1:1로 유지되도록 한다(get_chat_history 정렬 보장)(#8).
+        message_metadata: dict[str, Any] = {"timestamp": time.time()}
+        if metadata:
+            message_metadata.update(
+                {
+                    "message_id": metadata.get("message_id"),  # ✅ Task 5: 메시지 ID 저장
+                    "user_message": user_message,
+                    "assistant_response": assistant_response,
+                    "tokens_used": metadata.get("tokens_used", 0),
+                    "processing_time": metadata.get("processing_time", 0.0),
+                    "sources": metadata.get("sources", []),  # 인메모리 경로 sources 노출
+                    "model_info": metadata.get("model_info"),
+                    "topic": metadata.get("topic"),
+                    "debug_trace": metadata.get("debug_trace"),  # ✅ Task 5: 디버깅 추적 저장
+                }
+            )
+
+        # MemoryService로 위임 (메시지와 metadata를 같은 lock에서 append/trim)
         await self.memory_service.add_conversation(
-            session_id, session, user_message, assistant_response
+            session_id, session, user_message, assistant_response, message_metadata
         )
 
         # 통계 업데이트
         self.session_service.increment_conversation_count()
 
-        # 메시지 메타데이터 저장 (L217-228)
         if metadata:
-            message_metadata = {
-                "timestamp": time.time(),
-                "message_id": metadata.get("message_id"),  # ✅ Task 5: 메시지 ID 저장
-                "user_message": user_message,
-                "assistant_response": assistant_response,
-                "tokens_used": metadata.get("tokens_used", 0),
-                "processing_time": metadata.get("processing_time", 0.0),
-                "model_info": metadata.get("model_info"),
-                "topic": metadata.get("topic"),
-                "debug_trace": metadata.get("debug_trace"),  # ✅ Task 5: 디버깅 추적 저장
-            }
-            session["messages_metadata"].append(message_metadata)
-
             # PostgreSQL 통계 업데이트 (L230-235)
             await self.session_service.update_session_stats_in_db(
                 session_id,

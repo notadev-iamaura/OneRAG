@@ -13,6 +13,7 @@ from .html_loader import HTMLLoader
 from .json_loader import JSONLoader
 from .markdown_loader import MarkdownLoader
 from .pdf_loader import PDFLoader
+from .pptx_loader import PPTXLoader
 from .text_loader import TextLoader
 from .xlsx_loader import XLSXLoader
 
@@ -37,7 +38,7 @@ class LoaderFactory:
         ".txt": TextLoader(),
         ".text": TextLoader(),
         ".docx": DOCXLoader(),
-        ".doc": DOCXLoader(),
+        ".pptx": PPTXLoader(),
         ".xlsx": XLSXLoader(),
         ".xls": XLSXLoader(),
         ".csv": CSVLoader(),

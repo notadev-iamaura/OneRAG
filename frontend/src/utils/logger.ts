@@ -19,7 +19,25 @@ const maskSensitiveData = (data: unknown): unknown => {
   }
 
   const masked: Record<string, unknown> = {};
-  const sensitiveKeys = ['sessionId', 'session_id', 'chatSessionId', 'password', 'token', 'apiKey', 'api_key', 'secret'];
+    const sensitiveKeys = [
+      'sessionId',
+      'session_id',
+      'session-id',
+      'x-session-id',
+      'chatSessionId',
+      'authorization',
+      'password',
+      'token',
+      'jwt',
+      'apiKey',
+      'api_key',
+      'secret',
+      'cookie',
+      'csrf',
+      'xsrf',
+      'accessCode',
+      'access_code',
+    ];
 
   for (const [key, value] of Object.entries(data)) {
     if (sensitiveKeys.some(sk => key.toLowerCase().includes(sk.toLowerCase()))) {
