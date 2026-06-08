@@ -21,6 +21,26 @@ from app.api.routers.websocket_router import router, set_chat_service, ws_manage
 from app.lib.auth import APIKeyAuth, create_websocket_session_token
 
 
+@pytest.fixture(autouse=True)
+def _isolate_ws_auth_singleton(monkeypatch):
+    """전역 auth 싱글톤/환경 오염으로부터 WebSocket 테스트를 격리한다.
+
+    get_api_key_auth()는 _auth_instance 싱글톤을 캐시하고 FASTAPI_AUTH_KEY를 읽는다.
+    다른 테스트가 키를 남기면 무인증을 전제로 한 WebSocket 테스트가 순서에 따라 실패하므로,
+    각 테스트 시작 시 기본(무인증) 상태로 리셋해 순서 독립성을 보장한다.
+    인증 강제 테스트는 테스트 내부에서 _auth_instance를 직접 설정한다.
+    """
+    import app.lib.auth as auth_module
+
+    monkeypatch.delenv("FASTAPI_AUTH_KEY", raising=False)
+    original_instance = auth_module._auth_instance
+    auth_module._auth_instance = None
+    try:
+        yield
+    finally:
+        auth_module._auth_instance = original_instance
+
+
 class TestWebSocketRouterEndpoint:
     """WebSocket 라우터 엔드포인트 테스트"""
 

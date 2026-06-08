@@ -32,7 +32,7 @@ import json
 from datetime import UTC
 from typing import Any
 
-from weaviate.classes.query import MetadataQuery
+from weaviate.classes.query import Filter, MetadataQuery
 from weaviate.collections.collection import Collection
 from weaviate.exceptions import WeaviateQueryError
 
@@ -93,6 +93,10 @@ _INT_PROPERTIES = {
 }
 _NUMBER_PROPERTIES = {"load_timestamp"}
 _TEXT_ARRAY_PROPERTIES = {"keys"}
+# 저장 시 소문자로 정규화되는 텍스트 프로퍼티(예: 확장자 기반 file_type).
+# 필터 값도 동일 규칙으로 소문자화해야 .equal() 매칭이 성립한다(#12).
+# 주의: document_id/file_hash/source_file 등 정확매칭 키는 절대 포함하면 안 된다.
+_CASE_FOLDED_TEXT_PROPERTIES = {"file_type"}
 
 
 class WeaviateRetriever:
@@ -375,6 +379,7 @@ class WeaviateRetriever:
                     processed_query=processed_query,
                     query_embedding=query_embedding,
                     top_k=top_k,
+                    filters=filters,
                 )
 
             # 3. 통계 업데이트
@@ -410,6 +415,7 @@ class WeaviateRetriever:
         processed_query: str,
         query_embedding: list[float],
         top_k: int,
+        filters: dict[str, Any] | None = None,
     ) -> list[SearchResult]:
         """
         단일 컬렉션에서 하이브리드 검색 수행
@@ -428,13 +434,18 @@ class WeaviateRetriever:
 
         # weaviate-client v4.19+ 호환성: return_properties를 사용하지 않음
         # 모든 프로퍼티를 반환하고 결과 처리 시 필요한 것만 사용
-        response = collection.query.hybrid(
-            query=processed_query,
-            vector=query_embedding,
-            alpha=self.alpha,
-            limit=top_k,
-            return_metadata=MetadataQuery(score=True),
-        )
+        query_kwargs: dict[str, Any] = {
+            "query": processed_query,
+            "vector": query_embedding,
+            "alpha": self.alpha,
+            "limit": top_k,
+            "return_metadata": MetadataQuery(score=True),
+        }
+        where_filter = self._build_metadata_filter(filters)
+        if where_filter is not None:
+            query_kwargs["filters"] = where_filter
+
+        response = collection.query.hybrid(**query_kwargs)
 
         results = []
         for obj in response.objects:
@@ -481,7 +492,7 @@ class WeaviateRetriever:
             processed_query: BM25용 전처리된 쿼리
             query_embedding: Dense embedding 벡터
             top_k: 최종 반환할 결과 수
-            filters: 필터링 조건 (현재 미사용)
+            filters: 필터링 조건
 
         Returns:
             RRF로 병합된 검색 결과 리스트
@@ -502,6 +513,7 @@ class WeaviateRetriever:
                 processed_query=processed_query,
                 query_embedding=query_embedding,
                 top_k=top_k,
+                filters=filters,
             )
         )
 
@@ -514,6 +526,7 @@ class WeaviateRetriever:
                     processed_query=processed_query,
                     query_embedding=query_embedding,
                     top_k=top_k,
+                    filters=filters,
                 )
             )
 
@@ -529,6 +542,76 @@ class WeaviateRetriever:
         )
 
         return merged_results
+
+    def _build_metadata_filter(self, filters: dict[str, Any] | None) -> Any | None:
+        """Convert supported metadata filters to a Weaviate Filter tree.
+
+        Unsupported keys fail closed so callers do not accidentally run an
+        unfiltered corpus-wide search while believing a filter was applied.
+        """
+        if not filters:
+            return None
+
+        clauses: list[Any] = []
+        unsupported_keys: list[str] = []
+        for key, value in filters.items():
+            if value is None:
+                continue
+
+            property_filter = self._build_property_filter(key, value)
+            if property_filter is None:
+                unsupported_keys.append(key)
+                continue
+
+            clauses.append(property_filter)
+
+        if unsupported_keys:
+            raise ValueError(
+                "Unsupported Weaviate retrieval filters: "
+                f"{', '.join(sorted(set(unsupported_keys)))}. "
+                "Add the field to the Weaviate schema/property allowlist before filtering."
+            )
+
+        if not clauses:
+            return None
+
+        combined_filter = clauses[0]
+        for clause in clauses[1:]:
+            combined_filter = combined_filter & clause
+        return combined_filter
+
+    def _build_property_filter(self, key: str, value: Any) -> Any | None:
+        """Build a Weaviate filter for one supported property."""
+        if key in _TEXT_ARRAY_PROPERTIES:
+            normalized = self._normalize_metadata_property(key, value)
+            if normalized is None:
+                return None
+            return Filter.by_property(key).contains_any(normalized)
+
+        if key not in _TEXT_PROPERTIES and key not in _INT_PROPERTIES and key not in _NUMBER_PROPERTIES:
+            return None
+
+        raw_values = (
+            list(value)
+            if isinstance(value, (list, tuple, set)) and not isinstance(value, str)
+            else [value]
+        )
+        values = [
+            self._normalize_metadata_property(key, raw_value)
+            for raw_value in raw_values
+            if raw_value is not None
+        ]
+        values = [normalized for normalized in values if normalized is not None]
+        if not values:
+            return None
+
+        property_filter: Any | None = None
+        for normalized in values:
+            item_filter = Filter.by_property(key).equal(normalized)
+            property_filter = (
+                item_filter if property_filter is None else property_filter | item_filter
+            )
+        return property_filter
 
     def _rrf_merge_results(
         self,
@@ -734,6 +817,9 @@ class WeaviateRetriever:
         """Return a value compatible with the declared Weaviate property type."""
         if key in _TEXT_PROPERTIES:
             if isinstance(value, str):
+                # 소문자 정규화 대상 필드는 저장 규칙과 동일하게 소문자화(#12).
+                if key in _CASE_FOLDED_TEXT_PROPERTIES:
+                    return value.lower()
                 return value
             return json.dumps(value, ensure_ascii=False, default=str)
 

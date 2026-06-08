@@ -235,9 +235,11 @@ export type ChatAPIFactory = (config: ChatAPIConfig) => IChatAPIService;
  * Chat API 기본 URL 해석
  *
  * api.ts의 getAPIBaseURL()과 동일한 우선순위 체인을 따릅니다:
- * 1. VITE_API_BASE_URL (빌드 타임)
+ * 1. 운영 설정
  * 2. window.RUNTIME_CONFIG.API_BASE_URL (런타임)
- * 3. localhost:8000 (폴백)
+ * 3. VITE_API_BASE_URL (빌드 타임)
+ * 4. 개발 모드 localhost
+ * 5. same-origin (프로덕션 폴백)
  */
 function getChatAPIBaseURL(): string {
   const operatorApiUrl = getOperatorApiBaseUrl();
@@ -245,13 +247,20 @@ function getChatAPIBaseURL(): string {
     return operatorApiUrl;
   }
 
+  if (
+    typeof window !== 'undefined' &&
+    window.RUNTIME_CONFIG &&
+    Object.prototype.hasOwnProperty.call(window.RUNTIME_CONFIG, 'API_BASE_URL')
+  ) {
+    return window.RUNTIME_CONFIG.API_BASE_URL || '';
+  }
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
   }
-  if (typeof window !== 'undefined' && window.RUNTIME_CONFIG?.API_BASE_URL) {
-    return window.RUNTIME_CONFIG.API_BASE_URL;
+  if (import.meta.env.DEV) {
+    return import.meta.env.VITE_DEV_API_BASE_URL || 'http://localhost:8000';
   }
-  return 'http://localhost:8000';
+  return '';
 }
 
 /**

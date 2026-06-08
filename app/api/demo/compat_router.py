@@ -114,6 +114,13 @@ class CompatChatResponse(BaseModel):
     timestamp: str
 
 
+class CompatBulkDeleteAllRequest(BaseModel):
+    """프론트엔드 호환 전체 문서 삭제 요청"""
+
+    confirm_code: str = Field(..., min_length=1)
+    reason: str | None = None
+
+
 # =============================================================================
 # 엔드포인트
 # =============================================================================
@@ -262,6 +269,7 @@ async def compat_chat_stream(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "Content-Encoding": "identity",
             "X-Accel-Buffering": "no",
         },
     )
@@ -864,9 +872,13 @@ async def bulk_delete_documents(request: Request) -> dict[str, Any]:
 @limiter.limit(RATE_LIMIT_SESSION)
 async def delete_all_documents(
     request: Request,
+    body: CompatBulkDeleteAllRequest,
     dry_run: bool = False,
 ) -> dict[str, Any]:
     """전체 문서 삭제"""
+    if body.confirm_code != "DELETE_ALL_DOCUMENTS":
+        raise HTTPException(status_code=400, detail="확인 코드가 올바르지 않습니다.")
+
     count = len(_documents)
     if not dry_run:
         _documents.clear()

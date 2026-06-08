@@ -27,6 +27,22 @@ from .session_manager import DemoSession, DemoSessionManager
 
 logger = get_logger(__name__)
 
+
+async def _iterate_stream_tokens(stream: Any) -> AsyncGenerator[Any, None]:
+    """Yield tokens from either async or sync stream_text implementations."""
+    if hasattr(stream, "__aiter__"):
+        async for token in stream:
+            yield token
+        return
+
+    iterator = iter(stream)
+    sentinel = object()
+    while True:
+        token = await asyncio.to_thread(next, iterator, sentinel)
+        if token is sentinel:
+            break
+        yield token
+
 # =============================================================================
 # 상수
 # =============================================================================
@@ -475,15 +491,38 @@ class DemoPipeline:
 
         # 스트리밍 답변
         chunk_index = 0
-        async for token in self._llm_client.stream_text(
-            prompt=prompt,
-            system_prompt=RAG_SYSTEM_PROMPT,
-        ):
+        token_stream = _iterate_stream_tokens(
+            self._llm_client.stream_text(
+                prompt=prompt,
+                system_prompt=RAG_SYSTEM_PROMPT,
+            )
+        )
+        stream_iter = token_stream.__aiter__()
+        skip_remaining_stream = False
+        try:
+            first_token = await asyncio.wait_for(anext(stream_iter), timeout=25.0)
+        except StopAsyncIteration:
+            first_token = ""
+            skip_remaining_stream = True
+        except TimeoutError:
+            await stream_iter.aclose()
+            first_token = "답변 생성이 지연되고 있습니다. 잠시 후 다시 시도해주세요."
+            skip_remaining_stream = True
+
+        if first_token:
             yield {
                 "event": "chunk",
-                "data": {"token": token, "chunk_index": chunk_index},
+                "data": {"token": first_token, "chunk_index": chunk_index},
             }
             chunk_index += 1
+
+        if not skip_remaining_stream:
+            async for token in stream_iter:
+                yield {
+                    "event": "chunk",
+                    "data": {"token": token, "chunk_index": chunk_index},
+                }
+                chunk_index += 1
 
         # 완료 이벤트
         yield {

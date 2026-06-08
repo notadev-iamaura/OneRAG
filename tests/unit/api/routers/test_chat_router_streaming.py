@@ -146,6 +146,18 @@ class TestStreamEndpointResponse:
             f"X-Accel-Buffering이 'no'여야 함. 실제: {x_accel_buffering}"
         )
 
+    def test_stream_endpoint_disables_gzip_content_encoding(self, app_with_mock_service):
+        """SSE 응답은 GZipMiddleware가 압축하지 않도록 identity 인코딩을 명시"""
+        client = TestClient(app_with_mock_service)
+
+        response = client.post(
+            "/chat/stream",
+            json={"message": "gzip 우회 헤더 테스트"},
+            headers={"Accept-Encoding": "gzip"},
+        )
+
+        assert response.headers.get("content-encoding") == "identity"
+
 
 class TestStreamEndpointValidation:
     """스트리밍 엔드포인트 유효성 검사 테스트"""

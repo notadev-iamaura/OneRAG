@@ -8,6 +8,7 @@ LLM Query Router Module
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -146,6 +147,12 @@ class LLMQueryRouter:
         self.llm_model = llm_config.get("model", "gemini-2.0-flash-lite")
         self.llm_temperature = llm_config.get("temperature", 0.0)
         self.llm_max_tokens = llm_config.get("max_tokens", 300)
+        if self.enabled and not self._has_configured_llm_provider():
+            logger.warning(
+                "LLMQueryRouter disabled because the configured provider is not available",
+                extra={"provider": self.llm_provider},
+            )
+            self.enabled = False
 
         # 즉시 응답 설정
         direct_config = router_config.get("direct_answer", {})
@@ -172,6 +179,37 @@ class LLMQueryRouter:
         self.router_prompt = self._build_router_prompt()
 
         logger.info(f"LLMQueryRouter initialized (enabled={self.enabled}, model={self.llm_model})")
+
+    def _has_configured_llm_provider(self) -> bool:
+        """설정된 라우터 provider를 로컬에서 호출 가능한지 여부를 반환한다.
+
+        주의: 새 provider를 추가하면 아래 env_var_by_provider 맵에도 등록해야 한다
+        (그렇지 않으면 보수적 기본값에 의해 라우터가 비활성화된다).
+        """
+        # ✅ [45] google은 _clients에 등록돼 있어도 API 키가 없으면 호출 불가 → 먼저 차단
+        if self.llm_provider == "google" and not os.getenv("GOOGLE_API_KEY"):
+            return False
+
+        clients = getattr(self.llm_factory, "_clients", None)
+        if isinstance(clients, dict):
+            return self.llm_provider in clients
+
+        # _clients를 확인할 수 없는 경우(레거시/None 팩토리) 환경변수 기반 보수적 판단
+        env_var_by_provider = {
+            "google": "GOOGLE_API_KEY",
+            "openai": "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
+            "ollama": "OLLAMA_BASE_URL",
+        }
+        env_var = env_var_by_provider.get(self.llm_provider)
+        if env_var is None:
+            # ✅ [52] 알 수 없는 provider는 활성화하지 않는다(보수적 기본값)
+            return False
+        # ollama는 base_url 미설정 시에도 기본 로컬 엔드포인트로 동작 가능
+        if self.llm_provider == "ollama":
+            return True
+        return bool(os.getenv(env_var))
 
     def _build_router_prompt(self) -> str:
         """LLM 라우터용 구조화된 프롬프트 구성 (도메인 설정 기반 동적 생성)"""
@@ -466,11 +504,18 @@ Return response in JSON format.
             # LLM Factory 사용 (우선) 또는 직접 호출 (폴백)
             if self.llm_factory:
                 # 새로운 방식: LLM Factory
+                # ✅ #5 수정: 설정된 router 모델(self.llm_model)은 preferred provider에만
+                # 적용되어야 한다. generate_with_fallback이 이 model을 preferred provider로
+                # 스코프하므로(폴백 provider에는 미전달), auto_fallback 시 다른 provider에
+                # 잘못된 모델명이 전달되어 invalid-model로 실패하던 회귀가 방지된다.
                 response_text, provider = await breaker.call(
                     self.llm_factory.generate_with_fallback,
                     prompt=prompt,
                     system_prompt=None,  # 라우터는 시스템 프롬프트 없이 순수 호출
-                    preferred_provider="google",
+                    preferred_provider=self.llm_provider,
+                    model=self.llm_model,
+                    temperature=self.llm_temperature,
+                    max_tokens=self.llm_max_tokens,
                 )  # type: ignore[no-any-return]
                 logger.debug(f"LLM 라우터 응답 (제공자: {provider})")
             else:

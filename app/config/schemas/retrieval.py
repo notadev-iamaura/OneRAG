@@ -115,7 +115,7 @@ class DocumentProcessingConfig(BaseConfig):
     )
 
     file_types: list[str] = Field(
-        default=["pdf", "txt", "docx", "xlsx", "csv", "html", "md", "json"],
+        default=["pdf", "txt", "docx", "pptx", "xlsx", "csv", "html", "md", "json"],
         description="지원하는 파일 확장자 목록",
     )
 
@@ -161,6 +161,33 @@ class DocumentProcessingConfig(BaseConfig):
         return v
 
 
+class ContextExpansionConfig(BaseConfig):
+    """
+    인접 청크 컨텍스트 확장 설정
+
+    검색 결과 주변 청크를 생성 컨텍스트에 추가합니다. 기본값은 비활성화입니다.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="인접 청크 컨텍스트 확장 활성화 여부",
+    )
+
+    window: int = Field(
+        default=1,
+        ge=0,
+        le=3,
+        description="검색 hit 앞뒤로 포함할 청크 수 (0-3)",
+    )
+
+    max_window: int = Field(
+        default=3,
+        ge=1,
+        le=3,
+        description="요청 옵션으로 허용할 최대 청크 창 크기 (1-3)",
+    )
+
+
 class RAGConfig(BaseConfig):
     """
     RAG 파이프라인 설정
@@ -203,6 +230,11 @@ class RAGConfig(BaseConfig):
         ge=0.0,
         le=1.0,
         description="관련성 임계값 (0.0-1.0)",
+    )
+
+    context_expansion: ContextExpansionConfig = Field(
+        default_factory=ContextExpansionConfig,
+        description="인접 청크 컨텍스트 확장 설정",
     )
 
     @field_validator("rerank_top_k")

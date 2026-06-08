@@ -73,6 +73,30 @@ class TestChromaVectorStoreAddDocuments:
         assert count == 3
 
     @pytest.mark.asyncio
+    async def test_add_documents_stores_and_returns_content(self) -> None:
+        """본문(content)이 저장되고 검색 결과로 복원되는지 확인(#12 chroma 파리티)."""
+        from app.infrastructure.storage.vector.chroma_store import ChromaVectorStore
+
+        store = ChromaVectorStore()
+
+        documents: list[dict[str, Any]] = [
+            {
+                "id": "doc-c1",
+                "vector": [0.1, 0.2, 0.3],
+                "content": "마스코트는 보라색 수달입니다",
+                "metadata": {"document_id": "d1"},
+            },
+        ]
+        await store.add_documents(collection="content_collection", documents=documents)
+
+        results = await store.search(
+            collection="content_collection", query_vector=[0.1, 0.2, 0.3], top_k=1
+        )
+
+        assert len(results) == 1
+        assert results[0]["content"] == "마스코트는 보라색 수달입니다"
+
+    @pytest.mark.asyncio
     async def test_add_documents_with_empty_list_returns_zero(self) -> None:
         """빈 문서 리스트 추가 시 0을 반환하는지 확인"""
         from app.infrastructure.storage.vector.chroma_store import ChromaVectorStore
@@ -367,3 +391,58 @@ class TestChromaVectorStoreFactoryIntegration:
         )
 
         assert isinstance(store, IVectorStore)
+
+
+class TestChromaVectorStoreDocumentManagement:
+    """fetch_objects / delete_objects / metadata_json 라운드트립 (chroma 파리티 백포트)"""
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_and_delete_objects_roundtrip(self) -> None:
+        """fetch_objects로 조회, delete_objects로 삭제가 동작해야 한다(문서관리)."""
+        from app.infrastructure.storage.vector.chroma_store import ChromaVectorStore
+
+        store = ChromaVectorStore()
+        docs: list[dict[str, Any]] = [
+            {
+                "id": "x1",
+                "vector": [0.1, 0.2, 0.3],
+                "content": "안녕하세요",
+                "metadata": {"document_id": "d1"},
+            },
+        ]
+        await store.add_documents(collection="mgmt", documents=docs)
+
+        fetched = await store.fetch_objects(collection="mgmt", filters={"document_id": "d1"})
+        assert len(fetched) == 1
+        assert fetched[0]["_id"] == "x1"
+        assert fetched[0]["content"] == "안녕하세요"
+
+        deleted = await store.delete_objects(collection="mgmt", object_ids=["x1"])
+        assert deleted == 1
+
+        after = await store.fetch_objects(collection="mgmt", filters={"document_id": "d1"})
+        assert after == []
+
+    @pytest.mark.asyncio
+    async def test_metadata_json_restored_on_read(self) -> None:
+        """비기본 메타데이터(list)가 round-trip에서 복원되고 metadata_json은 노출되지 않아야 한다."""
+        from app.infrastructure.storage.vector.chroma_store import ChromaVectorStore
+
+        store = ChromaVectorStore()
+        docs: list[dict[str, Any]] = [
+            {
+                "id": "m1",
+                "vector": [0.1, 0.2, 0.3],
+                "content": "본문",
+                "metadata": {"document_id": "d1", "keywords": ["a", "b"]},
+            },
+        ]
+        await store.add_documents(collection="meta", documents=docs)
+
+        results = await store.search(collection="meta", query_vector=[0.1, 0.2, 0.3], top_k=1)
+        assert results[0].get("keywords") == ["a", "b"]
+        assert "metadata_json" not in results[0]
+
+        fetched = await store.fetch_objects(collection="meta", filters={"document_id": "d1"})
+        assert fetched[0].get("keywords") == ["a", "b"]
+        assert "metadata_json" not in fetched[0]

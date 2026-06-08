@@ -3,6 +3,7 @@ Health check API endpoints
 시스템 상태 확인 엔드포인트
 """
 
+import asyncio
 import os
 import sys
 import time
@@ -190,10 +191,19 @@ def _component_is_unhealthy(value: Any) -> bool:
 
 
 async def _collect_retrieval_readiness() -> dict[str, Any]:
+    global _retrieval_module
     if _retrieval_module is None:
         return {"status": "not_configured", "message": "Retrieval module not initialized"}
 
-    health_check = getattr(_retrieval_module, "health_check", None)
+    retrieval_module = _retrieval_module
+    # DI가 retrieval 모듈을 코루틴/Future로 지연 제공하므로 health_check 호출 전에 해소한다.
+    # 해소하지 않으면 getattr(Future, "health_check")가 None이 되어 retrieval이 항상
+    # "unknown"으로 보고되고, 필수(required) 정책에서는 /ready가 영구 503이 된다.
+    if asyncio.iscoroutine(retrieval_module) or isinstance(retrieval_module, asyncio.Future):
+        retrieval_module = await retrieval_module
+        _retrieval_module = retrieval_module  # 소비된 코루틴 재-await 방지
+
+    health_check = getattr(retrieval_module, "health_check", None)
     if not callable(health_check):
         return {"status": "unknown", "message": "Retrieval module has no health_check"}
 

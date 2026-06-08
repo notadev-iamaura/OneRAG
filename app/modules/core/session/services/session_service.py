@@ -32,15 +32,17 @@ class SessionService:
     def __init__(self, config: dict[str, Any]):
         """
         Args:
-            config: 세션 설정 (ttl, max_exchanges, cleanup_interval)
+            config: 세션 설정 (ttl_seconds/ttl, max_exchanges, cleanup_interval_seconds/cleanup_interval)
         """
         self.config = config
         session_config = config.get("session", {})
 
-        # 설정값 (enhanced_session.py L24-28)
-        self.ttl = session_config.get("ttl", 7200)  # 기본 2시간
+        # 설정값 (신키 우선, 구키 폴백)
+        self.ttl = session_config.get("ttl_seconds", session_config.get("ttl", 7200))
         self.max_exchanges = session_config.get("max_exchanges", 10)
-        self.cleanup_interval = session_config.get("cleanup_interval", 600)
+        self.cleanup_interval = session_config.get(
+            "cleanup_interval_seconds", session_config.get("cleanup_interval", 600)
+        )
 
         # 인메모리 세션 저장소 (enhanced_session.py L34-35)
         self.sessions: dict[str, dict[str, Any]] = {}

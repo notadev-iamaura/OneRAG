@@ -46,6 +46,14 @@ class IVectorStore(Protocol):
         """벡터 유사도 검색"""
         ...
 
+    async def add_documents(
+        self,
+        collection: str,
+        documents: list[dict[str, Any]],
+    ) -> int:
+        """문서(벡터 포함) 저장(Upsert). 저장된 문서 개수 반환."""
+        ...
+
 
 class ChromaRetriever:
     """
@@ -275,6 +283,87 @@ class ChromaRetriever:
     # ============================================================
     # 문서 관리 메서드 (Store 위임, duck typing)
     # ============================================================
+
+    async def add_documents(self, documents: list[dict[str, Any]]) -> dict[str, Any]:
+        """업로드된 임베딩 청크를 Chroma 컬렉션에 저장한다.
+
+        Weaviate 경로와 동일한 입력 포맷({content, embedding, metadata})을 받아
+        ChromaVectorStore가 기대하는 {id, vector, content, metadata}로 변환 후 위임한다.
+        (JapanRAG 프로덕션 ChromaRetriever.add_documents 패턴 백포트)
+        """
+        prepared: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for index, document in enumerate(documents):
+            metadata = dict(document.get("metadata") or {})
+            content = str(document.get("content") or document.get("page_content") or "")
+            vector = (
+                document.get("vector")
+                or document.get("embedding")
+                or document.get("dense_embedding")
+                or []
+            )
+            if not vector:
+                errors.append(f"chunk {index}: missing embedding")
+                continue
+
+            chunk_index = metadata.get("chunk_index", metadata.get("chunk", index))
+            page = metadata.get("page", metadata.get("page_number"))
+            document_id = str(
+                metadata.get("document_id")
+                or metadata.get("doc_id")
+                or document.get("document_id")
+                or document.get("id")
+                or "document"
+            )
+            source_id = str(
+                metadata.get("source_id")
+                or f"rag:{document_id}:{page if page is not None else 'na'}:{chunk_index}"
+            )
+            metadata.setdefault("chunk_index", chunk_index)
+            metadata.setdefault("source_id", source_id)
+            metadata.setdefault("document_id", document_id)
+
+            prepared.append(
+                {
+                    "id": str(document.get("id") or source_id),
+                    "vector": vector,
+                    "content": content,
+                    "metadata": metadata,
+                }
+            )
+
+        if not prepared:
+            return {
+                "success_count": 0,
+                "error_count": len(documents),
+                "total_count": len(documents),
+                "errors": errors or ["no valid documents to index"],
+            }
+
+        try:
+            saved_count = await self.store.add_documents(
+                collection=self.collection_name,
+                documents=prepared,
+            )
+        except Exception as error:  # noqa: BLE001 - 결과 dict로 환원해 업로드 경로가 처리
+            return {
+                "success_count": 0,
+                "error_count": len(documents),
+                "total_count": len(documents),
+                "errors": [str(error)],
+            }
+
+        total_count = len(documents)
+        success_count = int(saved_count)
+        error_count = total_count - success_count
+        if error_count > 0 and not errors:
+            errors.append(f"stored {success_count}/{total_count} chunks")
+        return {
+            "success_count": success_count,
+            "error_count": error_count,
+            "total_count": total_count,
+            "errors": errors,
+        }
 
     async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
         """document_id로 모든 청크 조회"""

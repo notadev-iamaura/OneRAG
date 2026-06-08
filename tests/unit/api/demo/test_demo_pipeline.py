@@ -349,6 +349,23 @@ class TestStreamQuery:
         assert events[-1]["data"]["total_chunks"] == 3
 
     @pytest.mark.asyncio
+    async def test_스트리밍_동기_이터러블_지원(self, pipeline: DemoPipeline) -> None:
+        """LLM stream_text가 sync iterable을 반환해도 스트리밍 처리"""
+        pipeline._llm_client.stream_text = MagicMock(return_value=iter(["동기 ", "응답"]))
+
+        events = [
+            event
+            async for event in pipeline.stream_query(
+                "test_session_123", "동기 스트림?"
+            )
+        ]
+
+        chunk_events = [event for event in events if event["event"] == "chunk"]
+        assert [event["data"]["token"] for event in chunk_events] == ["동기 ", "응답"]
+        assert events[-1]["event"] == "done"
+        assert events[-1]["data"]["total_chunks"] == 2
+
+    @pytest.mark.asyncio
     async def test_스트리밍_세션_미존재시_에러(
         self, pipeline: DemoPipeline, mock_session_manager: MagicMock
     ) -> None:

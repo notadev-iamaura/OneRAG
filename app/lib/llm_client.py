@@ -1035,6 +1035,11 @@ class LLMClientFactory:
         if not fallback_enabled:
             providers_to_try = providers_to_try[:1]
 
+        # ✅ #5 수정: model은 provider별로 다르므로 선호 provider에만 적용한다.
+        # 폴백 provider로 전환되면 해당 provider의 기본 model(self.model)을 사용해야 하며,
+        # 동일 model 문자열을 모든 provider에 전달하면 invalid-model로 폴백이 깨진다.
+        pinned_model = kwargs.pop("model", None)
+
         last_error = None
         for provider in providers_to_try:
             if provider not in self._clients:
@@ -1042,8 +1047,12 @@ class LLMClientFactory:
 
             try:
                 client = self._clients[provider]
+                # 선호 provider이고 model이 명시된 경우에만 model을 오버라이드한다.
+                call_kwargs = dict(kwargs)
+                if pinned_model is not None and provider == preferred_provider:
+                    call_kwargs["model"] = pinned_model
                 text = await client.generate_text(
-                    prompt=prompt, system_prompt=system_prompt, **kwargs
+                    prompt=prompt, system_prompt=system_prompt, **call_kwargs
                 )
                 logger.info(
                     "LLM 생성 성공",

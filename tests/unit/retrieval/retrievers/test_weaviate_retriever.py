@@ -274,6 +274,76 @@ class TestWeaviateRetrieverSearch:
         assert results == []
 
     @pytest.mark.asyncio
+    async def test_search_passes_metadata_filters_to_weaviate(
+        self,
+        mock_embedder: MagicMock,
+        mock_weaviate_client: MagicMock,
+        mock_collection: MagicMock,
+    ) -> None:
+        """
+        메타데이터 필터 전달 테스트
+
+        Given: file_type 필터가 지정됨
+        When: Weaviate 검색 수행
+        Then: hybrid 호출에 filters 인자가 전달됨
+        """
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        retriever = WeaviateRetriever(
+            embedder=mock_embedder,
+            weaviate_client=mock_weaviate_client,
+            collection_name="Documents",
+        )
+        retriever.collection = mock_collection
+
+        await retriever.search(query="테스트 쿼리", top_k=10, filters={"file_type": "PDF"})
+
+        call_kwargs = mock_collection.query.hybrid.call_args.kwargs
+        assert "filters" in call_kwargs
+
+    def test_metadata_filter_normalizes_case_folded_text(
+        self,
+        mock_embedder: MagicMock,
+        mock_weaviate_client: MagicMock,
+    ) -> None:
+        """#12: file_type 같은 소문자 저장 필드는 필터 값도 소문자로 정규화한다."""
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        retriever = WeaviateRetriever(
+            embedder=mock_embedder,
+            weaviate_client=mock_weaviate_client,
+            collection_name="Documents",
+        )
+
+        # file_type은 저장 규칙과 동일하게 소문자화되어야 매칭이 성립한다.
+        assert retriever._normalize_metadata_property("file_type", "PDF") == "pdf"
+        # 정확매칭 키(document_id 등)는 절대 소문자화하면 안 된다(대소문자 보존).
+        assert retriever._normalize_metadata_property("document_id", "AbC123") == "AbC123"
+
+    def test_metadata_filter_rejects_unsupported_keys(
+        self,
+        mock_embedder: MagicMock,
+        mock_weaviate_client: MagicMock,
+    ) -> None:
+        """미지원 필터 키는 silent drop 대신 fail-closed"""
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        retriever = WeaviateRetriever(
+            embedder=mock_embedder,
+            weaviate_client=mock_weaviate_client,
+            collection_name="Documents",
+        )
+
+        with pytest.raises(ValueError, match="Unsupported Weaviate retrieval filters"):
+            retriever._build_metadata_filter({"unknown_property": "x"})
+
+    @pytest.mark.asyncio
     async def test_search_with_uninitialized_collection(
         self,
         mock_embedder: MagicMock,

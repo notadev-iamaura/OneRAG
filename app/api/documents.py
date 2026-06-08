@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..lib.auth import get_api_key
 from ..lib.logger import get_logger
@@ -31,7 +31,7 @@ def set_dependencies(app_modules: dict[str, Any], app_config: dict[str, Any]):
 class BulkDeleteAllRequest(BaseModel):
     """전체 문서 일괄 삭제 요청 모델"""
 
-    confirm_code: str = "DELETE_ALL_DOCUMENTS"
+    confirm_code: str = Field(..., min_length=1)
     reason: str | None = None
 
 

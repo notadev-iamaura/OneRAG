@@ -32,6 +32,7 @@ from app.api.services.rag_pipeline import (
 )
 from app.lib.types import RAGResultDict
 from app.modules.core.generation.generator import GenerationResult
+from app.modules.core.retrieval.interfaces import SearchResult
 
 
 @pytest.fixture
@@ -153,6 +154,7 @@ class TestExecute:
             patch.object(pipeline, "prepare_context") as mock_prepare,
             patch.object(pipeline, "retrieve_documents") as mock_retrieve,
             patch.object(pipeline, "rerank_documents") as mock_rerank,
+            patch.object(pipeline, "expand_context_documents") as mock_expand,
             patch.object(pipeline, "generate_answer") as mock_generate,
             patch.object(pipeline, "self_rag_verify") as mock_self_rag,
             patch.object(pipeline, "format_sources") as mock_format,
@@ -171,6 +173,8 @@ class TestExecute:
             mock_rerank.return_value = RerankResults(
                 documents=[MagicMock(id="doc1")], count=1, reranked=True
             )
+            expanded_docs = [MagicMock(id="doc1"), MagicMock(id="doc1-next")]
+            mock_expand.return_value = expanded_docs
             mock_generate.return_value = GenerationResult(
                 answer="표준 모드 답변",
                 text="표준 모드 답변",
@@ -202,7 +206,11 @@ class TestExecute:
         mock_prepare.assert_called_once()
         mock_retrieve.assert_called_once()
         mock_rerank.assert_called_once()
+        mock_expand.assert_awaited_once()
         mock_generate.assert_called_once()
+        assert mock_generate.call_args.args[1] == expanded_docs
+        assert mock_self_rag.call_args.args[3] == expanded_docs
+        mock_format.assert_called_once_with(expanded_docs, None)
 
     @pytest.mark.asyncio
     async def test_execute_direct_answer_skip_pipeline(
@@ -1254,6 +1262,49 @@ class TestGenerateAnswerEdgeCases:
         assert result.tokens_used == 0
         assert result.provider == "fallback"
 
+    @pytest.mark.asyncio
+    async def test_generate_fallback_does_not_expose_document_repr(
+        self, mock_config: dict[str, Any], mock_modules: dict[str, Any]
+    ) -> None:
+        """
+        Fallback 문서 preview 보안 테스트
+
+        Given: 문서 객체에 텍스트 필드가 없고 repr에 내부 경로가 포함됨
+        When: LLM 실패로 fallback 응답 생성
+        Then: 객체 repr을 사용자 응답에 포함하지 않음
+        """
+        mock_generation = AsyncMock()
+        mock_generation.generate_answer = AsyncMock(side_effect=Exception("LLM 실패"))
+        mock_modules["generation_module"] = mock_generation
+
+        mock_cb = MagicMock()
+
+        async def mock_circuit_breaker_call(fn, fallback):
+            try:
+                return await fn()
+            except Exception:
+                return fallback()
+
+        mock_cb.call = mock_circuit_breaker_call
+        mock_modules["circuit_breaker_factory"].get = MagicMock(return_value=mock_cb)
+
+        class ReprOnlyDocument:
+            def __repr__(self) -> str:
+                return "<Document path=/srv/private/customer.pdf token=secret>"
+
+        pipeline = RAGPipeline(config=mock_config, **mock_modules)
+
+        result = await pipeline.generate_answer(
+            message="테스트 질문",
+            ranked_results=[ReprOnlyDocument()],
+            context=None,
+            options={},
+        )
+
+        assert "/srv/private/customer.pdf" not in result.answer
+        assert "token=secret" not in result.answer
+        assert "문서 내용 요약을 표시할 수 없습니다" in result.answer
+
 
 class TestPrepareContextErrors:
     """prepare_context 메서드 에러 테스트"""
@@ -1416,6 +1467,217 @@ class TestRerankDocuments:
         assert reranked.count == 0
         assert reranked.reranked is False
 
+    @pytest.mark.asyncio
+    async def test_rerank_provider_noop_fallback_skips_min_score_filter(
+        self, pipeline: RAGPipeline, mock_modules
+    ) -> None:
+        """리랭커 fallback이 원본 RRF 점수를 반환하면 min_score로 결과를 비우지 않음"""
+        docs = [
+            SearchResult(id="doc1", content="문서 1", score=0.03, metadata={}),
+            SearchResult(id="doc2", content="문서 2", score=0.02, metadata={}),
+        ]
+        mock_modules["retrieval_module"].rerank = AsyncMock(return_value=docs)
+
+        reranked = await pipeline.rerank_documents("쿼리", docs, {})
+
+        assert reranked.reranked is False
+        assert reranked.count == 2
+        assert [doc.id for doc in reranked.documents] == ["doc1", "doc2"]
+        assert reranked.documents[0].metadata["retrieval_score"] == 0.03
+        assert "rerank_score" not in reranked.documents[0].metadata
+
+    @pytest.mark.asyncio
+    async def test_rerank_success_still_filters_and_preserves_scores(
+        self, pipeline: RAGPipeline, mock_modules
+    ) -> None:
+        """실제 리랭킹 결과는 기존 min_score 필터링과 점수 메타데이터를 유지"""
+        docs = [
+            SearchResult(id="doc1", content="문서 1", score=0.03, metadata={}),
+            SearchResult(id="doc2", content="문서 2", score=0.02, metadata={}),
+        ]
+        ranked_docs = [
+            SearchResult(id="doc2", content="문서 2", score=0.8, metadata={}),
+            SearchResult(id="doc1", content="문서 1", score=0.01, metadata={}),
+        ]
+        mock_modules["retrieval_module"].rerank = AsyncMock(return_value=ranked_docs)
+
+        reranked = await pipeline.rerank_documents("쿼리", docs, {})
+
+        assert reranked.reranked is True
+        assert reranked.count == 1
+        assert reranked.documents[0].id == "doc2"
+        assert reranked.documents[0].metadata["retrieval_score"] == 0.02
+        assert reranked.documents[0].metadata["rerank_score"] == 0.8
+
+
+class TestExpandContextDocuments:
+    """expand_context_documents 메서드 테스트"""
+
+    @pytest.fixture
+    def pipeline(self, mock_config, mock_modules) -> RAGPipeline:
+        return RAGPipeline(config=mock_config, **mock_modules)
+
+    @pytest.mark.asyncio
+    async def test_context_expansion_disabled_by_default(
+        self, pipeline: RAGPipeline, mock_modules
+    ) -> None:
+        """기본 설정에서는 주변 청크 조회를 수행하지 않음"""
+        docs = [
+            SearchResult(
+                id="hit-1",
+                content="검색 hit",
+                score=0.7,
+                metadata={"document_id": "doc-1", "chunk_index": 1},
+            )
+        ]
+        mock_modules["retrieval_module"].get_document_chunks = AsyncMock()
+
+        expanded = await pipeline.expand_context_documents(docs, {})
+
+        assert expanded is docs
+        mock_modules["retrieval_module"].get_document_chunks.assert_not_called()
+
+    def test_build_retrieval_filters_passthrough_and_none(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """#12: options['filters']는 그대로 전달되고, 없으면 None(무필터)이다."""
+        assert pipeline._build_retrieval_filters({"filters": {"file_type": "pdf"}}) == {
+            "file_type": "pdf"
+        }
+        assert pipeline._build_retrieval_filters({}) is None
+        assert pipeline._build_retrieval_filters({"filters": {}}) is None
+
+    def test_resolve_context_expansion_config_window_zero_disables(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """설정 window=0은 '명시적 비활성'으로 취급되어야 한다([32])."""
+        pipeline.config = {"rag": {"context_expansion": {"enabled": True, "window": 0}}}
+        enabled, window = pipeline._resolve_context_expansion({})
+        assert enabled is False
+        assert window == 0
+
+    def test_resolve_context_expansion_option_window_zero_disables(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """옵션 adjacent_chunk_window=0은 설정값을 덮어쓰고 비활성화한다([32])."""
+        pipeline.config = {"rag": {"context_expansion": {"enabled": True, "window": 2}}}
+        enabled, window = pipeline._resolve_context_expansion({"adjacent_chunk_window": 0})
+        assert enabled is False
+        assert window == 0
+
+    def test_resolve_context_expansion_max_window_zero_clamped_to_one(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """max_window=0은 명시적 값으로 취급되어 최소 1로 클램프된다([34])."""
+        pipeline.config = {
+            "rag": {"context_expansion": {"enabled": True, "max_window": 0}}
+        }
+        enabled, window = pipeline._resolve_context_expansion({})
+        assert enabled is True
+        assert window == 1
+
+    @pytest.mark.asyncio
+    async def test_context_expansion_adds_adjacent_chunks_when_enabled(
+        self, mock_config, mock_modules
+    ) -> None:
+        """opt-in이면 검색 hit 앞뒤 청크를 생성 컨텍스트에 추가"""
+
+        class RetrievalWithChunks:
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
+                self.calls.append(document_id)
+                return [
+                    {
+                        "id": "chunk-0",
+                        "content": "이전 청크",
+                        "metadata": {"document_id": document_id, "chunk_index": 0},
+                    },
+                    {
+                        "id": "chunk-1",
+                        "content": "검색 hit",
+                        "metadata": {"document_id": document_id, "chunk_index": 1},
+                    },
+                    {
+                        "id": "chunk-2",
+                        "content": "다음 청크",
+                        "metadata": {"document_id": document_id, "chunk_index": 2},
+                    },
+                ]
+
+        retrieval = RetrievalWithChunks()
+        mock_modules["retrieval_module"] = retrieval
+        pipeline = RAGPipeline(config=mock_config, **mock_modules)
+        docs = [
+            SearchResult(
+                id="hit-1",
+                content="검색 hit",
+                score=0.7,
+                metadata={"document_id": "doc-1", "chunk_index": 1},
+            )
+        ]
+
+        expanded = await pipeline.expand_context_documents(
+            docs,
+            {"expand_adjacent_chunks": True},
+        )
+
+        assert retrieval.calls == ["doc-1"]
+        assert [doc.content for doc in expanded] == ["이전 청크", "검색 hit", "다음 청크"]
+        assert expanded[1] is docs[0]
+        assert expanded[0].metadata["context_expanded"] is True
+        # 이웃 청크는 앵커 점수(0.7)보다 약간 낮춘 값(*0.96)을 가진다(#4).
+        assert expanded[0].score == pytest.approx(0.7 * 0.96)
+        assert expanded[0].metadata["retrieval_score"] == pytest.approx(0.7 * 0.96)
+        assert expanded[2].metadata["context_expanded_from_chunk_index"] == 1
+
+    @pytest.mark.asyncio
+    async def test_context_expansion_reuses_original_ranked_adjacent_hit(
+        self, mock_config, mock_modules
+    ) -> None:
+        """주변 청크가 이미 검색 hit이면 원본 순위 객체를 재사용"""
+
+        class RetrievalWithChunks:
+            async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
+                return [
+                    {
+                        "id": "chunk-1",
+                        "content": "첫 번째 hit",
+                        "metadata": {"document_id": document_id, "chunk_index": 1},
+                    },
+                    {
+                        "id": "chunk-2",
+                        "content": "두 번째 hit",
+                        "metadata": {"document_id": document_id, "chunk_index": 2},
+                    },
+                ]
+
+        mock_modules["retrieval_module"] = RetrievalWithChunks()
+        pipeline = RAGPipeline(config=mock_config, **mock_modules)
+        docs = [
+            SearchResult(
+                id="hit-1",
+                content="첫 번째 hit",
+                score=0.8,
+                metadata={"document_id": "doc-1", "chunk_index": 1},
+            ),
+            SearchResult(
+                id="hit-2",
+                content="두 번째 hit",
+                score=0.6,
+                metadata={"document_id": "doc-1", "chunk_index": 2},
+            ),
+        ]
+
+        expanded = await pipeline.expand_context_documents(
+            docs,
+            {"expand_adjacent_chunks": True},
+        )
+
+        assert expanded == docs
+        assert expanded[1] is docs[1]
+
 
 class TestGenerateAnswer:
     """generate_answer 메서드 테스트"""
@@ -1535,6 +1797,36 @@ class TestFormatSources:
         assert sources.count == 1
         assert sources.sources[0].document == "문서1.md"
         assert sources.sources[0].source_type == "rag"
+
+    def test_format_sources_excludes_context_expanded_neighbors(
+        self, pipeline: RAGPipeline
+    ) -> None:
+        """인접 청크 확장으로 추가된 이웃 청크는 사용자 인용 소스에서 제외된다(#4)."""
+        docs = [
+            MagicMock(
+                id="hit-1",
+                metadata={"source": "real.md", "document_id": "doc-1", "chunk_index": 1},
+                content="실제 검색 히트",
+                score=0.9,
+            ),
+            MagicMock(
+                id="neighbor-1",
+                metadata={
+                    "source": "real.md",
+                    "document_id": "doc-1",
+                    "chunk_index": 0,
+                    "context_expanded": True,
+                },
+                content="이웃 청크",
+                score=0.86,
+            ),
+        ]
+
+        sources = pipeline.format_sources(docs)
+
+        rag_sources = [s for s in sources.sources if s.source_type == "rag"]
+        assert len(rag_sources) == 1
+        assert rag_sources[0].document == "real.md"
 
     def test_format_sources_normalizes_source_contract_fields(
         self, pipeline: RAGPipeline
@@ -1936,20 +2228,26 @@ class TestEdgeCases:
         mock_config["reranking"]["min_score"] = 0.5
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
 
-        # MagicMock 대신 실제 score 속성을 가진 객체 생성
-        doc1 = MagicMock()
-        doc1.id = "doc1"
-        doc1.score = 0.8
-        doc1.metadata = {"score": 0.8}
+        docs = [
+            SearchResult(id="doc1", content="문서 1", score=0.03, metadata={}),
+            SearchResult(id="doc2", content="문서 2", score=0.02, metadata={}),
+        ]
+        ranked_docs = [
+            SearchResult(
+                id="doc1",
+                content="문서 1",
+                score=0.8,
+                metadata={"rerank_method": "test"},
+            ),
+            SearchResult(
+                id="doc2",
+                content="문서 2",
+                score=0.3,
+                metadata={"rerank_method": "test"},
+            ),
+        ]
 
-        doc2 = MagicMock()
-        doc2.id = "doc2"
-        doc2.score = 0.3  # min_score 미만
-        doc2.metadata = {"score": 0.3}
-
-        docs = [doc1, doc2]
-
-        mock_modules["retrieval_module"].rerank = AsyncMock(return_value=docs)
+        mock_modules["retrieval_module"].rerank = AsyncMock(return_value=ranked_docs)
 
         reranked = await pipeline.rerank_documents("쿼리", docs, {})
 

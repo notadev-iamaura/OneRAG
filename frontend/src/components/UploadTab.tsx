@@ -34,6 +34,12 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { readOperatorSettings } from '../config/operatorSettings';
 
+// 지원 업로드 확장자 (accept / validation / 안내문구의 단일 출처 — 드리프트 방지)
+const SUPPORTED_UPLOAD_EXTENSIONS = [
+  '.pdf', '.txt', '.md', '.markdown', '.docx', '.pptx', '.xls', '.xlsx', '.html', '.htm', '.json',
+];
+const UPLOAD_ACCEPT = SUPPORTED_UPLOAD_EXTENSIONS.join(',');
+
 interface UploadTabProps {
   showToast: (message: Omit<ToastMessage, 'id'>) => void;
 }
@@ -94,12 +100,12 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
 
   // 파일 유효성 검사
   const validateFile = useCallback((file: File): string | null => {
-    const allowedExtensions = ['.pdf', '.txt', '.md', '.markdown', '.doc', '.docx', '.xls', '.xlsx', '.html', '.htm', '.json'];
+    const allowedExtensions = SUPPORTED_UPLOAD_EXTENSIONS;
     const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
     const maxSize = 50 * 1024 * 1024; // 50MB
 
     if (!allowedExtensions.includes(fileExtension)) {
-      return '지원되지 않는 형식입니다. PDF, TXT, Markdown, Word, Excel, HTML, JSON만 가능합니다.';
+      return '지원되지 않는 형식입니다. PDF, TXT, Markdown, DOCX, PPTX, Excel, HTML, JSON만 가능합니다.';
     }
 
     if (file.size > maxSize) {
@@ -412,7 +418,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
               파일을 여기에 드래그하거나 클릭하세요
             </p>
             <p className="text-sm text-center text-muted-foreground font-medium max-w-sm mx-auto">
-              PDF, TXT, Markdown, Word, Excel, HTML, JSON<br />
+              PDF, TXT, Markdown, DOCX, PPTX, Excel, HTML, JSON<br />
               <span className="text-xs opacity-60">(파일당 최대 50MB 지원)</span>
             </p>
           </div>
@@ -426,7 +432,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
         type="file"
         aria-label="업로드 파일"
         multiple
-        accept=".pdf,.txt,.md,.markdown,.doc,.docx,.xls,.xlsx,.html,.htm,.json"
+        accept={UPLOAD_ACCEPT}
         className="hidden"
         hidden
         tabIndex={-1}

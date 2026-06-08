@@ -14,19 +14,23 @@ const getAPIBaseURL = (): string => {
     return operatorApiUrl;
   }
 
-  // 개발 모드: 로컬 백엔드 사용 (api.ts와 동일한 전략)
-  if (import.meta.env.DEV) {
-    return import.meta.env.VITE_DEV_API_BASE_URL || 'http://localhost:8000';
-  }
-
-  // 런타임 설정이 있는 경우 우선 사용 (Railway 환경)
-  if (typeof window !== 'undefined' && window.RUNTIME_CONFIG?.API_BASE_URL) {
-    return window.RUNTIME_CONFIG.API_BASE_URL;
+  // 런타임 설정이 있는 경우 우선 사용 (Railway 환경). 빈 문자열은 same-origin.
+  if (
+    typeof window !== 'undefined' &&
+    window.RUNTIME_CONFIG &&
+    Object.prototype.hasOwnProperty.call(window.RUNTIME_CONFIG, 'API_BASE_URL')
+  ) {
+    return window.RUNTIME_CONFIG.API_BASE_URL || '';
   }
 
   // 빌드 타임 환경 변수가 설정된 경우 사용
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
+  }
+
+  // 개발 모드: 로컬 백엔드 사용 (api.ts와 동일한 전략)
+  if (import.meta.env.DEV) {
+    return import.meta.env.VITE_DEV_API_BASE_URL || 'http://localhost:8000';
   }
 
   // Railway 환경 자동 감지
@@ -45,8 +49,8 @@ const getAPIBaseURL = (): string => {
     }
   }
 
-  // 기본값: Railway 프로덕션 URL
-  return 'https://simple-rag-production-bb72.up.railway.app';
+  // 프로덕션 기본값: same-origin
+  return '';
 };
 
 const getWSBaseURL = (): string => {

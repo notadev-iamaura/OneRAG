@@ -6,6 +6,7 @@ Phase 4.3: enhanced_session.py에서 추출한 검증된 메모리 관리 로직
 
 import asyncio
 import re
+import time
 from collections import defaultdict
 from datetime import UTC
 from typing import Any
@@ -118,7 +119,12 @@ class MemoryService:
             logger.debug(f"메모리 삭제: {session_id}")
 
     async def add_conversation(
-        self, session_id: str, session: dict[str, Any], user_message: str, assistant_response: str
+        self,
+        session_id: str,
+        session: dict[str, Any],
+        user_message: str,
+        assistant_response: str,
+        metadata: dict[str, Any] | None = None,
     ):
         """
         대화 추가 with Window trimming + Race Condition 보호 + MongoDB 영구 저장
@@ -160,6 +166,12 @@ class MemoryService:
             # LangChain 0.3+ 방식: 메시지 추가 (L200-202)
             chat_history.add_user_message(user_message)
             chat_history.add_ai_message(assistant_response)
+            messages_metadata = session.setdefault("messages_metadata", [])
+            # ✅ #8 수정: 교환과 messages_metadata를 항상 1:1로 유지한다.
+            # metadata가 없는 턴(facade가 None 전달)도 최소 placeholder(timestamp 포함)를
+            # 추가해 get_chat_history의 offset 매핑이 영구적으로 어긋나지 않게 한다.
+            entry = metadata if metadata is not None else {"timestamp": time.time()}
+            messages_metadata.append(entry)
 
             # Window 로직: 최대 교환 수 유지 (L204-213)
             max_messages = self.max_exchanges * 2
@@ -168,9 +180,15 @@ class MemoryService:
             if len(current_messages) > max_messages:
                 messages_to_remove = len(current_messages) - max_messages
                 chat_history.messages = current_messages[messages_to_remove:]
+                # ✅ #13 수정: messages_metadata도 동일 윈도우(교환 단위)로 trim하여
+                # 무한 증가를 막고 messages와의 1:1 정렬을 유지한다.
+                exchanges_to_remove = messages_to_remove // 2
+                if exchanges_to_remove > 0:
+                    del messages_metadata[:exchanges_to_remove]
                 logger.debug(
                     f"Window trimming: {messages_to_remove}개 오래된 메시지 제거, "
-                    f"현재 {len(chat_history.messages)}개 유지"
+                    f"현재 {len(chat_history.messages)}개 유지 "
+                    f"(metadata {len(messages_metadata)}개 동기 trim)"
                 )
 
             # 💾 MongoDB 영구 저장 (Lock 안에서 트랜잭션처럼 실행)
@@ -180,11 +198,7 @@ class MemoryService:
                     session_id=session_id,
                     user_message=user_message,
                     assistant_response=assistant_response,
-                    metadata=(
-                        session.get("messages_metadata", [])[-1]
-                        if session.get("messages_metadata")
-                        else {}
-                    ),
+                    metadata=messages_metadata[-1] if messages_metadata else {},
                 )
             except Exception as e:
                 # MongoDB 저장 실패 시 메모리도 롤백
@@ -192,6 +206,9 @@ class MemoryService:
                 # 마지막 2개 메시지(user + assistant) 제거
                 if len(chat_history.messages) >= 2:
                     chat_history.messages = chat_history.messages[:-2]
+                # 방금 추가한 metadata entry를 롤백(메시지 2개 제거와 1:1 정합 유지)
+                if messages_metadata and messages_metadata[-1] is entry:
+                    messages_metadata.pop()
                 raise  # 에러를 상위로 전파하여 클라이언트에게 실패 알림
 
     async def get_context_string(self, session_id: str, session: dict[str, Any]) -> str:
@@ -314,6 +331,7 @@ class MemoryService:
         messages = []
         chat_messages = chat_history.messages
         messages_metadata = session.get("messages_metadata", [])
+        metadata_offset = max(0, len(messages_metadata) - (len(chat_messages) // 2))
 
         # LangChain 메시지와 메타데이터 매칭 (L312-345)
         message_index = 0
@@ -330,9 +348,11 @@ class MemoryService:
                             "content": user_msg.content,
                             "timestamp": (
                                 datetime.fromtimestamp(
-                                    messages_metadata[message_index]["timestamp"]
+                                    messages_metadata[message_index + metadata_offset][
+                                        "timestamp"
+                                    ]
                                 ).isoformat()
-                                if message_index < len(messages_metadata)
+                                if message_index + metadata_offset < len(messages_metadata)
                                 else datetime.now().isoformat()
                             ),
                         }
@@ -349,16 +369,16 @@ class MemoryService:
                         "content": ai_msg.content,
                         "timestamp": (
                             datetime.fromtimestamp(
-                                messages_metadata[message_index]["timestamp"]
+                                messages_metadata[message_index + metadata_offset]["timestamp"]
                             ).isoformat()
-                            if message_index < len(messages_metadata)
+                            if message_index + metadata_offset < len(messages_metadata)
                             else datetime.now().isoformat()
                         ),
                     }
 
                     # 메타데이터 추가
-                    if message_index < len(messages_metadata):
-                        metadata = messages_metadata[message_index]
+                    if message_index + metadata_offset < len(messages_metadata):
+                        metadata = messages_metadata[message_index + metadata_offset]
                         msg_data.update(
                             {
                                 "tokens_used": metadata.get("tokens_used", 0),

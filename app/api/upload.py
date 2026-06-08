@@ -3,6 +3,7 @@ Upload API endpoints
 파일 업로드 및 문서 처리 API 엔드포인트
 """
 
+import asyncio
 import json
 import os
 from datetime import datetime
@@ -160,6 +161,7 @@ def estimate_processing_time(file_size: int, file_type: str) -> float:
     processing_rates = {
         "pdf": 15.0,
         "docx": 10.0,
+        "pptx": 12.0,
         "xlsx": 20.0,
         "txt": 3.0,
         "md": 3.0,
@@ -182,6 +184,7 @@ def validate_file(file: UploadFile) -> dict[str, Any]:
         "application/pdf": "pdf",
         "text/plain": "txt",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
         "text/csv": "csv",
         "text/html": "html",
@@ -196,10 +199,20 @@ def validate_file(file: UploadFile) -> dict[str, Any]:
                 "error": {
                     "error": "지원하지 않는 파일 형식",
                     "message": f"'{file.content_type}' 형식은 지원되지 않습니다",
-                    "suggestion": "지원 형식: PDF, DOCX, TXT, MD, CSV, XLSX, HTML, JSON",
+                    "suggestion": "지원 형식: PDF, DOCX, PPTX, TXT, MD, CSV, XLSX, HTML, JSON",
                     "file_name": file.filename,
                     "file_type": file.content_type,
-                    "supported_extensions": [".pdf", ".docx", ".txt", ".md", ".csv", ".xlsx", ".html", ".json"],
+                    "supported_extensions": [
+                        ".pdf",
+                        ".docx",
+                        ".pptx",
+                        ".txt",
+                        ".md",
+                        ".csv",
+                        ".xlsx",
+                        ".html",
+                        ".json",
+                    ],
                 },
             }
         file_type = ext
@@ -234,6 +247,10 @@ async def process_document_background(job_id: str, file_path: Path, filename: st
         retrieval_module = modules.get("retrieval")
         if not document_processor or not retrieval_module:
             raise Exception("Required modules not available")
+        # 일부 DI 구성(예: chroma)에서 retrieval 모듈이 코루틴/Future로 지연 제공되므로,
+        # add_documents 호출 전에 실제 모듈로 해소한다('_asyncio.Future' has no attribute 방지).
+        if asyncio.iscoroutine(retrieval_module) or isinstance(retrieval_module, asyncio.Future):
+            retrieval_module = await retrieval_module
         logger.info(f"Loading document: {filename}")
         upload_jobs[job_id].update({"progress": 30, "message": "문서 로딩 중..."})
         save_upload_jobs(upload_jobs)
@@ -704,7 +721,7 @@ async def download_document(document_id: str):
             filename = f"{filename}.txt"
         # 원본이 바이너리 형식이면 .txt로 변환
         ext = Path(filename).suffix.lower()
-        if ext in (".pdf", ".docx", ".xlsx"):
+        if ext in (".pdf", ".docx", ".pptx", ".xlsx"):
             filename = Path(filename).stem + ".txt"
 
         logger.info(f"Document download: {document_id}, {len(sorted_chunks)} chunks, filename={filename}")
@@ -748,6 +765,11 @@ async def get_supported_types():
                 "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "description": "Microsoft Word documents",
                 "max_size_mb": 10,
+            },
+            "pptx": {
+                "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "description": "Microsoft PowerPoint presentations",
+                "max_size_mb": 20,
             },
             "xlsx": {
                 "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

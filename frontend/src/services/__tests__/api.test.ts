@@ -79,6 +79,68 @@ describe('api.ts', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+        vi.unstubAllEnvs();
+        delete window.RUNTIME_CONFIG;
+    });
+
+    describe('API base URL resolution', () => {
+        it('runtime config가 build-time VITE_API_BASE_URL보다 우선되어야 함', async () => {
+            vi.resetModules();
+            vi.stubEnv('VITE_API_BASE_URL', 'https://build.example.com');
+            window.RUNTIME_CONFIG = {
+                API_BASE_URL: 'https://runtime.example.com',
+            };
+
+            const create = vi.fn().mockReturnValue({
+                get: vi.fn(),
+                post: vi.fn(),
+                delete: vi.fn(),
+                interceptors: {
+                    request: { use: vi.fn() },
+                    response: { use: vi.fn() },
+                },
+                defaults: { headers: { common: {} } },
+            });
+
+            vi.doMock('axios', () => ({
+                default: { create },
+                __esModule: true,
+            }));
+
+            await import('../../services/api');
+
+            expect(create.mock.calls[0][0].baseURL).toBe('https://runtime.example.com');
+        });
+
+        it('runtime config의 빈 API_BASE_URL은 무시되고 빌드 타임 VITE 값이 우선해야 함 (#15)', async () => {
+            // generate-config.js는 env 미설정 시 API_BASE_URL: ''를 항상 내보내므로,
+            // 빈 런타임값이 빌드 타임 VITE 설정을 가려 요청이 잘못된 origin으로 가던 회귀를 방지한다.
+            vi.resetModules();
+            vi.stubEnv('VITE_API_BASE_URL', 'https://build.example.com');
+            window.RUNTIME_CONFIG = {
+                API_BASE_URL: '',
+            };
+
+            const create = vi.fn().mockReturnValue({
+                get: vi.fn(),
+                post: vi.fn(),
+                delete: vi.fn(),
+                interceptors: {
+                    request: { use: vi.fn() },
+                    response: { use: vi.fn() },
+                },
+                defaults: { headers: { common: {} } },
+            });
+
+            vi.doMock('axios', () => ({
+                default: { create },
+                __esModule: true,
+            }));
+
+            await import('../../services/api');
+
+            expect(create.mock.calls[0][0].baseURL).toBe('https://build.example.com');
+        });
     });
 
     describe('Issue #3: getUploadStatus는 메인 api 인스턴스를 사용해야 함', () => {
@@ -233,6 +295,237 @@ describe('api.ts', () => {
                 writable: true,
                 value: originalLocation,
             });
+        });
+    });
+
+    describe('session error logging', () => {
+        it('세션 생성 실패 로그에 인증/CSRF/세션 헤더 원문을 남기지 않아야 함', async () => {
+            vi.resetModules();
+            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+            vi.doMock('axios', () => {
+                const mainInstance = {
+                    get: vi.fn(),
+                    post: vi.fn(),
+                    delete: vi.fn(),
+                    interceptors: {
+                        request: { use: vi.fn() },
+                        response: { use: vi.fn() },
+                    },
+                    defaults: { headers: { common: {} } },
+                };
+
+                return {
+                    default: {
+                        create: vi.fn().mockReturnValue(mainInstance),
+                    },
+                    __esModule: true,
+                    __mainInstance: mainInstance,
+                };
+            });
+
+            vi.doMock('axios-retry', () => ({
+                default: vi.fn(),
+                __esModule: true,
+            }));
+
+            vi.doMock('../../utils/logger', () => ({
+                logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+            }));
+
+            vi.doMock('../../utils/privacy', () => ({
+                maskPhoneNumberDeep: vi.fn((data: unknown) => data),
+            }));
+
+            await import('../../services/api');
+            const axios = await import('axios');
+            const { logger } = await import('../../utils/logger');
+            const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { response: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
+            const errorHandler = mainInstance.interceptors.response.use.mock.calls[0][1];
+
+            const sessionError = {
+                message: 'session failed',
+                code: 'ERR_BAD_RESPONSE',
+                response: {
+                    status: 500,
+                    statusText: 'Internal Server Error',
+                    data: { token: 'response-token-secret' },
+                },
+                config: {
+                    url: '/api/chat/session',
+                    baseURL: 'https://api.example.com',
+                    method: 'post',
+                    timeout: 30000,
+                    headers: {
+                        Authorization: 'Bearer access-token-secret',
+                        'X-XSRF-TOKEN': 'csrf-token-secret',
+                        'X-Session-Id': 'session-id-secret',
+                        'Content-Type': 'application/json',
+                    },
+                    data: { accessCode: 'access-code-secret' },
+                },
+            };
+
+            await expect(errorHandler(sessionError)).rejects.toBe(sessionError);
+
+            expect(logger.error).toHaveBeenCalledWith('세션 생성 응답 실패:', expect.any(Object));
+            const [, details] = (logger.error as ReturnType<typeof vi.fn>).mock.calls[0];
+            expect(details.requestHeaders).toEqual({
+                authorization: '설정됨',
+                csrfToken: '설정됨',
+                sessionId: '설정됨',
+                contentType: '설정됨',
+            });
+            expect(details.requestData).toBe('object');
+            expect(details.responseData).toBe('object');
+
+            const serializedDetails = JSON.stringify(details);
+            expect(serializedDetails).not.toContain('access-token-secret');
+            expect(serializedDetails).not.toContain('csrf-token-secret');
+            expect(serializedDetails).not.toContain('session-id-secret');
+            expect(serializedDetails).not.toContain('access-code-secret');
+            expect(serializedDetails).not.toContain('response-token-secret');
+            expect(consoleError).not.toHaveBeenCalled();
+        });
+
+        it('세션 생성 CORS 오류 로그에도 원문 헤더 값을 남기지 않아야 함', async () => {
+            vi.resetModules();
+            const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+            vi.doMock('axios', () => {
+                const mainInstance = {
+                    get: vi.fn(),
+                    post: vi.fn(),
+                    delete: vi.fn(),
+                    interceptors: {
+                        request: { use: vi.fn() },
+                        response: { use: vi.fn() },
+                    },
+                    defaults: { headers: { common: {} } },
+                };
+
+                return {
+                    default: {
+                        create: vi.fn().mockReturnValue(mainInstance),
+                    },
+                    __esModule: true,
+                    __mainInstance: mainInstance,
+                };
+            });
+
+            vi.doMock('axios-retry', () => ({
+                default: vi.fn(),
+                __esModule: true,
+            }));
+
+            vi.doMock('../../utils/logger', () => ({
+                logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+            }));
+
+            vi.doMock('../../utils/privacy', () => ({
+                maskPhoneNumberDeep: vi.fn((data: unknown) => data),
+            }));
+
+            await import('../../services/api');
+            const axios = await import('axios');
+            const { logger } = await import('../../utils/logger');
+            const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { response: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
+            const errorHandler = mainInstance.interceptors.response.use.mock.calls[0][1];
+
+            const networkError = {
+                message: 'Network Error',
+                code: 'ERR_NETWORK',
+                config: {
+                    url: '/api/chat/session',
+                    baseURL: 'https://api.example.com',
+                    method: 'post',
+                    timeout: 30000,
+                    headers: {
+                        Authorization: 'Bearer access-token-secret',
+                        'X-XSRF-TOKEN': 'csrf-token-secret',
+                        'X-Session-Id': 'session-id-secret',
+                        'Content-Type': 'application/json',
+                    },
+                    data: { accessCode: 'access-code-secret' },
+                },
+            };
+
+            await expect(errorHandler(networkError)).rejects.toBe(networkError);
+
+            expect(logger.warn).toHaveBeenCalledWith('CORS 오류 감지:', expect.any(Object));
+            const [, details] = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0];
+            expect(details.config.headers).toEqual({
+                authorization: '설정됨',
+                csrfToken: '설정됨',
+                sessionId: '설정됨',
+                contentType: '설정됨',
+            });
+            expect(details.config.data).toBe('object');
+
+            const serializedDetails = JSON.stringify(details);
+            expect(serializedDetails).not.toContain('access-token-secret');
+            expect(serializedDetails).not.toContain('csrf-token-secret');
+            expect(serializedDetails).not.toContain('session-id-secret');
+            expect(serializedDetails).not.toContain('access-code-secret');
+            expect(consoleError).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('response masking', () => {
+        it('blob 응답은 전화번호 마스킹을 적용하지 않아야 함', async () => {
+            vi.resetModules();
+
+            const maskPhoneNumberDeep = vi.fn((data: unknown) => data);
+
+            vi.doMock('axios', () => {
+                const mainInstance = {
+                    get: vi.fn(),
+                    post: vi.fn(),
+                    delete: vi.fn(),
+                    interceptors: {
+                        request: { use: vi.fn() },
+                        response: { use: vi.fn() },
+                    },
+                    defaults: { headers: { common: {} } },
+                };
+
+                return {
+                    default: {
+                        create: vi.fn().mockReturnValue(mainInstance),
+                    },
+                    __esModule: true,
+                    __mainInstance: mainInstance,
+                };
+            });
+
+            vi.doMock('axios-retry', () => ({
+                default: vi.fn(),
+                __esModule: true,
+            }));
+
+            vi.doMock('../../utils/logger', () => ({
+                logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+            }));
+
+            vi.doMock('../../utils/privacy', () => ({
+                maskPhoneNumberDeep,
+            }));
+
+            await import('../../services/api');
+            const axios = await import('axios');
+            const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { response: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
+            const successHandler = mainInstance.interceptors.response.use.mock.calls[0][0];
+
+            const blob = new Blob(['010-1234-5678']);
+            const response = {
+                data: blob,
+                config: { responseType: 'blob' },
+            };
+
+            const result = successHandler(response);
+
+            expect(result.data).toBe(blob);
+            expect(maskPhoneNumberDeep).not.toHaveBeenCalled();
         });
     });
 });
