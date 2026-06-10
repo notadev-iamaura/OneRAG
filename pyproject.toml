@@ -85,7 +85,7 @@ dependencies = [
     "numpy>=1.26.0,<2",
     # Configuration and Environment
     "pyyaml==6.0.1",
-    "python-dotenv==1.0.0",
+    "python-dotenv==1.2.2",
     # Session and Caching
     "cachetools==5.3.0",
     # Validation and Serialization
