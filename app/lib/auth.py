@@ -117,7 +117,20 @@ class APIKeyAuth:
         # 보호할 경로 설정 (기본값: OpenAI-compatible /v1/)
         # 브라우저 채팅용 /api/chat/*는 서버 API key를 노출하지 않기 위해
         # 전역 미들웨어가 아닌 라우터별 의존성과 rate limit 경계에 둔다.
-        self.protected_paths = protected_paths or ["/v1/"]
+        #
+        # 범용성: 환경변수 FASTAPI_PROTECTED_PATHS(콤마 구분)로 오버라이드 가능.
+        # OpenAI 호환 API를 무인증으로 노출하려면 FASTAPI_PROTECTED_PATHS=""로 설정한다
+        # (외부 도구가 X-API-Key 헤더 없이 /v1에 접속).
+        if protected_paths is not None:
+            self.protected_paths = protected_paths
+        else:
+            env_paths = os.getenv("FASTAPI_PROTECTED_PATHS")
+            if env_paths is not None:
+                self.protected_paths = [
+                    p.strip() for p in env_paths.split(",") if p.strip()
+                ]
+            else:
+                self.protected_paths = ["/v1/"]
 
         # 공개 경로 설정 (인증 불필요)
         # 주의: "/" 는 모든 경로와 매칭되므로 제거하고 is_public_path에서 특별 처리
