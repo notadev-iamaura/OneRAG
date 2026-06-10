@@ -122,14 +122,19 @@ class PrivacyMasker:
             whitelist: 마스킹 예외 단어 목록 (None이면 기본값 사용)
             name_suffixes: 이름 뒤에 붙는 호칭 패턴 목록 (예: ["고객님", "담당자님"])
         """
-        self.mask_phone = mask_phone
-        self.mask_name = mask_name
-        self.mask_email = mask_email
-        self.mask_ssn = mask_ssn
-        self.mask_passport = mask_passport
-        self.mask_driver_license = mask_driver_license
-        self.phone_mask_char = phone_mask_char
-        self.name_mask_char = name_mask_char
+        # None 방어: 설정 누락(yaml import 누락 등)으로 None이 주입돼도
+        # 안전한 기본값으로 보정한다. 특히 phone_mask_char가 None이면
+        # SSN 마스킹의 `char * 7` 연산에서 TypeError가 발생한다.
+        self.mask_phone = True if mask_phone is None else mask_phone
+        self.mask_name = True if mask_name is None else mask_name
+        self.mask_email = False if mask_email is None else mask_email
+        self.mask_ssn = True if mask_ssn is None else mask_ssn
+        self.mask_passport = True if mask_passport is None else mask_passport
+        self.mask_driver_license = (
+            True if mask_driver_license is None else mask_driver_license
+        )
+        self.phone_mask_char = phone_mask_char if phone_mask_char else "*"
+        self.name_mask_char = name_mask_char if name_mask_char else "*"
 
         # 화이트리스트 설정 (설정 파일 또는 기본값)
         if whitelist is not None:
