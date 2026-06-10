@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 from ....lib.errors import ErrorCode, GenerationError
 from ....lib.logger import get_logger
 from ....lib.prompt_sanitizer import escape_xml, sanitize_for_prompt
+from ._async_bridge import aiter_sync_stream
 
 if TYPE_CHECKING:
     from openai import OpenAI
@@ -703,18 +704,19 @@ class GenerationModule:
     # ========================================
 
     async def _iterate_stream_chunks(self, stream: Any) -> AsyncGenerator[Any, None]:
-        """Yield chunks from either async or sync OpenAI-compatible streams."""
+        """Yield chunks from either async or sync OpenAI-compatible streams.
+
+        동기 Stream은 aiter_sync_stream 브리지(_async_bridge)로 별도 스레드에서
+        순회한다. 청크마다 to_thread(next)를 새로 디스패치하던 이전 방식과 달리
+        소비자 조기 종료 시 stop_event + close()로 결정적으로 정리되어
+        네트워크 read에 블로킹된 스레드가 남지 않는다(데드락 방지).
+        """
         if hasattr(stream, "__aiter__"):
             async for chunk in stream:
                 yield chunk
             return
 
-        iterator = iter(stream)
-        sentinel = object()
-        while True:
-            chunk = await asyncio.to_thread(next, iterator, sentinel)
-            if chunk is sentinel:
-                break
+        async for chunk in aiter_sync_stream(stream):
             yield chunk
 
     async def stream_answer(

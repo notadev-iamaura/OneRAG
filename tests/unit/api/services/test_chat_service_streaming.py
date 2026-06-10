@@ -647,3 +647,143 @@ class TestChatServiceStreaming:
 
         assert len(sources) == 1
         assert sources[0]["document"] == "real.md"
+
+
+class TestChatServiceStreamingTimeoutGuards:
+    """스트리밍 타임아웃 가드(첫 청크 전 예외 폴백·중간 실패·inter-chunk) 테스트"""
+
+    @staticmethod
+    def _build_modules(stream_answer_fn, fallback_answer: str):
+        """공통 mock 모듈 구성: session/retrieval/generation."""
+        from app.modules.core.generation.generator import GenerationResult
+
+        mock_session = MagicMock()
+        mock_session.get_session = AsyncMock(return_value={"is_valid": True})
+        mock_session.get_context_string = AsyncMock(return_value="")
+        mock_session.create_session = AsyncMock(return_value={"session_id": "test-123"})
+        mock_session.add_conversation = AsyncMock()
+
+        mock_generation = MagicMock()
+        mock_generation.stream_answer = stream_answer_fn
+        mock_generation.generate_answer = AsyncMock(
+            return_value=GenerationResult(
+                answer=fallback_answer,
+                text=fallback_answer,
+                tokens_used=11,
+                model_used="fallback-model",
+                provider="openrouter",
+                generation_time=0.1,
+            )
+        )
+
+        mock_doc = MagicMock()
+        mock_doc.metadata = {"source": "test.pdf"}
+        mock_doc.content = "테스트"
+        mock_doc.page_content = "테스트"
+        mock_retrieval = MagicMock()
+        mock_retrieval.search = AsyncMock(return_value=[mock_doc])
+
+        return {
+            "session": mock_session,
+            "generation": mock_generation,
+            "retrieval": mock_retrieval,
+        }
+
+    @pytest.mark.asyncio
+    async def test_stream_pre_first_chunk_exception_falls_back(self):
+        """첫 청크 전 예외 발생 시에도 비스트리밍 폴백으로 답변을 보장한다."""
+        from app.api.services.chat_service import ChatService
+
+        async def raising_stream(*args, **kwargs):
+            # 첫 청크를 yield하기 전에 예외 발생.
+            raise RuntimeError("스트리밍 연결 실패")
+            yield  # pragma: no cover - 도달하지 않음(제너레이터 표식)
+
+        modules = self._build_modules(raising_stream, "예외 후 폴백 답변.")
+        service = ChatService(modules, {})
+
+        events = [
+            event
+            async for event in service.stream_rag_pipeline(
+                message="테스트", session_id="test-123"
+            )
+        ]
+
+        # 예외 → 폴백 generate_answer 호출.
+        modules["generation"].generate_answer.assert_awaited_once()
+        chunk_events = [e for e in events if e.get("event") == "chunk"]
+        done_events = [e for e in events if e.get("event") == "done"]
+        assert chunk_events, f"폴백 chunk 이벤트가 없습니다: {events}"
+        assert done_events, f"done 이벤트가 없습니다: {events}"
+        assert "".join(e["data"] for e in chunk_events) == "예외 후 폴백 답변."
+        # 생성 실패 error는 발생하지 않아야 한다(폴백 성공).
+        assert not [e for e in events if e.get("event") == "error"]
+
+    @pytest.mark.asyncio
+    async def test_stream_mid_stream_failure_does_not_fall_back(self):
+        """청크 1개 이상 전송 후 실패 시 폴백하지 않고 에러 처리(중복 답변 방지)."""
+        from app.api.services.chat_service import ChatService
+        from app.lib.errors import ErrorCode
+
+        async def fail_after_first(*args, **kwargs):
+            yield "첫 청크"
+            raise RuntimeError("중간 스트리밍 실패")
+
+        modules = self._build_modules(fail_after_first, "이 폴백은 호출되면 안 됨.")
+        service = ChatService(modules, {})
+
+        events = [
+            event
+            async for event in service.stream_rag_pipeline(
+                message="테스트", session_id="test-123"
+            )
+        ]
+
+        # 이미 청크를 보냈으므로 폴백 generate_answer는 호출되지 않아야 한다.
+        modules["generation"].generate_answer.assert_not_awaited()
+        chunk_events = [e for e in events if e.get("event") == "chunk"]
+        assert chunk_events, f"첫 청크가 없습니다: {events}"
+        assert chunk_events[0]["data"] == "첫 청크"
+        # 중간 실패는 기존 생성 실패 에러로 처리돼야 한다.
+        error_events = [e for e in events if e.get("event") == "error"]
+        assert error_events, f"error 이벤트가 없습니다: {events}"
+        assert error_events[0]["error_code"] == ErrorCode.GENERATION_REQUEST_FAILED.value
+
+    @pytest.mark.asyncio
+    async def test_stream_inter_chunk_timeout_emits_stage_timeout_error(self):
+        """청크 간(inter-chunk) 지연이 generate_answer 예산을 넘으면 PIPE-001 에러로 중단."""
+        from app.api.services.chat_service import ChatService
+        from app.lib.errors import ErrorCode
+
+        async def stall_after_first(*args, **kwargs):
+            yield "첫 청크"
+            await asyncio.sleep(5)  # inter-chunk 예산(0.05초)보다 길게 멈춤
+            yield "도달하지 않는 청크"
+
+        modules = self._build_modules(stall_after_first, "이 폴백은 호출되면 안 됨.")
+        # pipeline_timeout opt-in: generate_answer 예산을 매우 짧게 설정.
+        config = {
+            "rag": {
+                "pipeline_timeout": {
+                    "enabled": True,
+                    "stages": {"generate_answer": 0.05},
+                }
+            }
+        }
+        service = ChatService(modules, config)
+
+        events = [
+            event
+            async for event in service.stream_rag_pipeline(
+                message="테스트", session_id="test-123"
+            )
+        ]
+
+        # 첫 청크는 전송, 이후 중간 timeout으로 stage timeout 에러가 나야 한다.
+        chunk_events = [e for e in events if e.get("event") == "chunk"]
+        assert chunk_events and chunk_events[0]["data"] == "첫 청크"
+        error_events = [e for e in events if e.get("event") == "error"]
+        assert error_events, f"error 이벤트가 없습니다: {events}"
+        assert error_events[0]["error_code"] == ErrorCode.PIPELINE_STAGE_TIMEOUT.value
+        # 중복 답변 방지: 폴백 generate_answer는 호출되지 않아야 한다.
+        modules["generation"].generate_answer.assert_not_awaited()

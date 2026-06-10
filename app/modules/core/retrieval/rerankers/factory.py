@@ -344,7 +344,7 @@ class RerankerFactoryV2:
         except ImportError:
             raise ImportError(
                 "LocalReranker를 사용하려면 sentence-transformers가 필요합니다. "
-                "설치: uv sync --extra local-reranker"
+                "설치: uv sync --extra local-embedding"
             )
 
         # config에서 sentence-transformers 또는 local 키로 설정 조회

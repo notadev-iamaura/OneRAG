@@ -29,6 +29,57 @@ rag:
     window: 1
     max_window: 3
 
+  # ==========================================================================
+  # 파이프라인 타임아웃 예산 (SLA Budget) - opt-in
+  # ==========================================================================
+  # 각 stage에 개별 deadline을, 전체에 총 budget을 부여해 무한 대기를 막는다.
+  # 개별 stage cap은 단일 stage 무한정 hang을 막고, total budget은 전체 누적
+  # 지연을 막는 이중 안전장치다(개별 합이 total을 넘을 수 있는 것은 의도된 패턴).
+  #
+  # 기본 OFF: enabled=false면 wait_for 래핑을 전부 건너뛰어 기존 동작(무제한)을
+  # 유지한다(회귀 안전판). 값이 비정상(0 이하/숫자 아님)이면 해당 항목은 무제한.
+  #
+  # 운영 조정 가이드(실가동 검증값 예시):
+  #   - total_budget_seconds는 프론트 HTTP 타임아웃보다 "작게" 잡아 프론트가
+  #     먼저 끊는 일을 막는다 (예: 프론트 300초 → total 270초)
+  #   - generate_answer는 generation.yaml의 LLM 최대 timeout과 동일하게 맞춰
+  #     정상 장문 생성이 stage deadline에 끊기지 않게 한다
+  pipeline_timeout:
+    enabled: false
+    # 전체 파이프라인 총 예산(초). 통짜(REST /chat) 경로에 적용.
+    total_budget_seconds: 270
+    # 스트리밍(SSE/WS) 전용 총 예산(초). 장수명 연결이므로 통짜보다 넉넉하게.
+    # 미설정이면 무제한(stage deadline만 적용).
+    stream_total_budget_seconds: 600
+    # stage별 deadline(초). 각 stage는 asyncio.wait_for로 이 값만큼만 대기한다.
+    stages:
+      route_query: 45        # 라우팅(LLM 분류)
+      prepare_context: 45    # 멀티턴 재작성 + 쿼리 확장(LLM 호출 포함)
+      retrieve_documents: 90 # 하이브리드 병렬 검색 + SQL
+      rerank_documents: 45   # 리랭킹 외곽 가드(리랭커 자체 timeout이 먼저 도달)
+      generate_answer: 180   # LLM 답변 생성 — generation 최대 timeout과 정렬
+      self_rag_verify: 90    # 품질 검증 + 선택적 재생성
+    # 스트리밍 전용: 첫 청크(first-chunk)까지의 최대 대기(초).
+    # 첫 토큰이 이 시간 안에 오지 않으면 검증된 비스트리밍 답변으로 폴백한다.
+    stream_first_chunk_seconds: 45
+
+  # ==========================================================================
+  # 멀티턴 standalone query rewrite - opt-in
+  # ==========================================================================
+  # 동일 대화방의 후속 질문이 대명사/생략/축약으로 자립적이지 않으면 직전 대화
+  # 맥락을 반영한 자립적(standalone) 질문으로 재작성해 검색에 투입한다.
+  # 자립적 질문은 휴리스틱 게이트에서 건너뛰어 불필요한 LLM 호출을 막고,
+  # 재작성 실패 시 원본 질문으로 graceful 폴백한다(채팅 비파괴).
+  # enabled: false면 기존 동작 불변(검색은 후속 질문 단독 수행).
+  multiturn_rewrite:
+    enabled: false
+    # 재작성에 사용할 LLM Factory 선호 provider (fallback_order로 자동 폴백)
+    provider: "google"
+    # 게이트 패턴은 언어별로 오버라이드 가능 (기본값: 한국어)
+    # followup_dependent_patterns: ["그건", "이건", ...]   # 대명사/지시어
+    # followup_start_patterns: ["그리고", "추가로", ...]    # 문장 시작 접속사
+    # short_question_max_words: 5                          # 짧은 질문 어절 임계치
+
   # RRF 점수 정규화 설정 (0~1 범위로 변환, 프론트엔드에서 ×100하여 % 표시)
   # 참고: RRF 공식 = weight / (rrf_k + rank)
   score_normalization:

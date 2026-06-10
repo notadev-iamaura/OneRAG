@@ -417,18 +417,31 @@ const transformApiDocument = (apiDoc: ApiDocument): Document => {
 // Document API
 export const documentAPI = {
   // 문서 목록 조회
+  // 백엔드 계약: 요청은 page_size, 응답 합계는 total_count.
+  // 기존 호출부 호환을 위해 limit도 받아 page_size로 매핑하고,
+  // 응답은 total ?? total_count 폴백으로 흡수한다.
   getDocuments: async (params?: {
     page?: number;
     limit?: number;
+    page_size?: number;
     search?: string;
     status?: string;
   }) => {
-    const response = await api.get<{ documents: ApiDocument[]; total: number }>('/api/upload/documents', { params });
+    const { limit, page_size: pageSize, ...restParams } = params ?? {};
+    const requestedPageSize = pageSize ?? limit;
+    const requestParams = {
+      ...restParams,
+      ...(requestedPageSize !== undefined ? { page_size: requestedPageSize } : {}),
+    };
+    const response = await api.get<{ documents: ApiDocument[]; total?: number; total_count?: number }>(
+      '/api/upload/documents',
+      { params: requestParams }
+    );
     return {
       ...response,
       data: {
         documents: response.data.documents.map(transformApiDocument),
-        total: response.data.total,
+        total: response.data.total ?? response.data.total_count ?? 0,
       },
     };
   },

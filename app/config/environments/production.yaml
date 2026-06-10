@@ -32,7 +32,7 @@ generation:
   google:
     temperature: 0.0
     max_tokens: 2048
-    timeout: 30
+    timeout: 90  # 실가동 교훈: 긴 RAG 컨텍스트 답변이 30초에 잘리는 문제로 상향
     max_retries: 3
 
 # 검색 설정 (프로덕션 환경)

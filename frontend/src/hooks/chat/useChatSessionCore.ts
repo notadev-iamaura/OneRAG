@@ -11,7 +11,7 @@
  * // 일반적인 사용은 useChatSession() 권장
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { AxiosError } from 'axios';
 import { logger } from '../../utils/logger';
 import { createClientId } from '../../utils/clientId';
@@ -99,6 +99,10 @@ export function useChatSessionCore(
   const [sessionId, setSessionId] = useState<string>('');
   const [isSessionInitialized, setIsSessionInitialized] = useState<boolean>(false);
 
+  // switchSession 빠른 연속 전환 race 방어용 토큰.
+  // 가장 최근에 요청한 대상 세션 ID만 화면에 반영하고, 늦게 도착한 이전 응답은 버린다.
+  const latestSelectRef = useRef<string | null>(null);
+
   /**
    * 세션 ID 동기화
    * 새 세션 ID가 현재와 다르면 업데이트하고 localStorage에 저장
@@ -131,6 +135,10 @@ export function useChatSessionCore(
     }
 
     logger.log('세션 사이드바 전환:', { from: sessionId, to: targetSessionId });
+
+    // 이번 전환을 최신 요청으로 표시 (빠른 연속 클릭 race 방어 토큰)
+    latestSelectRef.current = targetSessionId;
+
     setMessages([]);
     setSessionInfo(null);
     setSessionId(targetSessionId);
@@ -138,12 +146,27 @@ export function useChatSessionCore(
 
     try {
       const response = await chatAPI.getChatHistory(targetSessionId);
+
+      // race 가드: await 동안 더 최신 전환이 발생했다면 이 응답은 버린다.
+      // (늦게 도착한 이전 요청 응답이 최신 화면을 덮어쓰는 것을 방지)
+      if (latestSelectRef.current !== targetSessionId) {
+        logger.log('세션 전환 응답 무시 (더 최신 전환 존재):', {
+          ignored: targetSessionId,
+          latest: latestSelectRef.current,
+        });
+        return;
+      }
+
       const historyMessages = Array.isArray(response.data.messages)
         ? response.data.messages.map((msg, index) => mapHistoryEntryToChatMessage(msg, index))
         : [];
       setMessages(historyMessages);
       setIsSessionInitialized(true);
     } catch (historyError) {
+      // 늦게 도착한 이전 요청의 에러도 최신 화면에 영향 주지 않도록 가드
+      if (latestSelectRef.current !== targetSessionId) {
+        return;
+      }
       logger.warn('선택한 세션의 채팅 기록을 불러올 수 없습니다:', historyError);
       setMessages([]);
       showToast({

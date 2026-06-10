@@ -169,6 +169,17 @@ class ErrorCode(str, Enum):
     GROK_002 = "GROK-002"  # xAI API 속도 제한 초과
     GROK_003 = "GROK-003"  # Grok Collections 검색 실패
 
+    # PIPELINE (파이프라인 타임아웃) - 3개
+    # 정식 코드(PIPE_NNN)와 의미 별칭(PIPELINE_*)을 의도적으로 둘 다 제공한다.
+    # 별칭은 호출부 가독성(어떤 timeout인지 이름으로 드러남)을 위한 것으로, 값은
+    # 정식 코드와 동일하다(동일 값 alias는 의도된 설계).
+    PIPE_001 = "PIPE-001"  # 파이프라인 stage deadline 초과 (어느 stage인지 컨텍스트로 표시)
+    PIPE_002 = "PIPE-002"  # 파이프라인 총 budget 초과
+    PIPE_003 = "PIPE-003"  # 스트리밍 첫 청크(first-chunk) 타임아웃
+    PIPELINE_STAGE_TIMEOUT = "PIPE-001"  # 의미 별칭(=PIPE_001): stage 타임아웃
+    PIPELINE_TOTAL_TIMEOUT = "PIPE-002"  # 의미 별칭(=PIPE_002): 총 budget 타임아웃
+    PIPELINE_FIRST_CHUNK_TIMEOUT = "PIPE-003"  # 의미 별칭(=PIPE_003): 첫 청크 타임아웃
+
     # STREAM (스트리밍) - 1개
     STREAM_001 = "STREAM-001"  # 스트리밍 중 오류 발생
 

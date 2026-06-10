@@ -42,6 +42,13 @@ class CircuitBreakerConfig:
     enable_error_rate_check: bool = True
     error_rate_threshold: float = 0.5  # 에러율 임계값 (50%)
     error_rate_window: int = 10  # 최근 N개 요청 기준
+    minimum_error_rate_requests: int = 0  # 에러율 판단 전 필요한 최소 표본 수
+
+    def __post_init__(self) -> None:
+        # 0 이하면 윈도우 크기를 최소 표본으로 사용 — 소표본(첫 실패 1건)으로
+        # 에러율 100% 판정되어 즉시 Open 되는 오작동을 방지한다
+        if self.minimum_error_rate_requests <= 0:
+            self.minimum_error_rate_requests = self.error_rate_window
 
 
 @dataclass
@@ -219,15 +226,17 @@ class CircuitBreaker:
                     )
                     should_open = True
 
-                # 에러율 임계값 확인
+                # 에러율 임계값 확인 (최소 표본 수 충족 시에만 판정)
                 if self.config.enable_error_rate_check:
-                    error_rate = self.stats.get_error_rate(self.config.error_rate_window)
-                    if error_rate >= self.config.error_rate_threshold:
-                        logger.warning(
-                            f"⚠️  [{self.name}] 에러율 임계값 초과: "
-                            f"{error_rate:.1%} >= {self.config.error_rate_threshold:.1%}"
-                        )
-                        should_open = True
+                    sample_size = len(self.stats.recent_results[-self.config.error_rate_window :])
+                    if sample_size >= self.config.minimum_error_rate_requests:
+                        error_rate = self.stats.get_error_rate(self.config.error_rate_window)
+                        if error_rate >= self.config.error_rate_threshold:
+                            logger.warning(
+                                f"⚠️  [{self.name}] 에러율 임계값 초과: "
+                                f"{error_rate:.1%} >= {self.config.error_rate_threshold:.1%}"
+                            )
+                            should_open = True
 
                 if should_open:
                     logger.error(f"🔴 [{self.name}] Closed → Open")
@@ -391,6 +400,7 @@ class CircuitBreakerFactory:
             enable_error_rate_check=cb_settings.get("enable_error_rate_check", True),
             error_rate_threshold=cb_settings.get("error_rate_threshold", 0.5),
             error_rate_window=cb_settings.get("error_rate_window", 10),
+            minimum_error_rate_requests=cb_settings.get("minimum_error_rate_requests", 0),
         )
 
     def get_all_states(self) -> dict[str, dict[str, Any]]:

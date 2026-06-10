@@ -618,28 +618,6 @@ class DocumentProcessor:
             logger.error(f"[PARALLEL] Embedding generation failed: {e}")
             raise
 
-    async def process_document_full(
-        self, file_path: str, metadata: dict[str, Any] | None = None
-    ) -> list[dict[str, Any]]:
-        """
-        문서 전체 처리 파이프라인 (병렬 임베딩 적용)
-
-        Performance:
-            - Before: 100개 문서 → 15초
-            - After: 100개 문서 → 5초 (3x faster)
-        """
-        try:
-            documents = await self.load_document(file_path, metadata)
-            chunks = await self.split_documents(documents)
-            embedded_chunks = await self.embed_chunks_parallel(chunks)
-            logger.info(
-                f"Document processing completed: {file_path} -> {len(embedded_chunks)} embedded chunks"
-            )
-            return embedded_chunks
-        except Exception as e:
-            logger.error(f"Full document processing failed for {file_path}: {e}")
-            raise
-
     def get_stats(self) -> dict[str, Any]:
         """통계 반환"""
         return {

@@ -32,6 +32,7 @@ import json
 from datetime import UTC
 from typing import Any
 
+from weaviate.classes.data import DataObject
 from weaviate.classes.query import Filter, MetadataQuery
 from weaviate.collections.collection import Collection
 from weaviate.exceptions import WeaviateQueryError
@@ -678,10 +679,10 @@ class WeaviateRetriever:
         """
         문서를 Weaviate에 배치 업로드
 
-        안전한 업로드 방식 적용 (scripts/index_all_data.py 패턴):
-        - properties와 vector를 별도 파라미터로 전달
-        - insert() 메서드 사용 (insert_many 대신)
-        - 에러 발생 시 개별 문서 건너뛰고 계속 진행
+        배치 업로드 방식 (insert_many):
+        - DataObject(properties, vector)로 묶어 한 번의 요청으로 적재
+        - 검증 실패 문서는 제외하고 집계, 적재 실패는 배치 결과(errors)로 집계
+        - 단건 insert 직렬 반복 대비 네트워크 왕복을 대폭 감소
 
         Args:
             documents: 업로드할 문서 리스트
@@ -726,57 +727,65 @@ class WeaviateRetriever:
 
         success_count = 0
         error_count = 0
-        errors = []
+        errors: list[str] = []
 
         logger.info(f"📤 Weaviate 문서 업로드 시작: {len(documents)}개 문서")
 
+        # 1. DataObject 리스트 구성. 검증 실패 문서는 즉시 에러로 집계하고 제외한다.
+        #    object_source_index[i] = data_objects[i] 가 원래 documents 의 몇 번째인지.
+        data_objects: list[DataObject] = []
+        object_source_index: list[int] = []
         for i, doc in enumerate(documents):
             try:
-                # 1. 필수 필드 검증
+                # 필수 필드 검증
                 if "content" not in doc:
                     raise ValueError("문서에 'content' 필드가 없습니다.")
                 if "embedding" not in doc and "dense_embedding" not in doc:
                     raise ValueError("문서에 'embedding' 필드가 없습니다.")
 
-                # 2. properties 준비 (embedding 제외)
-                properties = {
-                    "content": doc["content"],
-                }
-
-                # 3. metadata 병합 (있는 경우)
+                # properties 준비 (embedding 제외)
+                properties: dict[str, Any] = {"content": doc["content"]}
                 if "metadata" in doc and isinstance(doc["metadata"], dict):
                     properties.update(self._prepare_metadata_properties(doc["metadata"]))
-
-                # 4. created_at 기본값 설정 (없는 경우)
                 if "created_at" not in properties:
                     from datetime import datetime
 
                     properties["created_at"] = datetime.now(UTC).isoformat()
 
-                # 5. embedding 추출 (DocumentProcessor의 이전 dense_embedding 키도 허용)
+                # embedding 추출 (DocumentProcessor의 이전 dense_embedding 키도 허용)
                 vector = doc.get("embedding", doc.get("dense_embedding"))
                 if not isinstance(vector, list) or not vector:
                     raise ValueError("문서의 'embedding' 필드는 비어 있지 않은 list여야 합니다.")
 
-                # 6. Weaviate에 업로드 (안전한 방식: properties와 vector 분리)
-                await asyncio.to_thread(
-                    self.collection.data.insert, properties=properties, vector=vector
-                )
-
-                success_count += 1
-
-                # 진행 상황 로그 (100개마다)
-                if (i + 1) % 100 == 0:
-                    logger.info(f"📊 업로드 진행: {success_count}/{len(documents)}")
-
+                data_objects.append(DataObject(properties=properties, vector=vector))
+                object_source_index.append(i)
             except Exception as e:
                 error_count += 1
-                error_msg = f"문서 {i+1} 업로드 실패: {str(e)}"
+                error_msg = f"문서 {i + 1} 업로드 실패: {str(e)}"
                 errors.append(error_msg)
                 logger.warning(error_msg)
-                # 개별 문서 실패해도 계속 진행
 
-        # 7. 결과 반환
+        # 2. 배치 적재(insert_many): 단건 insert 직렬 반복을 한 번의 배치 요청으로 대체한다.
+        #    배치 내 일부 실패는 batch_return.errors(배치 인덱스 → 에러)로 보고된다.
+        if data_objects:
+            batch_return = await asyncio.to_thread(
+                self.collection.data.insert_many, data_objects
+            )
+            batch_errors = getattr(batch_return, "errors", None) or {}
+            for batch_idx, batch_error in batch_errors.items():
+                error_count += 1
+                source_idx = (
+                    object_source_index[batch_idx]
+                    if 0 <= batch_idx < len(object_source_index)
+                    else batch_idx
+                )
+                message = getattr(batch_error, "message", str(batch_error))
+                error_msg = f"문서 {source_idx + 1} 업로드 실패: {message}"
+                errors.append(error_msg)
+                logger.warning(error_msg)
+            success_count = len(data_objects) - len(batch_errors)
+
+        # 3. 결과 반환
         result = {
             "success_count": success_count,
             "error_count": error_count,
