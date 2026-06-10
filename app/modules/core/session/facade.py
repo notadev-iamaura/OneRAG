@@ -377,17 +377,3 @@ class EnhancedSessionModule:
                 return msg.get("debug_trace")
 
         return None
-
-    # ========================================
-    # 하위 호환성 - IP Geolocation 주입
-    # ========================================
-
-    @property
-    def ip_geolocation(self):
-        """IP Geolocation 모듈 getter"""
-        return self.session_service.ip_geolocation
-
-    @ip_geolocation.setter
-    def ip_geolocation(self, value):
-        """IP Geolocation 모듈 setter"""
-        self.session_service.set_ip_geolocation(value)

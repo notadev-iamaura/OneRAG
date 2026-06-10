@@ -67,17 +67,10 @@ class SessionService:
             "cleanup_runs": 0,
         }
 
-        # IP Geolocation 모듈 (나중에 주입)
-        self.ip_geolocation = None
-
         logger.info(
             f"SessionService 초기화: ttl={self.ttl}s, max_exchanges={self.max_exchanges}, "
             f"Session creation lock 활성화 (Race Condition 보호)"
         )
-
-    def set_ip_geolocation(self, ip_geolocation):
-        """IP Geolocation 모듈 의존성 주입"""
-        self.ip_geolocation = ip_geolocation
 
     async def create_session(
         self, metadata: dict[str, Any] | None = None, session_id: str | None = None
@@ -105,18 +98,8 @@ class SessionService:
         Returns:
             {'session_id': str, 'location': dict}
         """
-        # IP Geolocation 비활성화 (세션 생성 타임아웃 원인 - 9-14초 지연)
-        # IP 주소 추출은 유지하지만 지역 조회는 하지 않음
-        # ip_address = metadata.get('metadata', {}).get('ip_address') if metadata else None
-
-        # IP 지역 정보 조회 비활성화
+        # IP 지역 정보 조회는 비활성화 상태 (세션 생성 타임아웃 원인이라 제거됨)
         location_data = None
-        # if ip_address and self.ip_geolocation:
-        #     try:
-        #         location_data = await self.ip_geolocation.get_location(ip_address)
-        #         logger.info(f"📍 세션 위치: {location_data.get('country')} - {location_data.get('city')}")
-        #     except Exception as e:
-        #         logger.error(f"IP 지역 조회 실패: {e}")
 
         # 🔒 세션 ID 중복 체크 및 세션 생성 (Lock으로 보호)
         lock_start = time.time()
