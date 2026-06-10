@@ -1,6 +1,12 @@
-# LLM 제공자 설정 (OpenRouter 통합)
-# 기능: 모든 LLM 호출을 OpenRouter 게이트웨이로 통합
+# LLM 제공자 설정 (OpenRouter 통합) — 내부 보조 LLM 전용
+# 기능: 쿼리 재작성/확장(LLMClientFactory, gpt5_engine 등) 등 내부 보조 호출용 설정
 # 사용: 단일 API 키로 300+ 모델 접근 (https://openrouter.ai/models)
+#
+# ⚠️ generation.yaml과 통합 금지 — "중복"이 아니라 용도가 다른 독립 섹션입니다.
+#   - llm.*        : 내부 보조 LLM (쿼리 재작성, 확장 등) — 짧은 출력, 낮은 지연 우선
+#   - generation.* : 사용자 답변 생성 LLM — 품질 우선
+#   온도/타임아웃 값이 다른 것은 드리프트가 아니라 의도입니다.
+#   (예: llm.timeout=120 vs generation.timeout=150)
 
 # ========================================
 # OpenRouter 통합 모드 (단일 게이트웨이)
