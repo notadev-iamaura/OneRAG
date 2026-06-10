@@ -251,8 +251,9 @@ async def websocket_chat(
             exc_info=True,
         )
     finally:
-        # 연결 해제
-        ws_manager.disconnect(session_id)
+        # 연결 해제 (이 핸들러의 websocket과 동일할 때만 삭제 → 재연결 경합 방지)
+        # 같은 session_id로 새 연결이 이미 등록되었다면 구 연결 정리는 무시됨
+        ws_manager.disconnect(session_id, websocket)
         logger.info("WebSocket 연결 해제", session_id=session_id)
 
 
