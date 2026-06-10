@@ -1,0 +1,61 @@
+# 통합 검증 전용 인프라 (Weaviate + PostgreSQL)
+# ===================================================
+# 목적: 정적 게이트(lint/mypy/test)를 넘어 실제 외부 서비스 연결로 integration
+#       테스트를 돌리기 위한 로컬 스택입니다.
+#
+# 사용:
+#   make verify-integration            # 전체 (서비스 기동 → 대기 → 테스트 → 종료)
+#   docker compose -f docker-compose.verify.yml up -d     # 서비스만 기동
+#   docker compose -f docker-compose.verify.yml down -v   # 종료 + 볼륨 삭제
+#
+# 환경변수(테스트 실행 시):
+#   WEAVIATE_URL=http://localhost:8080
+#   DATABASE_URL=postgresql://onerag:onerag-verify@localhost:5432/rag_db
+
+services:
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.27.8
+    container_name: onerag-verify-weaviate
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # HTTP API
+      - "50051:50051"  # gRPC (Python client v4)
+    environment:
+      ENABLE_TOKENIZER_KAGOME_KR: 'true'  # 한국어 토크나이저
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      QUERY_DEFAULTS_LIMIT: 25
+      LOG_LEVEL: 'info'
+    volumes:
+      - verify_weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  postgres:
+    image: postgres:16
+    container_name: onerag-verify-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: onerag
+      POSTGRES_PASSWORD: onerag-verify
+      POSTGRES_DB: rag_db
+    volumes:
+      - verify_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onerag -d rag_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  verify_weaviate_data:
+    name: onerag_verify_weaviate_data
+  verify_postgres_data:
+    name: onerag_verify_postgres_data

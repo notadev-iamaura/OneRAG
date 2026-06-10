@@ -1,0 +1,105 @@
+# 통합 검증 가이드 (Integration Verification)
+
+정적 CI 게이트(`lint` / `mypy` / `lint-imports` / 단위·통합 stub 테스트)는 빠르고
+의존성이 없지만, **실제 외부 서비스 연결과 무거운 optional provider 동작은
+검증하지 않는다.** 이 문서는 그 간극을 메우는 통합 검증 환경 구성과 실행 방법을
+설명한다.
+
+## 무엇을 추가로 검증하는가
+
+| 항목 | 정적 게이트 | 통합 검증 |
+|---|---|---|
+| Weaviate 하이브리드 검색 (실 연결) | ❌ (skip) | ✅ |
+| PostgreSQL 세션/평가/프롬프트 영속화 | stub | ✅ 실 DB |
+| spaCy 한국어 NER (PII detector) | ❌ (skip) | ✅ |
+| sentence-transformers 로컬 임베더 | ❌ (skip) | ✅ |
+| 실 LLM 호출 (self-reflection 등) | mock | ✅ (API 키 필요, 비용 발생) |
+| Neo4j GraphRAG | ❌ (skip) | 선택 (별도 기동 필요) |
+
+## 1. 선행 의존성 설치
+
+```bash
+# 무거운 optional 의존성 (sentence-transformers + torch ≈ 2GB)
+uv sync --extra dev --extra local-embedding
+
+# spaCy 한국어 모델 (PyPI 미배포 → GitHub release wheel 직접 설치)
+# spaCy 3.7.x → 모델 3.7.0
+uv pip install "https://github.com/explosion/spacy-models/releases/download/ko_core_news_sm-3.7.0/ko_core_news_sm-3.7.0-py3-none-any.whl"
+```
+
+> spaCy `python -m spacy download`는 uv 환경에 `pip`가 없어 실패한다. 위처럼
+> `uv pip install`로 wheel을 직접 설치한다. spaCy 버전이 바뀌면 모델 버전도 맞춘다.
+
+## 2. LLM 키 (실 LLM 테스트용, 선택)
+
+`.env`에 `GOOGLE_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` 중 하나 이상을
+설정한다. 없으면 실 LLM 테스트는 자동 skip된다. **실 LLM 호출은 토큰 비용이
+발생한다.**
+
+## 3. 실행
+
+### 한 번에 (권장)
+
+```bash
+make verify-integration
+```
+
+이 타깃은 `scripts/verify-integration.sh`를 실행하며:
+
+1. `docker-compose.verify.yml`로 **Weaviate + PostgreSQL**를 기동하고 healthy까지 대기
+2. optional provider 게이트(`ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1`)를 켜고
+   PII detector·로컬 임베더 단위 테스트 실행
+3. `WEAVIATE_URL`·`DATABASE_URL`을 주입하고 `pytest tests/integration -m integration` 실행
+4. 종료 시 서비스 정리 (`KEEP_SERVICES=1`로 유지 가능)
+
+### 수동 (디버깅)
+
+```bash
+# 서비스만 기동
+docker compose -f docker-compose.verify.yml up -d --wait
+
+# 환경변수 게이트
+export ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1
+export WEAVIATE_URL=http://localhost:8080
+export DATABASE_URL=postgresql://onerag:onerag-verify@localhost:5432/rag_db
+export ENVIRONMENT=test
+
+# 부분 실행 예시
+uv run pytest tests/integration/test_hybrid_search_integration.py -q   # Weaviate
+uv run pytest tests/unit/privacy/test_pii_detector.py -q               # spaCy ko
+
+# 종료
+docker compose -f docker-compose.verify.yml down -v
+```
+
+## 핵심 게이트 환경변수
+
+| 변수 | 용도 |
+|---|---|
+| `ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1` | spaCy/sentence-transformers 등 무거운 optional 테스트 활성화 (기본 비활성) |
+| `WEAVIATE_URL` | Weaviate 연결 (기본 `http://localhost:8080`) |
+| `DATABASE_URL` | PostgreSQL 연결 (`postgresql://onerag:onerag-verify@localhost:5432/rag_db`) |
+| `NEO4J_URI` | (선택) Neo4j GraphRAG 테스트. 미설정 시 skip |
+
+## Neo4j (선택)
+
+GraphRAG integration 테스트는 Neo4j가 필요하다. 검증하려면 별도 기동:
+
+```bash
+docker compose -f docker-compose.neo4j.yml up -d
+export NEO4J_URI=bolt://localhost:7687
+```
+
+## 현재 검증 상태 (2026-06-10)
+
+- ✅ Weaviate 하이브리드 검색 integration 통과
+- ✅ PostgreSQL 세션 race condition / 영속화 통과
+- ✅ spaCy 한국어 NER (PII detector) 통과
+- ✅ sentence-transformers 로컬 임베더 통과
+- ⏭️ Neo4j GraphRAG: 별도 기동 시에만 (기본 skip)
+- 💰 실 LLM 테스트: 키 설정 시 통과 (토큰 비용 발생)
+
+> 통합 검증 중 `test_session_race_condition.py`의 중복-ID 테스트가
+> IDOR 방어(약한 session_id 거부) 변경과 불일치해 실패했고, 유효 UUID4를
+> 쓰도록 테스트를 수정했다. 이처럼 통합 검증은 단위 테스트가 놓친 실제
+> 시나리오 회귀를 잡아낸다.

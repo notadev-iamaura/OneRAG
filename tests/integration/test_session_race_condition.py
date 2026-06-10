@@ -14,6 +14,7 @@ Session Race Condition 테스트
 
 import asyncio
 import time
+from uuid import uuid4
 
 import pytest
 
@@ -43,8 +44,11 @@ class TestSessionRaceCondition:
         Given: 같은 session_id로 10개 동시 요청
         When: asyncio.gather로 동시 실행
         Then: 하나만 원래 ID 사용, 나머지는 새 ID로 대체
+
+        주의: IDOR 방어로 약한 session_id는 거부되고 서버 UUID4로 대체되므로,
+        race condition(중복 생성 방지) 검증에는 추측 불가능한 유효 UUID4를 쓴다.
         """
-        target_session_id = "duplicate-test-id"
+        target_session_id = str(uuid4())
 
         # 10개 동시 요청
         tasks = [
