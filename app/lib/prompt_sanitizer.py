@@ -222,13 +222,15 @@ def sanitize_for_prompt(
     if not text:
         return "", True
 
-    # 1. 길이 제한
-    if max_length and len(text) > max_length:
-        text = text[:max_length]
-
-    # 2. 인젝션 검사
+    # 1. 인젝션 검사 (길이 제한 전 원본 전체에 대해 수행)
+    # ⚠️ 보안: 절단 후 검사하면 max_length 뒤에 페이로드를 붙여 우회할 수 있다.
+    #         반드시 자르기 전 전체 텍스트를 검사한다.
     if check_injection and contains_injection(text):
         return "", False
+
+    # 2. 길이 제한
+    if max_length and len(text) > max_length:
+        text = text[:max_length]
 
     # 3. XML 이스케이핑
     safe_text = escape_xml(text)
