@@ -578,18 +578,19 @@ class TestRouteQuery:
         """
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
 
-        with patch("app.api.services.rag_pipeline.RuleBasedRouter") as mock_router_class:
-            mock_router = mock_router_class.return_value
-            mock_match = MagicMock()
-            mock_match.route = "direct_answer"
-            mock_match.direct_answer = "안녕하세요!"
-            mock_match.confidence = 0.95
-            mock_match.rule_name = "greeting"
-            mock_match.intent = "greeting"
-            mock_match.domain = "general"
-            mock_router.check_rules = AsyncMock(return_value=mock_match)
+        # 라우터는 __init__에서 1회 생성되므로 인스턴스 속성을 mock으로 교체한다.
+        mock_router = MagicMock()
+        mock_match = MagicMock()
+        mock_match.route = "direct_answer"
+        mock_match.direct_answer = "안녕하세요!"
+        mock_match.confidence = 0.95
+        mock_match.rule_name = "greeting"
+        mock_match.intent = "greeting"
+        mock_match.domain = "general"
+        mock_router.check_rules = AsyncMock(return_value=mock_match)
+        pipeline.rule_based_router = mock_router
 
-            decision = await pipeline.route_query("안녕", "test", time.time())
+        decision = await pipeline.route_query("안녕", "test", time.time())
 
         assert decision.should_continue is False
         assert decision.immediate_response is not None
@@ -617,15 +618,16 @@ class TestRouteQuery:
 
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
 
-        with patch("app.api.services.rag_pipeline.RuleBasedRouter") as mock_router_class:
-            mock_router = mock_router_class.return_value
-            mock_router.check_rules = AsyncMock(return_value=None)
+        # 라우터는 __init__에서 1회 생성되므로 인스턴스 속성을 mock으로 교체한다.
+        mock_router = MagicMock()
+        mock_router.check_rules = AsyncMock(return_value=None)
+        pipeline.rule_based_router = mock_router
 
-            decision = await pipeline.route_query(
-                message="세 번째 질문",
-                session_id="test-session",
-                start_time=time.time(),
-            )
+        decision = await pipeline.route_query(
+            message="세 번째 질문",
+            session_id="test-session",
+            start_time=time.time(),
+        )
 
         # 검증: get_conversation 호출되었는지
         mock_modules["session_module"].get_conversation.assert_called_once_with(
@@ -650,16 +652,17 @@ class TestRouteQuery:
 
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
 
-        with patch("app.api.services.rag_pipeline.RuleBasedRouter") as mock_router_class:
-            mock_router = mock_router_class.return_value
-            mock_router.check_rules = AsyncMock(return_value=None)
+        # 라우터는 __init__에서 1회 생성되므로 인스턴스 속성을 mock으로 교체한다.
+        mock_router = MagicMock()
+        mock_router.check_rules = AsyncMock(return_value=None)
+        pipeline.rule_based_router = mock_router
 
-            # 에러 발생하지 않고 정상 진행
-            decision = await pipeline.route_query(
-                message="테스트 질문",
-                session_id="test-session",
-                start_time=time.time(),
-            )
+        # 에러 발생하지 않고 정상 진행
+        decision = await pipeline.route_query(
+            message="테스트 질문",
+            session_id="test-session",
+            start_time=time.time(),
+        )
 
         assert decision.should_continue is True
 
@@ -706,15 +709,16 @@ class TestRouteQuery:
 
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
 
-        with patch("app.api.services.rag_pipeline.RuleBasedRouter") as mock_router_class:
-            mock_router = mock_router_class.return_value
-            mock_router.check_rules = AsyncMock(return_value=None)
+        # 라우터는 __init__에서 1회 생성되므로 인스턴스 속성을 mock으로 교체한다.
+        mock_router = MagicMock()
+        mock_router.check_rules = AsyncMock(return_value=None)
+        pipeline.rule_based_router = mock_router
 
-            decision = await pipeline.route_query(
-                message="부적절한 질문",
-                session_id="test-session",
-                start_time=time.time(),
-            )
+        decision = await pipeline.route_query(
+            message="부적절한 질문",
+            session_id="test-session",
+            start_time=time.time(),
+        )
 
         # 검증: blocked 라우트 시 즉시 응답
         assert decision.should_continue is False
@@ -735,16 +739,17 @@ class TestRouteQuery:
         """
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
 
-        with patch("app.api.services.rag_pipeline.RuleBasedRouter") as mock_router_class:
-            mock_router = mock_router_class.return_value
-            # RuleBasedRouter 예외 발생
-            mock_router.check_rules = AsyncMock(side_effect=RuntimeError("규칙 체크 실패"))
+        # 라우터는 __init__에서 1회 생성되므로 인스턴스 속성을 mock으로 교체한다.
+        mock_router = MagicMock()
+        # RuleBasedRouter 예외 발생
+        mock_router.check_rules = AsyncMock(side_effect=RuntimeError("규칙 체크 실패"))
+        pipeline.rule_based_router = mock_router
 
-            decision = await pipeline.route_query(
-                message="테스트 질문",
-                session_id="test-session",
-                start_time=time.time(),
-            )
+        decision = await pipeline.route_query(
+            message="테스트 질문",
+            session_id="test-session",
+            start_time=time.time(),
+        )
 
         # 검증: 예외 발생해도 계속 진행 (LLM 비활성화 상태)
         assert decision.should_continue is True

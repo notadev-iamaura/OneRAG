@@ -47,6 +47,10 @@ class JinaReranker:
         self.endpoint = endpoint
         self.timeout = timeout
 
+        # ✅ httpx AsyncClient를 1회 생성하여 재사용 (TCP/TLS 핸드셰이크 반복 방지)
+        # httpx.AsyncClient() 생성자는 동기이므로 __init__에서 생성 가능
+        self._client = httpx.AsyncClient(timeout=timeout)
+
         # 통계
         self.stats = {
             "total_requests": 0,
@@ -61,7 +65,8 @@ class JinaReranker:
         logger.debug("JinaReranker 초기화 완료 (HTTP API 사용)")
 
     async def close(self) -> None:
-        """리소스 정리 (HTTP 클라이언트는 요청마다 생성/소멸)"""
+        """리소스 정리 (재사용 중인 httpx AsyncClient 종료)"""
+        await self._client.aclose()
         logger.info("JinaReranker 종료 완료")
 
     async def rerank(
@@ -115,17 +120,16 @@ class JinaReranker:
                 f"documents={len(documents)}, top_n={request_data['top_n']}"
             )
 
-            # HTTP 요청 실행 (asyncio + httpx)
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    self.endpoint,
-                    json=request_data,
-                    headers=headers,
-                    timeout=self.timeout,
-                )
-                response.raise_for_status()
+            # HTTP 요청 실행 (재사용 클라이언트 사용, asyncio + httpx)
+            response = await self._client.post(
+                self.endpoint,
+                json=request_data,
+                headers=headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
 
-                rerank_response = response.json()
+            rerank_response = response.json()
 
             # 결과 재구성 (기존 SearchResult 객체에 새 스코어 적용)
             reranked_results = []

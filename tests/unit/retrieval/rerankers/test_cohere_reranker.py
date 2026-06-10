@@ -6,8 +6,7 @@ Cohere Rerank API v3를 사용하는 리랭커의 TDD 테스트 파일입니다.
 목표 커버리지: 75-85%
 """
 
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -147,10 +146,8 @@ class TestCohereRerankerReranking:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_post.return_value = mock_response
 
             results = await reranker.rerank("Python이란?", sample_results)
 
@@ -201,10 +198,8 @@ class TestCohereRerankerReranking:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_post.return_value = mock_response
 
             results = await reranker.rerank("test", sample_results, top_n=2)
 
@@ -248,10 +243,8 @@ class TestCohereRerankerErrorHandling:
 
         reranker = CohereReranker(api_key="test-key")
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                side_effect=Exception("API Error")
-            )
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_post.side_effect = Exception("API Error")
 
             results = await reranker.rerank("test", sample_results)
 
@@ -274,22 +267,17 @@ class TestCohereRerankerErrorHandling:
 
         from app.modules.core.retrieval.rerankers.cohere_reranker import CohereReranker
 
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx.AsyncClient.post") as mock_post:
             # HTTP 500 에러 시뮬레이션
             mock_response = MagicMock()
             mock_response.status_code = 500
             mock_response.text = "Internal Server Error"
 
-            async def mock_post(*args: Any, **kwargs: Any) -> MagicMock:
-                raise httpx.HTTPStatusError(
-                    "500 Server Error",
-                    request=MagicMock(),
-                    response=mock_response,
-                )
-
-            mock_client_instance = MagicMock()
-            mock_client_instance.post = mock_post
-            mock_client_class.return_value.__aenter__.return_value = mock_client_instance
+            mock_post.side_effect = httpx.HTTPStatusError(
+                "500 Server Error",
+                request=MagicMock(),
+                response=mock_response,
+            )
 
             reranker = CohereReranker(api_key="test-api-key")
             results = await reranker.rerank(query="test", results=sample_results)
@@ -311,14 +299,9 @@ class TestCohereRerankerErrorHandling:
 
         from app.modules.core.retrieval.rerankers.cohere_reranker import CohereReranker
 
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx.AsyncClient.post") as mock_post:
             # 타임아웃 시뮬레이션
-            async def mock_post(*args: Any, **kwargs: Any) -> None:
-                raise httpx.TimeoutException("Request timeout")
-
-            mock_client_instance = MagicMock()
-            mock_client_instance.post = mock_post
-            mock_client_class.return_value.__aenter__.return_value = mock_client_instance
+            mock_post.side_effect = httpx.TimeoutException("Request timeout")
 
             reranker = CohereReranker(api_key="test-api-key", timeout=1.0)
             results = await reranker.rerank(query="test", results=sample_results)
@@ -376,17 +359,14 @@ class TestCohereRerankerUtilities:
             SearchResult(id="test-doc", content="test", score=0.5, metadata={}),
         ]
 
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "results": [{"index": 0, "relevance_score": 0.9}]
             }
             mock_response.raise_for_status = MagicMock()
-
-            mock_client_instance = MagicMock()
-            mock_client_instance.post = AsyncMock(return_value=mock_response)
-            mock_client_class.return_value.__aenter__.return_value = mock_client_instance
+            mock_post.return_value = mock_response
 
             reranker = CohereReranker(api_key="test-api-key")
             await reranker.rerank(query="test", results=sample_results)
@@ -413,14 +393,9 @@ class TestCohereRerankerUtilities:
             SearchResult(id="test-doc", content="test", score=0.5, metadata={}),
         ]
 
-        with patch("httpx.AsyncClient") as mock_client_class:
+        with patch("httpx.AsyncClient.post") as mock_post:
             # 타임아웃 시뮬레이션
-            async def mock_post(*args: Any, **kwargs: Any) -> None:
-                raise httpx.TimeoutException("Timeout")
-
-            mock_client_instance = MagicMock()
-            mock_client_instance.post = mock_post
-            mock_client_class.return_value.__aenter__.return_value = mock_client_instance
+            mock_post.side_effect = httpx.TimeoutException("Timeout")
 
             reranker = CohereReranker(api_key="test-api-key")
             await reranker.rerank(query="test", results=sample_results)

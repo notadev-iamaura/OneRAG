@@ -17,7 +17,7 @@ TDD Phase: RED (실패 테스트 작성)
 """
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -103,13 +103,11 @@ class TestColBERTRerankerBasicOperations:
         mock_successful_response: dict[str, Any],
     ) -> None:
         """리랭킹 후 점수순으로 정렬된 결과 반환"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_successful_response
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -129,13 +127,11 @@ class TestColBERTRerankerBasicOperations:
         mock_successful_response: dict[str, Any],
     ) -> None:
         """API 응답의 점수로 SearchResult 점수 업데이트"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_successful_response
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -156,13 +152,11 @@ class TestColBERTRerankerBasicOperations:
         mock_successful_response: dict[str, Any],
     ) -> None:
         """리랭킹 후 원본 메타데이터 보존"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_successful_response
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -194,8 +188,7 @@ class TestAPICall:
         sample_search_results: list[SearchResult],
     ) -> None:
         """올바른 API 요청 형식 확인"""
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_post = AsyncMock()
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = {
@@ -206,7 +199,6 @@ class TestAPICall:
                 ]
             }
             mock_post.return_value = mock_response
-            mock_client.return_value.__aenter__.return_value.post = mock_post
 
             reranker = JinaColBERTReranker(config=default_config)
             await reranker.rerank(
@@ -246,14 +238,10 @@ class TestAPICall:
             max_documents=20,
         )
 
-        # colbert_reranker 모듈에서 import한 httpx를 패치
+        # colbert_reranker 모듈에서 import한 httpx의 post 메서드를 패치
         with patch(
-            "app.modules.core.retrieval.rerankers.colbert_reranker.httpx.AsyncClient"
-        ) as mock_client:
-            # AsyncClient context manager mock 설정
-            mock_client_instance = AsyncMock()
-            mock_client.return_value.__aenter__.return_value = mock_client_instance
-
+            "app.modules.core.retrieval.rerankers.colbert_reranker.httpx.AsyncClient.post"
+        ) as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             # sample_search_results가 3개이므로 3개 결과 반환
@@ -264,7 +252,7 @@ class TestAPICall:
                     {"index": 2, "relevance_score": 0.8},
                 ]
             }
-            mock_client_instance.post.return_value = mock_response
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=config)
             # 2개 이상의 결과를 전달해야 API가 호출됨 (단일 결과는 스킵)
@@ -274,8 +262,8 @@ class TestAPICall:
             )
 
             # 호출된 URL 확인
-            assert mock_client_instance.post.called
-            call_args = mock_client_instance.post.call_args
+            assert mock_post.called
+            call_args = mock_post.call_args
             # 첫 번째 위치 인자 또는 kwargs에서 URL 확인
             if call_args.args:
                 assert call_args.args[0] == custom_endpoint
@@ -299,13 +287,11 @@ class TestErrorHandling:
         sample_search_results: list[SearchResult],
     ) -> None:
         """API 오류 시 원본 결과 반환 (Graceful Fallback)"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 500
             mock_response.text = "Internal Server Error"
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -325,10 +311,8 @@ class TestErrorHandling:
         sample_search_results: list[SearchResult],
     ) -> None:
         """타임아웃 시 원본 결과 반환"""
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                side_effect=httpx.TimeoutException("Request timed out")
-            )
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_post.side_effect = httpx.TimeoutException("Request timed out")
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -347,10 +331,8 @@ class TestErrorHandling:
         sample_search_results: list[SearchResult],
     ) -> None:
         """네트워크 연결 오류 시 원본 결과 반환"""
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                side_effect=httpx.ConnectError("Connection failed")
-            )
+        with patch("httpx.AsyncClient.post") as mock_post:
+            mock_post.side_effect = httpx.ConnectError("Connection failed")
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -368,13 +350,11 @@ class TestErrorHandling:
         sample_search_results: list[SearchResult],
     ) -> None:
         """잘못된 JSON 응답 시 원본 결과 반환"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.side_effect = ValueError("Invalid JSON")
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -423,10 +403,7 @@ class TestEmptyInputHandling:
             )
         ]
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_post = AsyncMock()
-            mock_client.return_value.__aenter__.return_value.post = mock_post
-
+        with patch("httpx.AsyncClient.post") as mock_post:
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
                 query="테스트",
@@ -456,13 +433,11 @@ class TestTopNLimit:
         mock_successful_response: dict[str, Any],
     ) -> None:
         """top_n 지정 시 상위 n개만 반환"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_successful_response
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -481,13 +456,11 @@ class TestTopNLimit:
         mock_successful_response: dict[str, Any],
     ) -> None:
         """top_n이 None이면 전체 반환"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_successful_response
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
             result = await reranker.rerank(
@@ -532,13 +505,11 @@ class TestStatistics:
         mock_successful_response: dict[str, Any],
     ) -> None:
         """호출 통계 추적"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.json.return_value = mock_successful_response
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
 
@@ -557,12 +528,10 @@ class TestStatistics:
         sample_search_results: list[SearchResult],
     ) -> None:
         """실패 통계 추적"""
-        with patch("httpx.AsyncClient") as mock_client:
+        with patch("httpx.AsyncClient.post") as mock_post:
             mock_response = MagicMock()
             mock_response.status_code = 500
-            mock_client.return_value.__aenter__.return_value.post = AsyncMock(
-                return_value=mock_response
-            )
+            mock_post.return_value = mock_response
 
             reranker = JinaColBERTReranker(config=default_config)
 
@@ -660,10 +629,7 @@ class TestDisabledState:
             max_documents=20,
         )
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_post = AsyncMock()
-            mock_client.return_value.__aenter__.return_value.post = mock_post
-
+        with patch("httpx.AsyncClient.post") as mock_post:
             reranker = JinaColBERTReranker(config=config)
             result = await reranker.rerank(
                 query="테스트",

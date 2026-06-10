@@ -754,6 +754,31 @@ class RAGPipeline:
         from ..schemas.chat_schemas import Source
 
         self.Source = Source
+
+        # 규칙 기반 라우터를 1회 생성해 재사용한다.
+        # 기존에는 route_query()가 매 chat 요청마다 RuleBasedRouter(enabled=True)를
+        # 새로 만들어 config.yaml/routing_rules_v2.yaml을 디스크에서 반복 읽었다.
+        # DynamicRuleManager(auto_reload=True)가 5분마다 규칙을 자동 리로드하므로
+        # 인스턴스를 공유해도 규칙 변경은 그대로 반영된다(동작 보존).
+        # 생성 실패 시 None으로 두고 route_query()에서 lazy 생성으로 폴백한다.
+        self.rule_based_router: Any | None = None
+        try:
+            global RuleBasedRouter
+            if RuleBasedRouter is None:
+                from ...modules.core.routing.rule_based_router import (
+                    RuleBasedRouter as _RuleBasedRouter,
+                )
+
+                RuleBasedRouter = _RuleBasedRouter
+
+            self.rule_based_router = RuleBasedRouter(enabled=True)
+        except Exception as e:
+            logger.warning(
+                "RuleBasedRouter 초기화 실패 (route_query에서 lazy 생성으로 폴백)",
+                extra={"error": str(e)},
+                exc_info=True,
+            )
+
         logger.info(
             "RAGPipeline 초기화 완료",
             extra={
@@ -1725,15 +1750,21 @@ class RAGPipeline:
                     exc_info=True
                 )
         try:
-            global RuleBasedRouter
-            if RuleBasedRouter is None:
-                from ...modules.core.routing.rule_based_router import (
-                    RuleBasedRouter as _RuleBasedRouter,
-                )
+            # __init__에서 1회 생성한 라우터를 재사용한다.
+            # 초기화에 실패했던 경우에만 여기서 lazy 생성으로 폴백한다.
+            rule_router = self.rule_based_router
+            if rule_router is None:
+                global RuleBasedRouter
+                if RuleBasedRouter is None:
+                    from ...modules.core.routing.rule_based_router import (
+                        RuleBasedRouter as _RuleBasedRouter,
+                    )
 
-                RuleBasedRouter = _RuleBasedRouter
+                    RuleBasedRouter = _RuleBasedRouter
 
-            rule_router = RuleBasedRouter(enabled=True)
+                rule_router = RuleBasedRouter(enabled=True)
+                self.rule_based_router = rule_router
+
             rule_match = await rule_router.check_rules(message)
             if rule_match:
                 routing_metadata = {
