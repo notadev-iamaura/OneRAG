@@ -181,8 +181,15 @@ jobs:
   # provider/reranker/bm25/embedder 단위 테스트의 staleness 를 자동 차단한다.
   #
   # all-vectordb: chroma/pinecone/qdrant/pgvector, bm25: kiwipiepy/rank-bm25,
-  # local-embedding: sentence-transformers(reranker 테스트). weaviate/mongodb 는
-  # base 의존성으로 충족된다. (pgvector store 테스트는 psycopg v3 미설치 시 self-skip)
+  # local-embedding: sentence-transformers(reranker wiring 테스트). weaviate/mongodb
+  # 는 base 의존성으로 충족된다. (pgvector store 테스트는 psycopg v3 미설치 시 self-skip)
+  #
+  # 결정성(determinism) 정책: 이 게이트는 외부 네트워크에 의존하지 않는다.
+  #   - HF_HUB_OFFLINE=1 / TRANSFORMERS_OFFLINE=1 로 HuggingFace 다운로드를 차단한다.
+  #   - test_local_reranker.py 는 initialize()/rerank() 에서 실제 CrossEncoder 모델을
+  #     HF 에서 받아 추론하는 통합 성격이라 제외한다(429 rate-limit 등 flaky 원인).
+  #     LocalReranker 의 wiring(=lazy 생성)은 test_reranker_factory_v2 가 커버한다.
+  #     실모델 추론 검증은 integration verification(make verify-integration)에서 수행.
   # ============================================
   optional-providers:
     name: Optional Providers
@@ -191,6 +198,8 @@ jobs:
     env:
       ENVIRONMENT: test
       ONERAG_RUN_OPTIONAL_PROVIDER_TESTS: "1"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -223,6 +232,7 @@ jobs:
             tests/unit/retrieval/bm25_engine \
             tests/unit/retrieval/rerankers \
             tests/unit/retrieval/retrievers \
+            --ignore=tests/unit/retrieval/rerankers/test_local_reranker.py \
             --tb=short -q --timeout=120
 
   # ============================================
