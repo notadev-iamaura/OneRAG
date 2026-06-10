@@ -13,10 +13,21 @@ from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
+from tenacity import (
+    AsyncRetrying,
+    RetryError,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_incrementing,
+    wait_random,
+)
 
 from app.modules.ingestion.interfaces import IIngestionConnector, StandardDocument
 
 logger = logging.getLogger(__name__)
+
+# 재시도 폭주 완화용 무작위 지연 범위 (초, [0, JITTER) 추가)
+_BACKOFF_JITTER = 0.5
 
 class SitemapConnector(IIngestionConnector):
     def __init__(self, url: str, **kwargs: Any) -> None:
@@ -46,22 +57,48 @@ class SitemapConnector(IIngestionConnector):
                 logger.error(f"Critical error during document fetch task: {e}")
 
     async def _safe_fetch_and_parse(self, url: str) -> StandardDocument | None:
-        """세마포어와 재시도 로직을 적용한 안전한 페이지 수집"""
+        """
+        세마포어와 재시도 로직을 적용한 안전한 페이지 수집
+
+        동작 보존 (tenacity 이관):
+        - 세마포어로 동시 요청 수를 ``max_parallel``로 제한합니다(tenacity 루프 외부 유지).
+        - 재시도 대상: ``httpx.ConnectError``, ``httpx.TimeoutException``.
+          선형 백오프 ``(attempt + 1) * 2`` → 2, 4초(+jitter). tenacity의
+          ``attempt_number``는 1부터이므로 ``wait_incrementing(start=2, increment=2)``가
+          기존 시퀀스(2, 4)를 정확히 재현합니다.
+        - 최대 시도(``max_retries``) 소진 시: ``None`` 반환(예외 전파 없음).
+        - 그 외 예외: 즉시 ``None`` 반환(재시도/대기 없음).
+        """
         async with self._semaphore:
-            for attempt in range(self.max_retries):
-                try:
-                    async with httpx.AsyncClient(timeout=self.timeout) as client:
-                        return await self._fetch_and_parse_page(client, url)
-                except (httpx.ConnectError, httpx.TimeoutException) as e:
-                    if attempt == self.max_retries - 1:
-                        logger.error(f"Failed to fetch {url} after {self.max_retries} retries: {e}")
-                        return None
-                    wait_time = (attempt + 1) * 2 # 단순 지수 백오프
-                    logger.warning(f"Retry {attempt + 1}/{self.max_retries} for {url} in {wait_time}s...")
-                    await asyncio.sleep(wait_time)
-                except Exception as e:
-                    logger.error(f"Non-retryable error for {url}: {e}")
-                    return None
+            try:
+                async for attempt in AsyncRetrying(
+                    stop=stop_after_attempt(self.max_retries),
+                    wait=wait_incrementing(start=2, increment=2)
+                    + wait_random(0, _BACKOFF_JITTER),
+                    retry=retry_if_exception_type(
+                        (httpx.ConnectError, httpx.TimeoutException)
+                    ),
+                    reraise=True,  # 소진 시 마지막 예외를 받아 None 반환
+                    before_sleep=lambda rs: logger.warning(
+                        f"Retry {rs.attempt_number}/{self.max_retries} for {url} "
+                        f"in ~{rs.next_action.sleep if rs.next_action else 0:.1f}s..."
+                    ),
+                ):
+                    with attempt:
+                        async with httpx.AsyncClient(timeout=self.timeout) as client:
+                            return await self._fetch_and_parse_page(client, url)
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                # 재시도 소진: 기존과 동일하게 None 반환
+                logger.error(f"Failed to fetch {url} after {self.max_retries} retries: {e}")
+                return None
+            except RetryError:
+                # reraise=True이므로 통상 도달하지 않지만 안전장치로 None 반환
+                logger.error(f"Failed to fetch {url} after {self.max_retries} retries")
+                return None
+            except Exception as e:
+                # 비재시도 예외: 즉시 None 반환
+                logger.error(f"Non-retryable error for {url}: {e}")
+                return None
         return None
 
     async def _parse_sitemap(self, sitemap_url: str) -> list[str]:

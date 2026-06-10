@@ -12,6 +12,7 @@ DemoSessionManager — 데모 세션 생명주기 관리
 """
 
 import asyncio
+import random
 import time
 import uuid
 from collections.abc import Callable
@@ -22,6 +23,10 @@ from typing import Any
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
+
+# 정리 루프 실패 백오프 jitter 범위 (초, [0, JITTER) 추가)
+# 다수 인스턴스가 동시에 실패할 때 재시도 시점을 분산해 폭주를 완화합니다.
+_CLEANUP_BACKOFF_JITTER = 0.5
 
 
 # =============================================================================
@@ -499,7 +504,18 @@ class DemoSessionManager:
         logger.info(f"LRU 퇴거: {oldest_id}")
 
     async def _cleanup_loop(self) -> None:
-        """백그라운드 정리 루프 (연속 실패 시 지수 백오프)"""
+        """
+        백그라운드 정리 루프 (연속 실패 시 지수 백오프 + jitter)
+
+        무한 주기 작업(성공해도 계속 반복)이므로 "실패 시 재시도, 성공 시 종료"인
+        tenacity 재시도 모델과 맞지 않아 tenacity로 이관하지 않습니다. 대신 실패 백오프에
+        jitter를 추가해 다수 인스턴스 동시 실패 시 재시도 폭주를 완화합니다.
+
+        동작 보존:
+        - 정상 주기: ``sleep(cleanup_interval)`` 후 ``cleanup_expired()``, 성공 시 카운터 리셋.
+        - 실패: ``min(cleanup_interval * 2^failures, 300)`` 백오프(+jitter) 대기.
+        - ``CancelledError``: 루프 즉시 종료.
+        """
         consecutive_failures = 0
         max_backoff = 300  # 최대 5분
         while True:
@@ -515,11 +531,13 @@ class DemoSessionManager:
                     self._cleanup_interval * (2 ** consecutive_failures),
                     max_backoff,
                 )
+                # jitter 추가: base 백오프에 [0, JITTER) 무작위 지연을 더해 폭주 완화
+                jittered_backoff = backoff + random.uniform(0, _CLEANUP_BACKOFF_JITTER)
                 logger.error(
                     f"정리 루프 오류 (연속 {consecutive_failures}회): {e}, "
                     f"다음 시도까지 {backoff}초 대기"
                 )
                 try:
-                    await asyncio.sleep(backoff)
+                    await asyncio.sleep(jittered_backoff)
                 except asyncio.CancelledError:
                     break

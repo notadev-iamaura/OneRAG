@@ -11,12 +11,21 @@ Notion 공식 API를 활용한 데이터 조회 모듈
 - Rich Text 변환: Notion 포맷 → Plain Text 변환
 """
 
-import asyncio
 import os
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    RetryError,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+    wait_fixed,
+)
+from tenacity.wait import wait_base
 
 from app.lib.logger import get_logger
 
@@ -50,6 +59,46 @@ class NotionNotFoundError(NotionAPIError):
     """리소스를 찾을 수 없음"""
 
     pass
+
+
+# ============================================================================
+# 재시도 백오프 wait 전략 (tenacity)
+# ============================================================================
+
+
+class _NotionBackoffWait(wait_base):
+    """
+    Notion API 재시도 대기 전략 (발생 예외 타입별 분기)
+
+    동작 보존:
+    - ``NotionRateLimitError``(429): 지수 백오프 ``BASE_DELAY * 2^(attempt-1)`` + jitter.
+      tenacity의 ``attempt_number``는 1부터 시작하므로 기존 ``BASE_DELAY * 2^attempt``
+      (attempt 0부터) 시퀀스(1, 2, 4, 8, 16초)와 base가 정확히 일치합니다.
+    - ``httpx.TimeoutException``: 고정 ``BASE_DELAY``(1.0초) + jitter.
+
+    jitter는 thundering herd(동시 재시도 폭주) 완화를 위해 추가했습니다.
+    """
+
+    def __init__(self, base_delay: float, jitter: float = 0.0) -> None:
+        # 지수 백오프: initial=base_delay, max는 충분히 큰 값(상한 없음, 기존 동작 유지)
+        self._exponential = wait_exponential_jitter(
+            initial=base_delay,
+            max=float("inf"),
+            jitter=jitter,
+        )
+        # 고정 백오프: timeout 경로용
+        self._fixed: wait_base = wait_fixed(base_delay)
+        if jitter > 0.0:
+            from tenacity import wait_random
+
+            self._fixed = self._fixed + wait_random(0, jitter)
+
+    def __call__(self, retry_state: RetryCallState) -> float:
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        if isinstance(exc, httpx.TimeoutException):
+            return self._fixed(retry_state)
+        # NotionRateLimitError(429) 및 그 외 재시도 대상은 지수 백오프
+        return self._exponential(retry_state)
 
 
 # ============================================================================
@@ -119,6 +168,7 @@ class NotionAPIClient:
     # 지수 백오프 설정
     MAX_RETRIES = 5
     BASE_DELAY = 1.0  # 초기 대기 시간 (초)
+    BACKOFF_JITTER = 0.5  # 재시도 폭주 완화용 무작위 지연 범위 (초, [0, JITTER) 추가)
 
     def __init__(self, api_key: str | None = None):
         """
@@ -187,7 +237,17 @@ class NotionAPIClient:
         """
         client = await self._get_client()
 
-        for attempt in range(self.MAX_RETRIES):
+        async def _do_request() -> dict:
+            """
+            단일 요청 수행 + 응답코드/예외 분기
+
+            동작 보존:
+            - 200: JSON 반환
+            - 429: ``NotionRateLimitError`` raise → tenacity가 지수 백오프 재시도
+            - TimeoutException: 그대로 전파 → tenacity가 고정 백오프 재시도
+            - 401/404/기타 status: 해당 최종 예외 raise (재시도 대상 아님, 즉시 전파)
+            - RequestError(타임아웃 외): ``NotionAPIError`` raise (재시도 대상 아님)
+            """
             try:
                 if method.upper() == "GET":
                     response = await client.get(url)
@@ -199,43 +259,50 @@ class NotionAPIClient:
                     response = await client.delete(url)
                 else:
                     raise ValueError(f"지원하지 않는 HTTP 메서드: {method}")
-
-                # 응답 상태 코드 처리
-                if response.status_code == 200:
-                    return response.json()
-
-                elif response.status_code == 429:
-                    # Rate Limit: 지수 백오프 적용
-                    wait_time = self.BASE_DELAY * (2**attempt)
-                    logger.warning(
-                        f"⚠️ Rate Limit 발생, {wait_time:.1f}초 대기 "
-                        f"(시도 {attempt + 1}/{self.MAX_RETRIES})"
-                    )
-                    await asyncio.sleep(wait_time)
-                    continue
-
-                elif response.status_code == 401:
-                    raise NotionAuthError("Notion API 인증 실패: API 키를 확인하세요")
-
-                elif response.status_code == 404:
-                    raise NotionNotFoundError(f"리소스를 찾을 수 없음: {url}")
-
-                else:
-                    error_body = response.text
-                    raise NotionAPIError(
-                        f"Notion API 에러 (status={response.status_code}): {error_body}"
-                    )
-
             except httpx.TimeoutException:
-                logger.warning(f"⚠️ 요청 타임아웃, 재시도 중 ({attempt + 1}/{self.MAX_RETRIES})")
-                await asyncio.sleep(self.BASE_DELAY)
-                continue
-
+                # 고정 백오프 재시도를 위해 그대로 전파 (tenacity retry 대상)
+                logger.warning("⚠️ 요청 타임아웃, 재시도 중")
+                raise
             except httpx.RequestError as e:
+                # 타임아웃 외 연결 오류: 재시도하지 않고 즉시 전파
                 logger.error(f"❌ HTTP 요청 실패: {e}")
                 raise NotionAPIError(f"HTTP 요청 실패: {e}") from e
 
-        # 최대 재시도 횟수 초과
+            # 응답 상태 코드 처리
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 429:
+                # Rate Limit: 지수 백오프 재시도를 위해 예외 raise
+                logger.warning("⚠️ Rate Limit 발생, 재시도 예정")
+                raise NotionRateLimitError("Notion API Rate Limit (429)")
+            elif response.status_code == 401:
+                raise NotionAuthError("Notion API 인증 실패: API 키를 확인하세요")
+            elif response.status_code == 404:
+                raise NotionNotFoundError(f"리소스를 찾을 수 없음: {url}")
+            else:
+                error_body = response.text
+                raise NotionAPIError(
+                    f"Notion API 에러 (status={response.status_code}): {error_body}"
+                )
+
+        # tenacity 재시도: 429(NotionRateLimitError)와 timeout만 재시도 대상.
+        # 그 외 예외(Auth/NotFound/API/Value)는 retry 조건에 걸리지 않아 즉시 전파됩니다.
+        retrying = AsyncRetrying(
+            stop=stop_after_attempt(self.MAX_RETRIES),
+            wait=_NotionBackoffWait(base_delay=self.BASE_DELAY, jitter=self.BACKOFF_JITTER),
+            retry=retry_if_exception_type((NotionRateLimitError, httpx.TimeoutException)),
+            reraise=False,  # 소진 시 RetryError로 감싸 아래에서 통일 변환
+        )
+        try:
+            async for attempt in retrying:
+                with attempt:
+                    return await _do_request()
+        except RetryError:
+            # 최대 재시도 횟수 초과 (429/timeout 모두 동일하게 변환 — 기존 동작 보존)
+            raise NotionRateLimitError(
+                f"최대 재시도 횟수({self.MAX_RETRIES}) 초과"
+            ) from None
+        # 도달 불가 (AsyncRetrying은 항상 반환 또는 예외) — 타입 체커 안전장치
         raise NotionRateLimitError(f"최대 재시도 횟수({self.MAX_RETRIES}) 초과")
 
     # ========================================================================
