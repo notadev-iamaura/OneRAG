@@ -356,9 +356,11 @@ chunks = processor.process('data/conversation.txt')
 ```python
 from app.modules.core.documents import DocumentProcessor
 
-# 기존 방식 (파일 로딩 + 청킹 + 임베딩)
+# 기존 방식 (파일 로딩 + 청킹 + 병렬 임베딩)
 processor = DocumentProcessor(config)
-embedded_chunks = await processor.process_document_full('file.pdf')
+documents = await processor.load_document('file.pdf')
+chunks = await processor.split_documents(documents)
+embedded_chunks = await processor.embed_chunks_parallel(chunks)
 ```
 
 ### High-level (MVP Phase)

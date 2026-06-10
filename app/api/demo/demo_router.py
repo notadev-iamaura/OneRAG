@@ -499,6 +499,9 @@ async def chat_stream(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            # 전역 GZipMiddleware가 SSE 응답을 압축 버퍼링하면
+            # 스트리밍이 통짜로 출력되므로 identity로 우회한다
+            "Content-Encoding": "identity",
         },
     )
 

@@ -21,14 +21,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from ...lib.circuit_breaker import CircuitBreakerOpenError
 from ...lib.cost_tracker import CostTracker
-from ...lib.errors import ErrorCode, GenerationError, RetrievalError
+from ...lib.errors import ErrorCode, GenerationError, PipelineTimeoutError, RetrievalError
 from ...lib.langfuse_client import langfuse_context, observe  # Langfuse 트레이싱
 from ...lib.logger import get_logger
 from ...lib.metrics import PerformanceMetrics
@@ -45,6 +46,9 @@ if TYPE_CHECKING:
     from ..schemas.debug import DebugTrace
 
 logger = get_logger(__name__)
+
+# stage 타임아웃 헬퍼(_run_stage_with_timeout)의 반환 타입을 보존하기 위한 TypeVar
+_StageT = TypeVar("_StageT")
 
 # Kept as a patchable module attribute for existing tests while avoiding the
 # heavy routing module import until route_query actually runs.
@@ -602,6 +606,7 @@ class RAGPipeline:
         sql_search_service: SQLSearchService | None = None,
         agent_orchestrator: AgentOrchestrator | None = None,
         grok_answer_provider: Any | None = None,
+        llm_factory: Any | None = None,
     ):
         """
         RAGPipeline 초기화 (의존성 주입)
@@ -636,9 +641,36 @@ class RAGPipeline:
         self.sql_search_service = sql_search_service  # SQL 검색 서비스 (Phase 3)
         self.agent_orchestrator = agent_orchestrator  # Agent 오케스트레이터 (Agentic RAG)
         self.grok_answer_provider = grok_answer_provider
+        self.llm_factory = llm_factory  # 멀티턴 standalone query rewrite용 LLM Factory
 
         # YAML 설정에서 retrieval 파라미터 로드
         rag_config = config.get("rag", {})
+
+        # 멀티턴 standalone query rewrite 설정 (기본 OFF)
+        # 후속 질문이 대명사/생략/축약으로 자립적이지 않으면 직전 대화 맥락을
+        # 반영한 자립적(standalone) 질문으로 재작성해 검색에 투입한다.
+        # 게이트 패턴은 언어별로 다르므로 yaml에서 오버라이드 가능하게 일반화한다.
+        rewrite_config = rag_config.get("multiturn_rewrite", {})
+        self.multiturn_rewrite_enabled = bool(rewrite_config.get("enabled", False))
+        self.multiturn_rewrite_provider = rewrite_config.get("provider", "google")
+        configured_dependent = rewrite_config.get("followup_dependent_patterns")
+        self.multiturn_followup_dependent_patterns: tuple[str, ...] = (
+            tuple(str(p) for p in configured_dependent)
+            if isinstance(configured_dependent, list) and configured_dependent
+            else self._DEFAULT_FOLLOWUP_DEPENDENT_PATTERNS
+        )
+        configured_start = rewrite_config.get("followup_start_patterns")
+        self.multiturn_followup_start_patterns: tuple[str, ...] = (
+            tuple(str(p) for p in configured_start)
+            if isinstance(configured_start, list) and configured_start
+            else self._DEFAULT_FOLLOWUP_START_PATTERNS
+        )
+        try:
+            self.multiturn_short_question_max_words = int(
+                rewrite_config.get("short_question_max_words", 5)
+            )
+        except (TypeError, ValueError):
+            self.multiturn_short_question_max_words = 5
         retrieval_config = config.get("retrieval", {})
 
         self.retrieval_limit = rag_config.get(
@@ -646,6 +678,31 @@ class RAGPipeline:
         )
         self.min_score = retrieval_config.get("min_score", self.FALLBACK_MIN_SCORE)
         self.rerank_top_n = rag_config.get("rerank_top_k", self.FALLBACK_RERANK_TOP_N)
+
+        # 파이프라인 타임아웃 예산(SLA budget) 로드 (opt-in)
+        # 각 stage에 개별 deadline을, 전체에 총 budget을 부여해 무한 대기를 막는다.
+        # enabled=false면 모든 래핑을 건너뛰어 기존(무제한) 동작을 유지한다.
+        # 값이 비정상(0 이하/숫자 아님)이면 해당 stage는 무제한으로 폴백한다.
+        timeout_config = rag_config.get("pipeline_timeout", {})
+        self.pipeline_timeout_enabled = bool(timeout_config.get("enabled", False))
+        self.pipeline_total_budget_seconds = self._coerce_positive_timeout(
+            timeout_config.get("total_budget_seconds")
+        )
+        raw_stage_budgets = timeout_config.get("stages", {}) or {}
+        # stage 이름 → deadline(초). None이면 해당 stage 무제한.
+        self.pipeline_stage_budgets: dict[str, float | None] = {
+            str(stage): self._coerce_positive_timeout(value)
+            for stage, value in raw_stage_budgets.items()
+        }
+        self.pipeline_stream_first_chunk_seconds = self._coerce_positive_timeout(
+            timeout_config.get("stream_first_chunk_seconds")
+        )
+        # 스트리밍 전용 총 예산(초). 스트리밍(SSE/WS)은 프론트 HTTP 타임아웃에
+        # 묶이지 않는 장수명 연결이므로, 통짜(total_budget_seconds)보다 넉넉하게
+        # 둘 수 있다. 미설정이면 무제한(stage deadline만 적용).
+        self.pipeline_stream_total_budget_seconds = self._coerce_positive_timeout(
+            timeout_config.get("stream_total_budget_seconds")
+        )
 
         # RRF 점수 정규화 (0~1 범위 변환)
         score_norm_config = rag_config.get("score_normalization", {})
@@ -1117,6 +1174,321 @@ class RAGPipeline:
             routing_metadata=routing_metadata,
         )
 
+    # ========================================
+    # 멀티턴 standalone query rewrite
+    # ========================================
+
+    # 멀티턴 standalone rewrite 게이트용 기본 패턴 (한국어 기본값,
+    # yaml의 rag.multiturn_rewrite.followup_*_patterns로 언어별 오버라이드 가능)
+    # (1) 후속 질문임을 강하게 시사하는 대명사/지시어/생략 표현
+    #     주의: "그리고"/"추가로" 같은 일반 접속사는 자립 질문에도 흔히 등장하므로
+    #     여기서 제외하고, 문장 시작 위치에서만 후속 신호로 취급한다.
+    _DEFAULT_FOLLOWUP_DEPENDENT_PATTERNS: tuple[str, ...] = (
+        "그건", "그게", "그것", "그거", "이건", "이게", "이것", "이거",
+        "저건", "저게", "그럼", "그러면", "그때", "거기", "여기",
+        "위의", "앞서", "방금", "해당", "그 경우", "이 경우", "그 외",
+    )
+
+    # (1-b) 문장 시작 위치에서만 후속 신호로 보는 접속사
+    #       (문장 중간의 "A 그리고 B"는 자립 질문이므로 게이트를 통과시키지 않는다)
+    _DEFAULT_FOLLOWUP_START_PATTERNS: tuple[str, ...] = (
+        "그리고", "추가로", "또", "또한",
+    )
+
+    def _needs_standalone_rewrite(self, message: str) -> bool:
+        """
+        멀티턴 standalone rewrite가 필요한지 판정하는 게이트.
+
+        후속 질문이 대명사/지시어/생략 표현에 의존하거나 너무 짧아
+        그 자체로는 검색 맥락이 불충분한 경우에만 True를 반환한다.
+        이미 자립적(충분히 길고 구체적)인 질문은 False를 반환해 불필요한
+        LLM 호출과 지연을 막는다.
+
+        Args:
+            message: 후속 사용자 질문(원본)
+
+        Returns:
+            True면 재작성 필요(LLM 호출 대상), False면 게이트에서 건너뜀.
+        """
+        stripped = message.strip()
+        if not stripped:
+            return False
+
+        # (1) 대명사/지시어/생략 표현 포함 → 자립 불가로 간주
+        if any(pattern in stripped for pattern in self.multiturn_followup_dependent_patterns):
+            return True
+
+        # (1-b) 문장 시작 위치의 접속사만 후속 신호로 취급
+        #       (문장 중간 "A 그리고 B"는 자립 질문이므로 제외)
+        if any(stripped.startswith(pattern) for pattern in self.multiturn_followup_start_patterns):
+            return True
+
+        # (2) 짧은 후속 질문(맥락 생략형). 어절(공백 분리) 기준으로 판단.
+        #     예: "정규직 요건은?" 처럼 핵심 대상(프로그램명 등)이 생략된 형태.
+        #     충분히 긴 질문은 자립적으로 보고 건너뛴다.
+        word_count = len(stripped.split())
+        if word_count <= self.multiturn_short_question_max_words:
+            return True
+
+        # (3) 그 외 길고 구체적인 질문은 자립적으로 간주 → 재작성 불필요
+        return False
+
+    # 재작성 결과 정제용: 모델이 흔히 붙이는 라벨 접두어
+    _REWRITE_LABEL_PATTERN = re.compile(
+        r"^\s*(재작성(된)?\s*(질문|쿼리)?|standalone(\s*query)?|질문|rewritten\s*query)\s*[:：]\s*",
+        re.IGNORECASE,
+    )
+
+    def _postprocess_rewritten_query(self, content: str | None) -> str:
+        """
+        LLM 재작성 결과를 검색에 안전하게 투입하도록 경량 정제한다.
+
+        모델이 프롬프트 지시를 어기고 여러 줄/머리말 라벨/따옴표를 붙이는 경우를
+        방어한다. 첫 번째 비어있지 않은 줄만 취하고, "재작성: " 같은 라벨과
+        앞뒤 따옴표를 제거한다.
+
+        Args:
+            content: LLM 원본 응답 텍스트(None 가능)
+
+        Returns:
+            정제된 한 줄 질문 문자열(정제 후 비면 빈 문자열).
+        """
+        if not content:
+            return ""
+
+        # 첫 번째 비어있지 않은 줄만 사용 (여러 줄 방어)
+        first_line = ""
+        for line in content.splitlines():
+            if line.strip():
+                first_line = line.strip()
+                break
+        if not first_line:
+            return ""
+
+        # 라벨 접두어 제거 (예: "재작성된 질문: ...")
+        first_line = self._REWRITE_LABEL_PATTERN.sub("", first_line).strip()
+
+        # 앞뒤 따옴표 제거 (직선/곡선 따옴표 모두)
+        first_line = first_line.strip("\"'“”‘’").strip()
+
+        return first_line
+
+    async def _rewrite_standalone_query(
+        self, message: str, session_context: str | None
+    ) -> str:
+        """
+        직전 대화 맥락을 반영해 후속 질문을 자립적(standalone) 질문으로 재작성.
+
+        게이트(`_needs_standalone_rewrite`)와 사전 조건(설정 활성화, 세션 맥락,
+        llm_factory 존재)을 모두 통과한 경우에만 LLM을 호출한다. 재작성에
+        실패하면(예외/빈 결과) 원본 질문으로 graceful 폴백하여 검색을 계속한다.
+
+        Args:
+            message: 후속 사용자 질문(원본)
+            session_context: 직전 대화 컨텍스트 문자열(없으면 재작성 생략)
+
+        Returns:
+            재작성된 standalone 질문, 또는 폴백 시 원본 질문.
+        """
+        # 사전 조건 확인 (어느 하나라도 불충족이면 원본 반환)
+        if not self.multiturn_rewrite_enabled:
+            return message
+        if not session_context or not session_context.strip():
+            return message
+        if self.llm_factory is None:
+            logger.debug("standalone rewrite 생략: llm_factory 없음")
+            return message
+
+        # 게이트: 자립적 질문이면 LLM 호출 없이 건너뜀
+        if not self._needs_standalone_rewrite(message):
+            logger.debug(
+                "standalone rewrite 게이트 통과(자립적 질문), 재작성 생략",
+                extra={"message": message[:40]},
+            )
+            return message
+
+        # LLM 재작성 프롬프트 구성
+        prompt = (
+            "당신은 멀티턴 대화의 후속 질문을 검색에 적합한 자립적(standalone) "
+            "질문으로 재작성하는 전문가입니다.\n\n"
+            "아래 [직전 대화 맥락]을 참고하여, [후속 질문]에서 생략되거나 "
+            "대명사/지시어로 표현된 핵심 대상(프로그램명, 제도명, 주체 등)을 "
+            "명시적으로 복원해 하나의 완결된 질문으로 다시 쓰세요.\n"
+            "- 맥락에 없는 정보를 새로 추가하지 마세요.\n"
+            "- 후속 질문의 의도를 바꾸지 마세요.\n"
+            "- 설명 없이 재작성된 질문 한 문장만 출력하세요.\n\n"
+            f"[직전 대화 맥락]\n{session_context}\n\n"
+            f"[후속 질문]\n{message}\n\n"
+            "[재작성된 자립적 질문]"
+        )
+
+        try:
+            # 결정적(temperature=0.0) 호출로 재작성의 비결정성을 차단.
+            # max_tokens는 thinking(추론) 모델이 추론에 토큰을 소진해 출력이
+            # 빈 채 truncate되는 회귀(실가동 관측)를 막기 위해 넉넉히 둔다.
+            content, provider = await self.llm_factory.generate_with_fallback(
+                prompt=prompt,
+                system_prompt=None,
+                preferred_provider=self.multiturn_rewrite_provider,
+                temperature=0.0,
+                max_tokens=2048,
+            )
+            rewritten = self._postprocess_rewritten_query(content)
+            # 빈 결과/비정상적으로 긴 결과는 신뢰하지 않고 폴백
+            if not rewritten or len(rewritten) > len(message) + 200:
+                logger.warning(
+                    "standalone rewrite 결과 비정상, 원본 사용",
+                    extra={"original": message[:40]},
+                )
+                return message
+
+            logger.info(
+                "standalone rewrite 성공",
+                extra={
+                    "provider": provider,
+                    "original": message[:40],
+                    "rewritten": rewritten[:60],
+                },
+            )
+            return rewritten
+        except Exception as e:
+            # LLM 실패는 채팅을 깨뜨리지 않고 원본으로 폴백
+            logger.warning(
+                "standalone rewrite 실패, 원본 사용",
+                extra={"error": str(e), "original": message[:40]},
+                exc_info=True,
+            )
+            return message
+
+    @staticmethod
+    def _coerce_positive_timeout(value: Any) -> float | None:
+        """타임아웃 설정값을 양수 float로 변환한다.
+
+        0 이하/숫자 아님/None이면 None(=무제한)을 반환해 해당 stage·budget의
+        wait_for 래핑을 건너뛰게 한다. 잘못된 설정으로 정상 요청이 끊기는
+        것을 막기 위한 안전 폴백이다.
+
+        Args:
+            value: YAML에서 읽은 타임아웃 값(초)
+
+        Returns:
+            양수 float 또는 None(무제한)
+        """
+        if value is None:
+            return None
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            return None
+        return seconds if seconds > 0 else None
+
+    async def _run_stage_with_timeout(
+        self,
+        stage_name: str,
+        coro: Awaitable[_StageT],
+        *,
+        remaining_budget: float | None = None,
+    ) -> _StageT:
+        """단일 stage 코루틴을 deadline으로 감싸 실행한다.
+
+        - pipeline_timeout.enabled=false거나 stage 예산이 없으면 그대로 await
+          한다(기존 동작 유지).
+        - stage 예산과 남은 총 budget 중 "더 작은 값"을 실제 deadline으로 쓴다.
+          이렇게 하면 stage 자체는 여유가 있어도 총 budget이 임박하면 즉시
+          PIPE-002(총 budget 초과)로 끊긴다.
+        - deadline 초과 시 무한 대기 대신 PipelineTimeoutError를 던져 "어느
+          단계에서 몇 초를 초과했는지"를 명확히 전달한다.
+
+        Args:
+            stage_name: stage 이름(에러 메시지·로그용)
+            coro: 실행할 stage 코루틴
+            remaining_budget: 총 budget에서 남은 시간(초). None이면 미적용.
+
+        Returns:
+            stage 코루틴의 반환값
+
+        Raises:
+            PipelineTimeoutError: stage deadline(PIPE-001) 또는 총 budget(PIPE-002) 초과
+        """
+        if not self.pipeline_timeout_enabled:
+            return await coro
+
+        stage_budget = self.pipeline_stage_budgets.get(stage_name)
+
+        # 총 budget이 임박하면(남은 시간이 stage 예산보다 작으면) 그 값으로 끊는다.
+        effective_timeout = stage_budget
+        budget_is_limiting = False
+        if remaining_budget is not None:
+            if effective_timeout is None or remaining_budget < effective_timeout:
+                effective_timeout = remaining_budget
+                budget_is_limiting = True
+
+        if effective_timeout is None:
+            # stage·총 budget 모두 무제한 → 기존 동작
+            return await coro
+
+        try:
+            return await asyncio.wait_for(coro, timeout=effective_timeout)
+        except TimeoutError as exc:
+            if budget_is_limiting:
+                logger.warning(
+                    "파이프라인 총 budget 초과",
+                    extra={
+                        "stage": stage_name,
+                        "total_budget_seconds": self.pipeline_total_budget_seconds,
+                    },
+                )
+                raise PipelineTimeoutError(
+                    ErrorCode.PIPELINE_TOTAL_TIMEOUT,
+                    stage=stage_name,
+                    timeout=self.pipeline_total_budget_seconds,
+                ) from exc
+            logger.warning(
+                "파이프라인 stage deadline 초과",
+                extra={"stage": stage_name, "timeout_seconds": effective_timeout},
+            )
+            raise PipelineTimeoutError(
+                ErrorCode.PIPELINE_STAGE_TIMEOUT,
+                stage=stage_name,
+                timeout=effective_timeout,
+            ) from exc
+
+    def _remaining_total_budget(self, start_time: float) -> float | None:
+        """총 budget에서 남은 시간(초)을 계산한다.
+
+        Args:
+            start_time: 파이프라인 시작 시각(time.time())
+
+        Returns:
+            남은 budget(초). budget 미설정/비활성화면 None.
+            이미 초과했으면 0.0(다음 stage가 즉시 PIPE-002로 끊김).
+        """
+        if not self.pipeline_timeout_enabled or self.pipeline_total_budget_seconds is None:
+            return None
+        remaining = self.pipeline_total_budget_seconds - (time.time() - start_time)
+        return remaining if remaining > 0 else 0.0
+
+    def _remaining_stream_budget(self, start_time: float) -> float | None:
+        """스트리밍 총 예산에서 남은 시간(초)을 계산한다.
+
+        스트리밍 경로는 프론트 HTTP 타임아웃에 묶이지 않는 장수명 연결이므로
+        통짜 총 budget과 별도의 넉넉한 예산(stream_total_budget_seconds)을 쓴다.
+
+        Args:
+            start_time: 스트리밍 시작 시각(time.time())
+
+        Returns:
+            남은 예산(초). 미설정/비활성화면 None(무제한, stage deadline만 적용).
+            이미 초과했으면 0.0.
+        """
+        if (
+            not self.pipeline_timeout_enabled
+            or self.pipeline_stream_total_budget_seconds is None
+        ):
+            return None
+        remaining = self.pipeline_stream_total_budget_seconds - (time.time() - start_time)
+        return remaining if remaining > 0 else 0.0
+
     @observe(name="RAG Pipeline", capture_input=True, capture_output=True)
     async def execute(
         self, message: str, session_id: str, options: dict[str, Any] | None = None
@@ -1152,7 +1524,11 @@ class RAGPipeline:
         tracker = PipelineTracker()
         tracker.start_pipeline()
         tracker.start_stage("route_query")
-        route_decision = await self.route_query(message, session_id, start_time)
+        route_decision = await self._run_stage_with_timeout(
+            "route_query",
+            self.route_query(message, session_id, start_time),
+            remaining_budget=self._remaining_total_budget(start_time),
+        )
         tracker.end_stage("route_query")
 
         if not route_decision.should_continue:
@@ -1177,7 +1553,11 @@ class RAGPipeline:
             )
 
         tracker.start_stage("prepare_context")
-        prepared_context = await self.prepare_context(message, session_id)
+        prepared_context = await self._run_stage_with_timeout(
+            "prepare_context",
+            self.prepare_context(message, session_id),
+            remaining_budget=self._remaining_total_budget(start_time),
+        )
         tracker.end_stage("prepare_context")
 
         if enable_debug_trace:
@@ -1188,8 +1568,10 @@ class RAGPipeline:
             }
 
         tracker.start_stage("retrieve_documents")
-        retrieval_results, sql_search_result = await self._execute_parallel_search(
-            message, prepared_context, options
+        retrieval_results, sql_search_result = await self._run_stage_with_timeout(
+            "retrieve_documents",
+            self._execute_parallel_search(message, prepared_context, options),
+            remaining_budget=self._remaining_total_budget(start_time),
         )
         tracker.end_stage("retrieve_documents")
 
@@ -1197,8 +1579,12 @@ class RAGPipeline:
         self._update_retrieval_metrics(tracker, prepared_context, sql_search_result)
 
         tracker.start_stage("rerank_documents")
-        rerank_results = await self.rerank_documents(
-            prepared_context.expanded_query, retrieval_results.documents, options
+        rerank_results = await self._run_stage_with_timeout(
+            "rerank_documents",
+            self.rerank_documents(
+                prepared_context.expanded_query, retrieval_results.documents, options
+            ),
+            remaining_budget=self._remaining_total_budget(start_time),
         )
         tracker.end_stage("rerank_documents")
 
@@ -1224,8 +1610,12 @@ class RAGPipeline:
                 "SQL 컨텍스트 전달",
                 extra={"context_length": len(sql_search_result.formatted_context)}
             )
-        generation_result = await self.generate_answer(
-            message, context_documents, prepared_context.session_context, generation_options
+        generation_result = await self._run_stage_with_timeout(
+            "generate_answer",
+            self.generate_answer(
+                message, context_documents, prepared_context.session_context, generation_options
+            ),
+            remaining_budget=self._remaining_total_budget(start_time),
         )
         tracker.end_stage("generate_answer")
 
@@ -1233,8 +1623,12 @@ class RAGPipeline:
         options_with_debug = {**options}
         if enable_debug_trace:
             options_with_debug["_debug_trace_data"] = debug_trace_data
-        generation_result = await self.self_rag_verify(
-            message, session_id, generation_result, context_documents, options_with_debug
+        generation_result = await self._run_stage_with_timeout(
+            "self_rag_verify",
+            self.self_rag_verify(
+                message, session_id, generation_result, context_documents, options_with_debug
+            ),
+            remaining_budget=self._remaining_total_budget(start_time),
         )
         tracker.end_stage("self_rag_verify")
 
@@ -1476,8 +1870,15 @@ class RAGPipeline:
                     extra={"error": str(e)},
                     exc_info=True
                 )
+
+        # 멀티턴 standalone query rewrite (검색 측 맥락 보강, 기본 OFF)
+        # 직전 대화가 있고 후속 질문이 자립적이지 않으면(대명사/생략/축약),
+        # 직전 맥락을 반영한 standalone 질문으로 재작성해 검색에 투입한다.
+        # 원본 질문(message)은 PreparedContext.original_query로 보존된다.
+        search_message = await self._rewrite_standalone_query(message, session_context)
+
         # Multi-Query RRF: 모든 확장 쿼리와 가중치 추출
-        expanded_query = message
+        expanded_query = search_message
         expanded_queries: list[str] = []
         query_weights: list[float] = []
 
@@ -1485,7 +1886,7 @@ class RAGPipeline:
             try:
                 logger.debug("쿼리 확장 시도")
                 expansion_result = await self.query_expansion.expand_query(
-                    query=message, context=session_context
+                    query=search_message, context=session_context
                 )
 
                 if expansion_result and hasattr(expansion_result, "expansions"):
@@ -1520,11 +1921,11 @@ class RAGPipeline:
                         )
                     else:
                         logger.debug("쿼리 확장 결과 없음, 원본 사용")
-                        expanded_queries = [message]
+                        expanded_queries = [search_message]
                         query_weights = [1.0]
                 else:
                     logger.debug("쿼리 확장 결과 없음, 원본 사용")
-                    expanded_queries = [message]
+                    expanded_queries = [search_message]
                     query_weights = [1.0]
             except Exception as e:
                 logger.warning(
@@ -1532,11 +1933,11 @@ class RAGPipeline:
                     extra={"error": str(e)},
                     exc_info=True
                 )
-                expanded_queries = [message]
+                expanded_queries = [search_message]
                 query_weights = [1.0]
         else:
             # query_expansion 모듈 없음
-            expanded_queries = [message]
+            expanded_queries = [search_message]
             query_weights = [1.0]
 
         logger.debug(

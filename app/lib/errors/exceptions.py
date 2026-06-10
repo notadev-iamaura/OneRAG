@@ -142,6 +142,17 @@ class GeneralError(RAGException):
     pass
 
 
+class PipelineTimeoutError(RAGException):
+    """파이프라인 타임아웃 관련 예외.
+
+    stage별 deadline 초과(PIPE-001), 총 budget 초과(PIPE-002),
+    스트리밍 첫 청크 타임아웃(PIPE-003)에 사용한다.
+    무한 대기 대신 "어느 단계에서 얼마만큼 초과했는지"를 명확히 전달한다.
+    """
+
+    pass
+
+
 # 레거시 호환: RAGError 별칭 (기존 코드 지원)
 RAGError = RAGException
 
@@ -182,6 +193,7 @@ def get_exception_class(error_code: str | ErrorCode) -> type[RAGException]:
         "EMBEDDING": EmbeddingError,
         "GENERAL": GeneralError,
         "API": GeneralError,  # API는 GENERAL과 같은 예외 사용
+        "PIPE": PipelineTimeoutError,  # 파이프라인 타임아웃
     }
 
     return domain_map.get(domain, RAGException)

@@ -452,6 +452,19 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "ko": "Grok Collections 검색 실패: {reason}",
         "en": "Grok Collections search failed: {reason}",
     },
+    # PIPELINE (파이프라인 타임아웃) - 3개
+    "PIPE-001": {
+        "ko": "처리 단계({stage})가 제한 시간({timeout}초)을 초과했습니다",
+        "en": "Pipeline stage ({stage}) exceeded its time limit ({timeout}s)",
+    },
+    "PIPE-002": {
+        "ko": "전체 처리 시간이 제한 시간({timeout}초)을 초과했습니다",
+        "en": "The overall processing time exceeded its limit ({timeout}s)",
+    },
+    "PIPE-003": {
+        "ko": "응답 생성 시작이 제한 시간({timeout}초)을 초과했습니다",
+        "en": "Response generation did not start within the time limit ({timeout}s)",
+    },
 }
 
 # 에러 해결 방법 저장소: {error_code: {"ko": [...], "en": [...]}}
@@ -1665,6 +1678,43 @@ ERROR_SOLUTIONS: dict[str, dict[str, list[str]]] = {
             "Verify Collection ID is correct on xAI console",
             "Check your network connection",
             "Check xAI API service status (https://status.x.ai)",
+        ],
+    },
+    # PIPELINE (파이프라인 타임아웃)
+    "PIPE-001": {
+        "ko": [
+            "잠시 후 다시 시도해주세요",
+            "질문을 더 짧고 구체적으로 나눠서 다시 질문해보세요",
+            "문제가 계속되면 관리자에게 해당 단계 이름과 함께 문의해주세요",
+        ],
+        "en": [
+            "Please try again in a moment",
+            "Try splitting your question into shorter, more specific parts",
+            "If the problem persists, contact the administrator with the stage name",
+        ],
+    },
+    "PIPE-002": {
+        "ko": [
+            "잠시 후 다시 시도해주세요",
+            "질문 범위를 좁히거나 더 짧게 나눠서 다시 질문해보세요",
+            "문제가 계속되면 관리자에게 문의해주세요",
+        ],
+        "en": [
+            "Please try again in a moment",
+            "Narrow the scope of your question or split it into shorter parts",
+            "If the problem persists, contact the administrator",
+        ],
+    },
+    "PIPE-003": {
+        "ko": [
+            "잠시 후 다시 시도해주세요",
+            "네트워크 상태를 확인해주세요",
+            "문제가 계속되면 관리자에게 문의해주세요",
+        ],
+        "en": [
+            "Please try again in a moment",
+            "Check your network connection",
+            "If the problem persists, contact the administrator",
         ],
     },
 }

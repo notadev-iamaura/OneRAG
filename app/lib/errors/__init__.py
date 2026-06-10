@@ -45,6 +45,7 @@ from app.lib.errors.exceptions import (
     GeneralError,
     ImageError,
     LLMError,
+    PipelineTimeoutError,
     RAGError,  # 레거시 호환 별칭 (RAGException)
     RAGException,
     RoutingError,
@@ -88,6 +89,7 @@ __all__ = [
     "RoutingError",
     "EmbeddingError",
     "GeneralError",
+    "PipelineTimeoutError",
     # 유틸리티 함수
     "get_exception_class",
     "wrap_exception",

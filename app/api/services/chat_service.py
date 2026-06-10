@@ -94,6 +94,7 @@ class ChatService:
             sql_search_service=modules.get(
                 "sql_search_service"
             ),  # ✅ SQL Search Service 주입 (Phase 3)
+            llm_factory=modules.get("llm_factory"),  # ✅ standalone rewrite용 LLM Factory
         )
 
         logger.info("ChatService 초기화 완료 (RAGPipeline + Self-RAG + SQL Search 포함)")
@@ -623,58 +624,110 @@ class ChatService:
                     generation_options.setdefault("max_context_documents", 20)
 
                 # 스트리밍 호출
+                # 첫 청크(first-chunk) 타임아웃 + 청크 간(inter-chunk) 타임아웃.
+                #  - 첫 토큰이 너무 늦으면 에러 대신 검증된 비스트리밍 답변으로
+                #    폴백한다(답변 보장).
+                #  - 이후 청크도 generate_answer stage 예산만큼만 대기해, 생성
+                #    중간에 무한정 멈추는 상황을 막는다(pipeline_timeout opt-in).
                 try:
-                    stream = generation_module.stream_answer(
+                    first_chunk_timeout = self._get_first_token_timeout(options)
+                    inter_chunk_timeout = (
+                        self.rag_pipeline.pipeline_stage_budgets.get("generate_answer")
+                        if getattr(self.rag_pipeline, "pipeline_timeout_enabled", False)
+                        else None
+                    )
+                    stream_gen = generation_module.stream_answer(
                         query=message,
                         context_documents=context_documents,
                         options=generation_options,
                     )
-                    stream_iter = stream.__aiter__()
-                    timeout = self._get_first_token_timeout(options)
+                    stream_iter = stream_gen.__aiter__()
+                    # 폴백 결정 상태:
+                    #  - chunk_emitted: chunk 이벤트를 1개라도 yield했는지. True면
+                    #    중복 답변 방지를 위해 폴백하지 않고 기존 에러 처리를 유지.
+                    #  - fallback_reason: 첫 청크 단계에서 실패해 폴백할 사유.
+                    #    None이면 폴백하지 않는다(정상 종료 또는 중간 실패).
+                    chunk_emitted = False
                     fallback_reason: str | None = None
-
-                    skip_remaining_stream = False
                     try:
-                        if timeout > 0:
-                            first_chunk = await asyncio.wait_for(
-                                anext(stream_iter), timeout=timeout
+                        is_first_chunk = True
+                        while True:
+                            chunk_timeout = (
+                                first_chunk_timeout if is_first_chunk else inter_chunk_timeout
                             )
-                        else:
-                            first_chunk = await anext(stream_iter)
-                    except StopAsyncIteration:
-                        first_chunk = ""
-                        skip_remaining_stream = True
-                    except TimeoutError:
-                        logger.warning(
-                            "스트리밍 첫 청크 타임아웃, 비스트리밍 fallback 진입",
-                            extra={"timeout": timeout, "session_id": final_session_id},
-                        )
-                        if hasattr(stream_iter, "aclose"):
-                            await stream_iter.aclose()
-                        first_chunk = ""
-                        fallback_reason = f"first_token_timeout:{timeout}"
-                        skip_remaining_stream = True
+                            try:
+                                if chunk_timeout is not None and chunk_timeout > 0:
+                                    text_chunk = await asyncio.wait_for(
+                                        anext(stream_iter), timeout=chunk_timeout
+                                    )
+                                else:
+                                    text_chunk = await anext(stream_iter)
+                            except StopAsyncIteration:
+                                break
+                            except TimeoutError:
+                                # 무한 대기 대신 명확한 timeout. 정리는 아래 finally의
+                                # aclose로 결정적으로 수행한다.
+                                if not chunk_emitted:
+                                    # 첫 청크가 끝내 오지 않은 경우: 검증된 비스트리밍
+                                    # 답변으로 폴백한다. 실제 폴백 호출은 stream_gen
+                                    # 정리(finally) 후 수행한다.
+                                    logger.warning(
+                                        "스트리밍 첫 청크 타임아웃, 비스트리밍 fallback 진입",
+                                        extra={
+                                            "timeout": first_chunk_timeout,
+                                            "session_id": final_session_id,
+                                        },
+                                    )
+                                    fallback_reason = (
+                                        f"first_token_timeout:{first_chunk_timeout}"
+                                    )
+                                    break
+                                # 이미 청크를 보낸 뒤 중간 timeout: 폴백 시 중복 답변이
+                                # 되므로 stage timeout 에러로 종료한다.
+                                logger.warning(
+                                    "스트리밍 청크 간 타임아웃",
+                                    extra={"timeout_seconds": inter_chunk_timeout},
+                                )
+                                yield {
+                                    "event": "error",
+                                    "error_code": ErrorCode.PIPELINE_STAGE_TIMEOUT.value,
+                                    "message": "답변 생성이 지연되어 중단되었습니다. 잠시 후 다시 시도해주세요.",
+                                }
+                                return
 
-                    if first_chunk:
-                        answer_chunks.append(str(first_chunk))
-                        chunk_event = {
-                            "event": "chunk",
-                            "data": first_chunk,
-                            "chunk_index": chunk_index,
-                        }
-                        yield chunk_event
-                        chunk_index += 1
-
-                    if not skip_remaining_stream:
-                        async for text_chunk in stream_iter:
                             answer_chunks.append(str(text_chunk))
-                            chunk_event = {
+                            yield {
                                 "event": "chunk",
                                 "data": text_chunk,
                                 "chunk_index": chunk_index,
                             }
-                            yield chunk_event
                             chunk_index += 1
+                            chunk_emitted = True
+                            is_first_chunk = False
+                    except Exception as stream_error:
+                        # 첫 청크 전(아직 chunk 미전송) 예외는 폴백 대상.
+                        # 이미 청크를 보낸 뒤라면 중복 답변 방지를 위해 기존 에러 처리.
+                        if not chunk_emitted:
+                            logger.warning(
+                                "스트리밍 첫 청크 전 예외, 비스트리밍 fallback 진입: %s",
+                                stream_error,
+                            )
+                            fallback_reason = f"stream_error:{stream_error}"
+                        else:
+                            raise
+                    finally:
+                        # 생성 제너레이터를 닫아 하위 브리지(_async_bridge) 정리를
+                        # 즉시 트리거한다. 정상 소진 시에는 이미 닫혀 no-op이다.
+                        # aclose 실패는 정리 단계이므로 치명적이지 않다(로깅 후 흡수).
+                        aclose = getattr(stream_gen, "aclose", None)
+                        if callable(aclose):
+                            try:
+                                await aclose()
+                            except Exception as close_exc:  # noqa: BLE001 - 정리 단계
+                                logger.debug(
+                                    "스트리밍 생성 제너레이터 aclose 실패(무시)",
+                                    extra={"error": str(close_exc)},
+                                )
 
                     if fallback_reason is not None:
                         try:
