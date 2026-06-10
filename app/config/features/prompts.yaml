@@ -15,6 +15,11 @@ prompts:
   # PostgreSQL 사용 여부 (Hybrid Mode)
   use_database: ${USE_DATABASE:-true}  # 기본값: true (PostgreSQL 사용)
 
+  # 프롬프트 내용 캐시 TTL(초). generator가 매 답변 생성 시 조회하는 프롬프트의
+  # 반복 DB 조회를 줄인다. 프롬프트 수정 시 즉시 무효화되어 최대 이 시간 내 반영됨.
+  # 0으로 설정하면 캐시 비활성화 (항상 최신, DB 조회 매번).
+  cache_ttl: 60
+
   # JSON 폴백 설정 (로컬 파일 경로)
   storage_path: "./data/prompts"  # JSON 파일 저장 경로
 
