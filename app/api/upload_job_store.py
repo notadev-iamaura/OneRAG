@@ -697,6 +697,14 @@ class SQLiteUploadJobStore:
         return jobs
 
     def save_all(self, jobs: dict[str, dict[str, Any]]) -> None:
+        """전체 잡 맵을 SQLite에 동기화한다 (incoming에 없는 행은 삭제).
+
+        ⚠️ 멀티워커 비호환: 이 메서드는 단일 프로세스가 모든 잡을 보유한다고
+        전제한다(전체 동기화). SQLite store는 _is_shared_upload_job_store()에서
+        non-shared로 분류되며, 멀티워커 배포에서는 워커마다 자기 in-memory 맵만
+        가지므로 이 전체 동기화가 다른 워커의 잡을 삭제한다. 멀티워커가 필요하면
+        Postgres store(per-job upsert, 삭제 없음)를 사용해야 한다.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
             self._ensure_schema(connection)
