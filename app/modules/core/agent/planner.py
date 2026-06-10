@@ -28,7 +28,9 @@ logger = get_logger(__name__)
 
 
 # 도구 선택 프롬프트 템플릿
-PLANNER_SYSTEM_PROMPT = """당신은 RAG 시스템의 도구 선택 에이전트입니다.
+# {output_language}는 build_planner_system_prompt에서 선치환되고,
+# {tool_schemas}는 런타임에 .format(tool_schemas=...)로 치환된다.
+PLANNER_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 도구 선택 에이전트입니다.
 사용자 질문과 현재 상태를 분석하여 적절한 도구를 선택하세요.
 
 ## 사용 가능한 도구:
@@ -36,7 +38,7 @@ PLANNER_SYSTEM_PROMPT = """당신은 RAG 시스템의 도구 선택 에이전트
 
 ## 응답 형식 (JSON만 출력):
 {{
-    "reasoning": "도구 선택 이유 (한국어, 1-2문장)",
+    "reasoning": "도구 선택 이유 ({output_language}, 1-2문장)",
     "tool_calls": [
         {{
             "tool_name": "도구 이름",
@@ -108,6 +110,27 @@ PLANNER_SYSTEM_PROMPT = """당신은 RAG 시스템의 도구 선택 에이전트
 - 마크다운 코드 블록(```)은 사용하지 마세요
 """
 
+
+def build_planner_system_prompt(output_language: str = "한국어") -> str:
+    """도구 선택 시스템 프롬프트 템플릿을 출력 언어로 조립한다.
+
+    {output_language}만 선치환하고, {tool_schemas}와 JSON 이스케이프({{ }})는
+    이후 .format(tool_schemas=...) 단계에서 처리되도록 그대로 둔다.
+
+    Args:
+        output_language: reasoning 출력 언어 이름 (기본값: "한국어")
+
+    Returns:
+        언어가 반영된, 아직 {tool_schemas}가 남아 있는 프롬프트 템플릿
+    """
+    return PLANNER_SYSTEM_PROMPT_TEMPLATE.replace(
+        "{output_language}", output_language
+    )
+
+
+# 하위 호환: 한국어 기본 시스템 프롬프트 템플릿(기존 상수명 유지)
+PLANNER_SYSTEM_PROMPT = build_planner_system_prompt("한국어")
+
 PLANNER_USER_PROMPT = """## 사용자 질문:
 {query}
 
@@ -157,6 +180,11 @@ class AgentPlanner:
         self._llm_client = llm_client
         self._mcp_server = mcp_server
         self._config = config
+        # 출력 언어를 반영한 시스템 프롬프트 템플릿을 미리 빌드.
+        # {tool_schemas}는 plan()에서 .format()으로 런타임 치환된다.
+        self._system_prompt_template = build_planner_system_prompt(
+            getattr(config, "output_language", "한국어")
+        )
 
         logger.info(
             f"AgentPlanner 초기화: model={config.selector_model}, "
@@ -193,8 +221,8 @@ class AgentPlanner:
             # 2. 이전 컨텍스트 생성
             context = state.get_context_for_llm() or "없음 (첫 번째 스텝)"
 
-            # 3. 프롬프트 구성
-            system_prompt = PLANNER_SYSTEM_PROMPT.format(
+            # 3. 프롬프트 구성 (출력 언어가 반영된 템플릿에 도구 스키마 치환)
+            system_prompt = self._system_prompt_template.format(
                 tool_schemas=tool_schemas_str
             )
             user_prompt = PLANNER_USER_PROMPT.format(

@@ -670,6 +670,13 @@ class RAGPipeline:
             )
         except (TypeError, ValueError):
             self.multiturn_short_question_max_words = 5
+        # 재작성 프롬프트 템플릿 (없으면 한국어 기본 템플릿 사용 → 출력 언어 보존)
+        configured_prompt = rewrite_config.get("prompt_template")
+        self.multiturn_rewrite_prompt_template: str = (
+            configured_prompt
+            if isinstance(configured_prompt, str) and configured_prompt.strip()
+            else self._DEFAULT_MULTITURN_REWRITE_PROMPT
+        )
         retrieval_config = config.get("retrieval", {})
 
         self.retrieval_limit = rag_config.get(
@@ -1194,6 +1201,24 @@ class RAGPipeline:
         "그리고", "추가로", "또", "또한",
     )
 
+    # standalone rewrite 기본 프롬프트 템플릿 (한국어, 출력 언어 보존용)
+    # yaml의 rag.multiturn_rewrite.prompt_template로 오버라이드 가능하며,
+    # 비한국어 외주는 이 템플릿을 해당 언어로 교체할 수 있다.
+    # 플레이스홀더: {session_context}(직전 대화 맥락), {message}(후속 질문)
+    _DEFAULT_MULTITURN_REWRITE_PROMPT: str = (
+        "당신은 멀티턴 대화의 후속 질문을 검색에 적합한 자립적(standalone) "
+        "질문으로 재작성하는 전문가입니다.\n\n"
+        "아래 [직전 대화 맥락]을 참고하여, [후속 질문]에서 생략되거나 "
+        "대명사/지시어로 표현된 핵심 대상(프로그램명, 제도명, 주체 등)을 "
+        "명시적으로 복원해 하나의 완결된 질문으로 다시 쓰세요.\n"
+        "- 맥락에 없는 정보를 새로 추가하지 마세요.\n"
+        "- 후속 질문의 의도를 바꾸지 마세요.\n"
+        "- 설명 없이 재작성된 질문 한 문장만 출력하세요.\n\n"
+        "[직전 대화 맥락]\n{session_context}\n\n"
+        "[후속 질문]\n{message}\n\n"
+        "[재작성된 자립적 질문]"
+    )
+
     def _needs_standalone_rewrite(self, message: str) -> bool:
         """
         멀티턴 standalone rewrite가 필요한지 판정하는 게이트.
@@ -1306,20 +1331,12 @@ class RAGPipeline:
             )
             return message
 
-        # LLM 재작성 프롬프트 구성
-        prompt = (
-            "당신은 멀티턴 대화의 후속 질문을 검색에 적합한 자립적(standalone) "
-            "질문으로 재작성하는 전문가입니다.\n\n"
-            "아래 [직전 대화 맥락]을 참고하여, [후속 질문]에서 생략되거나 "
-            "대명사/지시어로 표현된 핵심 대상(프로그램명, 제도명, 주체 등)을 "
-            "명시적으로 복원해 하나의 완결된 질문으로 다시 쓰세요.\n"
-            "- 맥락에 없는 정보를 새로 추가하지 마세요.\n"
-            "- 후속 질문의 의도를 바꾸지 마세요.\n"
-            "- 설명 없이 재작성된 질문 한 문장만 출력하세요.\n\n"
-            f"[직전 대화 맥락]\n{session_context}\n\n"
-            f"[후속 질문]\n{message}\n\n"
-            "[재작성된 자립적 질문]"
-        )
+        # LLM 재작성 프롬프트 구성 (설정 템플릿 기반, 기본값=한국어 프롬프트)
+        # 템플릿에 {session_context}/{message} 외 중괄호가 있어도 깨지지 않도록
+        # replace로 안전 치환한다(format은 임의 중괄호에 취약).
+        prompt = self.multiturn_rewrite_prompt_template.replace(
+            "{session_context}", session_context
+        ).replace("{message}", message)
 
         try:
             # 결정적(temperature=0.0) 호출로 재작성의 비결정성을 차단.

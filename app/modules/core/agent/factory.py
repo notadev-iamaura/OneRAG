@@ -52,6 +52,8 @@ DEFAULT_AGENT_CONFIG = {
     "enable_reflection": True,
     "reflection_threshold": 7.0,
     "max_reflection_iterations": 2,
+    # 출력 언어 (외주 언어 변경용, 기본값=한국어)
+    "output_language": "한국어",
 }
 
 
@@ -237,6 +239,11 @@ class AgentFactory:
                     "max_reflection_iterations",
                     defaults["max_reflection_iterations"],
                 )
+            ),
+            # 출력 언어 (없으면 한국어 기본값 → 기존 동작 보존)
+            output_language=agent_yaml.get(
+                "output_language",
+                defaults["output_language"],
             ),
         )
 

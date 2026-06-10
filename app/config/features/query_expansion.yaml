@@ -8,6 +8,16 @@ query_expansion:
   cache_size: 1000
   cache_ttl: 86400  # 1일 (24시간)
 
+  # 확장 대상 언어 설정 (비한국어 외주 언어 전환용)
+  # 설정이 없으면 코드 기본값(한국어/Korean)을 사용한다(하위 호환).
+  # expansion_language: 한국어 프롬프트에 삽입되는 언어 이름
+  # expansion_language_en: 영어 시스템 메시지에 삽입되는 언어 이름
+  expansion_language: "한국어"
+  expansion_language_en: "Korean"
+  # 단순 쿼리 판정용 질문 마커(생략 시 기존 한/일 마커 기본값 사용)
+  # 외국어 외주는 해당 언어의 의문사/어미로 교체하세요.
+  # question_markers: ["pourquoi", "comment", "où", ...]
+
   # ========================================
   # OpenRouter 통합 LLM 설정
   # ========================================
