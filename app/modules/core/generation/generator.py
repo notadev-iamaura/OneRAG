@@ -137,6 +137,11 @@ class GenerationModule:
                 "default_model",
                 self.gen_config.get("default_model", "gemini-2.0-flash"),
             )
+        elif self.provider == "openai":
+            self.default_model = self.provider_config.get(
+                "default_model",
+                self.gen_config.get("default_model", "gpt-4.1"),
+            )
         elif self.provider == "ollama":
             self.default_model = self.provider_config.get(
                 "default_model",
@@ -193,8 +198,13 @@ class GenerationModule:
         logger.info(f"🚀 GenerationModule 초기화 시작 (provider: {self.provider})")
 
         # Provider별 클라이언트 초기화
+        # google/openai/ollama는 직접 클라이언트, 그 외(anthropic 포함)는 OpenRouter 경유.
+        # (Anthropic은 OpenAI 호환 messages API가 없어 generator의 OpenAI 클라이언트 구조로
+        #  직접 호출이 불가하므로 OpenRouter 경유를 권장한다 — openrouter/anthropic/claude-*)
         if self.provider == "google":
             self._initialize_google_client()
+        elif self.provider == "openai":
+            self._initialize_openai_client()
         elif self.provider == "ollama":
             self._initialize_ollama_client()
         else:
@@ -229,6 +239,33 @@ class GenerationModule:
         # Google OpenAI 호환 API 클라이언트 초기화
         self.client = OpenAI(
             base_url=GOOGLE_OPENAI_COMPAT_URL,
+            api_key=api_key,
+            timeout=timeout,
+            max_retries=0,
+            http_client=httpx.Client(
+                timeout=httpx.Timeout(timeout, connect=10.0),
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            ),
+        )
+
+    def _initialize_openai_client(self) -> None:
+        """OpenAI 네이티브 API 클라이언트 초기화 (OpenAI 호환 — 직접 지원)"""
+        import httpx
+        from openai import OpenAI
+
+        api_key = self.provider_config.get("api_key") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "OpenAI API 키가 설정되지 않았습니다. "
+                "해결 방법: 1) 환경변수 OPENAI_API_KEY를 설정하거나, "
+                "2) config의 generation.openai.api_key를 추가하세요."
+            )
+
+        timeout = self.provider_config.get("timeout", 120)
+        base_url = self.provider_config.get("base_url", "https://api.openai.com/v1")
+
+        self.client = OpenAI(
+            base_url=base_url,
             api_key=api_key,
             timeout=timeout,
             max_retries=0,
