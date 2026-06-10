@@ -1380,13 +1380,27 @@ def create_retriever_via_factory(
                     HybridMerger,
                     KoreanTokenizer,
                 )
-
-                tokenizer = KoreanTokenizer(
-                    stopword_filter=stopword_filter,
-                    synonym_manager=synonym_manager,
-                    user_dictionary=user_dictionary,
+                from app.modules.core.retrieval.bm25_engine.tokenizer import (
+                    WhitespaceTokenizer,
                 )
-                bm25_index = BM25Index(tokenizer=tokenizer)
+
+                # 범용성: bm25.yaml의 tokenizer 설정으로 언어에 맞는 토크나이저 선택.
+                # 기본 "korean"은 Kiwi 형태소 분석기, 그 외(예: "whitespace")는
+                # 언어 중립 토크나이저로 비한국어 코퍼스를 지원한다.
+                tokenizer_type = config.get("bm25", {}).get("tokenizer", "korean")
+                tokenizer: object
+                if tokenizer_type == "korean":
+                    tokenizer = KoreanTokenizer(
+                        stopword_filter=stopword_filter,
+                        synonym_manager=synonym_manager,
+                        user_dictionary=user_dictionary,
+                    )
+                else:
+                    tokenizer = WhitespaceTokenizer()
+                    logger.info(
+                        f"BM25 언어 중립 토크나이저 사용 (tokenizer={tokenizer_type})"
+                    )
+                bm25_index = BM25Index(tokenizer=tokenizer)  # type: ignore[arg-type]
                 hybrid_merger = HybridMerger(
                     alpha=config.get("hybrid_search", {}).get("default_alpha", 0.6)
                 )

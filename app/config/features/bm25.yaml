@@ -7,6 +7,11 @@ bm25:
   # 롤백 시: enabled: false로 변경
   enabled: true
 
+  # 토크나이저 선택 (범용성: chroma/pgvector/mongodb 하이브리드 검색용)
+  # - korean: Kiwi 한국어 형태소 분석기 (기본)
+  # - whitespace: 언어 중립 공백 분리 (영어·다국어 코퍼스용)
+  tokenizer: "korean"
+
   # ========================================
   # 동의어 사전 설정
   # ========================================

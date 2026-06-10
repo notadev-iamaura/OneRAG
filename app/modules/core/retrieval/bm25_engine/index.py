@@ -15,7 +15,7 @@ import logging
 import math
 from typing import Any
 
-from app.modules.core.retrieval.bm25_engine.tokenizer import KoreanTokenizer
+from app.modules.core.retrieval.bm25_engine.tokenizer import Tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,10 @@ class BM25Index:
     쿼리에 대한 키워드 기반 점수를 계산합니다.
 
     Args:
-        tokenizer: 한국어 토크나이저 (DI 주입)
+        tokenizer: BM25 토크나이저 (Tokenizer Protocol — 언어별 구현 주입)
     """
 
-    def __init__(self, tokenizer: KoreanTokenizer) -> None:
+    def __init__(self, tokenizer: Tokenizer) -> None:
         self._tokenizer = tokenizer
         self._bm25 = None
         self._documents: list[dict[str, Any]] = []
