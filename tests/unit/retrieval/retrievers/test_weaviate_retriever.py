@@ -657,10 +657,11 @@ class TestWeaviateRetrieverAddDocuments:
 
     @pytest.fixture
     def mock_collection(self) -> MagicMock:
-        """Mock Collection with data.insert"""
+        """Mock Collection with data.insert_many (배치 적재)"""
         collection = MagicMock()
         collection.data = MagicMock()
-        collection.data.insert = MagicMock(return_value=None)
+        # insert_many 는 배치 결과 객체를 반환한다. errors={} 는 전건 성공을 의미한다.
+        collection.data.insert_many = MagicMock(return_value=MagicMock(errors={}))
         return collection
 
     @pytest.mark.asyncio
@@ -709,7 +710,11 @@ class TestWeaviateRetrieverAddDocuments:
         assert result["success_count"] == 2
         assert result["error_count"] == 0
         assert result["total_count"] == 2
-        assert mock_collection.data.insert.call_count == 2
+        # 코드가 단건 insert 직렬 반복을 한 번의 배치(insert_many)로 대체했으므로,
+        # insert_many 가 1회 호출되고 그 안에 2개의 DataObject 가 담겨야 한다.
+        assert mock_collection.data.insert_many.call_count == 1
+        inserted_objects = mock_collection.data.insert_many.call_args.args[0]
+        assert len(inserted_objects) == 2
 
     @pytest.mark.asyncio
     async def test_add_documents_accepts_document_processor_dense_embedding(
@@ -745,7 +750,9 @@ class TestWeaviateRetrieverAddDocuments:
 
         assert result["success_count"] == 1
         assert result["error_count"] == 0
-        assert mock_collection.data.insert.call_args.kwargs["vector"] == [0.3] * 3072
+        # 배치 적재이므로 insert_many 에 전달된 DataObject 의 vector 를 검증한다.
+        inserted_objects = mock_collection.data.insert_many.call_args.args[0]
+        assert inserted_objects[0].vector == [0.3] * 3072
 
     @pytest.mark.asyncio
     async def test_add_documents_normalizes_known_metadata_and_preserves_extras(
@@ -781,7 +788,9 @@ class TestWeaviateRetrieverAddDocuments:
 
         result = await retriever.add_documents(documents)
 
-        properties = mock_collection.data.insert.call_args.kwargs["properties"]
+        # 배치 적재이므로 insert_many 에 전달된 DataObject 의 properties 를 검증한다.
+        inserted_objects = mock_collection.data.insert_many.call_args.args[0]
+        properties = inserted_objects[0].properties
         assert result["success_count"] == 1
         assert properties["document_id"] == "doc-1"
         assert properties["chunk_index"] == 2
