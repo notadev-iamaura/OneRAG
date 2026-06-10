@@ -13,7 +13,6 @@ OpenRouter 지원 임베딩 모델:
 """
 
 import asyncio
-import math
 import os
 from typing import TYPE_CHECKING
 
@@ -25,6 +24,7 @@ else:
 
 from ....lib.logger import get_logger
 from .interfaces import BaseEmbedder
+from .vector_ops import l2_norm as _l2_norm
 
 logger = get_logger(__name__)
 
@@ -32,11 +32,11 @@ logger = get_logger(__name__)
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
-def _l2_norm(vector: list[float]) -> float:
-    return math.sqrt(sum(value * value for value in vector))
-
-
 def _normalize_vector_values(vector: list[float]) -> list[float]:
+    # ⚠️ Gemini 임베더와 정규화 본체가 의도적으로 다름:
+    # OpenAI는 이미 정규화된 벡터(norm≈1)를 반환하므로, 재계산 시 발생하는
+    # 미세 부동소수점 오차를 피하기 위해 norm≈1이면 원본을 그대로 반환한다.
+    # (Gemini는 미정규화 벡터라 항상 재계산 — 통합하면 검색 점수가 미세 변동)
     norm = _l2_norm(vector)
     if norm <= 0:
         return vector
