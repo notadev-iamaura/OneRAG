@@ -216,6 +216,10 @@ class RAGChatbotApp:
             # 컨테이너 싱글톤을 사용해야 실제 비용이 /api/admin에 반영된다.
             "cost_tracker": self.container.cost_tracker(),
             "performance_metrics": self.container.performance_metrics(),
+            # Phase 2.6: Grok answer 모드 / Agentic RAG 의존성 — RAGPipeline에 전달돼야
+            # grok answer 모드와 use_agent=true가 동작한다.
+            "grok_answer_provider": self.container.grok_answer_provider(),
+            "agent_orchestrator": self.container.agent_orchestrator(),
         }
 
 
