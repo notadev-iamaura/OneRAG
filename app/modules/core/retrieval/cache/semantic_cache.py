@@ -122,11 +122,8 @@ class InMemorySemanticCache:
         self.embedder = embedder
         self.config = config
 
-        # LRU 캐시 (키: 해시, 값: CacheEntry)
+        # LRU 캐시 (키: 해시, 값: CacheEntry — embedding은 CacheEntry에 포함)
         self._cache: LRUCache[str, CacheEntry] = LRUCache(maxsize=config.max_entries)
-
-        # 임베딩 벡터 저장소 (빠른 유사도 계산용)
-        self._embeddings: dict[str, np.ndarray] = {}
 
         # 통계
         self._stats = {
@@ -220,9 +217,8 @@ class InMemorySemanticCache:
                 query=query,
             )
 
-            # LRU 캐시에 저장
+            # LRU 캐시에 저장 (embedding은 CacheEntry에 포함되어 함께 관리/퇴출됨)
             self._cache[cache_key] = entry
-            self._embeddings[cache_key] = query_embedding
 
             self._stats["sets"] += 1
             logger.debug(f"시맨틱 캐시 저장: '{query[:30]}...' (결과 {len(results)}개)")
@@ -242,16 +238,12 @@ class InMemorySemanticCache:
         if cache_key in self._cache:
             del self._cache[cache_key]
 
-        if cache_key in self._embeddings:
-            del self._embeddings[cache_key]
-
         self._stats["invalidations"] += 1
         logger.debug(f"시맨틱 캐시 무효화: '{query[:30]}...'")
 
     async def clear(self) -> None:
         """모든 캐시 클리어"""
         self._cache.clear()
-        self._embeddings.clear()
         logger.info("시맨틱 캐시 전체 클리어")
 
     def get_stats(self) -> dict[str, Any]:
@@ -349,8 +341,6 @@ class InMemorySemanticCache:
         for key in expired_keys:
             if key in self._cache:
                 del self._cache[key]
-            if key in self._embeddings:
-                del self._embeddings[key]
 
         return best_entry, best_key
 

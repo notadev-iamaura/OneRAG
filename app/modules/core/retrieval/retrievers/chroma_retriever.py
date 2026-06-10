@@ -15,6 +15,7 @@ Chroma Retriever - Dense 및 하이브리드 벡터 검색
 - (선택) kiwipiepy, rank-bm25: 하이브리드 검색 시 필요
 """
 
+import asyncio
 from typing import Any, Protocol, runtime_checkable
 
 from app.lib.logger import get_logger
@@ -150,8 +151,10 @@ class ChromaRetriever:
         """
         try:
             # 1. 쿼리 벡터화
+            # 동기 임베딩(네트워크 HTTP 호출)을 to_thread로 오프로딩한다.
+            # (직접 호출하면 임베딩 왕복 동안 이벤트 루프 전체가 블로킹됨)
             logger.debug(f"쿼리 임베딩 생성 중: '{query[:50]}...'")
-            query_vector = self.embedder.embed_query(query)
+            query_vector = await asyncio.to_thread(self.embedder.embed_query, query)
 
             # 2. ChromaVectorStore에서 검색
             raw_results = await self.store.search(

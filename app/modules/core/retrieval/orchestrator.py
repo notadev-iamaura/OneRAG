@@ -346,7 +346,13 @@ class RetrievalOrchestrator:
             # Step 1: 캐시 확인 (선택적)
             if self.cache:
                 try:
-                    cache_key = self.cache.generate_cache_key(query, top_k, filters)  # type: ignore[attr-defined]
+                    # 캐시 키가 리랭킹/그래프 설정을 구분하도록 키 구성에 포함한다.
+                    # (미포함 시 rerank_enabled/use_graph가 다른 호출이 같은 키를 공유해
+                    #  리랭킹 안 된 결과나 벡터 전용 결과가 잘못 반환될 수 있음)
+                    cache_filters = dict(filters or {})
+                    cache_filters["_rerank_enabled"] = rerank_enabled
+                    cache_filters["_use_graph"] = effective_use_graph
+                    cache_key = self.cache.generate_cache_key(query, top_k, cache_filters)  # type: ignore[attr-defined]
                     cached_results = await self.cache.get(cache_key)
 
                     if cached_results:
@@ -1067,6 +1073,22 @@ class RetrievalOrchestrator:
         start_time = asyncio.get_event_loop().time()
         results_per_query = await asyncio.gather(*search_tasks, return_exceptions=True)
         search_time = (asyncio.get_event_loop().time() - start_time) * 1000
+
+        # Phase 2.7: 모든 쿼리가 예외로 실패하면 검색 백엔드 완전 장애로 판단하고
+        # 예외를 전파한다. 예외를 삼키고 빈 리스트를 반환하면 상위 CircuitBreaker가
+        # 장애 신호를 받지 못해 영원히 CLOSED로 남는다.
+        # (retriever가 정상적으로 빈 결과를 반환한 경우는 예외가 아니므로 전파하지 않음)
+        if results_per_query and all(
+            isinstance(r, BaseException) for r in results_per_query
+        ):
+            first_exc = next(
+                r for r in results_per_query if isinstance(r, BaseException)
+            )
+            logger.error(
+                "모든 쿼리 검색 실패 — 백엔드 장애로 판단, 예외 전파",
+                extra={"query_count": len(queries), "error": str(first_exc)},
+            )
+            raise first_exc
 
         logger.info(
             "병렬 검색 완료",

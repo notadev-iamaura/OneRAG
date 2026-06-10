@@ -317,3 +317,111 @@ class TestQdrantVectorStoreStats:
         assert stats["documents_added"] == 0
         assert stats["searches"] == 0
         assert stats["deletions"] == 0
+
+
+# ============================================================
+# 문서 관리 테스트 (fetch_objects / delete_objects)
+# ============================================================
+
+
+def _make_record(point_id, payload):
+    """Qdrant Record(scroll/retrieve 반환)를 흉내내는 fake."""
+    rec = MagicMock()
+    rec.id = point_id
+    rec.payload = payload
+    return rec
+
+
+class TestQdrantVectorStoreDocumentManagement:
+    """fetch_objects / delete_objects 테스트 (문서관리 위임 대상)"""
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_all_uses_scroll(self, mock_qdrant_client):
+        """필터 없이 전체 조회 시 scroll 페이지네이션으로 수집한다"""
+        from app.infrastructure.storage.vector.qdrant_store import QdrantVectorStore
+
+        # 2페이지: 첫 페이지는 next_offset=1, 두 번째는 None
+        mock_qdrant_client.scroll.side_effect = [
+            ([_make_record(111, {"content": "a", "document_id": "doc-1"})], 1),
+            ([_make_record(222, {"content": "b", "document_id": "doc-2"})], None),
+        ]
+        store = QdrantVectorStore(_client=mock_qdrant_client)
+
+        results = await store.fetch_objects(collection="documents")
+
+        # scroll이 2회 호출되고 두 번째 호출에 offset 전달
+        assert mock_qdrant_client.scroll.call_count == 2
+        second_offset = mock_qdrant_client.scroll.call_args_list[1].kwargs.get("offset")
+        assert second_offset == 1
+        # chroma_store 파리티 반환 형태 검증 (_id는 포인트 ID 문자열)
+        assert len(results) == 2
+        assert results[0]["_id"] == "111"
+        assert results[0]["content"] == "a"
+        assert results[0]["document_id"] == "doc-1"
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_by_ids_uses_retrieve(self, mock_qdrant_client):
+        """ids 필터는 scroll 대신 retrieve로 직접 조회한다(재해시 없음)"""
+        from app.infrastructure.storage.vector.qdrant_store import QdrantVectorStore
+
+        mock_qdrant_client.retrieve.return_value = [
+            _make_record(111, {"content": "a", "document_id": "doc-1"}),
+        ]
+        store = QdrantVectorStore(_client=mock_qdrant_client)
+
+        # fetch_objects가 반환한 _id("111")를 그대로 ids로 전달
+        results = await store.fetch_objects(
+            collection="documents", filters={"ids": ["111"]}
+        )
+
+        mock_qdrant_client.scroll.assert_not_called()
+        # 문자열 "111"이 정수 포인트 ID 111로 정규화되어 retrieve에 전달
+        retrieve_ids = mock_qdrant_client.retrieve.call_args.kwargs.get("ids")
+        assert retrieve_ids == [111]
+        assert results[0]["_id"] == "111"
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_metadata_filter(self, mock_qdrant_client):
+        """메타데이터 필터는 scroll_filter로 변환된다"""
+        from app.infrastructure.storage.vector.qdrant_store import QdrantVectorStore
+
+        mock_qdrant_client.scroll.return_value = ([], None)
+        store = QdrantVectorStore(_client=mock_qdrant_client)
+
+        await store.fetch_objects(
+            collection="documents", filters={"document_id": "doc-1"}
+        )
+
+        scroll_filter = mock_qdrant_client.scroll.call_args.kwargs.get("scroll_filter")
+        assert scroll_filter is not None
+
+    @pytest.mark.asyncio
+    async def test_delete_objects_uses_point_ids_directly(self, mock_qdrant_client):
+        """delete_objects는 fetch_objects의 _id를 재해시 없이 포인트 ID로 삭제한다"""
+        from app.infrastructure.storage.vector.qdrant_store import QdrantVectorStore
+
+        store = QdrantVectorStore(_client=mock_qdrant_client)
+
+        # fetch_objects가 돌려준 _id("111","222")를 그대로 전달
+        deleted = await store.delete_objects(
+            collection="documents", object_ids=["111", "222"]
+        )
+
+        assert deleted == 2
+        # delete가 호출되고 points_selector에 정수 포인트 ID가 그대로 들어갔는지 확인
+        mock_qdrant_client.delete.assert_called_once()
+        selector = mock_qdrant_client.delete.call_args.kwargs.get("points_selector")
+        assert selector.points == [111, 222]
+        assert store.stats["deletions"] == 2
+
+    @pytest.mark.asyncio
+    async def test_delete_objects_empty(self, mock_qdrant_client):
+        """빈 ID 목록은 삭제 호출 없이 0을 반환한다"""
+        from app.infrastructure.storage.vector.qdrant_store import QdrantVectorStore
+
+        store = QdrantVectorStore(_client=mock_qdrant_client)
+
+        deleted = await store.delete_objects(collection="documents", object_ids=[])
+
+        assert deleted == 0
+        mock_qdrant_client.delete.assert_not_called()

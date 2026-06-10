@@ -79,6 +79,16 @@ rag:
     # followup_dependent_patterns: ["그건", "이건", ...]   # 대명사/지시어
     # followup_start_patterns: ["그리고", "추가로", ...]    # 문장 시작 접속사
     # short_question_max_words: 5                          # 짧은 질문 어절 임계치
+    # 재작성 프롬프트 템플릿(출력 언어 결정). 생략 시 한국어 기본 템플릿 사용.
+    # 플레이스홀더 {session_context}(직전 대화 맥락), {message}(후속 질문)는
+    # 런타임에 치환된다. 비한국어 외주는 아래처럼 해당 언어로 교체하세요.
+    # prompt_template: |
+    #   You rewrite the follow-up question into a standalone search query.
+    #   [Context]
+    #   {session_context}
+    #   [Follow-up]
+    #   {message}
+    #   [Rewritten standalone question]
 
   # RRF 점수 정규화 설정 (0~1 범위로 변환, 프론트엔드에서 ×100하여 % 표시)
   # 참고: RRF 공식 = weight / (rrf_k + rank)

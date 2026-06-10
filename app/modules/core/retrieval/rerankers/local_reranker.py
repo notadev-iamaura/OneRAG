@@ -13,6 +13,7 @@ API 키 불필요, 오프라인 사용 가능.
 참고: https://www.sbert.net/docs/pretrained-models/ce-msmarco.html
 """
 
+import asyncio
 from typing import Any
 
 import numpy as np
@@ -140,9 +141,11 @@ class LocalReranker:
             # 쿼리-문서 쌍 생성
             pairs = [(query, result.content) for result in results]
 
-            # CrossEncoder 추론 (동기 함수이므로 직접 호출)
+            # CrossEncoder 추론 (CPU/GPU 동기 추론을 to_thread로 오프로딩)
+            # 직접 호출하면 추론 시간(수백 ms~수 초) 동안 이벤트 루프 전체가 블로킹됨
             # 원시 logit 점수 획득 (activation 없이)
-            raw_scores = self._model.predict(
+            raw_scores = await asyncio.to_thread(
+                self._model.predict,
                 pairs,
                 batch_size=self.batch_size,
             )

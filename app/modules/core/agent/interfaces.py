@@ -38,6 +38,8 @@ class AgentConfig:
         enable_reflection: Self-Reflection 활성화 여부 (기본: True)
         reflection_threshold: Reflection 품질 임계값 (기본: 7.0)
         max_reflection_iterations: 최대 Reflection 반복 횟수 (기본: 2)
+        output_language: 에이전트 답변/추론 출력 언어 (기본: "한국어").
+            비한국어 외주는 mcp.yaml의 agent.output_language로 변경한다.
     """
 
     # 도구 선택 방식: "llm" | "rule_based" | "hybrid"
@@ -75,6 +77,11 @@ class AgentConfig:
 
     # 최대 Reflection 반복 횟수
     max_reflection_iterations: int = 2
+
+    # === 출력 언어 설정 ===
+
+    # 에이전트 답변/추론 출력 언어 (기본: 한국어, 외주 언어 변경용)
+    output_language: str = "한국어"
 
     def __post_init__(self) -> None:
         """설정값 검증"""

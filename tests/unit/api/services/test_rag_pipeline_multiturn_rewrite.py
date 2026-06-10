@@ -226,3 +226,63 @@ class TestRewriteStandaloneQuery:
         result = await pipeline._rewrite_standalone_query("그건 자격이 어떻게 돼?", "직전 대화")
 
         assert result == "그건 자격이 어떻게 돼?"
+
+
+class TestMultiturnRewritePromptTemplate:
+    """재작성 프롬프트 템플릿 설정 이관 검증."""
+
+    def test_default_prompt_template_is_korean(self, mock_modules):
+        """설정이 없으면 한국어 기본 프롬프트 템플릿을 사용한다(하위 호환)."""
+        pipeline = _build_pipeline(mock_modules)
+        assert "후속 질문" in pipeline.multiturn_rewrite_prompt_template
+        assert "standalone" in pipeline.multiturn_rewrite_prompt_template
+        assert "{session_context}" in pipeline.multiturn_rewrite_prompt_template
+        assert "{message}" in pipeline.multiturn_rewrite_prompt_template
+
+    @pytest.mark.asyncio
+    async def test_default_prompt_passed_to_llm(self, mock_modules):
+        """기본 템플릿이 직전 맥락/후속 질문을 채워 LLM에 전달된다."""
+        factory = MagicMock()
+        factory.generate_with_fallback = AsyncMock(
+            return_value=("재작성된 질문", "google")
+        )
+        pipeline = _build_pipeline(mock_modules, llm_factory=factory)
+
+        await pipeline._rewrite_standalone_query("그건 자격이 어떻게 돼?", "청년 공제 얘기 중")
+
+        prompt = factory.generate_with_fallback.call_args.kwargs["prompt"]
+        # 한국어 기본 프롬프트 + 맥락/질문 치환 확인
+        assert "당신은 멀티턴 대화의 후속 질문을" in prompt
+        assert "청년 공제 얘기 중" in prompt
+        assert "그건 자격이 어떻게 돼?" in prompt
+        # 플레이스홀더가 모두 치환됐는지 확인
+        assert "{session_context}" not in prompt
+        assert "{message}" not in prompt
+
+    @pytest.mark.asyncio
+    async def test_custom_prompt_template_overrides(self, mock_modules):
+        """설정으로 외국어 프롬프트 템플릿을 주입하면 그 템플릿이 사용된다."""
+        custom = (
+            "You rewrite follow-up questions into standalone search queries.\n"
+            "Context:\n{session_context}\n"
+            "Follow-up:\n{message}\n"
+            "Rewritten:"
+        )
+        factory = MagicMock()
+        factory.generate_with_fallback = AsyncMock(
+            return_value=("rewritten query", "google")
+        )
+        pipeline = _build_pipeline(
+            mock_modules,
+            llm_factory=factory,
+            rewrite_overrides={"prompt_template": custom},
+        )
+
+        await pipeline._rewrite_standalone_query("그건 자격이 어떻게 돼?", "context here")
+
+        prompt = factory.generate_with_fallback.call_args.kwargs["prompt"]
+        assert "You rewrite follow-up questions into standalone search queries" in prompt
+        assert "context here" in prompt
+        assert "그건 자격이 어떻게 돼?" in prompt
+        # 한국어 기본 프롬프트는 들어가지 않는다
+        assert "당신은 멀티턴 대화의 후속 질문을" not in prompt

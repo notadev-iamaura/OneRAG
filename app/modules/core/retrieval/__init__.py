@@ -12,7 +12,6 @@ __all__ = [
     "BaseCacheManager",
     "SearchResult",
     "MemoryCacheManager",
-    "MongoDBRetriever",
     "JinaReranker",
     "OpenAILLMReranker",
     "GeminiFlashReranker",
@@ -34,10 +33,6 @@ _EXPORTS = {
     "MemoryCacheManager": (
         "app.modules.core.retrieval.cache.memory_cache",
         "MemoryCacheManager",
-    ),
-    "MongoDBRetriever": (
-        "app.modules.core.retrieval.retrievers.mongodb_retriever",
-        "MongoDBRetriever",
     ),
     "JinaReranker": ("app.modules.core.retrieval.rerankers.jina_reranker", "JinaReranker"),
     "OpenAILLMReranker": (

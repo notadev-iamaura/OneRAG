@@ -28,7 +28,8 @@ logger = get_logger(__name__)
 
 
 # Reflection 프롬프트 템플릿
-REFLECTOR_SYSTEM_PROMPT = """당신은 RAG 시스템의 답변 품질 평가 에이전트입니다.
+# {output_language}는 build_reflector_system_prompt에서 치환된다.
+REFLECTOR_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 답변 품질 평가 에이전트입니다.
 생성된 답변의 품질을 객관적으로 평가하세요.
 
 ## 평가 기준 (각 항목 0-2점):
@@ -49,8 +50,27 @@ REFLECTOR_SYSTEM_PROMPT = """당신은 RAG 시스템의 답변 품질 평가 에
 ## 중요:
 - 객관적이고 공정하게 평가하세요
 - 문제점이 없으면 빈 배열 []을 반환하세요
+- issues/suggestions/reasoning은 {output_language}로 작성하세요
 - 반드시 JSON 형식으로만 응답하세요
 """
+
+
+def build_reflector_system_prompt(output_language: str = "한국어") -> str:
+    """답변 품질 평가 시스템 프롬프트를 출력 언어로 조립한다.
+
+    Args:
+        output_language: issues/suggestions/reasoning 출력 언어 (기본값: "한국어")
+
+    Returns:
+        출력 언어가 반영된 시스템 프롬프트 문자열
+    """
+    return REFLECTOR_SYSTEM_PROMPT_TEMPLATE.replace(
+        "{output_language}", output_language
+    )
+
+
+# 하위 호환: 한국어 기본 시스템 프롬프트(기존 상수명 유지)
+REFLECTOR_SYSTEM_PROMPT = build_reflector_system_prompt("한국어")
 
 REFLECTOR_USER_PROMPT = """## 원본 질문:
 {query}
@@ -98,6 +118,10 @@ class AgentReflector:
 
         self._llm_client = llm_client
         self._config = config
+        # 출력 언어를 반영한 시스템 프롬프트를 미리 빌드 (기본값=한국어)
+        self._system_prompt = build_reflector_system_prompt(
+            getattr(config, "output_language", "한국어")
+        )
 
         logger.info(
             f"AgentReflector 초기화: "
@@ -139,7 +163,7 @@ class AgentReflector:
             # 2. LLM 호출
             response = await self._llm_client.generate_text(
                 prompt=user_prompt,
-                system_prompt=REFLECTOR_SYSTEM_PROMPT,
+                system_prompt=self._system_prompt,
             )
 
             # 3. 응답 파싱

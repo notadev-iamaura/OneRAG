@@ -296,6 +296,132 @@ class TestPineconeVectorStoreDelete:
         assert isinstance(deleted_count, int)
 
 
+class TestPineconeVectorStoreFetchObjects:
+    """PineconeVectorStore.fetch_objects() 테스트 (문서관리 위임 대상)"""
+
+    @staticmethod
+    def _make_vector(vec_id: str, metadata: dict[str, Any]) -> MagicMock:
+        """Pinecone FetchResponse.vectors의 단일 Vector를 흉내내는 fake."""
+        vec = MagicMock()
+        vec.id = vec_id
+        vec.metadata = metadata
+        return vec
+
+    @staticmethod
+    def _make_list_page(ids: list[str], next_token: str | None) -> MagicMock:
+        """list_paginated 응답을 흉내내는 fake (vectors[].id, pagination.next)."""
+        page = MagicMock()
+        page.vectors = [MagicMock(id=i) for i in ids]
+        if next_token is None:
+            page.pagination = None
+        else:
+            pagination = MagicMock()
+            pagination.next = next_token
+            page.pagination = pagination
+        return page
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_by_ids_uses_fetch(self) -> None:
+        """ids 필터는 list_paginated 없이 fetch로 직접 조회한다"""
+        _, mock_index, store = create_mock_pinecone_store()
+        fetch_response = MagicMock()
+        fetch_response.vectors = {
+            "id-1": self._make_vector(
+                "id-1", {"content": "본문1", "document_id": "doc-1"}
+            ),
+        }
+        mock_index.fetch.return_value = fetch_response
+
+        results = await store.fetch_objects(
+            collection="ns", filters={"ids": ["id-1"]}
+        )
+
+        # list_paginated는 호출되지 않아야 함 (직접 ID 조회)
+        mock_index.list_paginated.assert_not_called()
+        # fetch가 올바른 ids/namespace로 호출되었는지 확인
+        call = mock_index.fetch.call_args
+        assert call.kwargs.get("ids") == ["id-1"]
+        assert call.kwargs.get("namespace") == "ns"
+        # chroma_store 파리티 반환 형태 검증
+        assert len(results) == 1
+        assert results[0]["_id"] == "id-1"
+        assert results[0]["content"] == "본문1"
+        assert results[0]["document_id"] == "doc-1"
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_all_lists_then_fetches(self) -> None:
+        """필터 없으면 list_paginated로 전체 ID 수집 후 fetch로 메타데이터 조회"""
+        _, mock_index, store = create_mock_pinecone_store()
+        # 2페이지에 걸친 ID 목록
+        mock_index.list_paginated.side_effect = [
+            self._make_list_page(["id-1"], next_token="tok-2"),
+            self._make_list_page(["id-2"], next_token=None),
+        ]
+        fetch_response = MagicMock()
+        fetch_response.vectors = {
+            "id-1": self._make_vector("id-1", {"content": "a", "document_id": "doc-1"}),
+            "id-2": self._make_vector("id-2", {"content": "b", "document_id": "doc-2"}),
+        }
+        mock_index.fetch.return_value = fetch_response
+
+        results = await store.fetch_objects(collection="ns")
+
+        # list_paginated가 페이지네이션으로 2회 호출됐는지 확인
+        assert mock_index.list_paginated.call_count == 2
+        second_call = mock_index.list_paginated.call_args_list[1]
+        assert second_call.kwargs.get("pagination_token") == "tok-2"
+        # fetch가 수집된 ID로 호출됐는지 확인
+        fetch_call = mock_index.fetch.call_args
+        assert sorted(fetch_call.kwargs.get("ids")) == ["id-1", "id-2"]
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_metadata_filter(self) -> None:
+        """전수 조회 후 메타데이터 필터로 메모리 필터링한다"""
+        _, mock_index, store = create_mock_pinecone_store()
+        mock_index.list_paginated.return_value = self._make_list_page(
+            ["id-1", "id-2"], next_token=None
+        )
+        fetch_response = MagicMock()
+        fetch_response.vectors = {
+            "id-1": self._make_vector("id-1", {"content": "a", "document_id": "doc-1"}),
+            "id-2": self._make_vector("id-2", {"content": "b", "document_id": "doc-2"}),
+        }
+        mock_index.fetch.return_value = fetch_response
+
+        results = await store.fetch_objects(
+            collection="ns", filters={"document_id": "doc-1"}
+        )
+
+        assert len(results) == 1
+        assert results[0]["_id"] == "id-1"
+
+    @pytest.mark.asyncio
+    async def test_delete_objects_delegates_to_delete(self) -> None:
+        """delete_objects는 fetch_objects의 _id를 그대로 사용해 삭제한다"""
+        _, mock_index, store = create_mock_pinecone_store()
+        mock_index.delete.return_value = {}
+
+        deleted = await store.delete_objects(
+            collection="ns", object_ids=["id-1", "id-2"]
+        )
+
+        assert deleted == 2
+        call = mock_index.delete.call_args
+        assert call.kwargs.get("ids") == ["id-1", "id-2"]
+        assert call.kwargs.get("namespace") == "ns"
+
+    @pytest.mark.asyncio
+    async def test_delete_objects_empty_is_noop(self) -> None:
+        """빈 ID 목록은 삭제 호출 없이 0을 반환한다"""
+        _, mock_index, store = create_mock_pinecone_store()
+
+        deleted = await store.delete_objects(collection="ns", object_ids=[])
+
+        assert deleted == 0
+        mock_index.delete.assert_not_called()
+
+
 class TestPineconeVectorStoreConfiguration:
     """PineconeVectorStore 설정 테스트"""
 

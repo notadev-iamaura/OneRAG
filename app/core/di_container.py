@@ -1380,13 +1380,27 @@ def create_retriever_via_factory(
                     HybridMerger,
                     KoreanTokenizer,
                 )
-
-                tokenizer = KoreanTokenizer(
-                    stopword_filter=stopword_filter,
-                    synonym_manager=synonym_manager,
-                    user_dictionary=user_dictionary,
+                from app.modules.core.retrieval.bm25_engine.tokenizer import (
+                    WhitespaceTokenizer,
                 )
-                bm25_index = BM25Index(tokenizer=tokenizer)
+
+                # 범용성: bm25.yaml의 tokenizer 설정으로 언어에 맞는 토크나이저 선택.
+                # 기본 "korean"은 Kiwi 형태소 분석기, 그 외(예: "whitespace")는
+                # 언어 중립 토크나이저로 비한국어 코퍼스를 지원한다.
+                tokenizer_type = config.get("bm25", {}).get("tokenizer", "korean")
+                tokenizer: object
+                if tokenizer_type == "korean":
+                    tokenizer = KoreanTokenizer(
+                        stopword_filter=stopword_filter,
+                        synonym_manager=synonym_manager,
+                        user_dictionary=user_dictionary,
+                    )
+                else:
+                    tokenizer = WhitespaceTokenizer()
+                    logger.info(
+                        f"BM25 언어 중립 토크나이저 사용 (tokenizer={tokenizer_type})"
+                    )
+                bm25_index = BM25Index(tokenizer=tokenizer)  # type: ignore[arg-type]
                 hybrid_merger = HybridMerger(
                     alpha=config.get("hybrid_search", {}).get("default_alpha", 0.6)
                 )
@@ -1771,9 +1785,11 @@ class AppContainer(containers.DeclarativeContainer):
     # ----------------------------------------
     # Phase 6: 고급 리랭킹 시스템
     # ----------------------------------------
-    # Base Reranker (Gemini Flash or Jina - 기존 호환성)
+    # Base Reranker (reranking.yaml v2.1: approach/provider/model 3단계 구조)
+    # create_reranker_instance_v2가 RerankerFactoryV2를 통해 설정대로 생성한다.
+    # (레거시 create_reranker_instance는 default_provider 키를 참조해 v2.1 설정을 무시했음)
     base_reranker = providers.Singleton(
-        create_reranker_instance, config=config, llm_factory=llm_factory
+        create_reranker_instance_v2, config=config, llm_factory=llm_factory
     )
 
     # ColBERT Reranker (Jina ColBERT v2 - 토큰 수준 Late Interaction)

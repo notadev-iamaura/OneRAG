@@ -212,6 +212,14 @@ class RAGChatbotApp:
             "self_rag": self.container.self_rag(),
             "circuit_breaker_factory": self.container.circuit_breaker_factory(),  # ✅ Circuit Breaker Factory 추가
             "sql_search_service": self.container.sql_search_service(),  # ✅ SQL Search Service 추가 (Phase 3)
+            # Phase 2.5: 비용 추적기/성능 메트릭을 공유 — ChatService와 admin이 동일
+            # 컨테이너 싱글톤을 사용해야 실제 비용이 /api/admin에 반영된다.
+            "cost_tracker": self.container.cost_tracker(),
+            "performance_metrics": self.container.performance_metrics(),
+            # Phase 2.6: Grok answer 모드 / Agentic RAG 의존성 — RAGPipeline에 전달돼야
+            # grok answer 모드와 use_agent=true가 동작한다.
+            "grok_answer_provider": self.container.grok_answer_provider(),
+            "agent_orchestrator": self.container.agent_orchestrator(),
         }
 
 
@@ -384,6 +392,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         upload.set_dependencies(modules_dict, rag_app.config)
         documents.set_dependencies(modules_dict, rag_app.config)
         admin.set_dependencies(modules_dict, rag_app.config)
+        # Phase 2.2: monitoring/prompts에 공유 컨테이너 주입 (새 AppContainer 생성 방지)
+        monitoring.set_container(rag_app.container)
+        prompts.set_container(rag_app.container)
+        # Phase 2.2: ingest 라우터의 Provide[] 마커 해소 (wire 미호출 시 500)
+        rag_app.container.wire(modules=["app.api.ingest"])
         # Phase 1-3 개선: retrieval 모듈을 health API에 전달
         health.set_retrieval_module(modules_dict["retrieval"])
         health.set_startup_state(True, "ready", {"modules": "initialized"})

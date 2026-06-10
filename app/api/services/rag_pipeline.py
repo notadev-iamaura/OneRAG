@@ -28,11 +28,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from ...lib.circuit_breaker import CircuitBreakerOpenError
-from ...lib.cost_tracker import CostTracker
 from ...lib.errors import ErrorCode, GenerationError, PipelineTimeoutError, RetrievalError
 from ...lib.langfuse_client import langfuse_context, observe  # Langfuse 트레이싱
 from ...lib.logger import get_logger
-from ...lib.metrics import PerformanceMetrics
+from ...lib.metrics import CostTracker, PerformanceMetrics
 from ...lib.prompt_sanitizer import contains_output_leakage, validate_document
 from ...lib.score_normalizer import RRFScoreNormalizer  # RRF 점수 정규화
 from ...lib.types import RAGResultDict
@@ -671,6 +670,13 @@ class RAGPipeline:
             )
         except (TypeError, ValueError):
             self.multiturn_short_question_max_words = 5
+        # 재작성 프롬프트 템플릿 (없으면 한국어 기본 템플릿 사용 → 출력 언어 보존)
+        configured_prompt = rewrite_config.get("prompt_template")
+        self.multiturn_rewrite_prompt_template: str = (
+            configured_prompt
+            if isinstance(configured_prompt, str) and configured_prompt.strip()
+            else self._DEFAULT_MULTITURN_REWRITE_PROMPT
+        )
         retrieval_config = config.get("retrieval", {})
 
         self.retrieval_limit = rag_config.get(
@@ -748,6 +754,31 @@ class RAGPipeline:
         from ..schemas.chat_schemas import Source
 
         self.Source = Source
+
+        # 규칙 기반 라우터를 1회 생성해 재사용한다.
+        # 기존에는 route_query()가 매 chat 요청마다 RuleBasedRouter(enabled=True)를
+        # 새로 만들어 config.yaml/routing_rules_v2.yaml을 디스크에서 반복 읽었다.
+        # DynamicRuleManager(auto_reload=True)가 5분마다 규칙을 자동 리로드하므로
+        # 인스턴스를 공유해도 규칙 변경은 그대로 반영된다(동작 보존).
+        # 생성 실패 시 None으로 두고 route_query()에서 lazy 생성으로 폴백한다.
+        self.rule_based_router: Any | None = None
+        try:
+            global RuleBasedRouter
+            if RuleBasedRouter is None:
+                from ...modules.core.routing.rule_based_router import (
+                    RuleBasedRouter as _RuleBasedRouter,
+                )
+
+                RuleBasedRouter = _RuleBasedRouter
+
+            self.rule_based_router = RuleBasedRouter(enabled=True)
+        except Exception as e:
+            logger.warning(
+                "RuleBasedRouter 초기화 실패 (route_query에서 lazy 생성으로 폴백)",
+                extra={"error": str(e)},
+                exc_info=True,
+            )
+
         logger.info(
             "RAGPipeline 초기화 완료",
             extra={
@@ -1195,6 +1226,24 @@ class RAGPipeline:
         "그리고", "추가로", "또", "또한",
     )
 
+    # standalone rewrite 기본 프롬프트 템플릿 (한국어, 출력 언어 보존용)
+    # yaml의 rag.multiturn_rewrite.prompt_template로 오버라이드 가능하며,
+    # 비한국어 외주는 이 템플릿을 해당 언어로 교체할 수 있다.
+    # 플레이스홀더: {session_context}(직전 대화 맥락), {message}(후속 질문)
+    _DEFAULT_MULTITURN_REWRITE_PROMPT: str = (
+        "당신은 멀티턴 대화의 후속 질문을 검색에 적합한 자립적(standalone) "
+        "질문으로 재작성하는 전문가입니다.\n\n"
+        "아래 [직전 대화 맥락]을 참고하여, [후속 질문]에서 생략되거나 "
+        "대명사/지시어로 표현된 핵심 대상(프로그램명, 제도명, 주체 등)을 "
+        "명시적으로 복원해 하나의 완결된 질문으로 다시 쓰세요.\n"
+        "- 맥락에 없는 정보를 새로 추가하지 마세요.\n"
+        "- 후속 질문의 의도를 바꾸지 마세요.\n"
+        "- 설명 없이 재작성된 질문 한 문장만 출력하세요.\n\n"
+        "[직전 대화 맥락]\n{session_context}\n\n"
+        "[후속 질문]\n{message}\n\n"
+        "[재작성된 자립적 질문]"
+    )
+
     def _needs_standalone_rewrite(self, message: str) -> bool:
         """
         멀티턴 standalone rewrite가 필요한지 판정하는 게이트.
@@ -1307,20 +1356,12 @@ class RAGPipeline:
             )
             return message
 
-        # LLM 재작성 프롬프트 구성
-        prompt = (
-            "당신은 멀티턴 대화의 후속 질문을 검색에 적합한 자립적(standalone) "
-            "질문으로 재작성하는 전문가입니다.\n\n"
-            "아래 [직전 대화 맥락]을 참고하여, [후속 질문]에서 생략되거나 "
-            "대명사/지시어로 표현된 핵심 대상(프로그램명, 제도명, 주체 등)을 "
-            "명시적으로 복원해 하나의 완결된 질문으로 다시 쓰세요.\n"
-            "- 맥락에 없는 정보를 새로 추가하지 마세요.\n"
-            "- 후속 질문의 의도를 바꾸지 마세요.\n"
-            "- 설명 없이 재작성된 질문 한 문장만 출력하세요.\n\n"
-            f"[직전 대화 맥락]\n{session_context}\n\n"
-            f"[후속 질문]\n{message}\n\n"
-            "[재작성된 자립적 질문]"
-        )
+        # LLM 재작성 프롬프트 구성 (설정 템플릿 기반, 기본값=한국어 프롬프트)
+        # 템플릿에 {session_context}/{message} 외 중괄호가 있어도 깨지지 않도록
+        # replace로 안전 치환한다(format은 임의 중괄호에 취약).
+        prompt = self.multiturn_rewrite_prompt_template.replace(
+            "{session_context}", session_context
+        ).replace("{message}", message)
 
         try:
             # 결정적(temperature=0.0) 호출로 재작성의 비결정성을 차단.
@@ -1654,6 +1695,8 @@ class RAGPipeline:
             model_info=generation_result.model_info,
             routing_metadata=route_decision.metadata,
             debug_trace=debug_trace,
+            quality_score=getattr(generation_result, "quality_score", None),
+            refusal_reason=getattr(generation_result, "refusal_reason", None),
         )
         tracker.end_stage("build_result")
         tracker.end_pipeline()
@@ -1707,15 +1750,21 @@ class RAGPipeline:
                     exc_info=True
                 )
         try:
-            global RuleBasedRouter
-            if RuleBasedRouter is None:
-                from ...modules.core.routing.rule_based_router import (
-                    RuleBasedRouter as _RuleBasedRouter,
-                )
+            # __init__에서 1회 생성한 라우터를 재사용한다.
+            # 초기화에 실패했던 경우에만 여기서 lazy 생성으로 폴백한다.
+            rule_router = self.rule_based_router
+            if rule_router is None:
+                global RuleBasedRouter
+                if RuleBasedRouter is None:
+                    from ...modules.core.routing.rule_based_router import (
+                        RuleBasedRouter as _RuleBasedRouter,
+                    )
 
-                RuleBasedRouter = _RuleBasedRouter
+                    RuleBasedRouter = _RuleBasedRouter
 
-            rule_router = RuleBasedRouter(enabled=True)
+                rule_router = RuleBasedRouter(enabled=True)
+                self.rule_based_router = rule_router
+
             rule_match = await rule_router.check_rules(message)
             if rule_match:
                 routing_metadata = {
@@ -2826,6 +2875,8 @@ class RAGPipeline:
         model_info: dict[str, Any],
         routing_metadata: dict[str, Any] | None,
         debug_trace: DebugTrace | None = None,  # ⭐ 신규 파라미터
+        quality_score: float | None = None,  # Self-RAG 품질 점수
+        refusal_reason: str | None = None,  # 저품질 거부 사유
     ) -> RAGResultDict:
         """
         7단계: 최종 응답 딕셔너리 구성
@@ -2905,6 +2956,13 @@ class RAGPipeline:
 
         if routing_metadata:
             result["routing_metadata"] = routing_metadata
+
+        # ⭐ Self-RAG 품질 점수/거부 사유 전파
+        # (chat_router의 quality 메타데이터 블록이 이 값을 읽는다 — 누락 시 항상 None)
+        if quality_score is not None:
+            result["quality_score"] = quality_score
+        if refusal_reason is not None:
+            result["refusal_reason"] = refusal_reason
 
         # ⭐ 디버깅 추적 정보 추가
         if debug_trace is not None:

@@ -181,7 +181,7 @@ data: {"session_id": "abc-123", "total_chunks": 10}
 ### 11. OpenAI 호환 API (v1.1.0)
 - **POST /v1/chat/completions**: OpenAI SDK 형식의 채팅 완료 (RAG 파이프라인 포함)
 - **GET /v1/models**: 사용 가능한 모델 목록
-- **인증**: 없음 (Ollama 방식 — 로컬 서비스 전제)
+- **인증**: `FASTAPI_AUTH_KEY` 설정 시 `/v1`도 `X-API-Key` 헤더 필요 (전역 미들웨어). 무인증 노출을 원하면 `FASTAPI_PROTECTED_PATHS=""`로 설정 (Ollama 방식 — 로컬 서비스 전제)
 - **모델 선택**: `model` 필드에 슬래시 구분 (`provider/sub-model`)
   - `gemini` — Google Gemini 기본 모델
   - `ollama/qwen2.5:3b` — Ollama 특정 모델
@@ -192,7 +192,13 @@ data: {"session_id": "abc-123", "total_chunks": 10}
 ```python
 # OpenAI SDK로 OneRAG에 연결
 from openai import OpenAI
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+# FASTAPI_AUTH_KEY가 설정된 경우 default_headers로 X-API-Key를 전달한다.
+# (무인증으로 노출하려면 서버에서 FASTAPI_PROTECTED_PATHS="" 설정)
+client = OpenAI(
+    base_url="http://localhost:8000/v1",
+    api_key="not-needed",
+    default_headers={"X-API-Key": "local-dev-only-change-me"},  # FASTAPI_AUTH_KEY 값
+)
 resp = client.chat.completions.create(
     model="gemini",
     messages=[{"role": "user", "content": "RAG란?"}],

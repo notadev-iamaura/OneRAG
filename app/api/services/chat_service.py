@@ -19,10 +19,9 @@ from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import Any
 
-from ...lib.cost_tracker import CostTracker
 from ...lib.errors import ErrorCode, SessionError
 from ...lib.logger import get_logger
-from ...lib.metrics import PerformanceMetrics
+from ...lib.metrics import CostTracker, PerformanceMetrics
 from ...lib.types import RAGResultDict, SessionInfoDict, SessionResult, StatsDict
 from .rag_pipeline import RAGPipeline
 
@@ -95,6 +94,10 @@ class ChatService:
                 "sql_search_service"
             ),  # ✅ SQL Search Service 주입 (Phase 3)
             llm_factory=modules.get("llm_factory"),  # ✅ standalone rewrite용 LLM Factory
+            # Phase 2.6: Grok answer 모드 / Agentic RAG 의존성 전달
+            # (미전달 시 grok answer는 GROK_003 에러, use_agent는 일반 RAG로 강등)
+            grok_answer_provider=modules.get("grok_answer_provider"),
+            agent_orchestrator=modules.get("agent_orchestrator"),
         )
 
         logger.info("ChatService 초기화 완료 (RAGPipeline + Self-RAG + SQL Search 포함)")

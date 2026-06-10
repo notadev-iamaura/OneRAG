@@ -111,6 +111,50 @@ class TestWebSocketManagerDisconnect:
         manager.disconnect(session_id)
         assert manager.is_connected(session_id) is False
 
+    @pytest.mark.asyncio
+    async def test_disconnect_재연결_경합_구연결만_해제(
+        self, manager: WebSocketManager
+    ) -> None:
+        """재연결 시 구 연결의 disconnect가 새 연결을 삭제하면 안 됨.
+
+        같은 session_id로 ws_a → ws_b 재연결 후, ws_a의 finally가
+        disconnect(session_id, ws_a)를 호출해도 현재 등록된 ws_b는 유지되어야 한다.
+        (session_id 키만 보고 삭제하면 새 연결이 사라져 메시지 전송이 누락됨)
+        """
+        # Given
+        session_id = "session-001"
+        ws_a = AsyncMock()
+        ws_a.accept = AsyncMock()
+        ws_b = AsyncMock()
+        ws_b.accept = AsyncMock()
+
+        await manager.connect(session_id, ws_a)
+        # 재연결: ws_b가 ws_a를 대체
+        await manager.connect(session_id, ws_b)
+
+        # When: 구 연결(ws_a)의 finally가 disconnect 호출
+        manager.disconnect(session_id, ws_a)
+
+        # Then: 새 연결(ws_b)은 유지되어야 함
+        assert manager.is_connected(session_id) is True
+
+    @pytest.mark.asyncio
+    async def test_disconnect_현재_연결_웹소켓_일치_시_해제(
+        self, manager: WebSocketManager
+    ) -> None:
+        """현재 등록된 WebSocket과 동일 객체로 disconnect 시 정상 해제되어야 함."""
+        # Given
+        session_id = "session-001"
+        ws = AsyncMock()
+        ws.accept = AsyncMock()
+        await manager.connect(session_id, ws)
+
+        # When: 동일 WebSocket으로 disconnect
+        manager.disconnect(session_id, ws)
+
+        # Then: 해제됨
+        assert manager.is_connected(session_id) is False
+
 
 class TestWebSocketManagerIsConnected:
     """연결 상태 확인 테스트"""

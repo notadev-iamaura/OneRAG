@@ -296,9 +296,16 @@ class ConfigLoader:
                 def replace_env_var(match: re.Match[str]) -> str:
                     var_expr = match.group(1)
                     if ":-" in var_expr:
+                        # ${VAR:-default}: 미설정 시 default 사용
                         var_name, default_value = var_expr.split(":-", 1)
                         return os.getenv(var_name, default_value)
+                    elif ":" in var_expr:
+                        # ${VAR:} 또는 ${VAR:default}: 콜론 뒤를 기본값으로 사용
+                        # (${VAR:}는 빈 문자열 기본값 — 치환 실패 리터럴 방지)
+                        var_name, default_value = var_expr.split(":", 1)
+                        return os.getenv(var_name, default_value)
                     else:
+                        # ${VAR}: 미설정 시 원문 유지 (기존 동작 보존)
                         return os.getenv(var_expr, match.group(0))
 
                 return re.sub(pattern, replace_env_var, value)

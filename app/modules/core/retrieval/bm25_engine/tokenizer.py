@@ -14,7 +14,7 @@ Kiwi 한국어 형태소 분석기를 래핑하여 BM25 검색에 필요한
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from app.modules.core.retrieval.bm25.stopwords import StopwordFilter
@@ -22,6 +22,32 @@ if TYPE_CHECKING:
     from app.modules.core.retrieval.bm25.user_dictionary import UserDictionary
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class Tokenizer(Protocol):
+    """BM25 토크나이저 인터페이스 (언어별 구현 교체용).
+
+    범용성: bm25.yaml의 tokenizer 설정으로 언어에 맞는 구현을 선택한다.
+    """
+
+    def tokenize(self, text: str) -> list[str]: ...
+
+    def tokenize_batch(self, texts: list[str]) -> list[list[str]]: ...
+
+
+class WhitespaceTokenizer:
+    """언어 중립 공백 기반 토크나이저 (비한국어 코퍼스용).
+
+    형태소 분석 없이 소문자화 + 공백 분리만 수행한다. 영어·다국어 BM25에
+    적합하며, 한국어 형태소 분석기(Kiwi)가 부적합한 코퍼스에서 사용한다.
+    """
+
+    def tokenize(self, text: str) -> list[str]:
+        return text.lower().split()
+
+    def tokenize_batch(self, texts: list[str]) -> list[list[str]]:
+        return [self.tokenize(t) for t in texts]
 
 # Kiwi에서 추출할 의미 있는 품사 태그
 # NNG: 일반 명사, NNP: 고유 명사, NNB: 의존 명사

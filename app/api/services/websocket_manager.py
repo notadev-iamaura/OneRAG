@@ -12,7 +12,7 @@ WebSocket 연결 관리자
     manager = WebSocketManager()
     await manager.connect(session_id, websocket)
     await manager.send_json(session_id, {"type": "message", "content": "Hello"})
-    manager.disconnect(session_id)
+    manager.disconnect(session_id, websocket)
 """
 
 from typing import Any
@@ -66,23 +66,42 @@ class WebSocketManager:
             total_connections=len(self._connections),
         )
 
-    def disconnect(self, session_id: str) -> None:
+    def disconnect(self, session_id: str, websocket: WebSocket | None = None) -> None:
         """
         WebSocket 연결을 해제합니다.
 
         Args:
             session_id: 세션 식별자
+            websocket: 해제하려는 WebSocket 객체. 지정 시 현재 등록된 연결과
+                동일 객체일 때만 삭제합니다(재연결 경합 방지).
+                None이면 session_id 기준으로 무조건 삭제합니다(하위 호환).
 
         Note:
             존재하지 않는 세션 ID에 대해서는 무시합니다.
+            재연결 경합 방지: 같은 session_id로 새 연결(ws_b)이 등록된 뒤
+            구 연결(ws_a)의 finally가 disconnect를 호출해도, websocket 인자가
+            현재 등록된 연결과 다르면 삭제하지 않아 새 연결이 보존됩니다.
         """
-        if session_id in self._connections:
-            del self._connections[session_id]
-            self._logger.info(
-                "WebSocket 연결 해제됨",
+        current = self._connections.get(session_id)
+        if current is None:
+            return
+
+        # websocket이 지정되었는데 현재 등록된 연결과 다르면 삭제하지 않음
+        # (재연결로 이미 새 연결이 등록된 상황 → 구 연결 정리 요청은 무시)
+        if websocket is not None and current is not websocket:
+            self._logger.debug(
+                "WebSocket 연결 해제 스킵: 이미 다른 연결로 대체됨",
                 session_id=session_id,
-                total_connections=len(self._connections),
+                action="stale_disconnect_ignored",
             )
+            return
+
+        del self._connections[session_id]
+        self._logger.info(
+            "WebSocket 연결 해제됨",
+            session_id=session_id,
+            total_connections=len(self._connections),
+        )
 
     def is_connected(self, session_id: str) -> bool:
         """
@@ -129,8 +148,8 @@ class WebSocketManager:
                 session_id=session_id,
                 error=str(e),
             )
-            # 연결 해제
-            self.disconnect(session_id)
+            # 연결 해제 (전송 대상 websocket과 동일할 때만 삭제 → 재연결 경합 방지)
+            self.disconnect(session_id, websocket)
             return False
 
     async def broadcast(self, data: dict[str, Any]) -> dict[str, int]:

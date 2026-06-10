@@ -156,6 +156,10 @@ class RateLimiter:
                 return True, "ip", remaining
 
             # 🛡️ 메모리 보호: Session 개수 제한 (LRU 방식 제거)
+            # IP 보호 분기와 동일하게, 여기서는 메모리 정리만 수행하고
+            # 실제 Rate Limit 판단은 아래 `if session_id:` 블록에서 처리한다.
+            # (과거에는 elif 구조로 인해 한도 도달 시 Rate Limit 분기가 건너뛰어져
+            #  함수가 return 없이 None을 반환하는 결함이 있었다.)
             if session_id and len(self.session_requests) >= self.max_tracked_sessions:
                 if session_id not in self.session_requests:
                     # 가장 오래된 세션 제거 (LRU 전략)
@@ -173,7 +177,7 @@ class RateLimiter:
                     )
 
             # Session 기반 Rate Limiting (fallback)
-            elif session_id:
+            if session_id:
                 request_list = self.session_requests[session_id]
                 self._clean_old_requests(request_list, current_time)
 
@@ -193,9 +197,8 @@ class RateLimiter:
                 return True, "session", remaining
 
             # IP와 Session 모두 없으면 통과 (안전을 위해)
-            else:
-                logger.warning("Rate Limit 체크 실패: IP와 Session ID 모두 없음")
-                return True, "none", -1
+            logger.warning("Rate Limit 체크 실패: IP와 Session ID 모두 없음")
+            return True, "none", -1
 
     async def get_stats(self) -> dict[str, int]:
         """

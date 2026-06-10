@@ -14,7 +14,7 @@ FastAPI 평가 API (/api/evaluations)의 백엔드 데이터 계층입니다.
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, asc, delete, desc, func, select
@@ -31,6 +31,25 @@ from .connection import db_manager
 from .models import EvaluationModel
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_aware_utc(value: datetime) -> datetime:
+    """naive datetime을 UTC timezone-aware로 보정합니다.
+
+    created_at 컬럼은 DateTime(timezone=True)이지만, 백엔드에 따라 반환 형태가 다릅니다.
+    - PostgreSQL(asyncpg): timezone-aware datetime 반환
+    - SQLite: timezone 정보를 보존하지 않아 naive datetime 반환
+    두 백엔드를 동일하게 비교하기 위해 naive 값은 UTC로 간주해 aware로 변환합니다.
+
+    Args:
+        value: 보정할 datetime 값
+
+    Returns:
+        datetime: timezone-aware(UTC) datetime
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
 
 
 class DuplicateEvaluationError(Exception):
@@ -474,8 +493,15 @@ class EvaluationDataManager:
 
         # 시간 통계
         if evaluations:
+            # naive/aware 혼재 시 정렬 비교 오류를 막기 위해 UTC aware로 보정 후 정렬
             sorted_by_time = sorted(
-                evaluations, key=lambda e: e.created_at or datetime.min, reverse=True
+                evaluations,
+                key=lambda e: (
+                    _ensure_aware_utc(e.created_at)
+                    if e.created_at is not None
+                    else datetime.min.replace(tzinfo=UTC)
+                ),
+                reverse=True,
             )
             # SQLAlchemy Column 타입을 datetime으로 변환
             last_created_at = sorted_by_time[0].created_at
@@ -484,20 +510,35 @@ class EvaluationDataManager:
                     last_created_at if isinstance(last_created_at, datetime) else None
                 )
 
-            now = datetime.utcnow()
+            # timezone-aware 경계값 생성 (created_at은 DateTime(timezone=True)이므로
+            # naive datetime과 비교 시 TypeError 발생 → UTC aware로 통일)
+            now = datetime.now(UTC)
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             week_start = today_start - timedelta(days=today_start.weekday())
             month_start = today_start.replace(day=1)
 
             # created_at 비교를 위한 안전한 필터링
+            # (SQLite는 naive, PostgreSQL은 aware를 반환하므로 양쪽 모두 aware로 보정)
             stats.evaluations_today = len(
-                [e for e in evaluations if e.created_at and e.created_at >= today_start]
+                [
+                    e
+                    for e in evaluations
+                    if e.created_at and _ensure_aware_utc(e.created_at) >= today_start
+                ]
             )
             stats.evaluations_this_week = len(
-                [e for e in evaluations if e.created_at and e.created_at >= week_start]
+                [
+                    e
+                    for e in evaluations
+                    if e.created_at and _ensure_aware_utc(e.created_at) >= week_start
+                ]
             )
             stats.evaluations_this_month = len(
-                [e for e in evaluations if e.created_at and e.created_at >= month_start]
+                [
+                    e
+                    for e in evaluations
+                    if e.created_at and _ensure_aware_utc(e.created_at) >= month_start
+                ]
             )
 
         # 세션 통계

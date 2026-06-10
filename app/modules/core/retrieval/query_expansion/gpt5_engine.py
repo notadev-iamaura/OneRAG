@@ -110,6 +110,9 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         llm_factory: Any = None,  # 필수 (None이면 에러)
         provider: str = "google",  # LLM Factory의 선호 제공자 (google = Gemini Flash)
         circuit_breaker_factory: CircuitBreakerFactory | None = None,
+        expansion_language: str = "한국어",  # 한국어 프롬프트용 언어 이름
+        expansion_language_en: str = "Korean",  # 영어 시스템 메시지용 언어 이름
+        question_markers: tuple[str, ...] | None = None,  # 질문 마커 오버라이드
     ):
         """
         Args:
@@ -122,6 +125,13 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
             llm_factory: LLM Factory 인스턴스 (필수)
             provider: LLM Factory의 선호 제공자 (google, openai, anthropic)
             circuit_breaker_factory: DI Container의 CircuitBreaker 팩토리
+            expansion_language: 한국어 프롬프트에 삽입되는 언어 이름
+                (기본값: "한국어"). 비한국어 외주는 이 값만 바꿔 확장 대상
+                언어를 전환할 수 있다.
+            expansion_language_en: 영어 시스템 메시지에 삽입되는 언어 이름
+                (기본값: "Korean"). 기존 영어 시스템 메시지 동작을 보존한다.
+            question_markers: 단순 쿼리 판정용 질문 마커 목록 오버라이드.
+                None이면 기존 한/일 질문 마커 기본값을 사용한다.
 
         Raises:
             ValueError: llm_factory가 None인 경우
@@ -139,6 +149,14 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         self.llm_factory = llm_factory
         self.provider = provider  # 선호 제공자 저장
         self.circuit_breaker_factory = circuit_breaker_factory
+        # 확장 언어 및 질문 마커 (설정 기반, 기본값=기존 한국어 동작)
+        self.expansion_language = expansion_language
+        self.expansion_language_en = expansion_language_en
+        self.question_markers: tuple[str, ...] = (
+            tuple(question_markers)
+            if question_markers is not None
+            else _KOREAN_JAPANESE_QUESTION_MARKERS
+        )
 
         # TTL 캐시 초기화
         self.expansion_cache: TTLCache[str, ExpandedQuery] = TTLCache(
@@ -167,13 +185,24 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         self.expansion_prompt = self._create_expansion_prompt()
 
     def _create_expansion_prompt(self) -> str:
-        """GPT-5-nano용 최적화된 쿼리 확장 프롬프트"""
-        return """당신은 한국어 문서 검색을 위한 쿼리 확장 전문가입니다.
+        """GPT-5-nano용 최적화된 쿼리 확장 프롬프트
+
+        프롬프트의 언어 특성 부분은 self.expansion_language로 파라미터화돼
+        있어, 비한국어 외주가 설정만으로 확장 대상 언어를 바꿀 수 있다.
+        기본값은 "한국어"로 기존 동작과 동일하다.
+
+        Note:
+            반환 문자열은 이후 `.format(query=query)`로 치환되므로, 이 단계에서는
+            언어 플레이스홀더({language})만 먼저 치환하고 `{query}` 및 JSON
+            이스케이프({{ }})는 그대로 남겨 둔다.
+        """
+        # 언어 플레이스홀더만 선치환 (`.format()` 대상 토큰은 보존)
+        template = """당신은 {language} 문서 검색을 위한 쿼리 확장 전문가입니다.
 
 주어진 사용자 쿼리를 분석하고 검색 효율성을 극대화하기 위해 확장해주세요.
 
 **분석 요구사항:**
-1. 동의어 및 유사어 발굴 (한국어 특성 고려)
+1. 동의어 및 유사어 발굴 ({language} 특성 고려)
 2. 핵심 키워드 추출 및 중요도 가중치 부여 (0.1-1.0)
 3. 검색 의도 분류 (factual/procedural/conceptual/comparative/problem_solving)
 4. 쿼리 복잡도 평가 (simple/medium/complex/contextual)
@@ -209,6 +238,8 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
 - search_strategy 값: broad, focused, hybrid, contextual 중 하나
 - weight는 0.1-1.0 범위의 실수
 - 검색 효율성에 집중"""
+        # 언어 토큰만 치환하고 `{query}`/JSON 이스케이프는 보존한다
+        return template.replace("{language}", self.expansion_language)
 
     async def expand_query(
         self, query: str, context: list[dict] | None = None
@@ -298,7 +329,7 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
 
         has_question_signal = (
             any(punctuation in normalized for punctuation in _QUERY_PUNCTUATION)
-            or any(marker in normalized for marker in _KOREAN_JAPANESE_QUESTION_MARKERS)
+            or any(marker in normalized for marker in self.question_markers)
             or _ENGLISH_QUESTION_RE.search(normalized) is not None
         )
         if has_question_signal:
@@ -316,7 +347,8 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
             self.stats["gpt5_api_calls"] += 1
 
             # GPT-5 새로운 API를 위한 input 텍스트 준비
-            input_text = f"""System: You are a Korean query expansion specialist. Always respond in valid JSON format.
+            # 영어 시스템 메시지의 언어 특성은 expansion_language_en으로 파라미터화한다.
+            input_text = f"""System: You are a {self.expansion_language_en} query expansion specialist. Always respond in valid JSON format.
 
 User: {self.expansion_prompt.format(query=query)}"""
 
@@ -708,6 +740,15 @@ User: {self.expansion_prompt.format(query=query)}"""
         # 설정 파일 구조: query_expansion.llm.provider
         provider = llm_config.get("provider", query_expansion_config.get("provider", "openai"))
 
+        # 언어/질문 마커 설정 읽기 (없으면 기존 한국어 동작 유지)
+        expansion_language = query_expansion_config.get("expansion_language", "한국어")
+        expansion_language_en = query_expansion_config.get(
+            "expansion_language_en", "Korean"
+        )
+        # question_markers가 설정돼 있으면 tuple로 변환, 없으면 None(기본값 사용)
+        markers_cfg = query_expansion_config.get("question_markers")
+        question_markers = tuple(markers_cfg) if markers_cfg else None
+
         # 생성자 호출
         return cls(
             num_expansions=multi_query_config.get("num_expansions", 5),
@@ -718,4 +759,7 @@ User: {self.expansion_prompt.format(query=query)}"""
             llm_factory=llm_factory,
             provider=provider,  # 설정에서 읽은 provider 전달
             circuit_breaker_factory=circuit_breaker_factory,
+            expansion_language=expansion_language,
+            expansion_language_en=expansion_language_en,
+            question_markers=question_markers,
         )

@@ -23,6 +23,9 @@ imports:
   - features/embeddings.yaml
   - features/generation.yaml      # 답변 생성 전용 (기존 llm.yaml 대체)
   - features/query_expansion.yaml # 쿼리 확장 전용 (신규)
+  - features/privacy.yaml         # PII 마스킹 (di_container.privacy_masker 필수)
+  - features/bm25.yaml            # BM25 전처리 (synonym/stopword/user_dictionary 필수)
+  - features/grok.yaml            # Grok 관리형 RAG (grok_answer_provider)
   - features/reranking.yaml       # 리랭킹 전용 (RerankerFactory 지원)
   - features/cache.yaml           # 캐시 전용 (CacheFactory 지원)
   - features/routing.yaml         # 라우팅 전용 (개선)

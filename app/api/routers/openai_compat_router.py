@@ -115,7 +115,8 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     retriever = _modules.get("retrieval")
     if retriever:
         try:
-            search_results = await retriever.search(query=user_message, top_k=_MAX_SEARCH_RESULTS)
+            # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict
+            search_results = await retriever.search(user_message, {"limit": _MAX_SEARCH_RESULTS})
             documents = [
                 {"content": getattr(r, "content", ""), "score": getattr(r, "score", 0.0)}
                 for r in search_results
@@ -173,7 +174,10 @@ async def _stream_completion(
         retriever = _modules.get("retrieval")
         if retriever:
             try:
-                search_results = await retriever.search(query=user_message, top_k=_MAX_SEARCH_RESULTS)
+                # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict
+                search_results = await retriever.search(
+                    user_message, {"limit": _MAX_SEARCH_RESULTS}
+                )
                 documents = [
                     {"content": getattr(r, "content", "")}
                     for r in search_results

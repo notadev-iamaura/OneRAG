@@ -408,3 +408,93 @@ class TestMongoDBAtlasStoreStats:
         assert stats["documents_added"] == 0
         assert stats["searches"] == 0
         assert stats["deletions"] == 0
+
+
+# ============================================================
+# 문서 관리 테스트 (fetch_objects / delete_objects)
+# ============================================================
+
+
+class TestMongoDBAtlasStoreDocumentManagement:
+    """fetch_objects / delete_objects 테스트 (문서관리 위임 대상)"""
+
+    @staticmethod
+    def _make_store(mock_client):
+        from app.infrastructure.storage.vector.mongodb_atlas_store import (
+            MongoDBAtlasStore,
+        )
+
+        return MongoDBAtlasStore(
+            connection_string="mongodb+srv://user:pass@cluster.mongodb.net",
+            _client=mock_client,
+        )
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_all(self, mock_client, mock_collection):
+        """필터 없이 전체 조회 시 find가 빈 쿼리로 호출되고 파리티 형태로 반환된다"""
+        mock_collection.find.return_value = [
+            {"_id": "id-1", "content": "본문1", "metadata": {"document_id": "doc-1"}},
+            {"_id": "id-2", "content": "본문2", "metadata": {"document_id": "doc-2"}},
+        ]
+        store = self._make_store(mock_client)
+
+        results = await store.fetch_objects(collection="docs")
+
+        # find가 빈 쿼리로 호출되고 embedding 필드는 projection으로 제외
+        call = mock_collection.find.call_args
+        assert call.args[0] == {}
+        assert call.args[1] == {"embedding": 0}
+        assert len(results) == 2
+        assert results[0]["_id"] == "id-1"
+        assert results[0]["content"] == "본문1"
+        assert results[0]["document_id"] == "doc-1"
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_by_ids(self, mock_client, mock_collection):
+        """ids 필터는 _id $in 쿼리로 변환된다"""
+        mock_collection.find.return_value = [
+            {"_id": "id-1", "content": "a", "metadata": {}},
+        ]
+        store = self._make_store(mock_client)
+
+        await store.fetch_objects(collection="docs", filters={"ids": ["id-1", "id-2"]})
+
+        query = mock_collection.find.call_args.args[0]
+        assert query == {"_id": {"$in": ["id-1", "id-2"]}}
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_metadata_filter(self, mock_client, mock_collection):
+        """메타데이터 필터는 metadata.{key} 경로로 변환된다"""
+        mock_collection.find.return_value = []
+        store = self._make_store(mock_client)
+
+        await store.fetch_objects(
+            collection="docs", filters={"document_id": "doc-1"}
+        )
+
+        query = mock_collection.find.call_args.args[0]
+        assert query == {"metadata.document_id": "doc-1"}
+
+    @pytest.mark.asyncio
+    async def test_delete_objects(self, mock_client, mock_collection):
+        """delete_objects는 _id $in 으로 delete_many를 호출한다"""
+        store = self._make_store(mock_client)
+
+        deleted = await store.delete_objects(
+            collection="docs", object_ids=["id-1", "id-2"]
+        )
+
+        # mock_collection.delete_many는 deleted_count=2 반환
+        assert deleted == 2
+        query = mock_collection.delete_many.call_args.args[0]
+        assert query == {"_id": {"$in": ["id-1", "id-2"]}}
+
+    @pytest.mark.asyncio
+    async def test_delete_objects_empty(self, mock_client, mock_collection):
+        """빈 ID 목록은 삭제 호출 없이 0을 반환한다"""
+        store = self._make_store(mock_client)
+
+        deleted = await store.delete_objects(collection="docs", object_ids=[])
+
+        assert deleted == 0
+        mock_collection.delete_many.assert_not_called()

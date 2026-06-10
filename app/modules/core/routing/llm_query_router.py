@@ -706,25 +706,41 @@ Return response in JSON format.
         return profile, routing
 
     def _generate_greeting_response(self, query: str) -> str:
-        """인사말/잡담 응답 생성 (도메인 설정 기반)"""
+        """인사말/잡담 응답 생성 (도메인 설정 기반)
+
+        트리거 키워드(작별/감사/인사)는 domain.yaml의
+        `router.greeting_triggers`에서 읽는다. 설정이 없으면 현재 한국어
+        하드코딩 목록을 기본값으로 사용해 하위 호환을 유지한다.
+        비한국어 외주는 코드 수정 없이 설정만으로 언어를 바꿀 수 있다.
+        """
         query_lower = query.lower()
 
         # 메시지 설정 로드
         router_config = self.config.get("domain", {}).get("router", {})
         messages: dict[str, str] = router_config.get("messages", {})
 
+        # 트리거 키워드 설정 로드 (없으면 기존 한국어 하드코딩 기본값)
+        triggers: dict[str, list[str]] = router_config.get("greeting_triggers", {})
+        farewell_words = triggers.get(
+            "farewell", ["잘가", "안녕히", "bye", "goodbye", "바이"]
+        )
+        thanks_words = triggers.get(
+            "thanks", ["고마", "감사", "thank", "thx", "ㄱㅅ", "땡큐"]
+        )
+        greeting_words = triggers.get(
+            "greeting", ["안녕", "hello", "hi", "헬로", "하이", "ㅎㅇ", "방가"]
+        )
+
         # 작별
-        if any(word in query_lower for word in ["잘가", "안녕히", "bye", "goodbye", "바이"]):
+        if any(word in query_lower for word in farewell_words):
             return messages.get("farewell", "안녕히 가세요! 이용해 주셔서 감사합니다.")
 
         # 감사
-        if any(word in query_lower for word in ["고마", "감사", "thank", "thx", "ㄱㅅ", "땡큐"]):
+        if any(word in query_lower for word in thanks_words):
             return messages.get("thanks", "도움이 되셨다니 기쁩니다! 언제든 다시 질문해주세요.")
 
         # 인사말
-        if any(
-            word in query_lower for word in ["안녕", "hello", "hi", "헬로", "하이", "ㅎㅇ", "방가"]
-        ):
+        if any(word in query_lower for word in greeting_words):
             return messages.get("greeting", "안녕하세요! 무엇을 도와드릴까요?")
 
         # 기본 응답

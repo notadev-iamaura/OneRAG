@@ -301,11 +301,35 @@ async def get_realtime_metrics():
         memory_usage = get_memory_usage()
         cpu_usage = get_cpu_usage()
         active_sessions = await get_active_sessions_count()
-        import random
 
-        chat_requests_per_minute = random.randint(5, 25)
-        average_response_time = round(random.uniform(0.5, 2.0), 2)
-        error_rate = round(random.uniform(0.0, 5.0), 2)
+        # Phase 2.5: 가짜 random 값 제거 — 실제 성능 메트릭에서 집계한다.
+        # 별도 요청-카운터(분당 요청 수)는 아직 추적하지 않으므로 0으로 둔다(정직).
+        chat_requests_per_minute = 0
+        average_response_time = 0.0
+        error_rate = 0.0
+        perf_module = modules.get("performance_metrics")
+        if perf_module and hasattr(perf_module, "get_all_stats"):
+            try:
+                all_stats = perf_module.get_all_stats()
+                func_stats = [
+                    s
+                    for s in all_stats.values()
+                    if isinstance(s, dict) and "avg_latency_ms" in s
+                ]
+                total_calls = sum(s.get("count", 0) for s in func_stats)
+                total_errors = sum(s.get("errors", 0) for s in func_stats)
+                if total_calls > 0:
+                    # 호출 수 가중 평균 응답시간(ms → s)
+                    weighted = sum(
+                        s.get("avg_latency_ms", 0) * s.get("count", 0) for s in func_stats
+                    )
+                    average_response_time = round(weighted / total_calls / 1000, 2)
+                    error_rate = round(total_errors / total_calls * 100, 2)
+            except Exception as e:
+                logger.warning(
+                    "성능 메트릭 조회 실패",
+                    extra={"error": str(e), "error_type": type(e).__name__},
+                )
 
         # 캐시 메트릭 조회 (retrieval_orchestrator에서)
         cache_hit_rate = 0.0
@@ -333,15 +357,12 @@ async def get_realtime_metrics():
         cost_per_hour = 0.0
         total_llm_tokens = 0
         cost_tracker_module = modules.get("cost_tracker")
-        if cost_tracker_module and hasattr(cost_tracker_module, "get_stats"):
+        if cost_tracker_module and hasattr(cost_tracker_module, "get_summary"):
             try:
-                cost_stats = cost_tracker_module.get_stats()
-                total_cost_usd = cost_stats.get("total_cost", 0.0)
-                cost_per_hour = cost_stats.get("cost_per_hour", 0.0)
-                # 모든 provider의 토큰 합산
-                usage = cost_stats.get("usage", {})
-                for provider_stats in usage.values():
-                    total_llm_tokens += provider_stats.get("total_tokens", 0)
+                cost_summary = cost_tracker_module.get_summary()
+                total_cost_usd = cost_summary.get("total_cost_usd", 0.0)
+                cost_per_hour = cost_summary.get("cost_per_hour", 0.0)
+                total_llm_tokens = cost_summary.get("total_tokens", 0)
             except Exception as e:
                 logger.warning(
                     "비용 메트릭 조회 실패",
@@ -478,80 +499,27 @@ async def get_metrics(period: str = "7d"):
 
 @router.get("/keywords")
 async def get_keywords(period: str = "7d"):
-    """주요 키워드 분석"""
-    try:
-        return {
-            "keywords": [
-                {"rank": 1, "keyword": "이용 방법", "count": 45},
-                {"rank": 2, "keyword": "서비스 안내", "count": 38},
-                {"rank": 3, "keyword": "문의 사항", "count": 32},
-                {"rank": 4, "keyword": "절차 안내", "count": 28},
-                {"rank": 5, "keyword": "자주 묻는 질문", "count": 24},
-            ]
-        }
-    except Exception as error:
-        logger.error(
-            "키워드 조회 실패",
-            extra={
-                "error": str(error),
-                "error_type": type(error).__name__
-            },
-            exc_info=True
-        )
-        raise HTTPException(status_code=500, detail="Failed to retrieve keywords") from error
+    """주요 키워드 분석 (실제 집계 미구현 — 빈 결과 반환)"""
+    # Phase 2.5: 하드코딩 가짜 통계 제거. 가짜 데이터로 운영 판단을 오도하지 않기 위해
+    # 실제 키워드 집계가 구현되기 전까지 빈 리스트를 반환한다.
+    logger.info("키워드 집계 미구현 — 빈 결과 반환", extra={"period": period})
+    return {"keywords": []}
 
 
 @router.get("/chunks")
 async def get_chunks(period: str = "7d"):
-    """자주 사용된 청크 분석"""
-    try:
-        return {
-            "chunks": [
-                {"rank": 1, "chunkName": "서비스_이용가이드.pdf", "count": 42},
-                {"rank": 2, "chunkName": "자주묻는질문_FAQ.docx", "count": 35},
-                {"rank": 3, "chunkName": "운영정책_안내.pdf", "count": 29},
-                {"rank": 4, "chunkName": "문의접수_절차.xlsx", "count": 26},
-                {"rank": 5, "chunkName": "시작하기_가이드.pdf", "count": 21},
-            ]
-        }
-    except Exception as error:
-        logger.error(
-            "청크 조회 실패",
-            extra={
-                "error": str(error),
-                "error_type": type(error).__name__
-            },
-            exc_info=True
-        )
-        raise HTTPException(status_code=500, detail="Failed to retrieve chunks") from error
+    """자주 사용된 청크 분석 (실제 집계 미구현 — 빈 결과 반환)"""
+    # Phase 2.5: 하드코딩 가짜 통계 제거 (가짜 문서명으로 운영 판단 오도 방지).
+    logger.info("청크 집계 미구현 — 빈 결과 반환", extra={"period": period})
+    return {"chunks": []}
 
 
 @router.get("/countries")
 async def get_countries(period: str = "7d"):
-    """접속 국가 통계"""
-    try:
-        return {
-            "countries": [
-                {"country": "한국", "count": 145},
-                {"country": "미국", "count": 23},
-                {"country": "일본", "count": 18},
-                {"country": "중국", "count": 12},
-                {"country": "독일", "count": 8},
-                {"country": "영국", "count": 6},
-                {"country": "프랑스", "count": 4},
-                {"country": "캐나다", "count": 3},
-            ]
-        }
-    except Exception as error:
-        logger.error(
-            "국가 조회 실패",
-            extra={
-                "error": str(error),
-                "error_type": type(error).__name__
-            },
-            exc_info=True
-        )
-        raise HTTPException(status_code=500, detail="Failed to retrieve countries") from error
+    """접속 국가 통계 (실제 집계 미구현 — 빈 결과 반환)"""
+    # Phase 2.5: 하드코딩 가짜 통계 제거 (가짜 국가 분포로 운영 판단 오도 방지).
+    logger.info("국가 집계 미구현 — 빈 결과 반환", extra={"period": period})
+    return {"countries": []}
 
 
 @router.get("/sessions")

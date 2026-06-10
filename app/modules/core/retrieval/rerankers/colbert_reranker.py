@@ -86,6 +86,10 @@ class JinaColBERTReranker:
         self.name = "colbert"
         self.enabled = config.enabled
 
+        # ✅ httpx AsyncClient를 1회 생성하여 재사용 (TCP/TLS 핸드셰이크 반복 방지)
+        # httpx.AsyncClient() 생성자는 동기이므로 __init__에서 생성 가능
+        self._client = httpx.AsyncClient(timeout=config.timeout)
+
         # 통계
         self._stats = {
             "total_calls": 0,
@@ -98,6 +102,11 @@ class JinaColBERTReranker:
                 f"JinaColBERTReranker 초기화: model={config.model}, "
                 f"timeout={config.timeout}s, max_documents={config.max_documents}"
             )
+
+    async def close(self) -> None:
+        """리소스 정리 (재사용 중인 httpx AsyncClient 종료)"""
+        await self._client.aclose()
+        logger.info("JinaColBERTReranker 종료 완료")
 
     async def rerank(
         self,
@@ -189,23 +198,22 @@ class JinaColBERTReranker:
             f"documents={len(documents)}"
         )
 
-        # HTTP 요청 실행
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.config.endpoint,
-                json=request_data,
-                headers=headers,
-                timeout=self.config.timeout,
+        # HTTP 요청 실행 (재사용 클라이언트 사용)
+        response = await self._client.post(
+            self.config.endpoint,
+            json=request_data,
+            headers=headers,
+            timeout=self.config.timeout,
+        )
+
+        # 응답 상태 확인
+        if response.status_code != 200:
+            raise Exception(
+                f"API error: {response.status_code} - {response.text}"
             )
 
-            # 응답 상태 확인
-            if response.status_code != 200:
-                raise Exception(
-                    f"API error: {response.status_code} - {response.text}"
-                )
-
-            # JSON 파싱
-            response_data = response.json()
+        # JSON 파싱
+        response_data = response.json()
 
         # 결과 재구성
         reranked_results: list[SearchResult] = []

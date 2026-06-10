@@ -446,7 +446,9 @@ class WeaviateRetriever:
         if where_filter is not None:
             query_kwargs["filters"] = where_filter
 
-        response = collection.query.hybrid(**query_kwargs)
+        # 동기 weaviate v4 클라이언트의 검색을 to_thread로 오프로딩한다.
+        # (직접 호출하면 검색 네트워크 왕복 동안 이벤트 루프 전체가 블로킹됨)
+        response = await asyncio.to_thread(collection.query.hybrid, **query_kwargs)
 
         results = []
         for obj in response.objects:
