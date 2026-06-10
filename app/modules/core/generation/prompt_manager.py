@@ -73,6 +73,11 @@ class PromptManager:
         # generator가 매 답변 생성 시 get_prompt_content를 호출하므로, 거의 정적인
         # 프롬프트의 반복 DB 조회를 줄인다. 프롬프트 수정(create/update/delete/import)
         # 시 즉시 무효화되어 최대 cache_ttl초 내 반영된다.
+        #
+        # ⚠️ 멀티워커 한계: 무효화는 "쓰기가 발생한 워커"의 캐시만 비운다. 다른
+        #    워커는 최대 cache_ttl초까지 옛 프롬프트로 응답한다. 단일 워커 배포에서는
+        #    문제없으나, 멀티워커로 전환하면 PostgreSQL LISTEN/NOTIFY로 무효화를 전
+        #    워커에 전파(Level 3)하고 cache_ttl을 짧게(또는 0) 두는 것을 검토해야 한다.
         self._content_cache: dict[str, tuple[float, str]] = {}
         self._cache_ttl = cache_ttl
 

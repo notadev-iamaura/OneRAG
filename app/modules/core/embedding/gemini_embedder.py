@@ -6,7 +6,6 @@ models/gemini-embedding-001 모델로 벡터 생성 및 L2 정규화 수행
 """
 
 import asyncio
-import math
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
@@ -17,14 +16,11 @@ else:
 
 from ....lib.logger import get_logger
 from .interfaces import BaseEmbedder
+from .vector_ops import l2_norm as _l2_norm
 
 logger = get_logger(__name__)
 
 genai: Any | None = None
-
-
-def _l2_norm(vector: list[float]) -> float:
-    return math.sqrt(sum(value * value for value in vector))
 
 
 def _get_genai() -> Any:
@@ -89,6 +85,9 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
         Returns:
             L2 정규화된 벡터
         """
+        # ⚠️ OpenAI 임베더와 정규화 본체가 의도적으로 다름:
+        # Gemini는 정규화되지 않은 벡터를 반환하므로 norm>0이면 "항상" 재계산한다.
+        # (OpenAI는 이미 정규화된 벡터를 반환해 norm≈1이면 재계산을 생략 — 통합 금지)
         norm = _l2_norm(vector)
 
         if norm > 0:
