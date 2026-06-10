@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   UploadCloud,
   FileText,
@@ -71,6 +71,18 @@ interface UploadFile {
 
 export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
   const [files, setFiles] = useState<UploadFile[]>([]);
+
+  // 업로드 상태 폴링 interval 추적: 언마운트 시 모두 정리해
+  // 유령 폴링(언마운트된 컴포넌트의 setFiles 호출)과 메모리 누수를 방지한다.
+  const activeIntervalsRef = useRef<Set<ReturnType<typeof setInterval>>>(new Set());
+
+  useEffect(() => {
+    const intervals = activeIntervalsRef.current;
+    return () => {
+      intervals.forEach((id) => clearInterval(id));
+      intervals.clear();
+    };
+  }, []);
   const [isDragging, setIsDragging] = useState(false);
   const [globalSettings, setGlobalSettings] = useState<UploadSettings>(() => {
     const operatorSettings = readOperatorSettings();
@@ -239,7 +251,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
         failureCount = 0;
 
         if (status.status === 'completed' || status.status === 'completed_with_errors') {
-          clearInterval(checkInterval);
+          clearInterval(checkInterval); activeIntervalsRef.current.delete(checkInterval);
           setFiles((prev) => prev.map((f) => f.id === fileId ? {
             ...f,
             status: 'completed',
@@ -255,22 +267,23 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
           } : f));
           showToast({ type: 'success', message: `업로드 완료: ${status.chunk_count || 0}개 청크` });
         } else if (status.status === 'failed') {
-          clearInterval(checkInterval);
+          clearInterval(checkInterval); activeIntervalsRef.current.delete(checkInterval);
           setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', error: status.error_message || '처리 오류' } : f));
           showToast({ type: 'error', message: '문서 처리에 실패했습니다.' });
         } else if (checkCount >= maxChecks) {
-          clearInterval(checkInterval);
+          clearInterval(checkInterval); activeIntervalsRef.current.delete(checkInterval);
           setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', error: '시간 초과' } : f));
         }
       } catch (error: unknown) {
         void error;
         failureCount++;
         if (failureCount >= maxFailures) {
-          clearInterval(checkInterval);
+          clearInterval(checkInterval); activeIntervalsRef.current.delete(checkInterval);
           setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', error: '네트워크 상의 문제로 상태 확인 중단' } : f));
         }
       }
     }, 5000);
+    activeIntervalsRef.current.add(checkInterval);
   };
 
   const removeFile = useCallback((id: string) => {
