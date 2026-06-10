@@ -11,7 +11,6 @@ import asyncio
 import ipaddress
 import time
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -19,17 +18,14 @@ import httpx
 
 from ....lib.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 from ....lib.logger import get_logger
+
+# 백오프 전략/지연 계산은 공용 유틸로 일원화 (동작 동일).
+# BackoffStrategy는 기존 공개 API 호환성을 위해 이 모듈에서도 그대로 재노출한다.
+from ....lib.retry import BackoffStrategy as BackoffStrategy
+from ....lib.retry import calculate_backoff_delay as _calculate_backoff_delay_util
 from .tool_loader import ToolDefinition
 
 logger = get_logger(__name__)
-
-
-class BackoffStrategy(Enum):
-    """재시도 백오프 전략"""
-
-    EXPONENTIAL = "exponential"
-    LINEAR = "linear"
-    FIXED = "fixed"
 
 
 @dataclass
@@ -378,6 +374,9 @@ class ExternalAPICaller:
         """
         재시도 백오프 지연 시간 계산
 
+        공용 유틸 ``app.lib.retry.calculate_backoff_delay``에 위임한다.
+        기존 호출부 호환을 위해 메서드 시그니처와 반환값(초)을 그대로 유지한다.
+
         Args:
             attempt: 시도 횟수 (0부터 시작)
             retry_config: 재시도 설정
@@ -385,26 +384,7 @@ class ExternalAPICaller:
         Returns:
             지연 시간 (초)
         """
-        strategy_str = retry_config.get("backoff_strategy", "exponential")
-        strategy = BackoffStrategy(strategy_str)
-
-        initial_delay_ms = retry_config.get("initial_delay_ms", 1000)
-        max_delay_ms = retry_config.get("max_delay_ms", 5000)
-
-        if strategy == BackoffStrategy.EXPONENTIAL:
-            # 지수 백오프: delay = initial * (2 ^ attempt)
-            delay_ms = initial_delay_ms * (2**attempt)
-        elif strategy == BackoffStrategy.LINEAR:
-            # 선형 백오프: delay = initial * (attempt + 1)
-            delay_ms = initial_delay_ms * (attempt + 1)
-        else:  # FIXED
-            # 고정 백오프
-            delay_ms = initial_delay_ms
-
-        # 최대 지연 시간 제한
-        delay_ms = min(delay_ms, max_delay_ms)
-
-        return cast(float, delay_ms / 1000.0)  # 밀리초 → 초
+        return _calculate_backoff_delay_util(attempt, retry_config)
 
 
 # 싱글톤 인스턴스
