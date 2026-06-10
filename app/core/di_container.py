@@ -1771,9 +1771,11 @@ class AppContainer(containers.DeclarativeContainer):
     # ----------------------------------------
     # Phase 6: 고급 리랭킹 시스템
     # ----------------------------------------
-    # Base Reranker (Gemini Flash or Jina - 기존 호환성)
+    # Base Reranker (reranking.yaml v2.1: approach/provider/model 3단계 구조)
+    # create_reranker_instance_v2가 RerankerFactoryV2를 통해 설정대로 생성한다.
+    # (레거시 create_reranker_instance는 default_provider 키를 참조해 v2.1 설정을 무시했음)
     base_reranker = providers.Singleton(
-        create_reranker_instance, config=config, llm_factory=llm_factory
+        create_reranker_instance_v2, config=config, llm_factory=llm_factory
     )
 
     # ColBERT Reranker (Jina ColBERT v2 - 토큰 수준 Late Interaction)
