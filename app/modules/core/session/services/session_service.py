@@ -8,12 +8,20 @@ import asyncio
 import time
 from datetime import UTC, datetime
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.infrastructure.persistence.helpers import timestamps
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_valid_uuid4(value: str) -> bool:
+    """문자열이 유효한 UUID4 형식인지 검증한다 (세션 ID capability 보안용)."""
+    try:
+        return UUID(value).version == 4
+    except (ValueError, TypeError, AttributeError):
+        return False
 
 
 class SessionService:
@@ -116,13 +124,18 @@ class SessionService:
             lock_acquired_time = time.time() - lock_start
 
             # 세션 ID 생성 또는 검증 (L79-86)
+            # 🔒 보안(IDOR 방어): 클라이언트가 지정한 session_id는 추측 불가능한
+            # UUID4 형식만 허용한다. "admin" 같은 약한 ID를 거부함으로써 session_id
+            # 자체가 capability(접근 권한)가 되어 타 세션 무단 조회/삭제를 차단한다.
             uuid_start = time.time()
             if session_id is None:
                 session_id = str(uuid4())
-            else:
-                if session_id in self.sessions:
-                    logger.warning(f"요청된 세션 ID가 이미 존재함: {session_id}, 새 ID로 대체")
-                    session_id = str(uuid4())
+            elif not _is_valid_uuid4(session_id):
+                logger.warning("유효하지 않은 세션 ID 형식 거부, 서버 UUID 발급")
+                session_id = str(uuid4())
+            elif session_id in self.sessions:
+                logger.warning(f"요청된 세션 ID가 이미 존재함: {session_id}, 새 ID로 대체")
+                session_id = str(uuid4())
             uuid_time = time.time() - uuid_start
 
             # 세션 데이터 생성: datetime 기반 시간 저장 (float 대신)
