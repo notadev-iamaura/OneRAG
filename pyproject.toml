@@ -35,7 +35,7 @@ dependencies = [
     # FastAPI and ASGI Server
     "fastapi==0.104.1",
     "uvicorn[standard]==0.24.0",
-    "python-multipart==0.0.6",
+    "python-multipart==0.0.32",
     # HTTP Client (requests 제거, httpx만 사용)
     "httpx>=0.23.0,<1",
     # Retry/backoff (jitter 포함 — thundering herd 방지)
