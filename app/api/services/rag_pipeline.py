@@ -1653,6 +1653,8 @@ class RAGPipeline:
             model_info=generation_result.model_info,
             routing_metadata=route_decision.metadata,
             debug_trace=debug_trace,
+            quality_score=getattr(generation_result, "quality_score", None),
+            refusal_reason=getattr(generation_result, "refusal_reason", None),
         )
         tracker.end_stage("build_result")
         tracker.end_pipeline()
@@ -2825,6 +2827,8 @@ class RAGPipeline:
         model_info: dict[str, Any],
         routing_metadata: dict[str, Any] | None,
         debug_trace: DebugTrace | None = None,  # ⭐ 신규 파라미터
+        quality_score: float | None = None,  # Self-RAG 품질 점수
+        refusal_reason: str | None = None,  # 저품질 거부 사유
     ) -> RAGResultDict:
         """
         7단계: 최종 응답 딕셔너리 구성
@@ -2904,6 +2908,13 @@ class RAGPipeline:
 
         if routing_metadata:
             result["routing_metadata"] = routing_metadata
+
+        # ⭐ Self-RAG 품질 점수/거부 사유 전파
+        # (chat_router의 quality 메타데이터 블록이 이 값을 읽는다 — 누락 시 항상 None)
+        if quality_score is not None:
+            result["quality_score"] = quality_score
+        if refusal_reason is not None:
+            result["refusal_reason"] = refusal_reason
 
         # ⭐ 디버깅 추적 정보 추가
         if debug_trace is not None:
