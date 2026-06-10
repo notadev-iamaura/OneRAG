@@ -4,15 +4,15 @@ Last updated: 2026-06-10
 
 This page is the canonical current status for git-tracked documentation. Older
 roadmaps and reports may preserve their original historical findings, but this
-page reflects the current `main` branch after PR #74.
+page reflects the current `main` branch after PR #78.
 
 ## Source Of Truth
 
 | Item | Current value |
 |---|---|
 | Repository | `notadev-iamaura/OneRAG` |
-| Current release-readiness baseline | `main` after PR #74 |
-| Latest merged commit | `c9036c8` (Merge PR #74) |
+| Current release-readiness baseline | `main` after PR #78 |
+| Latest merged commit | `43c4605` (Merge PR #78) |
 | Latest merged operational-stability commit | `fe87219fde0c07ceae61880d93851bee24abca69` |
 | Runtime readiness model | `/health` for liveness, `/ready` for readiness |
 | Retrieval startup policy | `RETRIEVAL_STARTUP_POLICY=required|degraded` |
@@ -27,6 +27,13 @@ The GitHub Actions CI pipeline currently covers:
 - `Type Check`: `uv run mypy .`
 - `Architecture`: `uv run lint-imports`
 - `Test + Coverage`: backend pytest with coverage artifact generation
+- `Optional Providers`: optional-provider unit tests (vector stores, BM25,
+  rerankers, embedders) run with extras installed and
+  `ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1`. These are skipped by the default
+  `Test + Coverage` gate (`pytest_ignore_collect`), so this job makes their
+  staleness fail CI instead of hiding. Network-free by policy
+  (`HF_HUB_OFFLINE=1`); real-model reranker inference stays in integration
+  verification.
 - `Runtime Smoke`: `make test-operational-smoke`
 - `Frontend`: `npm run build:warning-gate`, `npm run lint`, `npm run test:warning-gate`
 - `LLM Cost Analysis`: token/cost reporting workflow
@@ -66,6 +73,27 @@ Resolved conditionally / deferred by design (NOT silently — documented in code
 - **Deferred by design:** `session_manager._cleanup_loop` (infinite loop — jitter
   only), embedder normalization bodies (intentionally different; only `_l2_norm`
   shared), prompt cache Level 3.
+
+### Follow-up hardening (PR #76–#78)
+
+A full optional-provider test run (normally skipped by the default gate) surfaced
+and fixed three more issues:
+
+- **Stale weaviate test (PR #76):** `add_documents` batch (`insert_many`, from
+  backport #69) was asserted against the old single-`insert` API. The test had
+  never run in CI because its directory is in the optional-provider skip list, so
+  the drift went unnoticed for a full backport cycle.
+- **`Optional Providers` CI gate (PR #77/#78):** a new CI job runs the
+  optional-provider unit tests with extras installed and
+  `ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1`, network-free by policy
+  (`HF_HUB_OFFLINE=1`; real-model reranker inference stays in integration
+  verification). This class of staleness can no longer hide.
+- **pinecone extra conflict (PR #77):** the `pinecone`/`all-vectordb` extras
+  pinned the deprecated `pinecone-client`, which broke `import pinecone` against
+  base `pinecone>=7.0.1`; repointed to `pinecone>=7.0.1`.
+
+All 14 open Dependabot PRs (#50–#68) were also verified and merged; the combined
+`main` CI (including the new gate) is green.
 
 ## Verification: Static Gates + Integration
 
