@@ -22,10 +22,25 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/prompts", tags=["Prompts"])
 
 
+# 공유 DI 컨테이너 (main.py lifespan에서 주입)
+# 새 AppContainer() 생성을 막아 PromptManager가 실행 중 파이프라인과 동일한
+# 설정(use_database 등)을 공유하게 한다 (관리 API와 RAG의 split-brain 방지).
+_shared_container: AppContainer | None = None
+
+
+def set_container(container: AppContainer) -> None:
+    """공유 DI 컨테이너 주입 (main.py lifespan에서 호출)"""
+    global _shared_container
+    _shared_container = container
+
+
 def _get_container() -> AppContainer:
-    """지연 임포트로 순환 임포트 방지"""
+    """공유 컨테이너를 반환한다 (미주입 시 경고 후 새 인스턴스 — 테스트 폴백)"""
+    if _shared_container is not None:
+        return _shared_container
     from ..core.di_container import AppContainer
 
+    logger.warning("공유 컨테이너 미주입 — 새 AppContainer 생성 (설정이 비어 있을 수 있음)")
     return AppContainer()
 
 
