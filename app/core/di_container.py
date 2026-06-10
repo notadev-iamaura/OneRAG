@@ -1589,7 +1589,10 @@ class AppContainer(containers.DeclarativeContainer):
 
     # PromptManager (Hybrid Mode: PostgreSQL + JSON Fallback)
     prompt_manager = providers.Singleton(
-        PromptManager, repository=prompt_repository, use_database=config.prompts.use_database
+        PromptManager,
+        repository=prompt_repository,
+        use_database=config.prompts.use_database,
+        cache_ttl=config.prompts.cache_ttl,
     )
 
     cost_tracker = providers.Singleton(CostTracker)

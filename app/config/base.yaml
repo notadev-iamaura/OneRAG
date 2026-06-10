@@ -21,7 +21,7 @@ vector_db:
 # 새 구조: 용도별 명확한 파일 분리
 imports:
   - features/embeddings.yaml
-  - features/generation.yaml      # 답변 생성 전용 (기존 llm.yaml 대체)
+  - features/generation.yaml      # 답변 생성 전용 (사용자 응답 LLM — llm.yaml과 용도 분리)
   - features/query_expansion.yaml # 쿼리 확장 전용 (신규)
   - features/privacy.yaml         # PII 마스킹 (di_container.privacy_masker 필수)
   - features/bm25.yaml            # BM25 전처리 (synonym/stopword/user_dictionary 필수)
@@ -36,7 +36,7 @@ imports:
   - features/langfuse.yaml        # Langfuse LLM Observability (RAG 추적)
   - features/prompts.yaml         # Prompts 관리 (Hybrid Mode: PostgreSQL + JSON)
   - features/domain.yaml          # 도메인 특화 설정 (사용자 정의)
-  - features/llm.yaml             # 하위 호환성 유지 (추후 제거 예정)
+  - features/llm.yaml             # 내부 보조 LLM 전용 (쿼리 재작성/확장 등 — generation.yaml과 통합 금지)
   - features/circuit_breaker.yaml # Circuit Breaker 설정 (MVP: 비활성화)
   - features/sql_search.yaml      # SQL 검색 설정 (Phase 3: 메타데이터 검색)
   - features/graph_rag.yaml       # GraphRAG 지식 그래프 검색 (GraphRAGFactory 지원)

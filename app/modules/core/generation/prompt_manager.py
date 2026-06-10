@@ -2,8 +2,11 @@
 프롬프트 관리 모듈 (Hybrid Mode: PostgreSQL + JSON Fallback)
 """
 
+import functools
 import json
+import time
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +22,25 @@ from ....models.prompts import PromptCreate, PromptResponse, PromptUpdate
 logger = get_logger(__name__)
 
 
+def _invalidates_content_cache(
+    func: Callable[..., Awaitable[Any]],
+) -> Callable[..., Awaitable[Any]]:
+    """프롬프트 쓰기 메서드 실행 후 내용 캐시를 무효화하는 데코레이터.
+
+    DB 성공/JSON 폴백/예외 등 모든 반환 경로에서 finally로 무효화하므로,
+    어떤 경로로 프롬프트가 변경돼도 다음 조회가 최신값을 다시 캐시한다.
+    """
+
+    @functools.wraps(func)
+    async def wrapper(self: "PromptManager", *args: Any, **kwargs: Any) -> Any:
+        try:
+            return await func(self, *args, **kwargs)
+        finally:
+            self._invalidate_content_cache()
+
+    return wrapper
+
+
 class PromptManager:
     """
     프롬프트 관리 클래스 (Hybrid Mode)
@@ -32,6 +54,7 @@ class PromptManager:
         storage_path: str = "./data/prompts",
         repository: PromptRepository | None = None,
         use_database: bool = True,
+        cache_ttl: float = 60.0,
     ):
         """
         프롬프트 매니저 초기화 (Hybrid Mode)
@@ -40,10 +63,18 @@ class PromptManager:
             storage_path: 프롬프트 JSON 저장 경로 (폴백용)
             repository: PostgreSQL PromptRepository 인스턴스 (선택적, DI Container에서 주입)
             use_database: PostgreSQL 사용 여부 (기본값: True)
+            cache_ttl: 프롬프트 내용 캐시 TTL(초). 0이면 캐시 비활성. (기본값: 60)
         """
         # PostgreSQL Repository (Primary)
         self.use_database = use_database
         self.repository = repository
+
+        # 프롬프트 내용 캐시 (TTL 기반 + 쓰기 시 무효화)
+        # generator가 매 답변 생성 시 get_prompt_content를 호출하므로, 거의 정적인
+        # 프롬프트의 반복 DB 조회를 줄인다. 프롬프트 수정(create/update/delete/import)
+        # 시 즉시 무효화되어 최대 cache_ttl초 내 반영된다.
+        self._content_cache: dict[str, tuple[float, str]] = {}
+        self._cache_ttl = cache_ttl
 
         # JSON Fallback 설정
         self.storage_path = Path(storage_path)
@@ -290,9 +321,20 @@ class PromptManager:
             )
             return None
 
+    def _invalidate_content_cache(self) -> None:
+        """프롬프트 내용 캐시를 전체 무효화한다 (쓰기 작업 후 호출).
+
+        프롬프트 쓰기는 드물고 어떤 name이 영향받는지 추적할 필요 없이 안전하게
+        전체를 비운다 (다음 조회 시 DB에서 최신값을 다시 캐시).
+        """
+        self._content_cache.clear()
+
     async def get_prompt_content(self, name: str, default: str | None = None) -> str:
         """
         프롬프트 내용만 조회 (generation.py에서 사용)
+
+        TTL 캐시를 적용한다. 캐시 히트 시 DB 조회를 생략하고, 쓰기 작업
+        (create/update/delete/import)이 발생하면 캐시가 무효화된다.
 
         Args:
             name: 프롬프트 이름
@@ -301,9 +343,19 @@ class PromptManager:
         Returns:
             프롬프트 내용
         """
+        # 캐시 확인 (TTL 유효 시 DB 조회 생략)
+        if self._cache_ttl > 0:
+            cached = self._content_cache.get(name)
+            if cached is not None and cached[0] > time.time():
+                return cached[1]
+
         prompt = await self.get_prompt(name=name)
         if prompt and prompt.is_active:
-            return prompt.content
+            # 활성 프롬프트만 캐시한다 (비활성/없음은 default 폴백이라 캐시 안 함)
+            content: str = prompt.content
+            if self._cache_ttl > 0:
+                self._content_cache[name] = (time.time() + self._cache_ttl, content)
+            return content
         return default or ""
 
     async def list_prompts(
@@ -405,6 +457,7 @@ class PromptManager:
             )
             return {"prompts": [], "total": 0, "page": page, "page_size": page_size}
 
+    @_invalidates_content_cache
     async def create_prompt(self, prompt_data: PromptCreate) -> PromptResponse:
         """
         프롬프트 생성 (Hybrid Mode: PostgreSQL → JSON Fallback)
@@ -512,6 +565,7 @@ class PromptManager:
             extra={"prompt_id": prompt.id}
         )
 
+    @_invalidates_content_cache
     async def update_prompt(self, prompt_id: str, update_data: PromptUpdate) -> PromptResponse:
         """
         프롬프트 업데이트 (Hybrid Mode: PostgreSQL → JSON Fallback)
@@ -613,6 +667,7 @@ class PromptManager:
             )
             raise
 
+    @_invalidates_content_cache
     async def delete_prompt(self, prompt_id: str) -> bool:
         """
         프롬프트 삭제 (Hybrid Mode: PostgreSQL → JSON Fallback)
@@ -724,6 +779,7 @@ class PromptManager:
             )
             raise
 
+    @_invalidates_content_cache
     async def import_prompts(
         self, data: dict[str, Any] | list[dict[str, Any]], overwrite: bool = False
     ) -> dict[str, Any]:
