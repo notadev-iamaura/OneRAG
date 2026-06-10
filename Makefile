@@ -167,6 +167,15 @@ test-operational-smoke:
 	sh -n docker-entrypoint.sh
 	sh -n frontend/entrypoint.sh
 
+# 통합 검증 (외부 서비스 Weaviate+PostgreSQL + optional provider 포함)
+# 정적 게이트(lint/mypy/test)를 넘어 실제 서비스 연결로 integration 테스트를 실행한다.
+# 전제: Docker 실행 중, 그리고 아래 선택 의존성 설치:
+#   uv sync --extra dev --extra local-embedding
+#   uv pip install "https://github.com/explosion/spacy-models/releases/download/ko_core_news_sm-3.7.0/ko_core_news_sm-3.7.0-py3-none-any.whl"
+# 상세: docs/INTEGRATION_VERIFICATION.md
+verify-integration:
+	./scripts/verify-integration.sh
+
 # 평가 테스트 (CI/CD 품질 게이트)
 test-eval: install-dev
 	uv run pytest -m eval -v
