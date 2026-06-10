@@ -510,8 +510,10 @@ class GenerationModule:
                 answer=answer,
                 text=answer,
                 tokens_used=tokens_used,
+                # 실제 활성 provider를 기록한다 (하드코딩된 "openrouter"는 google 직접
+                # 호출 시에도 openrouter로 기록되어 비용 추적 게이트를 통과 못 하게 했음)
                 model_used=model,
-                provider="openrouter",
+                provider=self.provider,
                 generation_time=0,  # 나중에 설정
                 model_config=model_settings,
             )

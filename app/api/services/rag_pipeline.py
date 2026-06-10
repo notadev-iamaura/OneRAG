@@ -28,11 +28,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from ...lib.circuit_breaker import CircuitBreakerOpenError
-from ...lib.cost_tracker import CostTracker
 from ...lib.errors import ErrorCode, GenerationError, PipelineTimeoutError, RetrievalError
 from ...lib.langfuse_client import langfuse_context, observe  # Langfuse 트레이싱
 from ...lib.logger import get_logger
-from ...lib.metrics import PerformanceMetrics
+from ...lib.metrics import CostTracker, PerformanceMetrics
 from ...lib.prompt_sanitizer import contains_output_leakage, validate_document
 from ...lib.score_normalizer import RRFScoreNormalizer  # RRF 점수 정규화
 from ...lib.types import RAGResultDict

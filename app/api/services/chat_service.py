@@ -19,10 +19,9 @@ from collections.abc import AsyncGenerator
 from datetime import datetime
 from typing import Any
 
-from ...lib.cost_tracker import CostTracker
 from ...lib.errors import ErrorCode, SessionError
 from ...lib.logger import get_logger
-from ...lib.metrics import PerformanceMetrics
+from ...lib.metrics import CostTracker, PerformanceMetrics
 from ...lib.types import RAGResultDict, SessionInfoDict, SessionResult, StatsDict
 from .rag_pipeline import RAGPipeline
 

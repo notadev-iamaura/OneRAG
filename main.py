@@ -212,6 +212,10 @@ class RAGChatbotApp:
             "self_rag": self.container.self_rag(),
             "circuit_breaker_factory": self.container.circuit_breaker_factory(),  # ✅ Circuit Breaker Factory 추가
             "sql_search_service": self.container.sql_search_service(),  # ✅ SQL Search Service 추가 (Phase 3)
+            # Phase 2.5: 비용 추적기/성능 메트릭을 공유 — ChatService와 admin이 동일
+            # 컨테이너 싱글톤을 사용해야 실제 비용이 /api/admin에 반영된다.
+            "cost_tracker": self.container.cost_tracker(),
+            "performance_metrics": self.container.performance_metrics(),
         }
 
 
