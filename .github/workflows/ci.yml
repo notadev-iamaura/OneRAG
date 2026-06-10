@@ -172,6 +172,60 @@ jobs:
           retention-days: 7
 
   # ============================================
+  # Optional Provider 테스트 (Vector DB / BM25 / Reranker / Embedder)
+  # ------------------------------------------------------------------
+  # 기본 Test 게이트는 conftest 의 pytest_ignore_collect 로 optional-provider
+  # 단위 테스트(tests/unit/retrieval/retrievers, rerankers, bm25_engine,
+  # infrastructure/storage/vector)를 수집 제외한다. 이 잡은 해당 extras 를
+  # 설치하고 ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1 로 그 경로를 실제 실행해,
+  # provider/reranker/bm25/embedder 단위 테스트의 staleness 를 자동 차단한다.
+  #
+  # all-vectordb: chroma/pinecone/qdrant/pgvector, bm25: kiwipiepy/rank-bm25,
+  # local-embedding: sentence-transformers(reranker 테스트). weaviate/mongodb 는
+  # base 의존성으로 충족된다. (pgvector store 테스트는 psycopg v3 미설치 시 self-skip)
+  # ============================================
+  optional-providers:
+    name: Optional Providers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ENVIRONMENT: test
+      ONERAG_RUN_OPTIONAL_PROVIDER_TESTS: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/uv
+          key: uv-optional-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-optional-${{ runner.os }}-
+
+      - name: Install dependencies (optional providers)
+        run: uv sync --frozen --extra dev --extra all-vectordb --extra bm25 --extra local-embedding
+
+      - name: Run optional-provider tests
+        run: |
+          uv run pytest \
+            tests/unit/infrastructure/storage/vector \
+            tests/unit/retrieval/bm25_engine \
+            tests/unit/retrieval/rerankers \
+            tests/unit/retrieval/retrievers \
+            --tb=short -q --timeout=120
+
+  # ============================================
   # 운영 안정성 Smoke (runtime 계약 + Docker config)
   # ============================================
   runtime-smoke:

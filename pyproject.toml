@@ -156,12 +156,12 @@ ragas = [
 
 # Multi Vector DB 선택적 의존성 (v3.4.0+)
 chroma = ["chromadb>=0.4.0"]
-pinecone = ["pinecone-client>=3.0.0"]
+pinecone = ["pinecone>=7.0.1"]
 qdrant = ["qdrant-client>=1.7.0"]
 pgvector = ["pgvector>=0.2.0"]
 all-vectordb = [
     "chromadb>=0.4.0",
-    "pinecone-client>=3.0.0",
+    "pinecone>=7.0.1",
     "qdrant-client>=1.7.0",
     "pgvector>=0.2.0",
 ]
