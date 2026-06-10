@@ -120,6 +120,9 @@ class CircuitBreaker:
         self.state = CircuitState.CLOSED
         self.stats = CircuitBreakerStats()
         self._lock = asyncio.Lock()
+        # HALF_OPEN 상태에서 동시에 진행 중인 시험 요청 수
+        # (success_threshold 개수만 허용해 복구 안 된 백엔드로의 쇄도를 막는다)
+        self._half_open_in_flight = 0
 
     async def call(
         self,
@@ -143,18 +146,46 @@ class CircuitBreaker:
             CircuitBreakerOpenError: Circuit이 Open 상태
             Exception: func 실행 중 발생한 에러
         """
+        # lock 안에서는 상태 전이와 진입 결정만 빠르게 수행한다.
+        # 느린 작업(func/fallback 실행)은 lock을 잡은 채 돌리지 않는다 —
+        # 그래야 OPEN 상태의 느린 fallback이 breaker 전체를 직렬화하지 않는다.
+        fast_fail = False
+        half_open_trial = False
+
         async with self._lock:
-            # Open 상태 확인
+            # HALF_OPEN이 half_open_timeout을 넘기면 복구 실패로 보고 OPEN 복귀
+            if self.state == CircuitState.HALF_OPEN:
+                elapsed = time.time() - self.stats.state_change_time
+                if elapsed >= self.config.half_open_timeout:
+                    logger.warning(f"⚠️  [{self.name}] Half-Open 타임아웃 → Open 복귀")
+                    self.state = CircuitState.OPEN
+                    self.stats.state_change_time = time.time()
+
+            # OPEN 상태: timeout 경과 시 HALF_OPEN 전환, 아니면 빠른 실패
             if self.state == CircuitState.OPEN:
                 if self._should_attempt_reset():
                     logger.info(f"🔄 [{self.name}] Half-Open 전환 시도")
                     self.state = CircuitState.HALF_OPEN
                     self.stats.state_change_time = time.time()
+                    self._half_open_in_flight = 0
                 else:
-                    logger.warning(f"🚫 [{self.name}] Circuit Open, 빠른 실패")
-                    if fallback:
-                        return await self._execute_fallback(fallback, *args, **kwargs)
-                    raise CircuitBreakerOpenError(f"Circuit {self.name} is OPEN")
+                    fast_fail = True
+
+            # HALF_OPEN 상태: 시험 요청을 success_threshold 개수로 제한한다.
+            # (게이트가 없으면 동시 요청이 전부 통과해 복구 안 된 백엔드로 쇄도)
+            if not fast_fail and self.state == CircuitState.HALF_OPEN:
+                if self._half_open_in_flight >= self.config.success_threshold:
+                    fast_fail = True
+                else:
+                    self._half_open_in_flight += 1
+                    half_open_trial = True
+
+        # --- 여기부터는 lock 밖 (느린 작업) ---
+        if fast_fail:
+            logger.warning(f"🚫 [{self.name}] Circuit Open, 빠른 실패")
+            if fallback:
+                return await self._execute_fallback(fallback, *args, **kwargs)
+            raise CircuitBreakerOpenError(f"Circuit {self.name} is OPEN")
 
         # 함수 실행
         try:
@@ -173,6 +204,11 @@ class CircuitBreaker:
             if fallback:
                 return await self._execute_fallback(fallback, *args, **kwargs)
             raise
+        finally:
+            # 시험 요청 카운터 해제 (HALF_OPEN 게이트가 다음 요청을 받을 수 있도록)
+            if half_open_trial:
+                async with self._lock:
+                    self._half_open_in_flight = max(0, self._half_open_in_flight - 1)
 
     async def _execute_fallback(
         self, fallback: Callable[..., Any], *args: Any, **kwargs: Any
