@@ -848,9 +848,15 @@ async def upload_document(
                     "technical_error": str(e),
                 },
             ) from e
-        with open(file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
+        content = await file.read()
+
+        # 동기 디스크 쓰기를 to_thread로 오프로딩한다.
+        # (대용량 파일을 이벤트 루프에서 직접 쓰면 진행 중인 모든 스트리밍이 정지함)
+        def _write_file() -> None:
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+
+        await asyncio.to_thread(_write_file)
         file_size = len(content)
         filename = file.filename or "unknown"
         upload_jobs[job_id] = {
@@ -868,7 +874,8 @@ async def upload_document(
             # 워커 진입점(process_queued_upload_job_once)이 재처리할 수 있도록 기록
             "temp_file_path": str(file_path),
         }
-        save_upload_job(job_id)
+        # 동기 SQLite 트랜잭션을 to_thread로 오프로딩 (이벤트 루프 블로킹 방지)
+        await asyncio.to_thread(save_upload_job, job_id)
         background_tasks.add_task(
             process_document_background_guarded, job_id, file_path, filename, file_type
         )
