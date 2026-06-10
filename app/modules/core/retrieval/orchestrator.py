@@ -346,7 +346,13 @@ class RetrievalOrchestrator:
             # Step 1: 캐시 확인 (선택적)
             if self.cache:
                 try:
-                    cache_key = self.cache.generate_cache_key(query, top_k, filters)  # type: ignore[attr-defined]
+                    # 캐시 키가 리랭킹/그래프 설정을 구분하도록 키 구성에 포함한다.
+                    # (미포함 시 rerank_enabled/use_graph가 다른 호출이 같은 키를 공유해
+                    #  리랭킹 안 된 결과나 벡터 전용 결과가 잘못 반환될 수 있음)
+                    cache_filters = dict(filters or {})
+                    cache_filters["_rerank_enabled"] = rerank_enabled
+                    cache_filters["_use_graph"] = effective_use_graph
+                    cache_key = self.cache.generate_cache_key(query, top_k, cache_filters)  # type: ignore[attr-defined]
                     cached_results = await self.cache.get(cache_key)
 
                     if cached_results:
