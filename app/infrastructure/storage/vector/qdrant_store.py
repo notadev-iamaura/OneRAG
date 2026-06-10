@@ -374,6 +374,146 @@ class QdrantVectorStore(IVectorStore):
             logger.error(f"Qdrant 문서 삭제 실패: {e}")
             raise RuntimeError(f"Qdrant 문서 삭제 중 오류가 발생했습니다: {e}") from e
 
+    async def fetch_objects(
+        self,
+        collection: str,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """컬렉션 객체를 페이로드 필터로 조회한다(문서관리/인접청크 확장용).
+
+        QdrantRetriever의 get_document_chunks/list_documents 등이 이 메서드에 위임한다
+        (ChromaVectorStore 파리티 백포트). chroma_store와 동일하게 각 객체는
+        {"_id": str, "content": str, ...payload} 형태로 반환한다.
+
+        Qdrant는 scroll API로 유사도 점수 없이 포인트를 페이지네이션 조회한다.
+        포인트 ID는 add_documents에서 해시 정수로 저장되므로 _id는 해당 정수의 문자열이며,
+        document_id 등 원본 식별자는 payload에 보존되어 필터로 사용한다.
+
+        Args:
+            collection: 컬렉션 이름
+            filters: 페이로드 필터.
+                - id: str|int - 단일 포인트 ID 직접 조회
+                - ids: list[str|int] - 여러 포인트 ID 직접 조회
+                - 그 외 필드: payload 필드 일치 필터
+
+        Returns:
+            조회 결과 리스트. 각 항목은 {"_id": str, "content": str, ...payload} 형식.
+        """
+        client = self._ensure_client()
+        filters_value = filters or {}
+
+        def _fetch_sync() -> list[dict[str, Any]]:
+            from qdrant_client.models import PointIdsList
+
+            # ID 직접 조회 (재해시하지 않고 원본 포인트 ID 사용)
+            id_value = filters_value.get("id")
+            ids_value = filters_value.get("ids")
+            if id_value is not None or ids_value is not None:
+                raw_ids = [id_value] if id_value is not None else list(ids_value or [])
+                point_ids = [self._coerce_point_id(value) for value in raw_ids]
+                if not point_ids:
+                    return []
+                records = client.retrieve(
+                    collection_name=collection,
+                    ids=PointIdsList(points=point_ids).points,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                return [self._record_to_item(rec) for rec in records]
+
+            # 페이로드 필터 기반 전수 조회 (scroll 페이지네이션)
+            scroll_filter = (
+                self._convert_filters(filters_value) if filters_value else None
+            )
+            output: list[dict[str, Any]] = []
+            next_offset: Any = None
+            while True:
+                records, next_offset = client.scroll(
+                    collection_name=collection,
+                    scroll_filter=scroll_filter,
+                    limit=256,
+                    offset=next_offset,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                output.extend(self._record_to_item(rec) for rec in records)
+                if next_offset is None:
+                    break
+            return output
+
+        try:
+            return await asyncio.to_thread(_fetch_sync)
+        except Exception as e:
+            logger.error(f"Qdrant 객체 조회 실패: {e}")
+            raise RuntimeError(
+                f"Qdrant 객체 조회 중 오류가 발생했습니다: {e}. "
+                "해결 방법: 1) Qdrant 서버 상태 확인 2) 컬렉션 존재 여부 확인"
+            ) from e
+
+    async def delete_objects(self, collection: str, object_ids: list[str]) -> int:
+        """ID 목록으로 객체를 삭제한다(문서관리용).
+
+        fetch_objects가 반환한 _id(포인트 ID)를 그대로 사용한다.
+        기존 delete()는 문자열 ID를 다시 해시하지만, 여기서는 fetch_objects가 돌려준
+        포인트 ID 자체이므로 재해시하지 않고 그대로 삭제한다.
+
+        Args:
+            collection: 컬렉션 이름
+            object_ids: 삭제할 포인트 ID 목록 (fetch_objects의 _id)
+
+        Returns:
+            삭제 요청한 객체 개수
+        """
+        if not object_ids:
+            return 0
+
+        client = self._ensure_client()
+
+        def _delete_sync() -> int:
+            from qdrant_client.models import PointIdsList
+
+            point_ids = [self._coerce_point_id(value) for value in object_ids]
+            client.delete(
+                collection_name=collection,
+                points_selector=PointIdsList(points=point_ids),
+            )
+            return len(point_ids)
+
+        try:
+            deleted = await asyncio.to_thread(_delete_sync)
+            self._stats["deletions"] += deleted
+            logger.info(f"Qdrant에서 {deleted}개 객체 삭제 완료")
+            return deleted
+        except Exception as e:
+            logger.error(f"Qdrant 객체 삭제 실패: {e}")
+            raise RuntimeError(f"Qdrant 객체 삭제 중 오류가 발생했습니다: {e}") from e
+
+    @staticmethod
+    def _coerce_point_id(value: Any) -> int | str:
+        """포인트 ID를 Qdrant가 허용하는 형태(정수 또는 UUID 문자열)로 정규화한다.
+
+        fetch_objects의 _id는 add_documents가 저장한 해시 정수의 문자열이므로
+        정수로 변환 가능하면 정수로, 아니면 원본 문자열(UUID 등)을 그대로 사용한다.
+        """
+        if isinstance(value, int):
+            return value
+        text = str(value)
+        try:
+            return int(text)
+        except ValueError:
+            return text
+
+    @staticmethod
+    def _record_to_item(record: Any) -> dict[str, Any]:
+        """Qdrant Record를 chroma_store 파리티 형태로 변환한다."""
+        item: dict[str, Any] = {}
+        payload = getattr(record, "payload", None)
+        if payload:
+            item.update(payload)
+        item["_id"] = str(getattr(record, "id", ""))
+        item["content"] = str(item.get("content", ""))
+        return item
+
     def _convert_filters(self, filters: dict[str, Any]) -> Any:
         """
         딕셔너리 필터를 Qdrant 필터 형식으로 변환

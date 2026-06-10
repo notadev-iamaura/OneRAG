@@ -314,3 +314,115 @@ class TestPgVectorStoreStats:
         assert stats["documents_added"] == 0
         assert stats["searches"] == 0
         assert stats["deletions"] == 0
+
+
+# ============================================================
+# 문서 관리 테스트 (fetch_objects / delete_objects)
+# ============================================================
+
+
+class TestPgVectorStoreDocumentManagement:
+    """fetch_objects / delete_objects 테스트 (문서관리 위임 대상)"""
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_all(self, mock_connection):
+        """필터 없이 전체 조회 시 WHERE 없는 SELECT가 실행되고 파리티 형태로 반환된다"""
+        from app.infrastructure.storage.vector.pgvector_store import PgVectorStore
+
+        cursor = mock_connection.cursor.return_value
+        # fetch_objects는 (id, content, metadata) 3컬럼을 SELECT
+        cursor.fetchall.return_value = [
+            ("id-1", "본문1", {"document_id": "doc-1"}),
+            ("id-2", "본문2", {"document_id": "doc-2"}),
+        ]
+        store = PgVectorStore(_connection=mock_connection, table_name="documents")
+
+        results = await store.fetch_objects(collection="documents")
+
+        # WHERE 절 없이 SELECT 실행 확인
+        sql = cursor.execute.call_args.args[0]
+        assert "WHERE" not in sql
+        assert "SELECT id, content, metadata" in sql
+        assert len(results) == 2
+        assert results[0]["_id"] == "id-1"
+        assert results[0]["content"] == "본문1"
+        assert results[0]["document_id"] == "doc-1"
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_by_ids(self, mock_connection):
+        """ids 필터는 id IN (...) 절과 파라미터로 변환된다"""
+        from app.infrastructure.storage.vector.pgvector_store import PgVectorStore
+
+        cursor = mock_connection.cursor.return_value
+        cursor.fetchall.return_value = [("id-1", "a", {})]
+        store = PgVectorStore(_connection=mock_connection, table_name="documents")
+
+        await store.fetch_objects(
+            collection="documents", filters={"ids": ["id-1", "id-2"]}
+        )
+
+        sql, params = cursor.execute.call_args.args
+        assert "id IN (%s,%s)" in sql
+        assert params == ["id-1", "id-2"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_metadata_filter(self, mock_connection):
+        """메타데이터 필터는 metadata->>'key' = %s 조건으로 변환된다"""
+        from app.infrastructure.storage.vector.pgvector_store import PgVectorStore
+
+        cursor = mock_connection.cursor.return_value
+        cursor.fetchall.return_value = []
+        store = PgVectorStore(_connection=mock_connection, table_name="documents")
+
+        await store.fetch_objects(
+            collection="documents", filters={"document_id": "doc-1"}
+        )
+
+        sql, params = cursor.execute.call_args.args
+        assert "metadata->>'document_id' = %s" in sql
+        assert params == ["doc-1"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_handles_json_string_metadata(self, mock_connection):
+        """metadata가 JSON 문자열로 와도 역직렬화한다"""
+        from app.infrastructure.storage.vector.pgvector_store import PgVectorStore
+
+        cursor = mock_connection.cursor.return_value
+        cursor.fetchall.return_value = [
+            ("id-1", "본문", '{"document_id": "doc-1"}'),
+        ]
+        store = PgVectorStore(_connection=mock_connection, table_name="documents")
+
+        results = await store.fetch_objects(collection="documents")
+
+        assert results[0]["document_id"] == "doc-1"
+
+    @pytest.mark.asyncio
+    async def test_delete_objects(self, mock_connection):
+        """delete_objects는 id IN (...) DELETE를 실행하고 개수를 반환한다"""
+        from app.infrastructure.storage.vector.pgvector_store import PgVectorStore
+
+        cursor = mock_connection.cursor.return_value
+        store = PgVectorStore(_connection=mock_connection, table_name="documents")
+
+        deleted = await store.delete_objects(
+            collection="documents", object_ids=["id-1", "id-2"]
+        )
+
+        assert deleted == 2
+        sql = cursor.execute.call_args.args[0]
+        assert "DELETE FROM documents WHERE id IN (%s,%s)" in sql
+
+    @pytest.mark.asyncio
+    async def test_delete_objects_empty(self, mock_connection):
+        """빈 ID 목록은 DELETE 없이 0을 반환한다"""
+        from app.infrastructure.storage.vector.pgvector_store import PgVectorStore
+
+        cursor = mock_connection.cursor.return_value
+        cursor.execute.reset_mock()
+        store = PgVectorStore(_connection=mock_connection, table_name="documents")
+
+        deleted = await store.delete_objects(collection="documents", object_ids=[])
+
+        assert deleted == 0
+        cursor.execute.assert_not_called()

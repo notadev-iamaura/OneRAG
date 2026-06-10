@@ -371,6 +371,90 @@ class MongoDBAtlasStore(IVectorStore):
                 f"MongoDB Atlas 문서 삭제 중 오류가 발생했습니다: {e}"
             ) from e
 
+    async def fetch_objects(
+        self,
+        collection: str,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """컬렉션 객체를 find로 조회한다(문서관리/인접청크 확장용).
+
+        MongoDBAtlasRetriever의 get_document_chunks/list_documents 등이 이 메서드에
+        위임한다(ChromaVectorStore 파리티 백포트). chroma_store와 동일하게 각 객체는
+        {"_id": str, "content": str, ...metadata} 형태로 반환한다.
+
+        Args:
+            collection: 컬렉션 이름
+            filters: 조회 필터.
+                - id: str - 단일 _id 직접 조회
+                - ids: list[str] - 여러 _id 직접 조회
+                - 그 외 필드: metadata.{key} 일치 조건
+
+        Returns:
+            조회 결과 리스트. 각 항목은 {"_id": str, "content": str, ...metadata} 형식.
+
+        Raises:
+            ImportError: pymongo 미설치 시
+            RuntimeError: 조회 실패 시
+        """
+        coll = self._get_collection(collection)
+        filters_value = filters or {}
+
+        try:
+            # MongoDB 쿼리 조건 구성
+            mongo_query: dict[str, Any] = {}
+            if "id" in filters_value:
+                mongo_query["_id"] = str(filters_value["id"])
+            elif "ids" in filters_value:
+                ids = [str(value) for value in filters_value["ids"]]
+                if not ids:
+                    return []
+                mongo_query["_id"] = {"$in": ids}
+
+            for key, value in filters_value.items():
+                if key in ("id", "ids"):
+                    continue
+                mongo_query[f"metadata.{key}"] = value
+
+            # 벡터 필드는 제외하고 조회 (불필요한 대용량 전송 방지)
+            projection = {self.embedding_field: 0}
+            results = list(coll.find(mongo_query, projection))
+
+            output: list[dict[str, Any]] = []
+            for doc in results:
+                item: dict[str, Any] = {}
+                metadata = doc.get("metadata")
+                if isinstance(metadata, dict):
+                    item.update(metadata)
+                item["_id"] = str(doc.get("_id", ""))
+                item["content"] = doc.get("content", "")
+                output.append(item)
+
+            logger.debug(f"MongoDB Atlas 객체 조회 완료: {len(output)}개")
+            return output
+
+        except Exception as e:
+            logger.error(f"MongoDB Atlas 객체 조회 실패: {e}")
+            raise RuntimeError(
+                f"MongoDB Atlas 객체 조회 중 오류가 발생했습니다: {e}. "
+                "해결 방법: 1) MongoDB Atlas 연결 확인 2) 컬렉션 권한 확인"
+            ) from e
+
+    async def delete_objects(self, collection: str, object_ids: list[str]) -> int:
+        """ID 목록으로 객체를 삭제한다(문서관리용).
+
+        fetch_objects가 반환한 _id를 그대로 사용한다.
+
+        Args:
+            collection: 컬렉션 이름
+            object_ids: 삭제할 _id 목록
+
+        Returns:
+            삭제된 객체 개수
+        """
+        if not object_ids:
+            return 0
+        return await self.delete(collection=collection, filters={"ids": object_ids})
+
     @property
     def stats(self) -> dict[str, int]:
         """통계 정보 반환"""

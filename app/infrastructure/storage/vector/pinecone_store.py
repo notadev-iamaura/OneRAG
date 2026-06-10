@@ -306,6 +306,158 @@ class PineconeVectorStore(IVectorStore):
                 "3) 필터 형식을 확인하세요."
             ) from e
 
+    async def fetch_objects(
+        self,
+        collection: str,
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """컬렉션(네임스페이스) 객체를 조회한다(문서관리/인접청크 확장용).
+
+        PineconeRetriever의 get_document_chunks/list_documents 등이 이 메서드에 위임한다
+        (ChromaVectorStore 파리티 백포트). chroma_store와 동일하게 각 객체는
+        {"_id": str, "content": str, ...metadata} 형태로 반환한다.
+
+        Pinecone은 메타데이터 조회용 단일 API가 없으므로 두 단계로 처리한다:
+        1. list_paginated로 네임스페이스의 벡터 ID 목록을 페이지네이션 수집
+        2. fetch로 ID 배치의 메타데이터를 조회
+
+        Args:
+            collection: 네임스페이스 이름 (Pinecone namespace)
+            filters: 메타데이터 필터.
+                - id: str - 단일 ID 직접 조회
+                - ids: list[str] - 여러 ID 직접 조회
+                - 그 외 필드: list_paginated로 전수 조회 후 메모리 필터링
+
+        Returns:
+            조회 결과 리스트. 각 항목은 {"_id": str, "content": str, ...metadata} 형식.
+        """
+        filters_value = filters or {}
+
+        def _fetch_sync() -> list[dict[str, Any]]:
+            # 1) 조회 대상 ID 목록 결정
+            target_ids: list[str]
+            if "id" in filters_value:
+                target_ids = [str(filters_value["id"])]
+            elif "ids" in filters_value:
+                target_ids = [str(value) for value in filters_value["ids"]]
+            else:
+                # 네임스페이스 전체 ID를 페이지네이션으로 수집
+                target_ids = self._list_all_ids(collection)
+
+            if not target_ids:
+                return []
+
+            # 메모리 필터링용 메타데이터 조건 (id/ids 제외)
+            meta_filters = {
+                key: value
+                for key, value in filters_value.items()
+                if key not in ("id", "ids")
+            }
+
+            # 2) ID 배치 단위로 fetch (Pinecone fetch 권장 배치 크기 100)
+            output: list[dict[str, Any]] = []
+            batch_size = 100
+            for start in range(0, len(target_ids), batch_size):
+                batch = target_ids[start : start + batch_size]
+                response = self._index.fetch(ids=batch, namespace=collection)
+                vectors = self._extract_fetch_vectors(response)
+                for vec_id, vec in vectors.items():
+                    metadata = self._extract_metadata(vec)
+                    # 메타데이터 필터 적용 (전수 조회 케이스)
+                    if meta_filters and not all(
+                        str(metadata.get(key)) == str(value)
+                        for key, value in meta_filters.items()
+                    ):
+                        continue
+                    item: dict[str, Any] = dict(metadata)
+                    item["_id"] = str(vec_id)
+                    item["content"] = str(metadata.get("content", ""))
+                    output.append(item)
+            return output
+
+        try:
+            return await asyncio.to_thread(_fetch_sync)
+        except Exception as e:
+            logger.error(f"PineconeVectorStore: 객체 조회 실패 - {e}")
+            raise RuntimeError(
+                "객체 조회 중 오류가 발생했습니다. "
+                "해결 방법: 1) API 키가 유효한지 확인하세요. "
+                "2) 인덱스/네임스페이스 이름이 올바른지 확인하세요. "
+                "3) Pinecone 로그를 확인하세요."
+            ) from e
+
+    async def delete_objects(self, collection: str, object_ids: list[str]) -> int:
+        """ID 목록으로 객체를 삭제한다(문서관리용).
+
+        fetch_objects가 반환한 _id(Pinecone 벡터 ID)를 그대로 사용한다.
+
+        Args:
+            collection: 네임스페이스 이름 (Pinecone namespace)
+            object_ids: 삭제할 벡터 ID 목록
+
+        Returns:
+            삭제 요청한 객체 개수
+        """
+        if not object_ids:
+            return 0
+        return await self.delete(collection=collection, filters={"ids": object_ids})
+
+    def _list_all_ids(self, namespace: str) -> list[str]:
+        """네임스페이스의 모든 벡터 ID를 list_paginated로 수집한다.
+
+        Pinecone list_paginated는 한 페이지의 ID와 다음 페이지 토큰을 반환하므로
+        pagination 토큰이 소진될 때까지 반복 호출한다.
+        """
+        all_ids: list[str] = []
+        pagination_token: str | None = None
+        while True:
+            if pagination_token is not None:
+                response = self._index.list_paginated(
+                    namespace=namespace, pagination_token=pagination_token
+                )
+            else:
+                response = self._index.list_paginated(namespace=namespace)
+
+            # 응답에서 ID 추출 (SDK 버전별 형태 차이 흡수)
+            vectors = getattr(response, "vectors", None)
+            if vectors is None and isinstance(response, dict):
+                vectors = response.get("vectors")
+            for item in vectors or []:
+                vec_id = getattr(item, "id", None)
+                if vec_id is None and isinstance(item, dict):
+                    vec_id = item.get("id")
+                if vec_id is not None:
+                    all_ids.append(str(vec_id))
+
+            # 다음 페이지 토큰 추출
+            pagination = getattr(response, "pagination", None)
+            if pagination is None and isinstance(response, dict):
+                pagination = response.get("pagination")
+            next_token = getattr(pagination, "next", None)
+            if next_token is None and isinstance(pagination, dict):
+                next_token = pagination.get("next")
+            if not next_token:
+                break
+            pagination_token = str(next_token)
+
+        return all_ids
+
+    @staticmethod
+    def _extract_fetch_vectors(response: Any) -> dict[str, Any]:
+        """fetch 응답에서 {id: Vector} 매핑을 추출한다(SDK 버전별 형태 차이 흡수)."""
+        vectors = getattr(response, "vectors", None)
+        if vectors is None and isinstance(response, dict):
+            vectors = response.get("vectors")
+        return dict(vectors) if vectors else {}
+
+    @staticmethod
+    def _extract_metadata(vector: Any) -> dict[str, Any]:
+        """Vector 객체/딕셔너리에서 메타데이터 딕셔너리를 추출한다."""
+        metadata = getattr(vector, "metadata", None)
+        if metadata is None and isinstance(vector, dict):
+            metadata = vector.get("metadata")
+        return dict(metadata) if metadata else {}
+
     def close(self) -> None:
         """
         리소스 정리.
