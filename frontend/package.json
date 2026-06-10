@@ -59,7 +59,7 @@
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.15.0",
-    "react-virtualized-auto-sizer": "^1.0.26",
+    "react-virtualized-auto-sizer": "^2.0.3",
     "react-window": "^2.2.3",
     "recharts": "^2.15.0",
     "remark-gfm": "^4.0.1",
