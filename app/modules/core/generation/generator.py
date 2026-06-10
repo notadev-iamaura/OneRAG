@@ -783,64 +783,94 @@ class GenerationModule:
         # 프롬프트 구성
         system_content, user_content = await self._build_prompt(query, context_text, options)
 
-        # 모델 결정
-        model = options.get("model", self.default_model)
+        # 모델 결정 (fallback 포함) — 비스트리밍 generate_answer와 동일하게
+        # 스트림 시작(첫 청크) 전 실패 시 다음 모델로 전환한다.
+        requested_model = options.get("model", self.default_model)
+        models_to_try = [requested_model]
+        if self.auto_fallback:
+            if requested_model in self.fallback_models:
+                idx = self.fallback_models.index(requested_model)
+                models_to_try.extend(self.fallback_models[idx + 1 :])
+            else:
+                models_to_try.extend(self.fallback_models)
+        # 중복 제거 (순서 유지)
+        seen_models: set[str] = set()
+        unique_models: list[str] = []
+        for m in models_to_try:
+            if m not in seen_models:
+                seen_models.add(m)
+                unique_models.append(m)
+        models_to_try = unique_models
 
-        # 모델별 설정 로드
-        model_settings = self._get_model_settings(model, options)
-
-        # API 파라미터 구성
         messages = [
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
 
-        api_params = {
-            "model": model,
-            "messages": messages,
-            "stream": True,  # 스트리밍 활성화
-        }
+        # 모델 순회: 스트림 생성에 성공한 첫 모델을 사용한다.
+        stream = None
+        model = requested_model
+        last_error: Exception | None = None
+        for model in models_to_try:
+            model_settings = self._get_model_settings(model, options)
+            api_params = {
+                "model": model,
+                "messages": messages,
+                "stream": True,  # 스트리밍 활성화
+            }
+            if "o1" in model.lower() or "gpt-5" in model.lower():
+                api_params["max_completion_tokens"] = model_settings.get("max_tokens", 20000)
+            else:
+                api_params["max_tokens"] = model_settings.get("max_tokens", 20000)
+                api_params["temperature"] = model_settings.get("temperature", 0.3)
 
-        # Reasoning 모델 (o1, gpt-5) 여부 확인
-        is_reasoning_model = "o1" in model.lower() or "gpt-5" in model.lower()
-
-        if is_reasoning_model:
-            api_params["max_completion_tokens"] = model_settings.get("max_tokens", 20000)
-        else:
-            api_params["max_tokens"] = model_settings.get("max_tokens", 20000)
-            api_params["temperature"] = model_settings.get("temperature", 0.3)
-
-        logger.debug(
-            "🌐 OpenRouter 스트리밍 API 호출",
-            model=model,
-            prompt_length=len(user_content),
-        )
-
-        # 스트리밍 API 호출
-        timeout = model_settings.get("timeout", 120)
-        try:
-            stream = cast(
-                Any,
-                await asyncio.wait_for(
-                    asyncio.to_thread(
-                        self.client.chat.completions.create,  # type: ignore[union-attr,arg-type]
-                        **api_params,
+            timeout = model_settings.get("timeout", 120)
+            try:
+                stream = cast(
+                    Any,
+                    await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self.client.chat.completions.create,  # type: ignore[union-attr,arg-type]
+                            **api_params,
+                        ),
+                        timeout=float(timeout),
                     ),
-                    timeout=float(timeout),
-                ),
-            )
-        except TimeoutError as e:
-            logger.error(f"OpenRouter 스트리밍 응답 시간 초과 ({timeout}s): {model}")
+                )
+                if model != requested_model:
+                    self.stats["fallback_count"] += 1
+                    logger.info(f"✅ 스트리밍 Fallback 성공: {requested_model} → {model}")
+                break
+            except Exception as e:
+                last_error = e
+                logger.warning(f"❌ 스트리밍 모델 {model} 실패: {e}")
+                continue
+
+        if stream is None:
+            self.stats["error_count"] += 1
             raise GenerationError(
-                message=f"AI 스트리밍 응답 시간이 초과되었습니다 ({timeout}초). 잠시 후 다시 시도해주세요.",
+                message="모든 모델에서 스트리밍 응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요.",
                 error_code=ErrorCode.LLM_008,
-                context={"model": model, "timeout_seconds": timeout},
-                original_error=e,
-            ) from e
+                context={"models_tried": models_to_try},
+                original_error=last_error,
+            )
 
         # Issue 2 수정: 통계 추적을 위한 청크 카운트 초기화
         chunk_count = 0
         self.stats["total_generations"] += 1
+
+        # PII 마스킹 버퍼: 청크 경계에 걸친 PII(예: '010-1234'/'-5678'로 쪼개진
+        # 전화번호)가 정규식을 우회하지 않도록, 누적 후 안전한 경계(공백)에서
+        # 마스킹하여 PII가 한 emit 안에 완성되도록 한다.
+        masking_active = self._privacy_enabled and self.privacy_masker is not None
+        pii_buffer = ""
+
+        def _mask(text: str) -> str:
+            try:
+                masked: str = self.privacy_masker.mask_text(text)  # type: ignore[union-attr]
+                return masked
+            except Exception as e:
+                logger.warning(f"스트리밍 마스킹 실패: {e}")
+                return text
 
         # 청크 단위로 yield
         async for chunk in self._iterate_stream_chunks(stream):
@@ -850,15 +880,21 @@ class GenerationModule:
                     content = delta.content
                     chunk_count += 1  # 청크 카운트 증가
 
-                    # Phase 2: 개인정보 마스킹 적용 (청크 단위)
-                    if self._privacy_enabled and self.privacy_masker is not None:
-                        try:
-                            content = self.privacy_masker.mask_text(content)
-                        except Exception as e:
-                            # 마스킹 실패 시 원본 반환 (Graceful Degradation)
-                            logger.warning(f"스트리밍 마스킹 실패: {e}")
+                    if masking_active:
+                        pii_buffer += content
+                        # 충분히 쌓이면 마지막 공백 경계까지 마스킹 후 emit
+                        if len(pii_buffer) >= 80:
+                            split_idx = pii_buffer.rfind(" ")
+                            if split_idx > 0:
+                                emit = pii_buffer[:split_idx]
+                                pii_buffer = pii_buffer[split_idx:]
+                                yield _mask(emit)
+                    else:
+                        yield content
 
-                    yield content
+        # 남은 버퍼 마스킹 후 emit
+        if masking_active and pii_buffer:
+            yield _mask(pii_buffer)
 
         # Issue 2 수정: 스트리밍 완료 후 통계 업데이트
         generation_time = time.time() - start_time
