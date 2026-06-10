@@ -1068,6 +1068,22 @@ class RetrievalOrchestrator:
         results_per_query = await asyncio.gather(*search_tasks, return_exceptions=True)
         search_time = (asyncio.get_event_loop().time() - start_time) * 1000
 
+        # Phase 2.7: 모든 쿼리가 예외로 실패하면 검색 백엔드 완전 장애로 판단하고
+        # 예외를 전파한다. 예외를 삼키고 빈 리스트를 반환하면 상위 CircuitBreaker가
+        # 장애 신호를 받지 못해 영원히 CLOSED로 남는다.
+        # (retriever가 정상적으로 빈 결과를 반환한 경우는 예외가 아니므로 전파하지 않음)
+        if results_per_query and all(
+            isinstance(r, BaseException) for r in results_per_query
+        ):
+            first_exc = next(
+                r for r in results_per_query if isinstance(r, BaseException)
+            )
+            logger.error(
+                "모든 쿼리 검색 실패 — 백엔드 장애로 판단, 예외 전파",
+                extra={"query_count": len(queries), "error": str(first_exc)},
+            )
+            raise first_exc
+
         logger.info(
             "병렬 검색 완료",
             extra={"search_time_ms": search_time}
