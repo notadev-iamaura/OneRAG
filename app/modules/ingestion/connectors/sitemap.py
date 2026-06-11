@@ -13,21 +13,12 @@ from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
-from tenacity import (
-    AsyncRetrying,
-    RetryError,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_incrementing,
-    wait_random,
-)
+from tenacity import RetryError
 
+from app.lib.retry import DEFAULT_BACKOFF_JITTER_S, BackoffStrategy, RetryPolicy
 from app.modules.ingestion.interfaces import IIngestionConnector, StandardDocument
 
 logger = logging.getLogger(__name__)
-
-# 재시도 폭주 완화용 무작위 지연 범위 (초, [0, JITTER) 추가)
-_BACKOFF_JITTER = 0.5
 
 class SitemapConnector(IIngestionConnector):
     def __init__(self, url: str, **kwargs: Any) -> None:
@@ -60,30 +51,33 @@ class SitemapConnector(IIngestionConnector):
         """
         세마포어와 재시도 로직을 적용한 안전한 페이지 수집
 
-        동작 보존 (tenacity 이관):
-        - 세마포어로 동시 요청 수를 ``max_parallel``로 제한합니다(tenacity 루프 외부 유지).
+        동작 보존 (RetryPolicy 이관):
+        - 세마포어로 동시 요청 수를 ``max_parallel``로 제한합니다(재시도 루프 외부 유지).
         - 재시도 대상: ``httpx.ConnectError``, ``httpx.TimeoutException``.
-          선형 백오프 ``(attempt + 1) * 2`` → 2, 4초(+jitter). tenacity의
-          ``attempt_number``는 1부터이므로 ``wait_incrementing(start=2, increment=2)``가
-          기존 시퀀스(2, 4)를 정확히 재현합니다.
+          선형 백오프 ``(attempt + 1) * 2`` → 2, 4, 6...초(+jitter).
+          ``increment_s`` 미지정 시 ``initial_delay_s``(2.0)와 동일하게 증가해
+          기존 시퀀스를 정확히 재현합니다.
         - 최대 시도(``max_retries``) 소진 시: ``None`` 반환(예외 전파 없음).
         - 그 외 예외: 즉시 ``None`` 반환(재시도/대기 없음).
         """
+        # 선언적 재시도 정책: 선형 백오프 2, 4, 6...초 (+jitter)
+        policy = RetryPolicy(
+            retry_exceptions=(httpx.ConnectError, httpx.TimeoutException),
+            max_attempts=self.max_retries,
+            strategy=BackoffStrategy.LINEAR,
+            initial_delay_s=2.0,
+            # increment_s 미지정 → initial_delay_s와 동일(2.0): (attempt+1)*2 시퀀스
+            max_delay_s=float("inf"),  # 기존 wait_incrementing 기본(사실상 무상한) 보존
+            jitter_s=DEFAULT_BACKOFF_JITTER_S,
+            reraise=True,  # 소진 시 마지막 예외를 받아 None 반환
+            before_sleep=lambda rs: logger.warning(
+                f"Retry {rs.attempt_number}/{self.max_retries} for {url} "
+                f"in ~{rs.next_action.sleep if rs.next_action else 0:.1f}s..."
+            ),
+        )
         async with self._semaphore:
             try:
-                async for attempt in AsyncRetrying(
-                    stop=stop_after_attempt(self.max_retries),
-                    wait=wait_incrementing(start=2, increment=2)
-                    + wait_random(0, _BACKOFF_JITTER),
-                    retry=retry_if_exception_type(
-                        (httpx.ConnectError, httpx.TimeoutException)
-                    ),
-                    reraise=True,  # 소진 시 마지막 예외를 받아 None 반환
-                    before_sleep=lambda rs: logger.warning(
-                        f"Retry {rs.attempt_number}/{self.max_retries} for {url} "
-                        f"in ~{rs.next_action.sleep if rs.next_action else 0:.1f}s..."
-                    ),
-                ):
+                async for attempt in policy.build_async_retrying():
                     with attempt:
                         async with httpx.AsyncClient(timeout=self.timeout) as client:
                             return await self._fetch_and_parse_page(client, url)

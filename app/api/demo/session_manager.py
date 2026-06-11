@@ -21,12 +21,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.lib.logger import get_logger
+from app.lib.retry import DEFAULT_BACKOFF_JITTER_S, calculate_backoff_delay
 
 logger = get_logger(__name__)
-
-# 정리 루프 실패 백오프 jitter 범위 (초, [0, JITTER) 추가)
-# 다수 인스턴스가 동시에 실패할 때 재시도 시점을 분산해 폭주를 완화합니다.
-_CLEANUP_BACKOFF_JITTER = 0.5
 
 
 # =============================================================================
@@ -508,8 +505,9 @@ class DemoSessionManager:
         백그라운드 정리 루프 (연속 실패 시 지수 백오프 + jitter)
 
         무한 주기 작업(성공해도 계속 반복)이므로 "실패 시 재시도, 성공 시 종료"인
-        tenacity 재시도 모델과 맞지 않아 tenacity로 이관하지 않습니다. 대신 실패 백오프에
-        jitter를 추가해 다수 인스턴스 동시 실패 시 재시도 폭주를 완화합니다.
+        tenacity 재시도 모델과 맞지 않아 tenacity로 이관하지 않습니다. 대신 순수 지연
+        계산만 공용 ``calculate_backoff_delay``에 위임하고, 실패 백오프에 jitter를
+        추가해 다수 인스턴스 동시 실패 시 재시도 폭주를 완화합니다.
 
         동작 보존:
         - 정상 주기: ``sleep(cleanup_interval)`` 후 ``cleanup_expired()``, 성공 시 카운터 리셋.
@@ -527,15 +525,23 @@ class DemoSessionManager:
                 break
             except Exception as e:
                 consecutive_failures += 1
-                backoff = min(
-                    self._cleanup_interval * (2 ** consecutive_failures),
-                    max_backoff,
+                # 지수 백오프 지연 계산을 공용 유틸에 위임
+                # (입력 단위가 ms이므로 초→ms 변환 후 호출, 반환은 초)
+                # 기존 min(interval * 2^failures, 300)과 수치적으로 동일합니다.
+                backoff = calculate_backoff_delay(
+                    consecutive_failures,
+                    {
+                        "backoff_strategy": "exponential",
+                        "initial_delay_ms": self._cleanup_interval * 1000,
+                        "max_delay_ms": max_backoff * 1000,
+                    },
                 )
                 # jitter 추가: base 백오프에 [0, JITTER) 무작위 지연을 더해 폭주 완화
-                jittered_backoff = backoff + random.uniform(0, _CLEANUP_BACKOFF_JITTER)
+                jittered_backoff = backoff + random.uniform(0, DEFAULT_BACKOFF_JITTER_S)
+                # :g 포맷: float 변환 후에도 기존 정수 표기("20초")를 유지
                 logger.error(
                     f"정리 루프 오류 (연속 {consecutive_failures}회): {e}, "
-                    f"다음 시도까지 {backoff}초 대기"
+                    f"다음 시도까지 {backoff:g}초 대기"
                 )
                 try:
                     await asyncio.sleep(jittered_backoff)
