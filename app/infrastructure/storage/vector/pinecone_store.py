@@ -27,13 +27,20 @@ from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Pinecone query API의 top_k 최대 허용값 (Pinecone 공식 제한: 10,000).
-# 서버측 메타데이터 필터 조회(fetch_objects 필터 경로)에서 사용하며,
-# 결과가 이 상한에 도달하면 잘림 가능성이 있으므로 warning 로그를 남긴다
-# (조용한 절단 방지 — 호출자가 데이터 누락 가능성을 인지할 수 있어야 함).
-PINECONE_QUERY_MAX_TOP_K = 10000
+# Pinecone query API의 top_k 상한 (include_metadata=True 기준).
+# - top_k 자체의 절대 최대값은 10,000이지만(공식 문서
+#   https://docs.pinecone.io/reference/api/database-limits "Max top_k value | 10,000"),
+#   include_metadata=True 또는 include_values=True인 쿼리의 top_k 상한은 1,000이다
+#   (Pinecone 공식 limits 문서: "The max value for top_k for queries with
+#   include_metadata=True or include_data=True is 1,000").
+# - 현행 문서(https://docs.pinecone.io/reference/quotas-and-limits)의 결과 크기
+#   4MB 제한도 메타데이터 포함 시 실질 상한을 같은 수준으로 묶는다.
+# 서버측 메타데이터 필터 조회(fetch_objects 필터 경로)는 include_metadata=True가
+# 필수이므로 이 값을 1,000으로 유지해야 한다. 결과가 이 상한에 도달하면
+# 잘림 가능성이 있으므로 전수 경로(list+fetch)로 폴백한다.
+PINECONE_QUERY_MAX_TOP_K = 1000
 
-# 메타데이터 필터 쿼리용 제로 벡터의 기본 차원.
+# 메타데이터 필터 쿼리용 쿼리 벡터의 기본 차원.
 # describe_index_stats로 실제 인덱스 차원을 조회하지 못한 경우의 폴백 값이며,
 # config/features/pinecone.yaml의 index_guide.dimensions(=3072, Gemini
 # embedding-001 기준)와 동일하게 유지한다.
@@ -87,7 +94,7 @@ class PineconeVectorStore(IVectorStore):
         # 인덱스 연결
         self._index = self._client.Index(index_name)
 
-        # 인덱스 차원 캐시 (메타데이터 필터 쿼리의 제로 벡터 구성용, 지연 조회)
+        # 인덱스 차원 캐시 (메타데이터 필터 쿼리의 쿼리 벡터 구성용, 지연 조회)
         self._index_dimension: int | None = None
 
         logger.info(
@@ -336,7 +343,8 @@ class PineconeVectorStore(IVectorStore):
         1. id/ids 필터: fetch로 직접 조회 (나머지 메타데이터 조건은 메모리 필터링)
         2. 메타데이터 필터(id/ids 외): 서버측 필터 쿼리(query + filter)로 1회 조회
            — 전수 ID 스캔 후 순차 fetch하던 기존 방식(네임스페이스 크기에 비례한
-           API 왕복)을 제거한다.
+           API 왕복)을 제거한다. 단, top_k 상한 도달 시 완전성 보장을 위해
+           전수 경로(list_paginated + fetch)로 폴백한다.
         3. 필터 없음(전체 목록): list_paginated로 전체 ID 수집 후 fetch 배치 조회
 
         Args:
@@ -345,7 +353,7 @@ class PineconeVectorStore(IVectorStore):
                 - id: str - 단일 ID 직접 조회
                 - ids: list[str] - 여러 ID 직접 조회
                 - 그 외 필드: 서버측 메타데이터 필터 쿼리 (top_k 상한
-                  ``PINECONE_QUERY_MAX_TOP_K``, 도달 시 잘림 경고)
+                  ``PINECONE_QUERY_MAX_TOP_K``, 도달 시 전수 경로 폴백)
 
         Returns:
             조회 결과 리스트. 각 항목은 {"_id": str, "content": str, ...metadata} 형식.
@@ -373,29 +381,10 @@ class PineconeVectorStore(IVectorStore):
                 # 필터 없음: 네임스페이스 전체 ID를 페이지네이션으로 수집
                 target_ids = self._list_all_ids(collection)
 
-            if not target_ids:
-                return []
-
-            # 2) ID 배치 단위로 fetch (Pinecone fetch 권장 배치 크기 100)
-            output: list[dict[str, Any]] = []
-            batch_size = 100
-            for start in range(0, len(target_ids), batch_size):
-                batch = target_ids[start : start + batch_size]
-                response = self._index.fetch(ids=batch, namespace=collection)
-                vectors = self._extract_fetch_vectors(response)
-                for vec_id, vec in vectors.items():
-                    metadata = self._extract_metadata(vec)
-                    # 메타데이터 필터 적용 (id/ids 직접 조회 케이스)
-                    if meta_filters and not all(
-                        str(metadata.get(key)) == str(value)
-                        for key, value in meta_filters.items()
-                    ):
-                        continue
-                    item: dict[str, Any] = dict(metadata)
-                    item["_id"] = str(vec_id)
-                    item["content"] = str(metadata.get("content", ""))
-                    output.append(item)
-            return output
+            # 2) ID 배치 단위로 fetch + 메모리 필터링
+            return self._fetch_ids_with_memory_filter(
+                collection, target_ids, meta_filters
+            )
 
         try:
             return await asyncio.to_thread(_fetch_sync)
@@ -432,35 +421,51 @@ class PineconeVectorStore(IVectorStore):
         기존 구현은 list_paginated로 네임스페이스 전체 ID를 수집한 뒤 100개씩
         순차 fetch하고 메모리에서 필터링했다(50k 벡터 기준 호출당 약 1,000회
         API 왕복). Pinecone query는 메타데이터 필터를 서버측에서 지원하므로
-        제로 벡터 + filter 쿼리 1회로 동일 결과를 얻는다.
+        정상 케이스(필터 일치 객체 < top_k 상한)는 쿼리 1회로 동일 결과를 얻는다.
+
+        완전성 보장: 결과가 top_k 상한에 도달하면 필터 일치 객체가 더 존재할
+        수 있으므로(잘림), 잘린 결과를 버리고 전수 경로(list_paginated + fetch
+        + 메모리 필터)로 폴백해 완전한 결과를 반환한다. 부분 결과를 그대로
+        반환하면 호출자(문서 삭제 등)에서 부분 삭제 사고로 이어지기 때문이다.
 
         Args:
             namespace: 네임스페이스 이름
             meta_filters: 메타데이터 필터 (id/ids 제외된 조건).
-                값이 dict면 Pinecone 연산자 필터({"$in": ...} 등)로 그대로 전달,
-                아니면 동등 비교({"$eq": value})로 변환한다.
+                - 값이 dict면 Pinecone 연산자 필터({"$in": ...} 등)로 그대로 전달
+                - 문자열 값은 동등 비교({"$eq": value})로 변환
+                - 비문자열 값은 {"$in": [value, str(value)]}로 변환 — 서버측
+                  $eq는 타입 엄격 비교라서 숫자로 저장된 값을 문자열로 조회하면
+                  (또는 그 반대) 조용히 0건이 된다. 기존 메모리 필터의
+                  str(metadata) == str(value) 강제 변환 비교 의미론을 보존하기
+                  위해 원본 타입과 문자열 표현 양쪽을 허용한다.
 
         Returns:
             조회 결과 리스트. 각 항목은 {"_id": str, "content": str, ...metadata} 형식
             (기존 fetch 경로와 동일한 반환 계약).
         """
-        # Pinecone filter 문법으로 변환 (단순 값은 $eq 동등 비교)
-        pinecone_filter = {
-            key: value if isinstance(value, dict) else {"$eq": value}
-            for key, value in meta_filters.items()
-        }
+        # Pinecone filter 문법으로 변환
+        pinecone_filter: dict[str, Any] = {}
+        for key, value in meta_filters.items():
+            if isinstance(value, dict):
+                # 연산자 필터({"$in": ...} 등)는 그대로 통과
+                pinecone_filter[key] = value
+            elif isinstance(value, str):
+                pinecone_filter[key] = {"$eq": value}
+            else:
+                # 비문자열 값: 원본 타입/문자열 표현 양쪽 매칭 (의미론 보존)
+                pinecone_filter[key] = {"$in": [value, str(value)]}
 
-        # 순수 메타데이터 조회 목적이므로 유사도 무의미 → 제로 벡터 사용.
+        # 순수 메타데이터 조회 목적이므로 유사도 순위는 무의미하다. 다만
+        # Pinecone은 모든 값이 0인 dense 쿼리 벡터를 거부하므로("Dense vectors
+        # must contain at least one non-zero value", error code 3 — 특히 cosine
+        # 메트릭은 제로 벡터와의 유사도가 정의되지 않음) 단위 기저 벡터
+        # [1, 0, 0, ...]를 사용한다. 어떤 메트릭(cosine/dotproduct/euclidean)
+        # 에서도 유효하며, 필터 매칭 결과 집합은 쿼리 벡터와 무관하다(순위만
+        # 영향을 받는데 이 경로에서는 순위를 사용하지 않음).
         # 차원은 인덱스 실제 차원과 일치해야 쿼리가 거부되지 않는다.
-        #
-        # 메트릭 제약: 이 패턴은 cosine 메트릭(출하 기본, pinecone.yaml) 전제다.
-        # dotproduct 인덱스에서는 제로 벡터와의 내적이 전부 0이라 매치가
-        # 반환되지 않을 수 있어 조용한 데이터 누락이 된다 — 인덱스 메트릭을
-        # dotproduct로 바꾼다면 이 경로를 list+fetch 방식으로 되돌리거나
-        # 더미 단위 벡터 등 대체 전략이 필요하다.
         dimension = self._get_index_dimension()
         response = self._index.query(
-            vector=[0.0] * dimension,
+            vector=[1.0] + [0.0] * (dimension - 1),
             filter=pinecone_filter,
             top_k=PINECONE_QUERY_MAX_TOP_K,
             namespace=namespace,
@@ -483,23 +488,108 @@ class PineconeVectorStore(IVectorStore):
             item["content"] = str(metadata.get("content", ""))
             output.append(item)
 
-        # top_k 상한 도달 시 잘림 가능성 경고 (조용한 절단 금지).
+        # top_k 상한 도달 시 결과가 잘렸을 수 있으므로 전수 경로로 폴백한다.
         # Pinecone query는 top_k를 넘는 결과를 반환하지 않으므로, 상한과 동일한
-        # 개수가 반환되면 필터 일치 객체가 더 존재할 수 있다.
+        # 개수가 반환되면 필터 일치 객체가 더 존재할 수 있다 — 잘린 부분 결과를
+        # 사용하면 부분 삭제 위험이 있어 완전 열거로 전환한다(조용한 절단 금지).
         if len(output) >= PINECONE_QUERY_MAX_TOP_K:
-            logger.warning(
+            logger.info(
                 f"PineconeVectorStore: 메타데이터 필터 조회 결과가 top_k 상한"
-                f"({PINECONE_QUERY_MAX_TOP_K})에 도달했습니다. 일부 객체가 누락되었을 "
-                f"수 있습니다 (namespace={namespace}, filter={pinecone_filter})"
+                f"({PINECONE_QUERY_MAX_TOP_K})에 도달해 전수 경로"
+                f"(list+fetch)로 폴백합니다 "
+                f"(namespace={namespace}, filter={pinecone_filter})"
+            )
+            return self._fetch_ids_with_memory_filter(
+                namespace, self._list_all_ids(namespace), meta_filters
             )
 
         return output
 
+    def _fetch_ids_with_memory_filter(
+        self,
+        namespace: str,
+        target_ids: list[str],
+        meta_filters: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """ID 목록을 배치 fetch하고 메타데이터 조건을 메모리에서 필터링한다.
+
+        id/ids 직접 조회 경로와 메타데이터 필터 쿼리의 전수 폴백 경로가
+        공유하는 헬퍼. 필터 의미론은 빠른 경로(서버측 query 필터)와 일치해야
+        한다 — cap-hit 폴백 시 두 경로가 다른 결과를 내면 조용한 오결과가 된다.
+
+        Args:
+            namespace: 네임스페이스 이름
+            target_ids: 조회할 벡터 ID 목록
+            meta_filters: 메모리 필터링할 메타데이터 조건 (빈 dict면 필터 없음)
+
+        Returns:
+            조회 결과 리스트. 각 항목은 {"_id": str, "content": str, ...metadata} 형식.
+        """
+        if not target_ids:
+            return []
+
+        # ID 배치 단위로 fetch (Pinecone fetch 권장 배치 크기 100)
+        output: list[dict[str, Any]] = []
+        batch_size = 100
+        for start in range(0, len(target_ids), batch_size):
+            batch = target_ids[start : start + batch_size]
+            response = self._index.fetch(ids=batch, namespace=namespace)
+            vectors = self._extract_fetch_vectors(response)
+            for vec_id, vec in vectors.items():
+                metadata = self._extract_metadata(vec)
+                # 메타데이터 필터 적용 (빠른 경로와 동일 의미론)
+                if meta_filters and not all(
+                    self._memory_filter_matches(metadata.get(key), value)
+                    for key, value in meta_filters.items()
+                ):
+                    continue
+                item: dict[str, Any] = dict(metadata)
+                item["_id"] = str(vec_id)
+                item["content"] = str(metadata.get("content", ""))
+                output.append(item)
+        return output
+
+    @staticmethod
+    def _memory_filter_values_equal(stored: Any, expected: Any) -> bool:
+        """단일 값 동등 비교 — 빠른 경로의 관용적 의미론을 재현한다.
+
+        Pinecone은 숫자 메타데이터를 float로 저장하므로(3 → 3.0),
+        숫자 동등성(3 == 3.0 == "3")과 문자열 강제 변환 동등성을 함께 허용한다.
+        """
+        if str(stored) == str(expected):
+            return True
+        try:
+            return float(stored) == float(expected)
+        except (TypeError, ValueError):
+            return False
+
+    @classmethod
+    def _memory_filter_matches(cls, stored: Any, condition: Any) -> bool:
+        """메모리 폴백 필터 1개 조건 평가 — 서버측 query 필터와 의미론 일치.
+
+        지원 연산자: ``$eq``, ``$in`` (빠른 경로가 생성·통과시키는 형태 전부).
+        그 외 연산자(dict)는 메모리에서 재현할 수 없으므로 조용한 오결과 대신
+        명시적 ValueError를 발생시킨다 (에러 숨김 금지).
+        """
+        if isinstance(condition, dict):
+            if "$eq" in condition:
+                return cls._memory_filter_values_equal(stored, condition["$eq"])
+            if "$in" in condition:
+                candidates = condition["$in"]
+                return any(
+                    cls._memory_filter_values_equal(stored, item) for item in candidates
+                )
+            raise ValueError(
+                f"메모리 폴백이 지원하지 않는 필터 연산자입니다: {sorted(condition.keys())}. "
+                "지원 연산자: $eq, $in"
+            )
+        return cls._memory_filter_values_equal(stored, condition)
+
     def _get_index_dimension(self) -> int:
         """인덱스 벡터 차원을 조회한다 (최초 1회 조회 후 캐시).
 
-        메타데이터 필터 쿼리의 제로 벡터는 인덱스 차원과 일치해야 하므로
-        describe_index_stats에서 실제 차원을 읽는다. 조회 실패 또는 응답에
+        메타데이터 필터 쿼리의 쿼리 벡터(단위 기저 벡터)는 인덱스 차원과
+        일치해야 하므로 describe_index_stats에서 실제 차원을 읽는다. 조회 실패 또는 응답에
         유효한 차원이 없으면 ``DEFAULT_INDEX_DIMENSION``으로 폴백한다
         (차원 불일치 시 Pinecone이 쿼리를 거부하므로 오류가 은폐되지 않음).
         """
