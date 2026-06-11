@@ -136,11 +136,16 @@ class CostTracker:
 class PerformanceMetrics:
     """성능 메트릭 수집"""
 
-    # 함수별 메트릭
+    # 함수별 메트릭 (최근 100건 윈도우 — 지연시간 통계 전용)
     function_metrics: dict[str, list[float]] = field(default_factory=dict)
 
-    # 에러 카운트
+    # 에러 카운트 (무한 누적)
     error_counts: dict[str, int] = field(default_factory=dict)
+
+    # 함수별 누적 호출 카운터 (윈도우와 별개로 무한 누적 —
+    # error_rate 분모로 사용. 윈도우 count를 분모로 쓰면
+    # 누적 에러 ÷ 최근 100건이 되어 100%를 초과하는 왜곡이 발생한다)
+    call_counts: dict[str, int] = field(default_factory=dict)
 
     # Thread-safe
     _lock: Lock = field(default_factory=Lock)
@@ -159,6 +164,9 @@ class PerformanceMetrics:
 
             self.function_metrics[function_name].append(latency_ms)
 
+            # 누적 호출 수는 윈도우와 별개로 무한 누적
+            self.call_counts[function_name] = self.call_counts.get(function_name, 0) + 1
+
             # 최근 100개만 유지
             if len(self.function_metrics[function_name]) > 100:
                 self.function_metrics[function_name].pop(0)
@@ -171,46 +179,70 @@ class PerformanceMetrics:
 
             self.error_counts[function_name] += 1
 
-    def get_stats(self, function_name: str) -> dict[str, Any]:
-        """함수별 통계 반환"""
-        with self._lock:
-            latencies = self.function_metrics.get(function_name, [])
+    def _get_stats_unlocked(self, function_name: str) -> dict[str, Any]:
+        """
+        함수별 통계 계산 (락 미획득 내부 헬퍼)
 
-            if not latencies:
-                return {
-                    "function": function_name,
-                    "count": 0,
-                    "avg_latency_ms": 0,
-                    "min_latency_ms": 0,
-                    "max_latency_ms": 0,
-                    "p95_latency_ms": 0,
-                    "errors": 0,
-                }
+        호출자가 self._lock을 이미 보유한 상태에서 호출해야 한다.
+        get_all_stats()가 락을 잡은 채 get_stats()를 재호출하면
+        비재진입 Lock의 중복 획득으로 자기 데드락이 발생하므로,
+        락 없는 계산 로직을 이 헬퍼로 분리한다.
+        """
+        latencies = self.function_metrics.get(function_name, [])
 
-            sorted_latencies = sorted(latencies)
-            count = len(latencies)
-            p95_index = int(count * 0.95)
-
+        if not latencies:
+            # 에러만 기록된 함수도 누적값은 정확히 반환한다
             return {
                 "function": function_name,
-                "count": count,
-                "avg_latency_ms": round(sum(latencies) / count, 2),
-                "min_latency_ms": round(min(latencies), 2),
-                "max_latency_ms": round(max(latencies), 2),
-                "p95_latency_ms": round(sorted_latencies[p95_index], 2) if p95_index < count else 0,
+                "count": 0,
+                "total_calls": self.call_counts.get(function_name, 0),
+                "avg_latency_ms": 0,
+                "min_latency_ms": 0,
+                "max_latency_ms": 0,
+                "p95_latency_ms": 0,
                 "errors": self.error_counts.get(function_name, 0),
             }
 
-    def get_all_stats(self) -> dict[str, Any]:
-        """모든 함수 통계 반환"""
+        sorted_latencies = sorted(latencies)
+        count = len(latencies)
+        p95_index = int(count * 0.95)
+
+        return {
+            "function": function_name,
+            # count = 최근 윈도우 크기(≤100, 지연시간 통계의 표본 수 — 호환성 유지)
+            "count": count,
+            # total_calls = 누적 성공 호출 수 (error_rate 분모용)
+            "total_calls": self.call_counts.get(function_name, 0),
+            "avg_latency_ms": round(sum(latencies) / count, 2),
+            "min_latency_ms": round(min(latencies), 2),
+            "max_latency_ms": round(max(latencies), 2),
+            "p95_latency_ms": round(sorted_latencies[p95_index], 2) if p95_index < count else 0,
+            "errors": self.error_counts.get(function_name, 0),
+        }
+
+    def get_stats(self, function_name: str) -> dict[str, Any]:
+        """함수별 통계 반환"""
         with self._lock:
-            return {fn: self.get_stats(fn) for fn in self.function_metrics.keys()}
+            return self._get_stats_unlocked(function_name)
+
+    def get_all_stats(self) -> dict[str, Any]:
+        """
+        모든 함수 통계 반환
+
+        락을 한 번만 획득하고 락 없는 헬퍼를 반복 호출한다
+        (get_stats 재호출 시 비재진입 Lock 중복 획득 데드락 방지).
+        에러만 기록된 함수(function_metrics에 키 없음)도 누락 없이 포함한다.
+        """
+        with self._lock:
+            all_functions = self.function_metrics.keys() | self.error_counts.keys()
+            return {fn: self._get_stats_unlocked(fn) for fn in all_functions}
 
     def reset(self) -> None:
         """통계 리셋"""
         with self._lock:
             self.function_metrics.clear()
             self.error_counts.clear()
+            self.call_counts.clear()
             logger.info("🔄 성능 메트릭 통계 리셋")
 
 
