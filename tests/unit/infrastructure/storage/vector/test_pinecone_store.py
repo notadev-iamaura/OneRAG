@@ -375,13 +375,116 @@ class TestPineconeVectorStoreFetchObjects:
         assert sorted(fetch_call.kwargs.get("ids")) == ["id-1", "id-2"]
         assert len(results) == 2
 
+    @staticmethod
+    def _make_match(match_id: str, metadata: dict[str, Any]) -> MagicMock:
+        """query 응답 matches의 단일 match를 흉내내는 fake."""
+        match = MagicMock()
+        match.id = match_id
+        match.metadata = metadata
+        return match
+
     @pytest.mark.asyncio
-    async def test_fetch_objects_metadata_filter(self) -> None:
-        """전수 조회 후 메타데이터 필터로 메모리 필터링한다"""
-        _, mock_index, store = create_mock_pinecone_store()
-        mock_index.list_paginated.return_value = self._make_list_page(
-            ["id-1", "id-2"], next_token=None
+    async def test_fetch_objects_metadata_filter_uses_server_side_query(self) -> None:
+        """메타데이터 필터는 전수 스캔 대신 서버측 필터 쿼리(query)를 사용한다"""
+        from app.infrastructure.storage.vector.pinecone_store import (
+            PINECONE_QUERY_MAX_TOP_K,
         )
+
+        _, mock_index, store = create_mock_pinecone_store()
+        # 인덱스 차원: describe_index_stats에서 조회
+        mock_index.describe_index_stats.return_value = MagicMock(dimension=8)
+        query_response = MagicMock()
+        query_response.matches = [
+            self._make_match("id-1", {"content": "a", "document_id": "doc-1"}),
+        ]
+        mock_index.query.return_value = query_response
+
+        results = await store.fetch_objects(
+            collection="ns", filters={"document_id": "doc-1"}
+        )
+
+        # 전수 스캔 경로(list_paginated + fetch)는 호출되지 않아야 함
+        mock_index.list_paginated.assert_not_called()
+        mock_index.fetch.assert_not_called()
+        # 서버측 메타데이터 필터 쿼리 호출 검증
+        call = mock_index.query.call_args
+        assert call.kwargs.get("namespace") == "ns"
+        assert call.kwargs.get("filter") == {"document_id": {"$eq": "doc-1"}}
+        assert call.kwargs.get("top_k") == PINECONE_QUERY_MAX_TOP_K
+        assert call.kwargs.get("include_metadata") is True
+        # 제로 벡터는 인덱스 차원과 일치해야 함
+        assert call.kwargs.get("vector") == [0.0] * 8
+        # chroma_store 파리티 반환 형태 검증 (기존 fetch_objects 계약과 동일)
+        assert len(results) == 1
+        assert results[0]["_id"] == "id-1"
+        assert results[0]["content"] == "a"
+        assert results[0]["document_id"] == "doc-1"
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_metadata_filter_dimension_cached(self) -> None:
+        """인덱스 차원은 1회만 조회하고 캐시한다"""
+        _, mock_index, store = create_mock_pinecone_store()
+        mock_index.describe_index_stats.return_value = MagicMock(dimension=8)
+        mock_index.query.return_value = MagicMock(matches=[])
+
+        await store.fetch_objects(collection="ns", filters={"document_id": "doc-1"})
+        await store.fetch_objects(collection="ns", filters={"document_id": "doc-2"})
+
+        assert mock_index.describe_index_stats.call_count == 1
+        assert mock_index.query.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_metadata_filter_dimension_fallback(self) -> None:
+        """차원 조회 실패 시 기본 차원 상수로 폴백한다"""
+        from app.infrastructure.storage.vector.pinecone_store import (
+            DEFAULT_INDEX_DIMENSION,
+        )
+
+        _, mock_index, store = create_mock_pinecone_store()
+        mock_index.describe_index_stats.side_effect = RuntimeError("stats 실패")
+        mock_index.query.return_value = MagicMock(matches=[])
+
+        await store.fetch_objects(collection="ns", filters={"document_id": "doc-1"})
+
+        call = mock_index.query.call_args
+        assert call.kwargs.get("vector") == [0.0] * DEFAULT_INDEX_DIMENSION
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_metadata_filter_truncation_warning(self) -> None:
+        """결과가 top_k 상한에 도달하면 잘림 가능성을 warning으로 알린다 (조용한 절단 금지)"""
+        from unittest.mock import patch
+
+        from app.infrastructure.storage.vector.pinecone_store import (
+            PINECONE_QUERY_MAX_TOP_K,
+        )
+
+        _, mock_index, store = create_mock_pinecone_store()
+        mock_index.describe_index_stats.return_value = MagicMock(dimension=4)
+        # 상한과 동일한 개수의 match (dict 형태 — SDK 응답 형태 차이 흡수 검증 겸용)
+        query_response = MagicMock()
+        query_response.matches = [
+            {"id": f"id-{i}", "metadata": {"content": "c", "document_id": "doc-1"}}
+            for i in range(PINECONE_QUERY_MAX_TOP_K)
+        ]
+        mock_index.query.return_value = query_response
+
+        with patch(
+            "app.infrastructure.storage.vector.pinecone_store.logger"
+        ) as mock_logger:
+            results = await store.fetch_objects(
+                collection="ns", filters={"document_id": "doc-1"}
+            )
+
+        assert len(results) == PINECONE_QUERY_MAX_TOP_K
+        # 잘림 가능성 경고가 기록되어야 함
+        assert mock_logger.warning.called
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_by_ids_with_metadata_filter_keeps_memory_filtering(
+        self,
+    ) -> None:
+        """id/ids 경로는 기존대로 fetch 후 메모리 필터링을 유지한다"""
+        _, mock_index, store = create_mock_pinecone_store()
         fetch_response = MagicMock()
         fetch_response.vectors = {
             "id-1": self._make_vector("id-1", {"content": "a", "document_id": "doc-1"}),
@@ -390,9 +493,13 @@ class TestPineconeVectorStoreFetchObjects:
         mock_index.fetch.return_value = fetch_response
 
         results = await store.fetch_objects(
-            collection="ns", filters={"document_id": "doc-1"}
+            collection="ns",
+            filters={"ids": ["id-1", "id-2"], "document_id": "doc-1"},
         )
 
+        # 서버측 쿼리/전수 스캔 없이 fetch 직접 조회 경로 유지
+        mock_index.query.assert_not_called()
+        mock_index.list_paginated.assert_not_called()
         assert len(results) == 1
         assert results[0]["_id"] == "id-1"
 

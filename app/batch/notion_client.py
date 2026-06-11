@@ -198,6 +198,19 @@ class NotionAPIClient:
         # httpx 비동기 클라이언트
         self._client: httpx.AsyncClient | None = None
 
+        # 재시도 정책을 요청마다 재생성하지 않도록 인스턴스 레벨로 1회 구성.
+        # frozen RetryPolicy와 tenacity wait 객체(_NotionBackoffWait 내부 포함)는
+        # 상태가 없어(stateless) 재사용해도 안전하며, 상태를 가지는 AsyncRetrying은
+        # _request_with_backoff에서 호출마다 build_async_retrying()으로 새로 만듭니다.
+        self._retry_policy = RetryPolicy(
+            retry_exceptions=(NotionRateLimitError, httpx.TimeoutException),
+            max_attempts=self.MAX_RETRIES,
+            reraise=False,  # 소진 시 RetryError로 감싸 _request_with_backoff에서 통일 변환
+            wait_override=_NotionBackoffWait(
+                base_delay=self.BASE_DELAY, jitter=self.BACKOFF_JITTER
+            ),
+        )
+
         logger.info("✅ NotionAPIClient 초기화 완료")
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -292,14 +305,9 @@ class NotionAPIClient:
         # RetryPolicy 재시도: 429(NotionRateLimitError)와 timeout만 재시도 대상.
         # 그 외 예외(Auth/NotFound/API/Value)는 retry 조건에 걸리지 않아 즉시 전파됩니다.
         # 예외 타입별 백오프 분기는 wait_override로 커스텀 wait를 주입해 표현합니다.
-        retrying = RetryPolicy(
-            retry_exceptions=(NotionRateLimitError, httpx.TimeoutException),
-            max_attempts=self.MAX_RETRIES,
-            reraise=False,  # 소진 시 RetryError로 감싸 아래에서 통일 변환
-            wait_override=_NotionBackoffWait(
-                base_delay=self.BASE_DELAY, jitter=self.BACKOFF_JITTER
-            ),
-        ).build_async_retrying()
+        # 정책 자체(__init__에서 1회 구성)는 stateless이므로 재사용하고,
+        # 상태를 가지는 AsyncRetrying만 요청마다 새로 생성합니다.
+        retrying = self._retry_policy.build_async_retrying()
         try:
             async for attempt in retrying:
                 with attempt:
