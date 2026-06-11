@@ -10,12 +10,17 @@ DI 컨테이너 배선 통합 테스트 (Phase 2.2 / Phase 0.3)
 
 from __future__ import annotations
 
+import pytest
 from dependency_injector import providers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.di_container import AppContainer
 from app.lib.config_loader import load_config
+
+# integration 마커: 기본 CI test 잡은 tests/integration을 ignore하므로
+# 별도 P0 회귀 스텝(ci.yml) 또는 `-m integration`으로 실행된다.
+pytestmark = pytest.mark.integration
 
 
 class FakeConnector:

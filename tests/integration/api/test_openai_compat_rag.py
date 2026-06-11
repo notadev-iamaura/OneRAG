@@ -20,6 +20,10 @@ from fastapi.testclient import TestClient
 from app.api.routers import openai_compat_router
 from app.modules.core.retrieval.interfaces import SearchResult
 
+# integration 마커: 기본 CI test 잡은 tests/integration을 ignore하므로
+# 별도 P0 회귀 스텝(ci.yml) 또는 `-m integration`으로 실행된다.
+pytestmark = pytest.mark.integration
+
 
 class FakeRetriever:
     """RetrievalOrchestrator.search(query, options)와 동일한 시그니처 stub."""

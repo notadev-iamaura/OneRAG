@@ -160,6 +160,13 @@ jobs:
       - name: Run Tests with Coverage
         run: uv run pytest -p pytest_cov --cov=app --cov-report=html --cov-report=xml --tb=short -q --timeout=60 --ignore=tests/integration
 
+      # P0 회귀 테스트: DI 컨테이너 배선 / async Singleton Future 해소 / OpenAI 호환 RAG 검색.
+      # 기본 테스트 스텝이 tests/integration을 ignore하고, verify 스크립트는 -m integration으로
+      # deselect되어 어떤 게이트에서도 실행되지 않던 결함을 막기 위해 명시적으로 실행한다.
+      # 세 테스트 모두 외부 서비스(docker/Weaviate) 없이 ENVIRONMENT=test로 통과한다.
+      - name: Run wiring regression tests (P0)
+        run: uv run pytest tests/integration/api/test_container_wiring.py tests/integration/api/test_openai_compat_rag.py tests/integration/api/test_grok_agent_wiring.py -q --timeout=60
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v7
