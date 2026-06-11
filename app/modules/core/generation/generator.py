@@ -51,6 +51,21 @@ NO_DOCUMENTS_MESSAGE = (
 DEFAULT_CONTEXT_DOCUMENT_LIMIT = 5
 MAX_CONTEXT_DOCUMENT_LIMIT = 20
 
+# ========================================
+# 스트리밍 PII 마스킹 버퍼 정책 상수
+# ========================================
+# 버퍼가 이 길이 이상 쌓이면 안전한 분할점을 찾아 emit을 시도한다 (기존 임계 80 유지)
+_PII_SOFT_FLUSH = 80
+# 경계 스패닝 lookahead 패턴 보호용 보류 꼬리.
+# 한국어 이름 패턴 `([가-힣]{2,4})(?=\s*(고객님|담당자님|...))`은 공백을 가로질러
+# lookahead하므로, 접미사가 아직 도착하지 않은 이름이 emit되면 마스킹이 불발된다.
+# 경계 스패닝 패턴의 최대 폭(이름 4자 + \s* + 접미사 등)을 덮도록 32자로 설정하며,
+# 스트림 종료 전까지 버퍼의 마지막 32자는 emit하지 않는다.
+_PII_HOLDBACK = 32
+# 공백이 전혀 없어도(일본어/중국어, 코드블록, 긴 URL) 토큰 중간 강제 분할하는 상한.
+# 공백 경계만 기다리다 스트리밍이 정지하거나 버퍼가 무한 증가하는 것을 방지한다.
+_PII_HARD_CAP = 512
+
 
 class Stats(TypedDict):
     """GenerationModule 통계 타입"""
@@ -900,7 +915,7 @@ class GenerationModule:
         self.stats["total_generations"] += 1
 
         # PII 마스킹 버퍼: 청크 경계에 걸친 PII(예: '010-1234'/'-5678'로 쪼개진
-        # 전화번호)가 정규식을 우회하지 않도록, 누적 후 안전한 경계(공백)에서
+        # 전화번호)가 정규식을 우회하지 않도록, 누적 후 안전한 분할점에서
         # 마스킹하여 PII가 한 emit 안에 완성되도록 한다.
         masking_active = self._privacy_enabled and self.privacy_masker is not None
         pii_buffer = ""
@@ -913,6 +928,66 @@ class GenerationModule:
                 logger.warning(f"스트리밍 마스킹 실패: {e}")
                 return text
 
+        def _drain_pii_buffer(buffer: str) -> tuple[list[str], str]:
+            """
+            버퍼에서 안전하게 emit 가능한 조각들을 분리한다.
+
+            안전성 논거:
+            - 경계 스패닝 lookahead(이름 + \\s* + 접미사)는 HOLDBACK 보류가 방어한다.
+              접미사가 아직 도착하지 않은 이름은 항상 버퍼의 마지막 _PII_HOLDBACK자
+              안에 있으므로 emit되지 않는다.
+            - 토큰 중간 강제 분할(HARD_CAP)은 등식 검사가 방어한다.
+              mask(prefix) + mask(suffix) == mask(전체)가 성립하지 않으면
+              (분할이 마스킹 결과를 바꾸면) 해당 분할점에서는 emit하지 않는다.
+            - 한계: 이름과 접미사 사이 공백(\\s*)이 HOLDBACK(32자)을 초과하는
+              병리적 케이스는 보류 꼬리가 덮지 못한다.
+
+            Args:
+                buffer: 누적된 미마스킹 원본 버퍼
+
+            Returns:
+                (emit할 마스킹된 조각 목록, 남은 버퍼)
+            """
+            pieces: list[str] = []
+            while len(buffer) >= _PII_SOFT_FLUSH:
+                # 보류 꼬리(HOLDBACK)를 제외한 영역에서만 분할점을 찾는다
+                limit = len(buffer) - _PII_HOLDBACK
+                if limit <= 0:
+                    break  # 보류 꼬리 확보 불가 → 다음 청크 대기
+
+                # 분할 후보: 마지막 공백(자연 경계) 우선, 앞쪽 공백 후퇴 재시도 2회 포함
+                candidates: list[int] = []
+                space_idx = buffer.rfind(" ", 0, limit)
+                while space_idx > 0 and len(candidates) < 3:
+                    candidates.append(space_idx)
+                    space_idx = buffer.rfind(" ", 0, space_idx)
+                # 공백 후보가 전혀 없고 HARD_CAP 이상이면 토큰 중간 강제 분할
+                if not candidates and len(buffer) >= _PII_HARD_CAP:
+                    candidates.append(limit)
+
+                full_masked = _mask(buffer)
+                chosen = -1
+                for split_at in candidates:
+                    # 분할 안전성 검사: 분할이 마스킹 결과를 바꾸지 않아야 emit 가능
+                    if _mask(buffer[:split_at]) + _mask(buffer[split_at:]) == full_masked:
+                        chosen = split_at
+                        break
+
+                if chosen > 0:
+                    pieces.append(_mask(buffer[:chosen]))
+                    buffer = buffer[chosen:]
+                    continue
+
+                # 안전 분할점 없음
+                if len(buffer) >= _PII_HARD_CAP * 2:
+                    # 트레이드오프: PII 누출 0을 보장하기 위해 버퍼 전체를 한 번에
+                    # 마스킹하여 emit한다. 순간적으로 큰 청크가 전달되지만,
+                    # 무한 버퍼 증가와 스트리밍 정지는 방지된다.
+                    pieces.append(_mask(buffer))
+                    buffer = ""
+                break  # 다음 청크 대기
+            return pieces, buffer
+
         # 청크 단위로 yield
         async for chunk in self._iterate_stream_chunks(stream):
             if chunk.choices and len(chunk.choices) > 0:
@@ -923,13 +998,10 @@ class GenerationModule:
 
                     if masking_active:
                         pii_buffer += content
-                        # 충분히 쌓이면 마지막 공백 경계까지 마스킹 후 emit
-                        if len(pii_buffer) >= 80:
-                            split_idx = pii_buffer.rfind(" ")
-                            if split_idx > 0:
-                                emit = pii_buffer[:split_idx]
-                                pii_buffer = pii_buffer[split_idx:]
-                                yield _mask(emit)
+                        # 안전한 분할점까지 마스킹 후 emit (보류 꼬리는 버퍼에 유지)
+                        emit_pieces, pii_buffer = _drain_pii_buffer(pii_buffer)
+                        for piece in emit_pieces:
+                            yield piece
                     else:
                         yield content
 
