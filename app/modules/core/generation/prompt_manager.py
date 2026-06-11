@@ -54,7 +54,7 @@ class PromptManager:
         storage_path: str = "./data/prompts",
         repository: PromptRepository | None = None,
         use_database: bool = True,
-        cache_ttl: float = 60.0,
+        cache_ttl: float | None = 60.0,
     ):
         """
         프롬프트 매니저 초기화 (Hybrid Mode)
@@ -64,6 +64,7 @@ class PromptManager:
             repository: PostgreSQL PromptRepository 인스턴스 (선택적, DI Container에서 주입)
             use_database: PostgreSQL 사용 여부 (기본값: True)
             cache_ttl: 프롬프트 내용 캐시 TTL(초). 0이면 캐시 비활성. (기본값: 60)
+                None이 전달되면 기본 60초로 동작한다 (DI 누락 키 방어).
         """
         # PostgreSQL Repository (Primary)
         self.use_database = use_database
@@ -79,7 +80,15 @@ class PromptManager:
         #    문제없으나, 멀티워커로 전환하면 PostgreSQL LISTEN/NOTIFY로 무효화를 전
         #    워커에 전파(Level 3)하고 cache_ttl을 짧게(또는 0) 두는 것을 검토해야 한다.
         self._content_cache: dict[str, tuple[float, str]] = {}
-        self._cache_ttl = cache_ttl
+        # None 방어: DI 컨테이너는 config.prompts.cache_ttl을 그대로 넘기는데,
+        # dependency-injector는 config에 키가 누락되면 None을 반환하는 특성이 있다.
+        # 출하 config에는 키가 있어 현재는 발현하지 않지만, 키 누락 시에도
+        # TypeError 없이 기본 60초로 동작하도록 방어한다.
+        self._cache_ttl: float = cache_ttl if cache_ttl is not None else 60.0
+        # 캐시 버전 카운터: 무효화마다 +1 된다. get_prompt_content가 DB await 중
+        # 이벤트 루프에 양보된 사이 쓰기가 끼어들면 버전이 달라져, 무효화 이전
+        # 시점의 옛 내용(stale)을 새 TTL로 재캐시하는 것을 막는다.
+        self._cache_version: int = 0
 
         # JSON Fallback 설정
         self.storage_path = Path(storage_path)
@@ -333,6 +342,9 @@ class PromptManager:
         전체를 비운다 (다음 조회 시 DB에서 최신값을 다시 캐시).
         """
         self._content_cache.clear()
+        # 버전 증가: 진행 중인 읽기(get_prompt_content)가 이 무효화 이전에 시작한
+        # DB 조회 결과를 캐시에 재기록(stale 재캐시)하지 못하게 한다.
+        self._cache_version += 1
 
     async def get_prompt_content(self, name: str, default: str | None = None) -> str:
         """
@@ -354,11 +366,17 @@ class PromptManager:
             if cached is not None and cached[0] > time.time():
                 return cached[1]
 
+        # DB 읽기 시작 전 캐시 버전을 캡처한다. 아래 await 중 이벤트 루프에
+        # 양보된 사이 쓰기(update_prompt 등)가 커밋+무효화하면 버전이 달라지므로,
+        # 그 경우 옛 내용(stale)을 새 TTL로 재캐시하지 않는다 (결과 반환은 수행).
+        # asyncio는 단일 스레드라 버전 비교~캐시 기록 사이에 양보 지점이 없어
+        # 락 없이도 원자적으로 동작한다.
+        version_before_read = self._cache_version
         prompt = await self.get_prompt(name=name)
         if prompt and prompt.is_active:
             # 활성 프롬프트만 캐시한다 (비활성/없음은 default 폴백이라 캐시 안 함)
             content: str = prompt.content
-            if self._cache_ttl > 0:
+            if self._cache_ttl > 0 and self._cache_version == version_before_read:
                 self._content_cache[name] = (time.time() + self._cache_ttl, content)
             return content
         return default or ""
