@@ -24,8 +24,15 @@ reranking:
   # ========================================
   # 기본 설정
   # ========================================
-  approach: "late-interaction"  # llm | cross-encoder | late-interaction | local
-  provider: "jina"              # approach에 따라 유효한 provider 선택
+  # 출하 기본값: GOOGLE_API_KEY만으로 동작하는 조합 (quickstart 호환)
+  # GOOGLE_API_KEY 부재 시에도 graceful degradation으로 리랭킹 없이 동작합니다.
+  approach: "llm"     # llm | cross-encoder | late-interaction | local
+  provider: "google"  # approach에 따라 유효한 provider 선택
+
+  # (선택) 더 빠른 토큰 레벨 리랭킹을 원하면 아래 조합으로 변경하세요.
+  # 단, JINA_API_KEY 환경변수가 반드시 필요합니다 (https://jina.ai/).
+  # approach: "late-interaction"
+  # provider: "jina"
 
   # ========================================
   # Provider별 설정

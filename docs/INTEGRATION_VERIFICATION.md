@@ -49,8 +49,14 @@ make verify-integration
 1. `docker-compose.verify.yml`로 **Weaviate + PostgreSQL**를 기동하고 healthy까지 대기
 2. optional provider 게이트(`ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1`)를 켜고
    PII detector·로컬 임베더 단위 테스트 실행
-3. `WEAVIATE_URL`·`DATABASE_URL`을 주입하고 `pytest tests/integration -m integration` 실행
-4. 종료 시 서비스 정리 (`KEEP_SERVICES=1`로 유지 가능)
+3. `WEAVIATE_URL`·`WEAVIATE_GRPC_PORT`·`DATABASE_URL`을 주입하고
+   `pytest tests/integration -m integration` 실행
+4. 종료 시 서비스·볼륨 정리 (`down -v` — 매 실행 깨끗한 상태 보장,
+   `KEEP_SERVICES=1`로 유지 가능)
+
+> 검증 스택은 dev 스택(`make start`)과 동시 실행이 가능하도록 호스트 포트를
+> 리맵했다: Weaviate HTTP `8081`, gRPC `50052`, PostgreSQL `55432`.
+> `restart: "no"` 정책이라 Docker 데몬 재시작 시 부활하지 않는다.
 
 ### 수동 (디버깅)
 
@@ -58,10 +64,11 @@ make verify-integration
 # 서비스만 기동
 docker compose -f docker-compose.verify.yml up -d --wait
 
-# 환경변수 게이트
+# 환경변수 게이트 (verify 스택은 dev 스택과 다른 포트 사용)
 export ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1
-export WEAVIATE_URL=http://localhost:8080
-export DATABASE_URL=postgresql://onerag:onerag-verify@localhost:5432/rag_db
+export WEAVIATE_URL=http://localhost:8081
+export WEAVIATE_GRPC_PORT=50052
+export DATABASE_URL=postgresql://onerag:onerag-verify@localhost:55432/rag_db
 export ENVIRONMENT=test
 
 # 부분 실행 예시
@@ -77,8 +84,9 @@ docker compose -f docker-compose.verify.yml down -v
 | 변수 | 용도 |
 |---|---|
 | `ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1` | spaCy/sentence-transformers 등 무거운 optional 테스트 활성화 (기본 비활성) |
-| `WEAVIATE_URL` | Weaviate 연결 (기본 `http://localhost:8080`) |
-| `DATABASE_URL` | PostgreSQL 연결 (`postgresql://onerag:onerag-verify@localhost:5432/rag_db`) |
+| `WEAVIATE_URL` | Weaviate 연결 (verify 스택 기본 `http://localhost:8081`) |
+| `WEAVIATE_GRPC_PORT` | Weaviate gRPC 포트 (verify 스택 기본 `50052`) |
+| `DATABASE_URL` | PostgreSQL 연결 (verify 스택 기본 `postgresql://onerag:onerag-verify@localhost:55432/rag_db`) |
 | `NEO4J_URI` | (선택) Neo4j GraphRAG 테스트. 미설정 시 skip |
 
 ## Neo4j (선택)
