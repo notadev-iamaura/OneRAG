@@ -87,6 +87,13 @@ from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
 
+# DI wiring 대상 패키지 목록 (패키지 단위 자동 wiring)
+# 신규 라우터가 Provide[]/@inject 를 써도 자동 wiring — 수동 모듈 열거 금지.
+# 과거 wire(modules=[...]) 수동 열거 방식에서 app.api.ingest 가 누락되어
+# 엔드포인트가 raw Provide 마커를 주입받아 프로덕션 500 을 낸 결함이 있었다.
+# 완전성은 tests/unit/architecture/test_wiring_completeness.py 가 검증한다.
+WIRED_PACKAGES: list[str] = ["app.api"]
+
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
@@ -414,8 +421,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Phase 2.2: monitoring/prompts에 공유 컨테이너 주입 (새 AppContainer 생성 방지)
         monitoring.set_container(rag_app.container)
         prompts.set_container(rag_app.container)
-        # Phase 2.2: ingest 라우터의 Provide[] 마커 해소 (wire 미호출 시 500)
-        rag_app.container.wire(modules=["app.api.ingest"])
+        # P2 구조 개선: 패키지 단위 wiring — WIRED_PACKAGES 하위 전 모듈의
+        # Provide[]/@inject 마커를 일괄 해소한다 (wire 미호출 시 500).
+        # 개별 모듈 수동 열거는 신규 라우터 누락 결함의 재발 경로이므로 금지.
+        rag_app.container.wire(packages=WIRED_PACKAGES)
         # Phase 1-3 개선: retrieval 모듈을 health API에 전달
         health.set_retrieval_module(modules_dict["retrieval"])
         health.set_startup_state(True, "ready", {"modules": "initialized"})
