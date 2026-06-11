@@ -95,6 +95,33 @@ and fixed three more issues:
 All 14 open Dependabot PRs (#50–#68) were also verified and merged; the combined
 `main` CI (including the new gate) is green.
 
+### Structural hardening (PR #80–#81)
+
+A second xhigh review confirmed 15 defects; PR #80 fixed the P0/P1 set (metrics
+self-deadlock, DI async-Singleton Future unwrapping for `/v1`/agent, streaming
+PII buffer, circuit-breaker HALF_OPEN accounting, pgvector filter-key SQL
+parameterization, blocking `fetch_objects`, inline conversation persistence,
+WS server-confirmed session id, shipped reranker default back to `google`).
+PR #81 then attacked the recurrence mechanisms themselves:
+
+- **Config liveness guard**: every `app/config/features/*.yaml` must be in
+  `base.yaml` imports (explicit allowlist with reasons) and every imported
+  yaml's top-level section must survive `load_config()` — replaces the stale
+  hardcoded 3-section check. `tools.yaml`/`mcp` dead-config fixed (agent
+  `output_language` now actually loads).
+- **Wiring completeness**: `container.wire(packages=WIRED_PACKAGES)` replaces
+  the hand-maintained module list; an AST-based guard test fails if any module
+  uses `Provide[]`/`@inject` outside the wired packages.
+- **Single source of truth for optional-provider tests**: the CI job runs the
+  whole `tests/unit` tree with `ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1` instead
+  of duplicating the conftest path list; real-model tests self-declare via
+  `ONERAG_RUN_REAL_MODEL_TESTS` (and `make verify-integration` now actually
+  runs them).
+- **RetryPolicy adopted**: the three hand-rolled tenacity wait implementations
+  (notion, llm_enricher, sitemap) and the demo cleanup-loop backoff now route
+  through `app/lib/retry.py`; the LINEAR increment default matches its
+  documented `initial*(attempt+1)` equivalence.
+
 ## Verification: Static Gates + Integration
 
 ### Static gates (every PR, fast, no external deps)
