@@ -8,11 +8,11 @@ NetworkX 기반 인메모리 그래프 저장소
 - 빠른 그래프 연산 (NetworkX 최적화)
 """
 import logging
-import math
 from collections import deque
 from collections.abc import Iterator
 from typing import Any, Literal, overload
 
+from ...embedding.vector_ops import l2_norm
 from ..interfaces import IGraphStore
 from ..models import Entity, GraphSearchResult, Relation
 
@@ -91,8 +91,9 @@ def _cosine_similarity(vector_a: list[float], vector_b: list[float]) -> float:
         return 0.0
 
     dot_product = sum(a * b for a, b in zip(vector_a, vector_b, strict=True))
-    norm_a = math.sqrt(sum(a * a for a in vector_a))
-    norm_b = math.sqrt(sum(b * b for b in vector_b))
+    # 공용 벡터 연산 헬퍼로 L2 노름 계산 (임베더들과 동일 패턴)
+    norm_a = l2_norm(vector_a)
+    norm_b = l2_norm(vector_b)
 
     return dot_product / (norm_a * norm_b) if norm_a > 0 and norm_b > 0 else 0.0
 

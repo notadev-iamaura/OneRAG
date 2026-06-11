@@ -349,6 +349,31 @@ class GenerationModule:
         self.client = None
         logger.info("GenerationModule 종료 완료")
 
+    def _build_fallback_model_chain(self, requested_model: str) -> list[str]:
+        """요청 모델과 fallback 모델을 결합해 시도할 모델 체인을 구성한다.
+
+        auto_fallback이 켜진 경우:
+        - 요청 모델이 fallback 리스트에 있으면 그 이후 모델들만 추가
+        - 요청 모델이 리스트에 없으면 전체 fallback 리스트 추가
+        중복은 순서를 보존하며 제거한다.
+
+        Args:
+            requested_model: 사용자가 요청한(또는 기본) 모델 이름
+
+        Returns:
+            시도 순서가 보존된 중복 없는 모델 이름 리스트
+        """
+        models_to_try = [requested_model]
+        if self.auto_fallback:
+            if requested_model in self.fallback_models:
+                idx = self.fallback_models.index(requested_model)
+                models_to_try.extend(self.fallback_models[idx + 1 :])
+            else:
+                models_to_try.extend(self.fallback_models)
+
+        # 중복 제거 (순서 유지)
+        return list(dict.fromkeys(models_to_try))
+
     async def generate_answer(
         self, query: str, context_documents: list[Any], options: dict[str, Any] | None = None
     ) -> GenerationResult:
@@ -388,25 +413,8 @@ class GenerationModule:
         # 모델 결정 (옵션 > 기본값)
         requested_model = options.get("model", self.default_model)
 
-        # Fallback 모델 리스트 구성
-        models_to_try = [requested_model]
-        if self.auto_fallback:
-            # 요청 모델이 fallback 리스트에 있으면 그 이후 모델들 추가
-            if requested_model in self.fallback_models:
-                idx = self.fallback_models.index(requested_model)
-                models_to_try.extend(self.fallback_models[idx + 1 :])
-            else:
-                # 요청 모델이 리스트에 없으면 전체 fallback 리스트 추가
-                models_to_try.extend(self.fallback_models)
-
-        # 중복 제거 (순서 유지)
-        seen: set[str] = set()
-        unique_models = []
-        for m in models_to_try:
-            if m not in seen:
-                seen.add(m)
-                unique_models.append(m)
-        models_to_try = unique_models
+        # Fallback 모델 체인 구성 (요청 모델 + fallback, 순서 보존 dedup)
+        models_to_try = self._build_fallback_model_chain(requested_model)
 
         last_error = None
 
@@ -842,21 +850,7 @@ class GenerationModule:
         # 모델 결정 (fallback 포함) — 비스트리밍 generate_answer와 동일하게
         # 스트림 시작(첫 청크) 전 실패 시 다음 모델로 전환한다.
         requested_model = options.get("model", self.default_model)
-        models_to_try = [requested_model]
-        if self.auto_fallback:
-            if requested_model in self.fallback_models:
-                idx = self.fallback_models.index(requested_model)
-                models_to_try.extend(self.fallback_models[idx + 1 :])
-            else:
-                models_to_try.extend(self.fallback_models)
-        # 중복 제거 (순서 유지)
-        seen_models: set[str] = set()
-        unique_models: list[str] = []
-        for m in models_to_try:
-            if m not in seen_models:
-                seen_models.add(m)
-                unique_models.append(m)
-        models_to_try = unique_models
+        models_to_try = self._build_fallback_model_chain(requested_model)
 
         messages = [
             {"role": "system", "content": system_content},

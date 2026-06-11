@@ -69,9 +69,6 @@ def build_reflector_system_prompt(output_language: str = "한국어") -> str:
     )
 
 
-# 하위 호환: 한국어 기본 시스템 프롬프트(기존 상수명 유지)
-REFLECTOR_SYSTEM_PROMPT = build_reflector_system_prompt("한국어")
-
 REFLECTOR_USER_PROMPT = """## 원본 질문:
 {query}
 
