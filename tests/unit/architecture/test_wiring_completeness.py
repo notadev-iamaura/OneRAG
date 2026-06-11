@@ -14,8 +14,13 @@ DI wiring 완전성 가드 테스트 (P2 구조 개선)
 검사 방식:
     - 무거운 모듈 import 를 피하기 위해 파일 시스템 스캔 + AST 분석만 사용한다
       (main.py 나 app.* 모듈을 import 하지 않음).
-    - 주석/문자열 내 "Provide[" 텍스트에 오탐하지 않도록 AST 의 import 구문을
-      기준으로 wiring 의존 모듈을 판별한다.
+    - 1차: AST 의 import 구문 기준으로 wiring 의존 모듈을 판별한다.
+    - 2차(보수적 텍스트 폴백): `import dependency_injector` 후 속성 접근
+      (dependency_injector.wiring.Provide[...]) 스타일은 AST import 검사가
+      놓치므로, 주석을 제외한 소스 텍스트에 "Provide[" / "wiring.inject" 가
+      보이면 소비자로 간주한다. 문자열 리터럴 오탐 가능성은 감수한다 —
+      wire 범위(WIRED_PACKAGES) 안이면 어차피 통과하고, 범위 밖이면
+      사람이 확인하도록 실패시키는 편이 조용한 누락보다 안전하다.
 """
 
 from __future__ import annotations
@@ -33,6 +38,9 @@ APP_DIR = REPO_ROOT / "app"
 # dependency_injector wiring 마커로 간주하는 import 대상
 WIRING_MODULE = "dependency_injector.wiring"
 WIRING_MARKER_NAMES = {"Provide", "Provider", "inject"}
+
+# 텍스트 폴백 마커: 속성 접근 스타일(wiring.Provide[...]) 사용 흔적
+_TEXT_WIRING_MARKERS = ("Provide[", "wiring.inject")
 
 
 def _imports_wiring_markers(tree: ast.Module) -> bool:
@@ -81,20 +89,46 @@ def _path_to_module(py_file: Path) -> str:
     return ".".join(parts)
 
 
+def _has_textual_wiring_marker(source: str) -> bool:
+    """주석을 제외한 소스 라인에서 wiring 마커 텍스트 사용 흔적을 찾습니다.
+
+    `import dependency_injector` 후 속성 접근(...wiring.Provide[...]) 스타일은
+    AST import 검사(_imports_wiring_markers)가 놓치므로 보수적 텍스트 폴백으로
+    보강한다. 라인 단위로 `#` 이후(주석)를 잘라낸 뒤 검색하므로 설명 주석
+    (main.py 의 WIRED_PACKAGES 주석 등)에는 오탐하지 않는다. 문자열 리터럴
+    내 마커는 오탐 가능하지만, covered 검사에서 걸러진다(모듈 docstring 참고).
+
+    Args:
+        source: 대상 모듈의 소스 텍스트
+
+    Returns:
+        주석 제외 코드 텍스트에 마커가 있으면 True
+    """
+    for line in source.splitlines():
+        code_part = line.split("#", 1)[0]
+        if any(marker in code_part for marker in _TEXT_WIRING_MARKERS):
+            return True
+    return False
+
+
 def _collect_wiring_consumer_modules() -> set[str]:
     """app/ 패키지와 main.py 에서 wiring 마커를 사용하는 모듈을 전수 수집합니다.
 
+    AST import 검사와 텍스트 폴백(_has_textual_wiring_marker) 중 하나라도
+    걸리면 소비자로 간주한다 (미탐지로 인한 조용한 wiring 누락 방지).
+
     Returns:
-        wiring 마커(Provide/@inject)를 import 하는 모듈 경로 집합
+        wiring 마커(Provide/@inject)를 사용하는 모듈 경로 집합
     """
     consumers: set[str] = set()
     candidates = sorted(APP_DIR.rglob("*.py")) + [MAIN_PY]
     for py_file in candidates:
+        source = py_file.read_text(encoding="utf-8")
         try:
-            tree = ast.parse(py_file.read_text(encoding="utf-8"))
+            tree = ast.parse(source)
         except SyntaxError as exc:  # 파싱 불가 파일은 가드가 침묵하면 안 됨
             pytest.fail(f"{py_file} AST 파싱 실패: {exc}")
-        if _imports_wiring_markers(tree):
+        if _imports_wiring_markers(tree) or _has_textual_wiring_marker(source):
             consumers.add(_path_to_module(py_file))
     return consumers
 
@@ -126,15 +160,11 @@ def _load_wired_packages() -> list[str]:
                 try:
                     packages = ast.literal_eval(value)
                 except ValueError:
-                    pytest.fail(
-                        "main.py 의 WIRED_PACKAGES 는 정적 리터럴 리스트여야 합니다."
-                    )
+                    pytest.fail("main.py 의 WIRED_PACKAGES 는 정적 리터럴 리스트여야 합니다.")
                 if not isinstance(packages, list) or not all(
                     isinstance(pkg, str) for pkg in packages
                 ):
-                    pytest.fail(
-                        "main.py 의 WIRED_PACKAGES 는 list[str] 이어야 합니다."
-                    )
+                    pytest.fail("main.py 의 WIRED_PACKAGES 는 list[str] 이어야 합니다.")
                 return packages
     pytest.fail(
         "main.py 에 WIRED_PACKAGES 상수가 없습니다. "
@@ -201,6 +231,69 @@ class TestWiringCompleteness:
             "탐지 로직 회귀 여부를 확인하십시오."
         )
 
+    def test_text_fallback_detects_attribute_access_style(self) -> None:
+        """`import dependency_injector` + 속성 접근 스타일도 소비자로 탐지해야 한다.
+
+        AST import 검사는 `dependency_injector.wiring.Provide[...]` 스타일을
+        놓친다(import 구문에 wiring 이 등장하지 않음). 텍스트 폴백이 이 구멍을
+        메우는지 자기 검증한다.
+        """
+        source = (
+            "import dependency_injector\n"
+            "def handler(svc=dependency_injector.wiring.Provide['svc']):\n"
+            "    return svc\n"
+        )
+        # 전제: AST 검사 단독으로는 미탐지 (이 구멍이 사라지면 폴백 재평가 가능)
+        assert not _imports_wiring_markers(ast.parse(source)), (
+            "AST 검사가 속성 접근 스타일을 탐지하게 됐습니다 — "
+            "텍스트 폴백 유지 필요 여부를 재평가하십시오."
+        )
+        assert _has_textual_wiring_marker(source), (
+            "텍스트 폴백이 속성 접근 스타일(wiring.Provide[...])을 탐지하지 못했습니다."
+        )
+
+    def test_text_fallback_ignores_comment_only_mentions(self) -> None:
+        """주석 속 'Provide[' 언급(main.py 의 설명 주석 등)은 오탐하지 않아야 한다."""
+        source = (
+            "# 신규 라우터가 Provide[]/@inject 를 써도 자동 wiring\n"
+            "WIRED_PACKAGES: list[str] = ['app.api']\n"
+        )
+        assert not _has_textual_wiring_marker(source), (
+            "텍스트 폴백이 주석 내 마커 언급에 오탐했습니다 — 주석 제거 로직을 확인하십시오."
+        )
+
+    def test_wired_packages_contain_no_implicit_namespace_dirs(self) -> None:
+        """wired 패키지 하위에서 .py 를 담는 모든 디렉토리에 __init__.py 가 있어야 한다.
+
+        dependency-injector 의 wire(packages=...) 는 pkgutil.walk_packages 기반이라
+        __init__.py 없는 디렉토리(implicit namespace package)는 순회하지 않는다.
+        반면 이 가드의 _is_covered 는 문자열 prefix 매칭이므로, namespace
+        디렉토리가 생기면 '커버됨'으로 오판한 채 실제 wiring 은 누락된다
+        (조용한 프로덕션 500). 그 불일치를 구조적으로 차단한다.
+        """
+        packages = _load_wired_packages()
+        missing: set[str] = set()
+        for pkg in packages:
+            pkg_dir = REPO_ROOT.joinpath(*pkg.split("."))
+            assert pkg_dir.is_dir(), (
+                f"WIRED_PACKAGES 항목 '{pkg}' 에 해당하는 디렉토리가 없습니다: {pkg_dir}"
+            )
+            for py_file in sorted(pkg_dir.rglob("*.py")):
+                # pkg 루트부터 .py 파일까지 경로상의 모든 디렉토리가 정규 패키지여야 한다
+                directory = py_file.parent
+                while True:
+                    if not (directory / "__init__.py").exists():
+                        missing.add(str(directory.relative_to(REPO_ROOT)))
+                    if directory == pkg_dir:
+                        break
+                    directory = directory.parent
+        assert not missing, (
+            f"다음 디렉토리에 __init__.py 가 없습니다 (implicit namespace): "
+            f"{sorted(missing)}. dependency-injector 의 walk_packages 는 이런 "
+            "디렉토리를 순회하지 않으므로 하위 모듈의 Provide/@inject 가 "
+            "wire 되지 않은 채 배포됩니다. __init__.py 를 추가하십시오."
+        )
+
     def test_all_wiring_consumers_covered_by_wired_packages(self) -> None:
         """Provide/@inject 를 사용하는 모든 모듈이 WIRED_PACKAGES 하위여야 한다.
 
@@ -211,9 +304,7 @@ class TestWiringCompleteness:
         packages = _load_wired_packages()
         consumers = _collect_wiring_consumer_modules()
 
-        uncovered = sorted(
-            module for module in consumers if not _is_covered(module, packages)
-        )
+        uncovered = sorted(module for module in consumers if not _is_covered(module, packages))
         assert not uncovered, (
             "다음 모듈이 dependency_injector wiring 마커(Provide/@inject)를 "
             f"사용하지만 WIRED_PACKAGES{packages} 의 wire 범위 밖에 있습니다: "

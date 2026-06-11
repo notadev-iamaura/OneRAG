@@ -1,5 +1,12 @@
 # LLM 문서 보강 설정
 # 문서 로드 시 LLM을 사용하여 메타데이터를 자동 생성
+#
+# 소비자: app/modules/core/enrichment/services/enrichment_service.py
+#   - EnrichmentService._parse_enrichment_config → enabled, llm.*, batch.*,
+#     timeout.*, retry.max_attempts, cache.enabled, quality.*
+#   - EnrichmentService._get_openai_api_key      → llm.api_key (1순위)
+# 아래 기본값(환경변수 미설정 시)은 EnrichmentConfig 코드 기본값과 동일하다 —
+# import만으로 동작이 바뀌지 않으며, 환경변수/yaml 수정으로 운영자가 제어한다.
 
 enrichment:
   # 보강 기능 활성화 여부 (기본값: false - 추후 고도화 완료 후 true로 변경)
@@ -17,7 +24,10 @@ enrichment:
     max_tokens: ${ENRICHMENT_LLM_MAX_TOKENS:-1000}
 
     # API 키 (OpenAI API 키 재사용)
-    api_key: ${OPENAI_API_KEY}
+    # 주의: `:-` 기본값(빈 문자열)이 반드시 필요하다. `${OPENAI_API_KEY}` 형태는
+    # 환경변수 미설정 시 미치환 리터럴로 남아 truthy가 되고,
+    # _get_openai_api_key가 가짜 키를 반환해 폴백 체인(generation/llm)이 끊긴다.
+    api_key: ${OPENAI_API_KEY:-}
 
   # 배치 처리 설정
   batch:

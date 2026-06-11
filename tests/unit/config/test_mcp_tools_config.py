@@ -14,8 +14,9 @@ mcp/agent 데드 컨피그 회귀 테스트 (P2)
     - mcp.enabled        → di_container.create_mcp_server_instance 활성화 게이트 (기본 false)
     - mcp.agent.*        → AgentFactory.create_config
     - mcp.tools.<도구명> → 도구 구현(vector_search 등) 파라미터 조회
-    - tools 섹션은 mcp의 YAML 별칭 — ToolFactory가 tools 섹션을 우선 조회하므로
-      두 섹션 내용이 항상 동일해야 한다.
+    - ToolFactory도 mcp 섹션을 정본으로 우선 조회한다 (tools는 레거시 폴백).
+    - tools 섹션은 mcp의 YAML 별칭 — 레거시 외부 소비자 호환을 위해
+      출하 설정에서는 두 섹션 내용이 동일해야 한다.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from typing import Any
 
 import pytest
 
-from app.lib.config_loader import load_config
+from app.lib.config_loader import ConfigLoader, load_config
 from app.modules.core.agent.factory import AgentFactory
 from app.modules.core.tools.factory import ToolFactory
 
@@ -96,12 +97,45 @@ def test_tools_alias_is_synchronized_with_mcp(
 ) -> None:
     """레거시 tools 섹션은 mcp 섹션과 내용이 동일해야 한다.
 
-    ToolFactory는 tools 섹션을 우선 조회하고 di_container는 mcp.enabled를
-    조회하므로, 두 섹션이 갈라지면 활성화 판단이 분열(split-brain)된다.
+    ToolFactory는 mcp 섹션을 정본으로 읽지만, tools 섹션을 직접 읽는
+    레거시 외부 소비자와의 계약을 위해 출하 설정에서는 두 섹션 내용을
+    동일하게 유지한다.
     """
     assert loaded_config.get("tools") == loaded_config.get("mcp"), (
         "tools 섹션과 mcp 섹션 내용이 다릅니다. "
         "tools.yaml에서 tools는 mcp의 YAML 별칭(*alias)으로 유지하십시오."
+    )
+
+
+def test_mcp_only_env_override_activates_tool_factory(
+    loaded_config: dict[str, Any],
+) -> None:
+    """환경별 yaml이 mcp 섹션만 오버라이드해도 활성화가 일관돼야 한다.
+
+    차단하는 결함(split-brain):
+        tools 섹션은 mcp의 YAML 별칭이라 파일 로드 시점에만 동기화된다.
+        운영자가 environments/*.yaml에 `mcp: {enabled: true}`만 추가하면
+        병합 후 mcp는 새 dict, tools는 stale 별칭이 된다. 과거 ToolFactory가
+        tools 섹션을 우선 읽어 활성화가 조용히 실패했다(di_container의
+        mcp.enabled 게이트와 판단 분열). ToolFactory는 mcp를 정본으로
+        읽어야 하며, 이 테스트는 그 회귀를 차단한다.
+    """
+    # 환경별 오버라이드와 동일한 방식으로 합성 병합 (_merge_configs 사용)
+    base = copy.deepcopy(loaded_config)
+    merged = ConfigLoader()._merge_configs(base, {"mcp": {"enabled": True}})
+
+    # di_container.create_mcp_server_instance의 게이트 (mcp.enabled)
+    assert merged["mcp"]["enabled"] is True, "mcp.enabled 오버라이드가 병합에 반영돼야 합니다"
+    # stale 별칭 상태 재현 확인: tools는 여전히 비활성 (분열 상황 그 자체)
+    assert merged["tools"]["enabled"] is False, (
+        "전제 불성립: 병합 후 tools 별칭이 stale 상태여야 split-brain 재현이 됩니다"
+    )
+
+    # ToolFactory도 동일하게 '활성화'로 읽어야 한다 (비활성으로 읽으면 ValueError)
+    server = ToolFactory.create(merged)
+    assert server.is_enabled is True, (
+        "ToolFactory가 mcp.enabled=true 오버라이드를 활성화로 읽지 못했습니다 "
+        "(stale tools 별칭을 우선 조회하는 split-brain 회귀)"
     )
 
 

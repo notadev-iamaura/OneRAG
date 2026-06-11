@@ -5,13 +5,14 @@
 #   코드가 실제로 읽는 경로 기준으로 mcp 섹션이 단일 정본이다.
 #   - app/core/di_container.py:create_mcp_server_instance → mcp.enabled (활성화 게이트)
 #   - app/modules/core/agent/factory.py:AgentFactory       → mcp.enabled, mcp.agent.*
+#   - app/modules/core/tools/factory.py:ToolFactory        → mcp 우선 조회 (없으면 tools 폴백)
 #   - app/modules/core/tools/vector_search.py 등 도구 구현  → mcp.tools.<도구명>.parameters
 #
-# 하위 호환: tools 섹션은 mcp의 YAML 별칭(*alias)이다.
-#   - app/modules/core/tools/factory.py:ToolFactory가 tools 섹션을 우선 조회하므로
-#     동일 내용을 가리키도록 별칭으로 유지한다 (분열 시 활성화 판단이 갈라짐).
-#   - 주의: 별칭은 이 파일 로드 시점에만 동기화된다. 환경별 yaml에서
-#     오버라이드할 때는 mcp와 tools 두 섹션을 함께 오버라이드해야 한다.
+# 하위 호환: tools 섹션은 mcp의 YAML 별칭(*alias)이며 레거시 호환 전용이다.
+#   - 모든 런타임 코드는 mcp를 정본으로 읽으므로, 환경별 yaml에서
+#     오버라이드할 때는 mcp 섹션만 오버라이드하면 된다.
+#   - 별칭은 이 파일 로드 시점에만 동기화되지만(환경별 오버라이드 시 stale),
+#     stale tools 별칭은 동작에 영향을 주지 않는다(정본=mcp).
 #
 # 사용 방법:
 #   - mcp.enabled: true로 변경하면 도구 서버 + 에이전트 경로가 활성화된다.
