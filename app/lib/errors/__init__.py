@@ -49,6 +49,7 @@ from app.lib.errors.exceptions import (
     RAGError,  # 레거시 호환 별칭 (RAGException)
     RAGException,
     RoutingError,
+    SearchUnavailableError,
     ServiceError,
     SessionError,
     UploadError,
@@ -84,6 +85,7 @@ __all__ = [
     "ImageError",
     "LLMError",
     "VectorError",
+    "SearchUnavailableError",  # 검색 백엔드 전면 불능 (VectorError 하위)
     "DatabaseError",
     "ConfigError",
     "RoutingError",

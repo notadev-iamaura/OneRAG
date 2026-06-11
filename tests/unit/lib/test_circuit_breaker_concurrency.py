@@ -4,7 +4,14 @@ CircuitBreaker 동시성 결함 테스트 (Phase 2.7)
 목적:
     (1) OPEN 상태에서 느린 fallback이 lock을 잡아 breaker 전체를 직렬화하던 결함,
     (2) HALF_OPEN 시험 요청 게이트 부재(동시 요청 전부 통과),
-    (3) half_open_timeout 미사용을 회귀 방지한다.
+    (3) half_open_timeout 미사용,
+    (4) HALF_OPEN 회계 결함 3종을 회귀 방지한다:
+        (4a) stale trial(이전 사이클의 시험 요청)이 새 사이클의 카운터를 오염시켜
+             threshold 초과 동시 진입 + 조기 CLOSED를 유발
+        (4b) finally의 슬롯 해제가 lock acquire를 await하는 동안 취소되면
+             감소가 건너뛰어져 시험 슬롯이 영구 누수
+        (4c) HALF_OPEN 사이클 재진입 시 consecutive_successes 미리셋으로
+             이전 사이클의 성공이 합산되어 조기 CLOSED
 """
 
 from __future__ import annotations
@@ -94,3 +101,187 @@ async def test_half_open_timeout_reverts_to_open() -> None:
     assert cb.state == CircuitState.OPEN, "Half-Open 타임아웃 후 OPEN 복귀 안 함"
     assert result == "fb"
     assert called == [], "타임아웃 복귀 후에도 백엔드를 호출함"
+
+
+# ========================================
+# HALF_OPEN 회계 결함 3종 (Phase 2.7 후속)
+# ========================================
+
+
+def _accounting_config() -> CircuitBreakerConfig:
+    """회계 결함 테스트용 공통 설정 (실패 1회 → OPEN, 성공 2회 → CLOSED)."""
+    return CircuitBreakerConfig(
+        failure_threshold=1,
+        success_threshold=2,
+        timeout=60.0,
+        half_open_timeout=100.0,
+        enable_error_rate_check=False,
+    )
+
+
+async def _fail() -> None:
+    raise RuntimeError("boom")
+
+
+async def _force_open(cb: CircuitBreaker) -> None:
+    """CLOSED → OPEN 전환 (failure_threshold=1 전제)."""
+    with pytest.raises(RuntimeError):
+        await cb.call(_fail)
+    assert cb.state == CircuitState.OPEN
+
+
+def _allow_half_open_reset(cb: CircuitBreaker) -> None:
+    """sleep 없이 OPEN → HALF_OPEN 전환 조건(timeout 경과)을 시뮬레이션한다."""
+    cb.stats.state_change_time = time.time() - cb.config.timeout - 1.0
+
+
+@pytest.mark.asyncio
+async def test_stale_trial_does_not_pollute_new_half_open_cycle() -> None:
+    """(4a) 이전 사이클의 stale trial이 새 사이클의 슬롯/연속 성공을 오염시키면 안 된다."""
+    cb = CircuitBreaker("t", _accounting_config())
+    await _force_open(cb)
+
+    # --- 사이클 A 진입: 느린 시험 요청 T1 시작 ---
+    _allow_half_open_reset(cb)
+    t1_started = asyncio.Event()
+    t1_gate = asyncio.Event()
+
+    async def slow_trial_a() -> str:
+        t1_started.set()
+        await t1_gate.wait()
+        return "A-ok"
+
+    t1 = asyncio.create_task(cb.call(slow_trial_a))
+    await t1_started.wait()
+    assert cb.state == CircuitState.HALF_OPEN
+    assert cb._half_open_in_flight == 1
+
+    # 사이클 A에서 다른 시험 요청 실패 → OPEN 복귀 (T1은 아직 실행 중 = stale)
+    with pytest.raises(RuntimeError):
+        await cb.call(_fail)
+    assert cb.state == CircuitState.OPEN
+
+    # --- 사이클 B 진입: 시험 요청 b1, b2가 한도(2)까지 진입 ---
+    _allow_half_open_reset(cb)
+    b1_started, b1_gate = asyncio.Event(), asyncio.Event()
+    b2_started, b2_gate = asyncio.Event(), asyncio.Event()
+
+    async def slow_trial_b(started: asyncio.Event, gate: asyncio.Event) -> str:
+        started.set()
+        await gate.wait()
+        return "B-ok"
+
+    b1 = asyncio.create_task(cb.call(slow_trial_b, b1_started, b1_gate))
+    await b1_started.wait()
+    b2 = asyncio.create_task(cb.call(slow_trial_b, b2_started, b2_gate))
+    await b2_started.wait()
+    assert cb.state == CircuitState.HALF_OPEN
+    assert cb._half_open_in_flight == 2
+
+    # --- stale T1 완료: 새 사이클 카운터/연속 성공에 영향이 없어야 한다 ---
+    t1_gate.set()
+    assert await t1 == "A-ok"
+    assert cb._half_open_in_flight == 2, "stale trial이 새 사이클 슬롯을 잘못 해제함"
+    assert cb.stats.consecutive_successes == 0, "stale 성공이 연속 성공에 합산됨"
+    assert cb.state == CircuitState.HALF_OPEN
+
+    # 한도(2)가 유지되므로 추가 시험 요청은 fast-fail해야 한다 (초과 진입 금지)
+    called: list[int] = []
+
+    async def fn() -> str:
+        called.append(1)
+        return "x"
+
+    result = await cb.call(fn, fallback=lambda: "fb")
+    assert result == "fb", "stale 감소로 한도가 풀려 초과 진입 발생"
+    assert called == []
+
+    # 사이클 B의 '실제' 성공 1회만으로는 CLOSED 전환 금지 (threshold=2)
+    b1_gate.set()
+    assert await b1 == "B-ok"
+    assert cb.state == CircuitState.HALF_OPEN, "stale 성공 합산으로 조기 CLOSED"
+    assert cb.stats.consecutive_successes == 1
+
+    # 두 번째 실제 성공으로 정상 CLOSED
+    b2_gate.set()
+    assert await b2 == "B-ok"
+    assert cb.state == CircuitState.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_cancelled_trial_releases_slot_even_while_lock_held() -> None:
+    """(4b) 다른 코루틴이 lock을 점유한 채 trial이 취소돼도 슬롯은 해제되어야 한다.
+
+    슬롯 해제가 lock acquire를 await하면 그 대기 중 CancelledError가 전달될 때
+    감소가 건너뛰어져 누수된다. 해제는 동기(awaits 없는) 연산이어야 한다.
+    """
+    cb = CircuitBreaker("t", _accounting_config())
+    await _force_open(cb)
+    _allow_half_open_reset(cb)
+
+    started = asyncio.Event()
+    gate = asyncio.Event()
+
+    async def slow_trial() -> str:
+        started.set()
+        await gate.wait()
+        return "ok"
+
+    t1 = asyncio.create_task(cb.call(slow_trial))
+    await started.wait()
+    assert cb.state == CircuitState.HALF_OPEN
+    assert cb._half_open_in_flight == 1
+
+    # 외부 코루틴이 breaker lock 점유 (다른 call이 lock 구간에 있는 상황 모사)
+    await cb._lock.acquire()
+    try:
+        # 취소 1회: func(gate.wait) 안에서 CancelledError 전달
+        t1.cancel()
+        # 이벤트 루프 양보 — 수정 전 구현이라면 t1이 finally의 lock acquire에서 대기
+        for _ in range(5):
+            await asyncio.sleep(0)
+        # 취소 2회: (수정 전) finally의 lock acquire 대기 중 전달 → 감소 건너뜀
+        #          (수정 후) t1은 이미 완료라 no-op
+        t1.cancel()
+        for _ in range(5):
+            await asyncio.sleep(0)
+    finally:
+        cb._lock.release()
+
+    with pytest.raises(asyncio.CancelledError):
+        await t1
+    assert cb._half_open_in_flight == 0, "취소된 trial의 시험 슬롯이 누수됨"
+
+
+@pytest.mark.asyncio
+async def test_half_open_reentry_resets_consecutive_successes() -> None:
+    """(4c) HALF_OPEN 사이클 재진입 시 이전 사이클의 연속 성공이 리셋되어야 한다.
+
+    half_open_timeout 경과로 OPEN 복귀할 때는 실패가 기록되지 않으므로
+    consecutive_successes가 잔존한다 — 재진입 시 리셋하지 않으면 새 사이클에서
+    성공 1회만으로 조기 CLOSED 된다.
+    """
+    cb = CircuitBreaker("t", _accounting_config())
+    await _force_open(cb)
+
+    # 사이클 1 진입: 성공 1회 (threshold=2 미달 → HALF_OPEN 유지)
+    _allow_half_open_reset(cb)
+    assert await cb.call(_ok) == "ok"
+    assert cb.state == CircuitState.HALF_OPEN
+    assert cb.stats.consecutive_successes == 1
+
+    # half_open_timeout 초과 → 다음 호출에서 OPEN 복귀 (실패 기록 없는 전환)
+    cb.stats.state_change_time = time.time() - cb.config.half_open_timeout - 1.0
+    result = await cb.call(_ok, fallback=lambda: "fb")
+    assert result == "fb"
+    assert cb.state == CircuitState.OPEN
+
+    # 사이클 2 재진입: 첫 성공만으로 CLOSED 되면 안 된다 (연속 성공 리셋 검증)
+    _allow_half_open_reset(cb)
+    assert await cb.call(_ok) == "ok"
+    assert cb.stats.consecutive_successes == 1
+    assert cb.state == CircuitState.HALF_OPEN, "사이클 재진입 시 연속 성공 미리셋 (조기 CLOSED)"
+
+    # 두 번째 성공으로 정상 CLOSED
+    assert await cb.call(_ok) == "ok"
+    assert cb.state == CircuitState.CLOSED

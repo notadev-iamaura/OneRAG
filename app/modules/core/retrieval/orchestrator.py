@@ -111,6 +111,7 @@ Facade 패턴으로 재구성한 것입니다.
 
 from typing import TYPE_CHECKING, Any
 
+from ....lib.errors import ErrorCode, SearchUnavailableError
 from ....lib.logger import get_logger
 from ....lib.types import HealthCheckDict, OrchestratorStatsDict
 from .interfaces import ICacheManager, IReranker, IRetriever, SearchResult
@@ -333,6 +334,11 @@ class RetrievalOrchestrator:
 
         Returns:
             검색 및 리랭킹된 결과 리스트
+
+        Raises:
+            SearchUnavailableError: 검색 백엔드 전면 불능(모든 쿼리 실패) 시.
+                부분 실패는 degradation(가능한 결과/빈 결과 반환)으로 처리되지만,
+                전면 장애는 상위 CircuitBreaker가 감지할 수 있도록 전파된다.
         """
         self.stats["total_requests"] += 1
 
@@ -439,6 +445,10 @@ class RetrievalOrchestrator:
                             "graph_count": hybrid_result.graph_count
                         }
                     )
+                except SearchUnavailableError:
+                    # 검색 백엔드 전면 불능은 degradation 대상이 아니다 —
+                    # 상위(CircuitBreaker 등)가 장애를 감지하도록 그대로 전파한다.
+                    raise
                 except Exception as e:
                     logger.error(
                         f"하이브리드 검색 실패: {e}, 빈 결과 반환 (서비스 계속 동작)",
@@ -457,8 +467,19 @@ class RetrievalOrchestrator:
 
                 try:
                     if len(search_queries) == 1:
-                        # 단일 쿼리: 기존 로직 유지
-                        search_results = await self.retriever.search(query, top_k, filters)
+                        # 단일 쿼리: 이 한 번의 실패가 곧 '모든 쿼리 실패'와 동치이므로
+                        # 다중 쿼리 경로(_search_and_merge)와 동일하게 전면 장애로
+                        # 식별 가능한 전용 예외로 래핑해 전파한다.
+                        try:
+                            search_results = await self.retriever.search(query, top_k, filters)
+                        except SearchUnavailableError:
+                            raise
+                        except Exception as single_query_exc:
+                            raise SearchUnavailableError(
+                                ErrorCode.SEARCH_BACKEND_UNAVAILABLE,
+                                reason=str(single_query_exc),
+                                query_count=1,
+                            ) from single_query_exc
                         self.stats["retrieval_count"] += 1
                     else:
                         # 다중 쿼리: 병렬 검색 및 결과 병합
@@ -469,6 +490,11 @@ class RetrievalOrchestrator:
                         "벡터 검색 완료",
                         extra={"result_count": len(search_results)}
                     )
+                except SearchUnavailableError:
+                    # 검색 백엔드 전면 불능(모든 쿼리 실패)은 빈 결과로 위장하지 않고
+                    # 전파한다. 부분 실패 degradation은 _search_and_merge 내부에서
+                    # 이미 처리되므로 여기 도달하는 예외는 전면 장애뿐이다.
+                    raise
                 except Exception as e:
                     logger.error(
                         f"벡터 검색 실패: {e}, 빈 결과 반환 (서비스 계속 동작)",
@@ -533,6 +559,11 @@ class RetrievalOrchestrator:
 
             return final_results
 
+        except SearchUnavailableError:
+            # 검색 백엔드 전면 불능은 '0건'으로 위장하지 않고 호출자에게 전파한다
+            # (Phase 2.7). 상위 CircuitBreaker가 장애 신호를 받아 OPEN 전환할 수
+            # 있어야 하며, 호출자(rag_pipeline 등)는 fallback으로 degradation한다.
+            raise
         except Exception as e:
             logger.error(
                 f"search_and_rerank 예상치 못한 에러: {e}, 빈 결과 반환",
@@ -1078,17 +1109,38 @@ class RetrievalOrchestrator:
         # 예외를 전파한다. 예외를 삼키고 빈 리스트를 반환하면 상위 CircuitBreaker가
         # 장애 신호를 받지 못해 영원히 CLOSED로 남는다.
         # (retriever가 정상적으로 빈 결과를 반환한 경우는 예외가 아니므로 전파하지 않음)
+        # 전용 예외 SearchUnavailableError(SEARCH-004)로 래핑해 상위
+        # search_and_rerank()의 degradation except가 부분 실패와 구분해
+        # 전면 장애만 통과시킬 수 있도록 식별 가능하게 만든다.
         if results_per_query and all(
             isinstance(r, BaseException) for r in results_per_query
         ):
+            # CancelledError(요청 취소)는 백엔드 장애가 아니라 취소 신호이므로
+            # 래핑 대상에서 제외한다 — 실제 장애 예외를 우선 선택해 래핑한다
             first_exc = next(
-                r for r in results_per_query if isinstance(r, BaseException)
+                (
+                    r
+                    for r in results_per_query
+                    if isinstance(r, BaseException)
+                    and not isinstance(r, asyncio.CancelledError)
+                ),
+                None,
             )
+            if first_exc is None:
+                # 전부 취소된 경우: 장애로 위장하지 않고 취소를 그대로 전파한다
+                # (asyncio 취소 의미 보존 — except Exception에도 잡히지 않음)
+                raise next(
+                    r for r in results_per_query if isinstance(r, BaseException)
+                )
             logger.error(
                 "모든 쿼리 검색 실패 — 백엔드 장애로 판단, 예외 전파",
                 extra={"query_count": len(queries), "error": str(first_exc)},
             )
-            raise first_exc
+            raise SearchUnavailableError(
+                ErrorCode.SEARCH_BACKEND_UNAVAILABLE,
+                reason=str(first_exc),
+                query_count=len(queries),
+            ) from first_exc
 
         logger.info(
             "병렬 검색 완료",

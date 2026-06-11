@@ -323,7 +323,7 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "ko": "문서 삭제 실패: {reason}",
         "en": "Document deletion failed: {reason}",
     },
-    # SEARCH (검색) - 3개
+    # SEARCH (검색) - 4개
     "SEARCH-001": {
         "ko": "검색 쿼리 실행 실패: {reason}",
         "en": "Search query execution failed: {reason}",
@@ -335,6 +335,10 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
     "SEARCH-003": {
         "ko": "Retrieval 모듈에서 검색 실패",
         "en": "Retrieval module search failed",
+    },
+    "SEARCH-004": {
+        "ko": "검색 백엔드를 사용할 수 없습니다: {reason}",
+        "en": "Search backend is unavailable: {reason}",
     },
     # DB (데이터베이스) - 6개
     "DB-001": {
@@ -1349,6 +1353,18 @@ ERROR_SOLUTIONS: dict[str, dict[str, list[str]]] = {
         "en": [
             "Verify retrieval module is initialized",
             "Verify Weaviate connection",
+            "Check server logs for detailed error information",
+        ],
+    },
+    "SEARCH-004": {
+        "ko": [
+            "벡터 데이터베이스(Weaviate 등) 연결 상태를 확인하세요",
+            "잠시 후 다시 시도하세요 (Circuit Breaker가 자동 복구를 시도합니다)",
+            "서버 로그를 확인하여 자세한 오류를 파악하세요",
+        ],
+        "en": [
+            "Verify vector database (e.g., Weaviate) connection",
+            "Try again later (Circuit Breaker will attempt automatic recovery)",
             "Check server logs for detailed error information",
         ],
     },

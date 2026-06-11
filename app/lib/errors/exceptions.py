@@ -112,6 +112,20 @@ class VectorError(RAGException):
     pass
 
 
+class SearchUnavailableError(VectorError):
+    """검색 백엔드 전면 불능 예외 (SEARCH-004).
+
+    모든 검색 쿼리가 예외로 실패해 검색 백엔드가 완전히 동작하지 않는 상태를
+    나타낸다. 부분 실패의 degradation(빈 결과 반환)과 달리, 이 예외는 상위
+    CircuitBreaker 등이 장애 신호를 받을 수 있도록 반드시 전파되어야 한다.
+
+    VectorError(= RetrievalError 별칭)의 하위 클래스이므로 기존
+    `except RetrievalError` 핸들러도 그대로 이 예외를 처리할 수 있다.
+    """
+
+    pass
+
+
 class DatabaseError(RAGException):
     """데이터베이스 관련 예외."""
 

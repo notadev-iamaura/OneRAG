@@ -123,6 +123,11 @@ class CircuitBreaker:
         # HALF_OPEN 상태에서 동시에 진행 중인 시험 요청 수
         # (success_threshold 개수만 허용해 복구 안 된 백엔드로의 쇄도를 막는다)
         self._half_open_in_flight = 0
+        # HALF_OPEN 세대 토큰: OPEN → HALF_OPEN 전환마다 +1.
+        # 이전 사이클에서 시작된 시험 요청(stale trial)이 늦게 완료되더라도
+        # 새 사이클의 슬롯 카운터/연속 성공/상태 전환을 오염시키지 못하도록
+        # trial 진입 시점의 세대와 완료 시점의 세대를 비교해 stale을 식별한다.
+        self._half_open_generation: int = 0
 
     async def call(
         self,
@@ -151,6 +156,8 @@ class CircuitBreaker:
         # 그래야 OPEN 상태의 느린 fallback이 breaker 전체를 직렬화하지 않는다.
         fast_fail = False
         half_open_trial = False
+        # 시험 요청이 진입한 HALF_OPEN 세대 (완료 시점에 stale 여부 판별용)
+        trial_generation = 0
 
         async with self._lock:
             # HALF_OPEN이 half_open_timeout을 넘기면 복구 실패로 보고 OPEN 복귀
@@ -168,6 +175,14 @@ class CircuitBreaker:
                     self.state = CircuitState.HALF_OPEN
                     self.stats.state_change_time = time.time()
                     self._half_open_in_flight = 0
+                    # 새 시험 사이클 시작: 세대를 올려 이전 사이클의 stale trial이
+                    # 이번 사이클의 회계(슬롯/성공 카운트)에 개입하지 못하게 한다
+                    self._half_open_generation += 1
+                    # 이전 사이클의 성공 기록이 이번 사이클의 CLOSED 전환 판단에
+                    # 합산되지 않도록 연속 성공 카운터를 리셋한다
+                    # (half_open_timeout 경유 OPEN 복귀는 실패를 기록하지 않아
+                    #  consecutive_successes가 잔존할 수 있다)
+                    self.stats.consecutive_successes = 0
                 else:
                     fast_fail = True
 
@@ -179,6 +194,8 @@ class CircuitBreaker:
                 else:
                     self._half_open_in_flight += 1
                     half_open_trial = True
+                    # 현재 세대를 캡처 — 완료 시 세대가 다르면 stale trial이다
+                    trial_generation = self._half_open_generation
 
         # --- 여기부터는 lock 밖 (느린 작업) ---
         if fast_fail:
@@ -194,21 +211,33 @@ class CircuitBreaker:
             else:
                 result = await asyncio.to_thread(func, *args, **kwargs)
 
-            await self._on_success()
+            await self._on_success(
+                half_open_trial=half_open_trial, trial_generation=trial_generation
+            )
             return result
 
         except Exception as e:
             logger.error(f"❌ [{self.name}] 실행 실패: {e}")
-            await self._on_failure()
+            await self._on_failure(
+                half_open_trial=half_open_trial, trial_generation=trial_generation
+            )
 
             if fallback:
                 return await self._execute_fallback(fallback, *args, **kwargs)
             raise
         finally:
-            # 시험 요청 카운터 해제 (HALF_OPEN 게이트가 다음 요청을 받을 수 있도록)
-            if half_open_trial:
-                async with self._lock:
-                    self._half_open_in_flight = max(0, self._half_open_in_flight - 1)
+            # 시험 요청 카운터 해제 (HALF_OPEN 게이트가 다음 요청을 받을 수 있도록).
+            #
+            # lock 없이 '동기'로 수행하는 근거: asyncio는 단일 스레드 이벤트 루프에서
+            # 동작하고 아래 블록에는 await가 없어 다른 코루틴이 끼어들 수 없으므로
+            # 정수 비교/증감은 원자적이다. 이전 구현처럼 lock acquire를 await하면
+            # 그 대기 중 CancelledError가 전달될 때 감소가 건너뛰어져 시험 슬롯이
+            # 영구 누수된다 (취소 슬롯 누수 방지).
+            #
+            # 세대가 일치할 때만 감소: stale trial(이전 HALF_OPEN 사이클)이 새 사이클
+            # 카운터를 잘못 감소시키면 threshold 초과 동시 진입이 발생한다.
+            if half_open_trial and trial_generation == self._half_open_generation:
+                self._half_open_in_flight = max(0, self._half_open_in_flight - 1)
 
     async def _execute_fallback(
         self, fallback: Callable[..., Any], *args: Any, **kwargs: Any
@@ -223,9 +252,27 @@ class CircuitBreaker:
             logger.error(f"❌ [{self.name}] Fallback 실패: {e}")
             raise
 
-    async def _on_success(self) -> None:
-        """성공 처리"""
+    async def _on_success(
+        self, *, half_open_trial: bool = False, trial_generation: int = 0
+    ) -> None:
+        """성공 처리
+
+        Args:
+            half_open_trial: HALF_OPEN 시험 요청 여부
+            trial_generation: 시험 요청이 진입한 HALF_OPEN 세대 (stale 판별용)
+        """
         async with self._lock:
+            # stale 세대(이전 HALF_OPEN 사이클)의 시험 요청 결과는 현재 사이클의
+            # 통계/상태 전환에 반영하지 않는다. 반영하면 이전 사이클의 성공이
+            # consecutive_successes에 합산되어 복구가 확인되지 않은 백엔드로
+            # 조기 CLOSED 되는 결함이 발생한다.
+            if half_open_trial and trial_generation != self._half_open_generation:
+                logger.debug(
+                    f"🕰️  [{self.name}] stale HALF_OPEN trial 성공 무시 "
+                    f"(세대 {trial_generation} != 현재 {self._half_open_generation})"
+                )
+                return
+
             self.stats.record_success()
 
             if self.state == CircuitState.HALF_OPEN:
@@ -238,9 +285,25 @@ class CircuitBreaker:
                     self.state = CircuitState.CLOSED
                     self.stats.state_change_time = time.time()
 
-    async def _on_failure(self) -> None:
-        """실패 처리"""
+    async def _on_failure(
+        self, *, half_open_trial: bool = False, trial_generation: int = 0
+    ) -> None:
+        """실패 처리
+
+        Args:
+            half_open_trial: HALF_OPEN 시험 요청 여부
+            trial_generation: 시험 요청이 진입한 HALF_OPEN 세대 (stale 판별용)
+        """
         async with self._lock:
+            # stale 세대의 시험 요청 실패도 현재 사이클의 통계/상태 전환에 반영하지
+            # 않는다 (이전 사이클의 늦은 실패가 새 사이클을 잘못 OPEN시키는 것 방지).
+            if half_open_trial and trial_generation != self._half_open_generation:
+                logger.debug(
+                    f"🕰️  [{self.name}] stale HALF_OPEN trial 실패 무시 "
+                    f"(세대 {trial_generation} != 현재 {self._half_open_generation})"
+                )
+                return
+
             self.stats.record_failure()
 
             # Half-Open 상태에서 실패 시 즉시 Open
