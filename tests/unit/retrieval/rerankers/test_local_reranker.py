@@ -3,13 +3,14 @@
 
 선택적 의존성: uv sync --extra local-reranker
 
-TDD RED 단계:
-- LocalReranker 구현 전 테스트 작성
-- sentence-transformers CrossEncoder 기반
-- 현재 커버리지: 0% (구현 전)
-- 목표 커버리지: 75-85%
+실모델 테스트 게이트:
+- 이 파일은 initialize()/rerank()에서 실제 CrossEncoder 모델을 HuggingFace에서
+  다운로드해 추론하는 실모델 테스트다 (CI에서 429 rate-limit 등 flaky 원인).
+- 따라서 기본적으로 skip하며, ONERAG_RUN_REAL_MODEL_TESTS=1 로만 실행한다
+  (예: make verify-integration). CI의 --ignore 대신 파일 스스로 게이트를 선언한다.
 """
 
+import os
 
 import pytest
 
@@ -23,8 +24,18 @@ try:
 except ImportError:
     HAS_LOCAL_RERANKER = False
 
+# 모듈 전체 자기 선언 게이트:
+# 1) sentence-transformers 미설치 환경에서 skip (선택적 의존성)
+# 2) 실모델 HF 다운로드/추론이 필요하므로 명시적 opt-in 없이는 skip
+pytestmark = [
+    pytest.mark.skipif(not HAS_LOCAL_RERANKER, reason="local-reranker 의존성 미설치"),
+    pytest.mark.skipif(
+        os.getenv("ONERAG_RUN_REAL_MODEL_TESTS") != "1",
+        reason="실모델 HF 다운로드/추론 필요 — ONERAG_RUN_REAL_MODEL_TESTS=1로 실행",
+    ),
+]
 
-@pytest.mark.skipif(not HAS_LOCAL_RERANKER, reason="local-reranker 의존성 미설치")
+
 class TestLocalRerankerInitialization:
     """LocalReranker 초기화 테스트"""
 
@@ -103,7 +114,6 @@ class TestLocalRerankerInitialization:
         assert True
 
 
-@pytest.mark.skipif(not HAS_LOCAL_RERANKER, reason="local-reranker 의존성 미설치")
 class TestLocalRerankerRerank:
     """LocalReranker.rerank() 테스트"""
 
@@ -228,7 +238,6 @@ class TestLocalRerankerRerank:
         assert results[0].id == "single"
 
 
-@pytest.mark.skipif(not HAS_LOCAL_RERANKER, reason="local-reranker 의존성 미설치")
 class TestLocalRerankerHelpers:
     """LocalReranker 헬퍼 메서드 테스트"""
 
@@ -285,7 +294,6 @@ class TestLocalRerankerHelpers:
         assert stats["successful_requests"] == 1
 
 
-@pytest.mark.skipif(not HAS_LOCAL_RERANKER, reason="local-reranker 의존성 미설치")
 class TestLocalRerankerErrorHandling:
     """LocalReranker 에러 핸들링 테스트"""
 
@@ -362,7 +370,6 @@ class TestLocalRerankerErrorHandling:
             assert stats["failed_requests"] == 1
 
 
-@pytest.mark.skipif(not HAS_LOCAL_RERANKER, reason="local-reranker 의존성 미설치")
 class TestLocalRerankerScoreNormalization:
     """LocalReranker 점수 정규화 테스트"""
 

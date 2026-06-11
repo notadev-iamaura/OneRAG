@@ -19,6 +19,9 @@ set -euo pipefail
 
 COMPOSE_FILE="docker-compose.verify.yml"
 export ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1
+# 실모델 게이트: test_local_reranker.py 가 실제 CrossEncoder 모델을 HF에서 받아
+# 추론하도록 허용 (CI 기본 게이트에서는 skip — 통합 검증에서만 실행)
+export ONERAG_RUN_REAL_MODEL_TESTS=1
 export WEAVIATE_URL="${WEAVIATE_URL:-http://localhost:8081}"
 export WEAVIATE_GRPC_PORT="${WEAVIATE_GRPC_PORT:-50052}"
 export DATABASE_URL="${DATABASE_URL:-postgresql://onerag:onerag-verify@localhost:55432/rag_db}"
@@ -42,9 +45,12 @@ echo "   WEAVIATE_URL=$WEAVIATE_URL"
 echo "   WEAVIATE_GRPC_PORT=$WEAVIATE_GRPC_PORT"
 echo "   DATABASE_URL=$DATABASE_URL"
 
-# 1) optional provider 단위 테스트 (spaCy 한국어 NER, 로컬 임베더)
+# 1) optional provider 단위 테스트 (spaCy 한국어 NER, 로컬 임베더, 실모델 reranker)
+#    test_local_reranker.py 는 ONERAG_RUN_REAL_MODEL_TESTS=1 게이트로만 실행되는
+#    실모델(HF CrossEncoder) 추론 검증이다 (sentence-transformers 미설치 시 self-skip)
 uv run pytest \
   tests/unit/privacy/test_pii_detector.py \
+  tests/unit/retrieval/rerankers/test_local_reranker.py \
   tests/integration/embedding/test_local_embedder_integration.py \
   -p no:warnings -q
 

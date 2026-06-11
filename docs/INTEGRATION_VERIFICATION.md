@@ -13,6 +13,7 @@
 | PostgreSQL 세션/평가/프롬프트 영속화 | stub | ✅ 실 DB |
 | spaCy 한국어 NER (PII detector) | ❌ (skip) | ✅ |
 | sentence-transformers 로컬 임베더 | ❌ (skip) | ✅ |
+| 실모델 CrossEncoder 리랭커 (HF 다운로드+추론) | ❌ (skip) | ✅ |
 | 실 LLM 호출 (self-reflection 등) | mock | ✅ (API 키 필요, 비용 발생) |
 | Neo4j GraphRAG | ❌ (skip) | 선택 (별도 기동 필요) |
 
@@ -47,8 +48,9 @@ make verify-integration
 이 타깃은 `scripts/verify-integration.sh`를 실행하며:
 
 1. `docker-compose.verify.yml`로 **Weaviate + PostgreSQL**를 기동하고 healthy까지 대기
-2. optional provider 게이트(`ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1`)를 켜고
-   PII detector·로컬 임베더 단위 테스트 실행
+2. optional provider 게이트(`ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1`)와 실모델
+   게이트(`ONERAG_RUN_REAL_MODEL_TESTS=1`)를 켜고 PII detector·로컬 임베더·
+   실모델 CrossEncoder 리랭커 단위 테스트 실행
 3. `WEAVIATE_URL`·`WEAVIATE_GRPC_PORT`·`DATABASE_URL`을 주입하고
    `pytest tests/integration -m integration` 실행
 4. 종료 시 서비스·볼륨 정리 (`down -v` — 매 실행 깨끗한 상태 보장,
@@ -66,6 +68,7 @@ docker compose -f docker-compose.verify.yml up -d --wait
 
 # 환경변수 게이트 (verify 스택은 dev 스택과 다른 포트 사용)
 export ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1
+export ONERAG_RUN_REAL_MODEL_TESTS=1
 export WEAVIATE_URL=http://localhost:8081
 export WEAVIATE_GRPC_PORT=50052
 export DATABASE_URL=postgresql://onerag:onerag-verify@localhost:55432/rag_db
@@ -74,6 +77,7 @@ export ENVIRONMENT=test
 # 부분 실행 예시
 uv run pytest tests/integration/test_hybrid_search_integration.py -q   # Weaviate
 uv run pytest tests/unit/privacy/test_pii_detector.py -q               # spaCy ko
+uv run pytest tests/unit/retrieval/rerankers/test_local_reranker.py -q # 실모델 reranker
 
 # 종료
 docker compose -f docker-compose.verify.yml down -v
@@ -83,7 +87,8 @@ docker compose -f docker-compose.verify.yml down -v
 
 | 변수 | 용도 |
 |---|---|
-| `ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1` | spaCy/sentence-transformers 등 무거운 optional 테스트 활성화 (기본 비활성) |
+| `ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1` | spaCy/sentence-transformers 등 무거운 optional 테스트 활성화 (기본 비활성). 제외 경로 목록의 단일 진실원은 `tests/conftest.py`의 `OPTIONAL_PROVIDER_TEST_PATHS` |
+| `ONERAG_RUN_REAL_MODEL_TESTS=1` | 실모델 테스트 활성화 (기본 비활성). `test_local_reranker.py`가 실제 CrossEncoder 모델을 HuggingFace에서 다운로드해 추론까지 검증한다. CI 기본 게이트는 결정성(네트워크 무의존)을 위해 skip하며, 실모델 reranker 추론 검증은 이 게이트를 켜고 수행 |
 | `WEAVIATE_URL` | Weaviate 연결 (verify 스택 기본 `http://localhost:8081`) |
 | `WEAVIATE_GRPC_PORT` | Weaviate gRPC 포트 (verify 스택 기본 `50052`) |
 | `DATABASE_URL` | PostgreSQL 연결 (verify 스택 기본 `postgresql://onerag:onerag-verify@localhost:55432/rag_db`) |

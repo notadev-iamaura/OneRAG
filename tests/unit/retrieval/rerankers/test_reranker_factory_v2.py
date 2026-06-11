@@ -3,9 +3,22 @@ RerankerFactory v2 테스트
 새로운 approach/provider/model 구조 지원
 """
 
+import importlib.util
 from unittest.mock import patch
 
 import pytest
+
+# local approach 테스트는 sentence-transformers(torch 포함) 설치가 필요하다.
+# extras 미설치 환경(기본 dev)에서는 실패가 아닌 skip이 되도록 자기 선언한다
+# (저장소 컨벤션: pgvector/qdrant/local_reranker 테스트와 동일 패턴).
+_HAS_LOCAL_RERANKER_DEPS = (
+    importlib.util.find_spec("sentence_transformers") is not None
+    and importlib.util.find_spec("torch") is not None
+)
+requires_local_reranker = pytest.mark.skipif(
+    not _HAS_LOCAL_RERANKER_DEPS,
+    reason="sentence-transformers/torch 미설치 — uv sync --extra local-embedding 필요",
+)
 
 
 class TestRerankerFactoryV2Registry:
@@ -170,6 +183,7 @@ class TestRerankerFactoryV2Create:
         assert reranker.max_documents == 30
         assert reranker.timeout == 20
 
+    @requires_local_reranker
     def test_create_local_sentence_transformers(self):
         """Local approach + sentence-transformers provider 리랭커 생성"""
         from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
@@ -186,6 +200,7 @@ class TestRerankerFactoryV2Create:
         reranker = RerankerFactoryV2.create(config)
         assert reranker.__class__.__name__ == "LocalReranker"
 
+    @requires_local_reranker
     def test_create_local_with_default_config(self):
         """Local approach 기본 설정으로 리랭커 생성"""
         from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
