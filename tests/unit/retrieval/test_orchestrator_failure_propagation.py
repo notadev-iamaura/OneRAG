@@ -12,6 +12,11 @@
     3. search() 레거시 어댑터 (스트리밍 chat, /v1, admin이 사용하는 경로)
 
     단, 정상 빈 결과나 부분 실패는 degradation을 유지한다(전파 금지).
+
+    또한 요청 수준 오류(사용자 입력 오류로 인한 ValueError/TypeError/KeyError 등)는
+    백엔드 장애가 아니므로 SearchUnavailableError로 래핑하지 않고 빈 결과로
+    degradation해야 한다 — 그렇지 않으면 한 클라이언트의 반복 오입력이 공유
+    CircuitBreaker threshold를 채워 전체 사용자의 검색을 fallback으로 강등시킨다.
 """
 
 from __future__ import annotations
@@ -159,3 +164,80 @@ async def test_search_adapter_propagates_total_failure() -> None:
     orch = RetrievalOrchestrator(retriever=FailingRetriever())
     with pytest.raises(SearchUnavailableError):
         await orch.search("q1", {"limit": 5})
+
+
+# ========================================
+# 4. 요청 수준 오류 분류 — 사용자 입력 오류는 백엔드 장애로 오분류 금지
+# ========================================
+
+
+class RequestLevelErrorRetriever:
+    """잘못된 사용자 입력(filters 등)으로 항상 요청 수준 오류를 내는 retriever."""
+
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    async def search(
+        self, query: str, top_k: int = 10, filters: dict | None = None
+    ) -> list[SearchResult]:
+        raise self.exc
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "exc",
+    [
+        ValueError("invalid filter value"),
+        TypeError("filter type mismatch"),
+        KeyError("unknown filter field"),
+    ],
+    ids=["ValueError", "TypeError", "KeyError"],
+)
+async def test_single_query_request_level_error_degrades(exc: Exception) -> None:
+    """단일 쿼리의 요청 수준 오류는 전파 없이 빈 결과로 degradation해야 한다.
+
+    잘못된 filters 입력으로 인한 결정적(per-request) 오류를 SearchUnavailableError로
+    래핑하면 공유 CircuitBreaker에 장애로 집계되어 전체 사용자가 영향을 받는다.
+    """
+    orch = RetrievalOrchestrator(retriever=RequestLevelErrorRetriever(exc))
+    results = await orch.search_and_rerank(
+        "q1", top_k=5, query_expansion_enabled=False
+    )
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_single_query_infra_error_still_propagates() -> None:
+    """단일 쿼리의 인프라성 오류(ConnectionError)는 여전히 전파해야 한다.
+
+    분류 도입이 기존 장애 전파(CircuitBreaker 감지)를 약화시키면 안 된다.
+    """
+    orch = RetrievalOrchestrator(retriever=FailingRetriever())
+    with pytest.raises(SearchUnavailableError) as exc_info:
+        await orch.search_and_rerank("q1", top_k=5, query_expansion_enabled=False)
+    assert isinstance(exc_info.value.__cause__, ConnectionError)
+
+
+@pytest.mark.asyncio
+async def test_multi_query_all_request_level_errors_degrade() -> None:
+    """멀티 쿼리 전부가 요청 수준 오류로 실패해도 빈 결과로 degradation해야 한다.
+
+    같은 잘못된 filters가 모든 확장 쿼리에 적용되므로 전 쿼리 실패는 자연스러운
+    결과다 — 백엔드 장애가 아니므로 SearchUnavailableError 전파 금지.
+    """
+    orch = RetrievalOrchestrator(
+        retriever=RequestLevelErrorRetriever(ValueError("invalid filter value"))
+    )
+    results = await orch._search_and_merge(["q1", "q2"], top_k=5, use_rrf=True)
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_multi_query_request_level_errors_degrade_via_search_and_rerank() -> None:
+    """search_and_rerank 경유 멀티 쿼리 경로에서도 요청 수준 오류는 degradation."""
+    orch = RetrievalOrchestrator(
+        retriever=RequestLevelErrorRetriever(ValueError("invalid filter value")),
+        query_expansion=FakeQueryExpansion(),  # type: ignore[arg-type]
+    )
+    results = await orch.search_and_rerank("q1", top_k=5, query_expansion_enabled=True)
+    assert results == []

@@ -410,10 +410,13 @@ class TestPineconeVectorStoreFetchObjects:
         call = mock_index.query.call_args
         assert call.kwargs.get("namespace") == "ns"
         assert call.kwargs.get("filter") == {"document_id": {"$eq": "doc-1"}}
+        # include_metadata=True 시 Pinecone top_k 상한은 1,000 (공식 문서 한도)
+        assert PINECONE_QUERY_MAX_TOP_K == 1000
         assert call.kwargs.get("top_k") == PINECONE_QUERY_MAX_TOP_K
         assert call.kwargs.get("include_metadata") is True
-        # 제로 벡터는 인덱스 차원과 일치해야 함
-        assert call.kwargs.get("vector") == [0.0] * 8
+        # 쿼리 벡터는 인덱스 차원과 일치하는 비제로 단위 기저 벡터여야 함
+        # (Pinecone은 모든 값이 0인 dense 벡터를 거부 — 제로 벡터 사용 금지)
+        assert call.kwargs.get("vector") == [1.0] + [0.0] * 7
         # chroma_store 파리티 반환 형태 검증 (기존 fetch_objects 계약과 동일)
         assert len(results) == 1
         assert results[0]["_id"] == "id-1"
@@ -447,13 +450,19 @@ class TestPineconeVectorStoreFetchObjects:
         await store.fetch_objects(collection="ns", filters={"document_id": "doc-1"})
 
         call = mock_index.query.call_args
-        assert call.kwargs.get("vector") == [0.0] * DEFAULT_INDEX_DIMENSION
+        # 폴백 차원에서도 비제로 단위 기저 벡터를 사용해야 함
+        assert call.kwargs.get("vector") == [1.0] + [0.0] * (
+            DEFAULT_INDEX_DIMENSION - 1
+        )
 
     @pytest.mark.asyncio
-    async def test_fetch_objects_metadata_filter_truncation_warning(self) -> None:
-        """결과가 top_k 상한에 도달하면 잘림 가능성을 warning으로 알린다 (조용한 절단 금지)"""
-        from unittest.mock import patch
+    async def test_fetch_objects_metadata_filter_falls_back_on_top_k_cap(self) -> None:
+        """결과가 top_k 상한에 도달하면 전수 경로(list+fetch)로 폴백해 완전한 결과를 반환한다
 
+        Pinecone query는 top_k를 넘는 결과를 반환하지 않으므로, 상한 도달 시
+        잘린 결과를 그대로 신뢰하면 부분 삭제 등 데이터 정합성 사고로 이어진다.
+        경고 로그가 아니라 전수 열거 폴백으로 완전성을 보장해야 한다.
+        """
         from app.infrastructure.storage.vector.pinecone_store import (
             PINECONE_QUERY_MAX_TOP_K,
         )
@@ -467,17 +476,54 @@ class TestPineconeVectorStoreFetchObjects:
             for i in range(PINECONE_QUERY_MAX_TOP_K)
         ]
         mock_index.query.return_value = query_response
+        # 전수 경로: list_paginated로 전체 ID 수집 → fetch → 메모리 필터
+        mock_index.list_paginated.return_value = self._make_list_page(
+            ["id-1", "id-2", "id-3"], next_token=None
+        )
+        fetch_response = MagicMock()
+        fetch_response.vectors = {
+            "id-1": self._make_vector("id-1", {"content": "a", "document_id": "doc-1"}),
+            "id-2": self._make_vector("id-2", {"content": "b", "document_id": "doc-1"}),
+            "id-3": self._make_vector("id-3", {"content": "c", "document_id": "doc-2"}),
+        }
+        mock_index.fetch.return_value = fetch_response
 
-        with patch(
-            "app.infrastructure.storage.vector.pinecone_store.logger"
-        ) as mock_logger:
-            results = await store.fetch_objects(
-                collection="ns", filters={"document_id": "doc-1"}
-            )
+        results = await store.fetch_objects(
+            collection="ns", filters={"document_id": "doc-1"}
+        )
 
-        assert len(results) == PINECONE_QUERY_MAX_TOP_K
-        # 잘림 가능성 경고가 기록되어야 함
-        assert mock_logger.warning.called
+        # 전수 경로가 실제로 호출되어야 함 (부분 결과 사용 금지)
+        mock_index.list_paginated.assert_called_once()
+        mock_index.fetch.assert_called_once()
+        # 잘린 query 결과(1,000건)가 아닌 전수 경로의 완전한 필터 결과를 반환
+        assert sorted(item["_id"] for item in results) == ["id-1", "id-2"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_objects_metadata_filter_non_string_value_allows_both_types(
+        self,
+    ) -> None:
+        """비문자열 단순 값 필터는 $in으로 원본/문자열 양쪽 타입을 허용한다
+
+        기존 메모리 필터는 str(metadata.get(key)) == str(value)로 타입을 강제
+        변환해 비교했으므로, 타입 엄격한 서버측 $eq로 바꾸면 숫자 저장/문자열
+        조회 케이스가 조용히 0건이 된다. $in 변환으로 기존 의미론을 보존한다.
+        """
+        _, mock_index, store = create_mock_pinecone_store()
+        mock_index.describe_index_stats.return_value = MagicMock(dimension=4)
+        mock_index.query.return_value = MagicMock(matches=[])
+
+        await store.fetch_objects(
+            collection="ns",
+            filters={"page": 3, "category": {"$in": ["a", "b"]}},
+        )
+
+        call = mock_index.query.call_args
+        # 비문자열 단순 값: 원본 타입과 문자열 표현 모두 매칭되도록 $in 변환,
+        # dict(연산자) 필터: Pinecone 문법 그대로 통과
+        assert call.kwargs.get("filter") == {
+            "page": {"$in": [3, "3"]},
+            "category": {"$in": ["a", "b"]},
+        }
 
     @pytest.mark.asyncio
     async def test_fetch_objects_by_ids_with_metadata_filter_keeps_memory_filtering(
@@ -527,6 +573,54 @@ class TestPineconeVectorStoreFetchObjects:
 
         assert deleted == 0
         mock_index.delete.assert_not_called()
+
+
+class TestMemoryFilterSemanticsParity:
+    """메모리 폴백 필터가 서버측(빠른 경로) 의미론과 일치하는지 검증
+
+    cap-hit 폴백 시 두 경로가 다른 결과를 내면 조용한 오결과가 되므로,
+    연산자($eq/$in)·숫자 동등성(Pinecone은 숫자를 float로 저장)을
+    메모리 경로도 동일하게 평가해야 한다.
+    """
+
+    def test_scalar_numeric_equality_matches_float_stored(self) -> None:
+        """숫자 필터 3이 float 저장값 3.0과 매칭된다 (서버 의미론 동일)"""
+        from app.infrastructure.storage.vector.pinecone_store import (
+            PineconeVectorStore,
+        )
+
+        assert PineconeVectorStore._memory_filter_matches(3.0, 3) is True
+        assert PineconeVectorStore._memory_filter_matches(3.0, "3") is True
+        assert PineconeVectorStore._memory_filter_matches("doc-1", "doc-1") is True
+        assert PineconeVectorStore._memory_filter_matches("doc-1", "doc-2") is False
+
+    def test_operator_eq_and_in_are_evaluated(self) -> None:
+        """연산자 dict($eq/$in)가 문자열 강제 비교가 아닌 의미 평가된다"""
+        from app.infrastructure.storage.vector.pinecone_store import (
+            PineconeVectorStore,
+        )
+
+        assert (
+            PineconeVectorStore._memory_filter_matches("a", {"$in": ["a", "b"]}) is True
+        )
+        assert (
+            PineconeVectorStore._memory_filter_matches("c", {"$in": ["a", "b"]})
+            is False
+        )
+        assert PineconeVectorStore._memory_filter_matches(3.0, {"$eq": 3}) is True
+        # 빠른 경로가 생성하는 혼합 타입 $in도 동일하게 매칭
+        assert (
+            PineconeVectorStore._memory_filter_matches(3.0, {"$in": [3, "3"]}) is True
+        )
+
+    def test_unsupported_operator_raises_explicitly(self) -> None:
+        """미지원 연산자는 조용한 오결과 대신 명시적 ValueError"""
+        from app.infrastructure.storage.vector.pinecone_store import (
+            PineconeVectorStore,
+        )
+
+        with pytest.raises(ValueError, match=r"\$gt"):
+            PineconeVectorStore._memory_filter_matches(5, {"$gt": 3})
 
 
 class TestPineconeVectorStoreConfiguration:

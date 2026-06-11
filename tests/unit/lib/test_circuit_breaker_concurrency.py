@@ -12,6 +12,11 @@ CircuitBreaker 동시성 결함 테스트 (Phase 2.7)
              감소가 건너뛰어져 시험 슬롯이 영구 누수
         (4c) HALF_OPEN 사이클 재진입 시 consecutive_successes 미리셋으로
              이전 사이클의 성공이 합산되어 조기 CLOSED
+    (5) CLOSED 시기에 시작된 장기 호출(stale)의 늦은 결과가 HALF_OPEN 사이클을
+        오염시키는 결함:
+        (5a) stale 성공이 consecutive_successes에 합산되어 실제 probe 1건만으로
+             조기 CLOSED → 미복구 백엔드로 트래픽 전면 재개
+        (5b) stale 실패가 HALF_OPEN → OPEN 복귀를 유발해 정상 probe를 무효화
 """
 
 from __future__ import annotations
@@ -251,6 +256,120 @@ async def test_cancelled_trial_releases_slot_even_while_lock_held() -> None:
     with pytest.raises(asyncio.CancelledError):
         await t1
     assert cb._half_open_in_flight == 0, "취소된 trial의 시험 슬롯이 누수됨"
+
+
+# ========================================
+# CLOSED 시기 시작 호출의 stale 결과가 HALF_OPEN 사이클 오염 (결함 5)
+# ========================================
+
+
+@pytest.mark.asyncio
+async def test_stale_closed_origin_success_does_not_pollute_half_open() -> None:
+    """(5a) CLOSED 시기에 시작된 호출의 늦은 성공이 HALF_OPEN 회계를 오염시키면 안 된다.
+
+    시나리오: CLOSED에서 느린 호출 S 시작 → 장애로 OPEN → HALF_OPEN 전환(세대 +1)
+    → 그 사이 S가 성공 완료. S의 성공이 consecutive_successes에 합산되면
+    실제 probe 1건 + 과거 성공 1건으로 threshold(2)를 채워 조기 CLOSED 된다.
+    """
+    cb = CircuitBreaker("t", _accounting_config())
+
+    # --- CLOSED 상태에서 느린 성공 호출 S 시작 (asyncio.Event로 결정적 제어) ---
+    s_started, s_gate = asyncio.Event(), asyncio.Event()
+
+    async def slow_closed_call() -> str:
+        s_started.set()
+        await s_gate.wait()
+        return "S-ok"
+
+    s = asyncio.create_task(cb.call(slow_closed_call))
+    await s_started.wait()
+    assert cb.state == CircuitState.CLOSED
+
+    # --- S 실행 중 장애 발생 → OPEN (failure_threshold=1) ---
+    with pytest.raises(RuntimeError):
+        await cb.call(_fail)
+    assert cb.state == CircuitState.OPEN
+
+    # --- OPEN → HALF_OPEN 전환: 느린 probe P1 진입 (세대 +1) ---
+    _allow_half_open_reset(cb)
+    p1_started, p1_gate = asyncio.Event(), asyncio.Event()
+
+    async def slow_probe() -> str:
+        p1_started.set()
+        await p1_gate.wait()
+        return "P-ok"
+
+    p1 = asyncio.create_task(cb.call(slow_probe))
+    await p1_started.wait()
+    assert cb.state == CircuitState.HALF_OPEN
+
+    # --- stale S 완료: 새 사이클의 연속 성공에 합산되면 안 된다 ---
+    s_gate.set()
+    assert await s == "S-ok"
+    assert cb.stats.consecutive_successes == 0, "CLOSED 시기 stale 성공이 연속 성공에 합산됨"
+    assert cb.state == CircuitState.HALF_OPEN
+
+    # --- 실제 probe 1건 성공만으로는 CLOSED 금지 (threshold=2) ---
+    p1_gate.set()
+    assert await p1 == "P-ok"
+    assert cb.state == CircuitState.HALF_OPEN, "stale 성공 합산으로 조기 CLOSED"
+    assert cb.stats.consecutive_successes == 1
+
+    # --- 두 번째 실제 probe 성공으로만 정상 CLOSED ---
+    assert await cb.call(_ok) == "ok"
+    assert cb.state == CircuitState.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_stale_closed_origin_failure_does_not_reopen_half_open() -> None:
+    """(5b) CLOSED 시기에 시작된 호출의 늦은 실패가 HALF_OPEN → OPEN을 유발하면 안 된다.
+
+    대칭 시나리오: CLOSED에서 시작된 느린 실패 호출이 HALF_OPEN 전환 후 완료되면,
+    현재 사이클의 probe와 무관한 과거 실패가 복구 시도를 무효화(OPEN 복귀)한다.
+    """
+    cb = CircuitBreaker("t", _accounting_config())
+
+    # --- CLOSED 상태에서 느린 실패 호출 F 시작 ---
+    f_started, f_gate = asyncio.Event(), asyncio.Event()
+
+    async def slow_failing_call() -> None:
+        f_started.set()
+        await f_gate.wait()
+        raise RuntimeError("late-fail")
+
+    f = asyncio.create_task(cb.call(slow_failing_call))
+    await f_started.wait()
+
+    # --- F 실행 중 장애 발생 → OPEN ---
+    with pytest.raises(RuntimeError):
+        await cb.call(_fail)
+    assert cb.state == CircuitState.OPEN
+
+    # --- OPEN → HALF_OPEN 전환: 느린 probe P1 진입 (세대 +1) ---
+    _allow_half_open_reset(cb)
+    p1_started, p1_gate = asyncio.Event(), asyncio.Event()
+
+    async def slow_probe() -> str:
+        p1_started.set()
+        await p1_gate.wait()
+        return "P-ok"
+
+    p1 = asyncio.create_task(cb.call(slow_probe))
+    await p1_started.wait()
+    assert cb.state == CircuitState.HALF_OPEN
+
+    # --- stale F 실패 완료: HALF_OPEN → OPEN 복귀를 유발하면 안 된다 ---
+    f_gate.set()
+    with pytest.raises(RuntimeError):
+        await f
+    assert cb.state == CircuitState.HALF_OPEN, "stale 실패가 HALF_OPEN → OPEN 유발"
+
+    # --- 실제 probe 2건 성공으로 정상 CLOSED ---
+    p1_gate.set()
+    assert await p1 == "P-ok"
+    assert cb.state == CircuitState.HALF_OPEN
+    assert await cb.call(_ok) == "ok"
+    assert cb.state == CircuitState.CLOSED
 
 
 @pytest.mark.asyncio

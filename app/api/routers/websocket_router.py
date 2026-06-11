@@ -260,11 +260,36 @@ async def websocket_chat(
                 )
                 continue
 
+            # 메시지별 세션 ID 채택: 각 메시지 payload의 session_id를 사용한다.
+            # 문서/스키마 프로토콜상 클라이언트는 stream_start로 회신된 서버 확정
+            # ID를 후속 메시지의 session_id에 담아 보내므로, 쿼리 파라미터(연결
+            # 수립 시점 ID)가 아닌 payload ID로 파이프라인을 호출해야 비-UUID4
+            # 커스텀 ID 클라이언트의 멀티턴 대화 컨텍스트가 유지된다.
+            #
+            # 보안 검토(IDOR): REST /chat도 요청 payload의 session_id를 수용하는
+            # capability 모델이다. 약한(비-UUID4) ID는 세션 서비스가 거부하고
+            # 새 UUID4를 재발급하므로(session_service.create_session 참조),
+            # payload 채택이 IDOR를 재도입하지 않는다 — 추측 불가능한 UUID4
+            # 자체가 접근 권한(capability)이다.
+            #
+            # 보안 검토(ws_token): ws_token은 쿼리 파라미터 session_id에 바인딩된
+            # "연결 수립 게이트"다(_authenticate_websocket). 연결 수립 후 메시지별
+            # 세션 접근은 위 capability 모델(세션 UUID 지식 = 권한)이 통제하므로,
+            # payload ID 채택은 ws_token의 보안 전제를 깨지 않는다. 서버가 교체
+            # 발급한 확정 ID를 같은 연결에서 사용하는 것은 정상 프로토콜이다.
+            message_session_id = client_message.session_id
+            if message_session_id != session_id:
+                logger.debug(
+                    "payload session_id가 연결 쿼리 파라미터와 다름 (서버 확정 ID 사용 추정)",
+                    connection_session_id=session_id,
+                    message_session_id=message_session_id,
+                )
+
             # 스트리밍 처리
             await _process_streaming(
                 websocket=websocket,
                 client_message=client_message,
-                session_id=session_id,
+                session_id=message_session_id,
             )
 
     except Exception as e:
@@ -294,7 +319,8 @@ async def _process_streaming(
     Args:
         websocket: WebSocket 연결
         client_message: 클라이언트 메시지
-        session_id: 세션 ID
+        session_id: 메시지별 세션 ID (payload의 session_id — 후속 메시지에서는
+            stream_start로 회신된 서버 확정 ID가 담겨 멀티턴 컨텍스트를 유지)
     """
     message_id = client_message.message_id
     start_time = time.time()

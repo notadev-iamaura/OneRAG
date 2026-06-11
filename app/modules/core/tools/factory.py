@@ -18,6 +18,7 @@ YAML 설정에 따라 도구를 동적으로 등록/비활성화.
 하위 호환성:
     MCPToolFactory는 ToolFactory의 alias입니다.
 """
+
 from typing import TYPE_CHECKING, Any
 
 from ....lib.logger import get_logger
@@ -141,7 +142,7 @@ class ToolFactory:
         설정 기반 도구 서버 생성
 
         Args:
-            config: 전체 설정 딕셔너리 (mcp 또는 tools 섹션 포함)
+            config: 전체 설정 딕셔너리 (정본 mcp 섹션, 레거시 tools 섹션 폴백)
 
         Returns:
             ToolServer: ToolServer 인스턴스
@@ -149,11 +150,16 @@ class ToolFactory:
         Raises:
             ValueError: 도구 기능이 비활성화된 경우
         """
-        # tools 섹션 우선, 없으면 mcp 섹션 사용 (하위 호환성)
-        tools_config = config.get("tools", config.get("mcp", {}))
+        # 정본(mcp) 섹션 우선, 없으면 레거시 tools 별칭 폴백 (하위 호환성).
+        # tools는 tools.yaml의 YAML 별칭이라 파일 로드 시점에만 동기화된다 —
+        # 환경별 yaml이 mcp만 오버라이드하면 tools는 stale 별칭이 되므로,
+        # tools를 우선 읽으면 활성화 판단이 분열(split-brain)된다.
+        # 빈 dict({})도 거짓으로 평가해 tools 폴백으로 넘어가도록 한다.
+        mcp_section = config.get("mcp")
+        tools_config = mcp_section if mcp_section else config.get("tools", {})
 
         if not tools_config.get("enabled", False):
-            raise ValueError("도구 기능이 비활성화되어 있습니다 (tools.enabled=false)")
+            raise ValueError("도구 기능이 비활성화되어 있습니다 (mcp.enabled=false)")
 
         # 서버 설정 생성
         server_config = ToolServerConfig(
@@ -193,8 +199,7 @@ class ToolFactory:
         server_config.tools = enabled_tools
 
         logger.info(
-            f"🔧 ToolFactory: {len(enabled_tools)}개 도구 활성화 "
-            f"({list(enabled_tools.keys())})"
+            f"🔧 ToolFactory: {len(enabled_tools)}개 도구 활성화 ({list(enabled_tools.keys())})"
         )
 
         # ToolServer 인스턴스 생성
@@ -223,11 +228,7 @@ class ToolFactory:
         Returns:
             해당 카테고리의 도구 이름 리스트
         """
-        return [
-            name
-            for name, info in SUPPORTED_TOOLS.items()
-            if info.get("category") == category
-        ]
+        return [name for name, info in SUPPORTED_TOOLS.items() if info.get("category") == category]
 
     @staticmethod
     def register_tool(

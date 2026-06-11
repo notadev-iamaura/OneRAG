@@ -97,6 +97,14 @@ WIRED_PACKAGES: list[str] = ["app.api"]
 # Rate limiter
 limiter = Limiter(key_func=get_remote_address)
 
+# get_modules_dict의 awaitable 일괄 해소(eager await) 타임아웃 (초).
+# async provider(예: mcp_server, cache)의 생성이 행(hang)에 빠지면 앱 기동이
+# 무기한 정지하는 결함을 방지한다 — lazy 시절에는 첫 요청만 영향이었지만
+# eager 전환 후에는 기동 전체가 멈추므로 상한이 필수다. 타임아웃 시 어느 키의
+# provider가 행인지 명시한 RuntimeError로 전환해 fail-fast를 유지한다.
+# 60초: 정상 초기화(모델 로드/외부 연결 포함)에 충분하면서 행을 조기 탐지하는 값.
+_MODULE_RESOLVE_TIMEOUT_S: float = 60.0
+
 
 class RAGChatbotApp:
     """RAG 챗봇 메인 애플리케이션 클래스 (DI Container 기반)"""
@@ -241,9 +249,23 @@ class RAGChatbotApp:
 
         # dependency-injector async Singleton이 반환한 Future/awaitable을 일괄 해소
         # (docstring 참조 — unwrap 누락 시 사용 지점에서 AttributeError P0 결함 발생)
+        # 각 await에 타임아웃을 걸어 async provider 행(hang) 시 기동이 무기한
+        # 정지하는 것을 방지한다. 실패는 숨기지 않고 어느 키가 행인지 명시한
+        # RuntimeError로 전환해 전파한다 (fail-fast 유지 + 진단 가능성 확보).
         for name, value in modules.items():
             if asyncio.isfuture(value) or inspect.isawaitable(value):
-                modules[name] = await value
+                try:
+                    modules[name] = await asyncio.wait_for(
+                        value, timeout=_MODULE_RESOLVE_TIMEOUT_S
+                    )
+                except TimeoutError as e:
+                    # Python 3.11+: asyncio.TimeoutError == builtins.TimeoutError
+                    raise RuntimeError(
+                        f"모듈 provider 해소 타임아웃: '{name}' provider가 "
+                        f"{_MODULE_RESOLVE_TIMEOUT_S}초 내에 완료되지 않았습니다. "
+                        "해당 async provider(생성 팩토리)의 외부 연결/초기화 행 여부를 "
+                        "확인하세요. (앱 기동은 의도적으로 실패 처리됩니다)"
+                    ) from e
 
         return modules
 
