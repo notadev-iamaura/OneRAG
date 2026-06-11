@@ -120,6 +120,10 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     # chat_service의 Future-unwrap 가드와 동일 패턴).
     if asyncio.iscoroutine(retriever) or isinstance(retriever, asyncio.Future):
         retriever = await retriever
+        # 코루틴은 1회만 await 가능하므로(재-await 시 'cannot reuse already
+        # awaited coroutine' RuntimeError), 해소된 인스턴스를 _modules에
+        # 되저장해 두 번째 요청부터는 인스턴스를 직접 사용하게 한다.
+        _modules["retrieval"] = retriever
     if retriever:
         try:
             # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict
@@ -185,6 +189,10 @@ async def _stream_completion(
         # chat_service의 Future-unwrap 가드와 동일 패턴).
         if asyncio.iscoroutine(retriever) or isinstance(retriever, asyncio.Future):
             retriever = await retriever
+            # 코루틴은 1회만 await 가능하므로(재-await 시 'cannot reuse already
+            # awaited coroutine' RuntimeError), 해소된 인스턴스를 _modules에
+            # 되저장해 두 번째 요청부터는 인스턴스를 직접 사용하게 한다.
+            _modules["retrieval"] = retriever
         if retriever:
             try:
                 # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict

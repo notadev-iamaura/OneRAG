@@ -570,6 +570,96 @@ class TestWebSocketServerConfirmedSessionId:
         set_chat_service(None)
 
 
+class TestWebSocketPayloadSessionIdAdoption:
+    """후속 메시지의 payload session_id 채택 테스트 (멀티턴 핵심)
+
+    문서(websocket-api-guide.md)와 ClientMessage 스키마는 "후속 메시지의
+    session_id 필드에 stream_start로 회신된 서버 확정 ID를 사용하라"고 지시한다.
+    따라서 핸들러는 연결 쿼리 파라미터가 아닌 각 메시지 payload의 session_id로
+    stream_rag_pipeline을 호출해야 비-UUID4 커스텀 ID 클라이언트의
+    대화 컨텍스트(멀티턴)가 유지된다.
+    """
+
+    @pytest.fixture
+    def app(self):
+        """테스트용 FastAPI 앱 생성"""
+        app = FastAPI()
+        app.include_router(router)
+        return app
+
+    @pytest.mark.asyncio
+    async def test_each_message_uses_its_payload_session_id(self, app):
+        """각 메시지는 자신의 payload session_id로 파이프라인을 호출해야 함
+
+        시나리오:
+        1. 비-UUID4 커스텀 ID(my-custom-session)로 연결 + 1번 메시지 전송
+           → 파이프라인은 payload ID(my-custom-session)로 호출
+           → 서버가 교체한 확정 ID(server-confirmed-uuid)를 stream_start로 회신
+        2. 2번 메시지의 payload에 확정 ID(server-confirmed-uuid)를 담아 전송
+           → 파이프라인은 쿼리 파라미터가 아닌 payload ID로 호출되어야 함
+        """
+        # Given: 호출된 session_id를 기록하는 Mock 파이프라인
+        service = MagicMock()
+        pipeline_session_ids: list[str] = []
+
+        def fake_pipeline(message, session_id, options):
+            # 호출마다 새 generator를 반환 (1회성 generator 재사용 방지)
+            pipeline_session_ids.append(session_id)
+
+            async def gen():
+                yield {
+                    "event": "metadata",
+                    "data": {"session_id": "server-confirmed-uuid"},
+                }
+                yield {"event": "chunk", "data": "답변", "chunk_index": 0}
+                yield {"event": "done", "data": {}}
+
+            return gen()
+
+        service.stream_rag_pipeline = MagicMock(side_effect=fake_pipeline)
+        set_chat_service(service)
+
+        def drain_until_stream_end(websocket):
+            """stream_end까지 이벤트를 소비 (최대 10개 안전 한도)"""
+            for _ in range(10):
+                event = websocket.receive_json()
+                if event["type"] in ("stream_end", "stream_error"):
+                    return
+
+        # When: 1번 메시지(쿼리 파라미터와 동일 ID) → 2번 메시지(서버 확정 ID)
+        with TestClient(app) as client:
+            with client.websocket_connect(
+                "/chat-ws?session_id=my-custom-session"
+            ) as websocket:
+                websocket.send_json({
+                    "type": "message",
+                    "message_id": "msg-001",
+                    "content": "첫 번째 질문",
+                    "session_id": "my-custom-session",
+                })
+                drain_until_stream_end(websocket)
+
+                # 문서 프로토콜대로 stream_start로 회신된 확정 ID를 payload에 사용
+                websocket.send_json({
+                    "type": "message",
+                    "message_id": "msg-002",
+                    "content": "두 번째 질문",
+                    "session_id": "server-confirmed-uuid",
+                })
+                drain_until_stream_end(websocket)
+
+        # Then: 각 메시지의 payload session_id로 파이프라인이 호출되어야 함
+        assert pipeline_session_ids == [
+            "my-custom-session",
+            "server-confirmed-uuid",
+        ], (
+            "파이프라인은 연결 쿼리 파라미터가 아닌 각 메시지 payload의 "
+            "session_id로 호출되어야 멀티턴 컨텍스트가 유지됩니다"
+        )
+
+        set_chat_service(None)
+
+
 class TestWebSocketConnection:
     """WebSocket 연결 관리 테스트"""
 
