@@ -29,6 +29,46 @@ async def test_check_rate_limit_returns_tuple_when_session_tracking_full() -> No
     assert isinstance(remaining, int)
 
 
+@pytest.mark.asyncio
+async def test_session_remaining_respects_override_limit() -> None:
+    """override_session_limit 적용 시 remaining도 override 기준으로 계산되어야 함.
+
+    limit 초과 판정은 active_session_limit(override 반영)을 쓰면서
+    remaining 계산만 기본 session_limit을 쓰면, override가 기본값과 다를 때
+    X-RateLimit-Remaining 헤더에 음수/오류 값이 노출된다.
+    """
+    limiter = RateLimiter(ip_limit=30, session_limit=10, window_seconds=60)
+
+    # 첫 요청: override=3 기준 remaining = 3 - 1 = 2 (버그 시 10 - 1 = 9)
+    allowed, limit_type, remaining = await limiter.check_rate_limit(
+        ip=None, session_id="override-session", override_session_limit=3
+    )
+    assert allowed is True
+    assert limit_type == "session"
+    assert remaining == 2
+
+    # 두 번째 요청: remaining = 3 - 2 = 1
+    allowed, _, remaining = await limiter.check_rate_limit(
+        ip=None, session_id="override-session", override_session_limit=3
+    )
+    assert allowed is True
+    assert remaining == 1
+
+    # 세 번째 요청: 한도 도달 직전 마지막 허용, remaining = 0 (버그 시 7 등 오값)
+    allowed, _, remaining = await limiter.check_rate_limit(
+        ip=None, session_id="override-session", override_session_limit=3
+    )
+    assert allowed is True
+    assert remaining == 0
+
+    # 네 번째 요청: override 한도(3) 초과로 거부
+    allowed, _, remaining = await limiter.check_rate_limit(
+        ip=None, session_id="override-session", override_session_limit=3
+    )
+    assert allowed is False
+    assert remaining == 0
+
+
 def test_rate_limit_middleware_replays_post_body_without_session_id() -> None:
     app = FastAPI()
     app.add_middleware(

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from dependency_injector import containers, providers
 
@@ -102,10 +102,6 @@ if TYPE_CHECKING:
     )
     from app.modules.core.retrieval.rerankers.jina_reranker import JinaReranker
     from app.modules.core.retrieval.rerankers.reranker_chain import RerankerChain
-
-# TypeVar for generic type parameters
-T = TypeVar("T")
-
 
 def _create_chat_service(*args: Any, **kwargs: Any) -> Any:
     """Create ChatService lazily so importing the container stays lightweight."""
@@ -234,140 +230,6 @@ def extract_topic_default(message: str) -> str:
         return "general"
     except Exception:
         return "general"
-
-
-def _get_provider_config(
-    config: dict, provider_name: str, key: str, default: T | None = None
-) -> T | None:
-    """
-    Provider별 설정값 로딩 (defaults 활용)
-
-    우선순위:
-    1. providers.{provider_name}.{key} (provider별 설정)
-    2. reranking.defaults.{key} (공통 기본값)
-    3. default 인자 (함수 기본값)
-
-    Args:
-        config: 전체 설정 딕셔너리
-        provider_name: provider 이름 (예: "gemini_flash", "jina")
-        key: 설정 키 (예: "max_documents", "timeout")
-        default: 최종 fallback 기본값
-
-    Returns:
-        설정값 또는 None
-
-    Raises:
-        TypeError: 설정값 타입이 예상과 다를 경우
-    """
-    reranking = config.get("reranking", {})
-
-    if not isinstance(reranking, dict):
-        raise TypeError(f"config.reranking must be dict, got {type(reranking).__name__}")
-
-    providers = reranking.get("providers", {})
-    if not isinstance(providers, dict):
-        raise TypeError(f"reranking.providers must be dict, got {type(providers).__name__}")
-
-    provider_config = providers.get(provider_name, {})
-    if not isinstance(provider_config, dict):
-        raise TypeError(
-            f"provider config for '{provider_name}' must be dict, got {type(provider_config).__name__}"
-        )
-
-    defaults = reranking.get("defaults", {})
-    if not isinstance(defaults, dict):
-        raise TypeError(f"reranking.defaults must be dict, got {type(defaults).__name__}")
-
-    # Provider 설정 > Defaults > 함수 기본값
-    result = provider_config.get(key, defaults.get(key, default))
-
-    # 타입 안전성 검증: default가 있으면 result 타입이 일치해야 함
-    if default is not None and result is not None:
-        if not isinstance(result, type(default)):
-            raise TypeError(
-                f"Config value type mismatch for '{provider_name}.{key}': "
-                f"expected {type(default).__name__}, got {type(result).__name__}"
-            )
-
-    return result
-
-
-async def create_reranker_instance(
-    config: dict, llm_factory: LLMClientFactory | None = None
-) -> GeminiFlashReranker | JinaReranker | None:
-    """
-    Reranker 인스턴스 생성 헬퍼 함수
-
-    main.py의 Phase 5 로직을 재현:
-    1. Gemini Flash Reranker 우선
-    2. 실패 시 Jina Reranker fallback
-    3. 둘 다 없으면 None
-
-    Args:
-        config: 설정 딕셔너리
-        llm_factory: LLM Factory (optional, 향후 확장용)
-
-    Returns:
-        Reranker 인스턴스 또는 None
-
-    v3.1.0 개선사항:
-    - YAML defaults 활용으로 중복 제거
-    - Provider별 설정 우선순위 명확화
-    """
-    reranking_config = config.get("reranking", {})
-    default_provider = reranking_config.get("default_provider", "gemini_flash")
-
-    # DEBUG: Reranker 초기화 디버깅
-    google_api_key_set = "SET" if os.getenv("GOOGLE_API_KEY") else "NOT SET"
-    logger.info(
-        "Reranker 초기화 디버그",
-        extra={"provider": default_provider, "google_api_key_set": google_api_key_set}
-    )
-
-    # Gemini Flash Reranker 시도
-    if default_provider == "gemini_flash":
-        google_api_key = os.getenv("GOOGLE_API_KEY")
-        if google_api_key:
-            try:
-                from app.modules.core.retrieval.rerankers.gemini_reranker import (
-                    GeminiFlashReranker,
-                )
-
-                reranker = GeminiFlashReranker(
-                    api_key=google_api_key,
-                    max_documents=_get_provider_config(config, "gemini_flash", "max_documents", 10)
-                    or 10,
-                    timeout=_get_provider_config(config, "gemini_flash", "timeout", 10) or 10,
-                )
-                logger.info("GeminiFlashReranker 초기화 성공", extra={"provider": "gemini_flash"})
-                return reranker
-            except Exception as e:
-                logger.warning(
-                    "GeminiFlashReranker 초기화 실패",
-                    extra={"error": str(e), "fallback": "jina"},
-                    exc_info=True
-                )
-
-    # Jina Reranker fallback
-    jina_api_key = os.getenv("JINA_API_KEY")
-    if jina_api_key:
-        try:
-            from app.modules.core.retrieval.rerankers.jina_reranker import JinaReranker
-
-            reranker = JinaReranker(  # type: ignore[assignment]
-                api_key=jina_api_key,
-                model=_get_provider_config(
-                    config, "jina", "model", "jina-reranker-v2-base-multilingual"
-                )
-                or "jina-reranker-v2-base-multilingual",
-            )
-            logger.info("JinaReranker 초기화 성공", extra={"provider": "jina"})
-            return reranker
-        except Exception as e:
-            logger.warning("JinaReranker 초기화 실패", extra={"error": str(e)}, exc_info=True)
-
-    logger.warning("Reranker API 키 없음", extra={"status": "proceeding_without_reranker"})
-    return None
 
 
 async def create_reranker_instance_v2(
@@ -749,7 +611,7 @@ async def create_evaluator_instance(
     Evaluator 인스턴스 생성 헬퍼 함수
 
     설정 기반 평가기 생성 (EvaluatorFactory 사용).
-    기존 create_reranker_instance, create_cache_instance 패턴과 동일.
+    기존 create_cache_instance 패턴과 동일.
 
     Args:
         config: 설정 딕셔너리
@@ -1790,7 +1652,6 @@ class AppContainer(containers.DeclarativeContainer):
     # ----------------------------------------
     # Base Reranker (reranking.yaml v2.1: approach/provider/model 3단계 구조)
     # create_reranker_instance_v2가 RerankerFactoryV2를 통해 설정대로 생성한다.
-    # (레거시 create_reranker_instance는 default_provider 키를 참조해 v2.1 설정을 무시했음)
     base_reranker = providers.Singleton(
         create_reranker_instance_v2, config=config, llm_factory=llm_factory
     )

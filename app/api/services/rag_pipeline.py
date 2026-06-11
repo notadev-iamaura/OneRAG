@@ -761,17 +761,10 @@ class RAGPipeline:
         # DynamicRuleManager(auto_reload=True)가 5분마다 규칙을 자동 리로드하므로
         # 인스턴스를 공유해도 규칙 변경은 그대로 반영된다(동작 보존).
         # 생성 실패 시 None으로 두고 route_query()에서 lazy 생성으로 폴백한다.
+        # (생성 로직 자체는 _create_rule_based_router 헬퍼로 단일화)
         self.rule_based_router: Any | None = None
         try:
-            global RuleBasedRouter
-            if RuleBasedRouter is None:
-                from ...modules.core.routing.rule_based_router import (
-                    RuleBasedRouter as _RuleBasedRouter,
-                )
-
-                RuleBasedRouter = _RuleBasedRouter
-
-            self.rule_based_router = RuleBasedRouter(enabled=True)
+            self.rule_based_router = self._create_rule_based_router()
         except Exception as e:
             logger.warning(
                 "RuleBasedRouter 초기화 실패 (route_query에서 lazy 생성으로 폴백)",
@@ -787,6 +780,29 @@ class RAGPipeline:
                 "score_normalization": "활성화" if score_norm_config.get('enabled', True) else "비활성화"
             }
         )
+
+    def _create_rule_based_router(self) -> Any:
+        """
+        RuleBasedRouter 인스턴스를 생성한다 (__init__ eager / route_query lazy 공용).
+
+        모듈 전역 캐시(RuleBasedRouter)를 활용해 임포트는 1회만 수행한다.
+        생성 로직을 단일 지점으로 모아 eager/lazy 두 경로가 갈라지지 않게 한다.
+
+        Returns:
+            RuleBasedRouter 인스턴스 (enabled=True)
+
+        Raises:
+            Exception: 설정 파일 로드 실패 등 생성 실패 시 호출부에서 처리
+        """
+        global RuleBasedRouter
+        if RuleBasedRouter is None:
+            from ...modules.core.routing.rule_based_router import (
+                RuleBasedRouter as _RuleBasedRouter,
+            )
+
+            RuleBasedRouter = _RuleBasedRouter
+
+        return RuleBasedRouter(enabled=True)
 
     def _create_fallback_response(
         self, message: str, start_time: float, routing_metadata: dict[str, Any]
@@ -1288,6 +1304,12 @@ class RAGPipeline:
         re.IGNORECASE,
     )
 
+    # 재작성 프롬프트 플레이스홀더 치환용: 두 토큰을 단일 패스로 치환해
+    # 치환 값 내부 토큰 재치환을 차단한다 (순차 replace는 앞선 치환 결과를
+    # 재스캔하므로, 직전 대화에 리터럴 '{message}'가 있으면 컨텍스트 블록에
+    # 새 질문이 주입되는 인젝션 벡터가 된다).
+    _REWRITE_PLACEHOLDER_PATTERN = re.compile(r"\{session_context\}|\{message\}")
+
     def _postprocess_rewritten_query(self, content: str | None) -> str:
         """
         LLM 재작성 결과를 검색에 안전하게 투입하도록 경량 정제한다.
@@ -1358,10 +1380,13 @@ class RAGPipeline:
 
         # LLM 재작성 프롬프트 구성 (설정 템플릿 기반, 기본값=한국어 프롬프트)
         # 템플릿에 {session_context}/{message} 외 중괄호가 있어도 깨지지 않도록
-        # replace로 안전 치환한다(format은 임의 중괄호에 취약).
-        prompt = self.multiturn_rewrite_prompt_template.replace(
-            "{session_context}", session_context
-        ).replace("{message}", message)
+        # 안전 치환한다(format은 임의 중괄호에 취약).
+        # 컴파일된 패턴으로 두 토큰을 단일 패스 치환해, 치환 값 내부에
+        # 리터럴 토큰이 있어도 재치환되지 않도록 차단한다.
+        values = {"{session_context}": session_context, "{message}": message}
+        prompt = self._REWRITE_PLACEHOLDER_PATTERN.sub(
+            lambda m: values[m.group(0)], self.multiturn_rewrite_prompt_template
+        )
 
         try:
             # 결정적(temperature=0.0) 호출로 재작성의 비결정성을 차단.
@@ -1751,18 +1776,11 @@ class RAGPipeline:
                 )
         try:
             # __init__에서 1회 생성한 라우터를 재사용한다.
-            # 초기화에 실패했던 경우에만 여기서 lazy 생성으로 폴백한다.
+            # 초기화에 실패했던 경우에만 공용 헬퍼로 lazy 생성 폴백한다.
+            # (일시적 실패였다면 여기서 복구되고, 성공 시 캐시되어 재시도 중단)
             rule_router = self.rule_based_router
             if rule_router is None:
-                global RuleBasedRouter
-                if RuleBasedRouter is None:
-                    from ...modules.core.routing.rule_based_router import (
-                        RuleBasedRouter as _RuleBasedRouter,
-                    )
-
-                    RuleBasedRouter = _RuleBasedRouter
-
-                rule_router = RuleBasedRouter(enabled=True)
+                rule_router = self._create_rule_based_router()
                 self.rule_based_router = rule_router
 
             rule_match = await rule_router.check_rules(message)

@@ -4,17 +4,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..lib.auth import get_api_key
 from ..lib.logger import get_logger
 from ..models.prompts import PromptCreate, PromptListResponse, PromptResponse, PromptUpdate
-
-# 순환 임포트 방지: 타입 힌트용으로만 임포트
-if TYPE_CHECKING:
-    from ..core.di_container import AppContainer
+from .container_registry import ContainerRegistry
 
 logger = get_logger(__name__)
 # ✅ H2 보안 패치: GET(읽기)은 공개, POST/PUT/DELETE(쓰기)는 인증 필요
@@ -22,26 +17,17 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/prompts", tags=["Prompts"])
 
 
-# 공유 DI 컨테이너 (main.py lifespan에서 주입)
+# 공유 DI 컨테이너 레지스트리 (main.py lifespan에서 set_container로 주입)
 # 새 AppContainer() 생성을 막아 PromptManager가 실행 중 파이프라인과 동일한
 # 설정(use_database 등)을 공유하게 한다 (관리 API와 RAG의 split-brain 방지).
-_shared_container: AppContainer | None = None
+_container_registry = ContainerRegistry(
+    owner="prompts", fallback_hint="설정이 비어 있을 수 있음"
+)
 
-
-def set_container(container: AppContainer) -> None:
-    """공유 DI 컨테이너 주입 (main.py lifespan에서 호출)"""
-    global _shared_container
-    _shared_container = container
-
-
-def _get_container() -> AppContainer:
-    """공유 컨테이너를 반환한다 (미주입 시 경고 후 새 인스턴스 — 테스트 폴백)"""
-    if _shared_container is not None:
-        return _shared_container
-    from ..core.di_container import AppContainer
-
-    logger.warning("공유 컨테이너 미주입 — 새 AppContainer 생성 (설정이 비어 있을 수 있음)")
-    return AppContainer()
+# main.py 호환: 기존 모듈 함수 이름(set_container/_get_container)을 유지한 채
+# 내부 구현만 공용 레지스트리에 위임한다 (re-export 형태).
+set_container = _container_registry.set
+_get_container = _container_registry.get
 
 
 @router.get(

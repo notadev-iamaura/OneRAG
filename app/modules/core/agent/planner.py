@@ -128,9 +128,6 @@ def build_planner_system_prompt(output_language: str = "한국어") -> str:
     )
 
 
-# 하위 호환: 한국어 기본 시스템 프롬프트 템플릿(기존 상수명 유지)
-PLANNER_SYSTEM_PROMPT = build_planner_system_prompt("한국어")
-
 PLANNER_USER_PROMPT = """## 사용자 질문:
 {query}
 

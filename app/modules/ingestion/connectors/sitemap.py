@@ -29,27 +29,40 @@ class SitemapConnector(IIngestionConnector):
         self._semaphore = asyncio.Semaphore(self.max_parallel)
 
     async def fetch_documents(self) -> AsyncGenerator[StandardDocument, None]:
-        """사이트맵에서 URL 목록을 가져와 각 페이지의 내용을 병렬로 추출"""
-        urls = await self._parse_sitemap(self.url)
-        if not urls:
-            logger.warning(f"No URLs found in sitemap: {self.url}")
-            return
+        """사이트맵에서 URL 목록을 가져와 각 페이지의 내용을 병렬로 추출
 
-        # 병렬 태스크 생성
-        tasks = [self._safe_fetch_and_parse(url) for url in urls]
+        커넥션 풀 재사용: 크롤 전체(사이트맵 조회 + 모든 페이지 수집/재시도)에서
+        ``httpx.AsyncClient`` 1개를 공유합니다. 기존에는 재시도 attempt마다 새
+        클라이언트를 생성해 N페이지 크롤에 N+α회 TCP+TLS 핸드셰이크가 발생했습니다.
+        """
+        # 크롤 전체가 공유하는 단일 클라이언트 (커넥션 풀 재사용)
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            urls = await self._parse_sitemap(self.url, client)
+            if not urls:
+                logger.warning(f"No URLs found in sitemap: {self.url}")
+                return
 
-        # 결과를 스트리밍하기 위해 as_completed 사용
-        for task in asyncio.as_completed(tasks):
-            try:
-                doc = await task
-                if doc:
-                    yield doc
-            except Exception as e:
-                logger.error(f"Critical error during document fetch task: {e}")
+            # 병렬 태스크 생성 (공유 클라이언트 전달)
+            tasks = [self._safe_fetch_and_parse(url, client) for url in urls]
 
-    async def _safe_fetch_and_parse(self, url: str) -> StandardDocument | None:
+            # 결과를 스트리밍하기 위해 as_completed 사용
+            for task in asyncio.as_completed(tasks):
+                try:
+                    doc = await task
+                    if doc:
+                        yield doc
+                except Exception as e:
+                    logger.error(f"Critical error during document fetch task: {e}")
+
+    async def _safe_fetch_and_parse(
+        self, url: str, client: httpx.AsyncClient | None = None
+    ) -> StandardDocument | None:
         """
         세마포어와 재시도 로직을 적용한 안전한 페이지 수집
+
+        클라이언트 수명: ``fetch_documents()``가 만든 공유 클라이언트를 주입받아
+        재시도(attempt) 간에도 커넥션 풀을 재사용합니다. 단독 호출(client=None) 시
+        1회용 클라이언트를 만들어 동일 경로로 위임합니다(하위호환).
 
         동작 보존 (RetryPolicy 이관):
         - 세마포어로 동시 요청 수를 ``max_parallel``로 제한합니다(재시도 루프 외부 유지).
@@ -60,6 +73,10 @@ class SitemapConnector(IIngestionConnector):
         - 최대 시도(``max_retries``) 소진 시: ``None`` 반환(예외 전파 없음).
         - 그 외 예외: 즉시 ``None`` 반환(재시도/대기 없음).
         """
+        if client is None:
+            # 하위호환 경로: 단독 호출 시 1회용 클라이언트를 만들어 공유 경로로 위임
+            async with httpx.AsyncClient(timeout=self.timeout) as own_client:
+                return await self._safe_fetch_and_parse(url, own_client)
         # 선언적 재시도 정책: 선형 백오프 2, 4, 6...초 (+jitter)
         policy = RetryPolicy(
             retry_exceptions=(httpx.ConnectError, httpx.TimeoutException),
@@ -79,8 +96,8 @@ class SitemapConnector(IIngestionConnector):
             try:
                 async for attempt in policy.build_async_retrying():
                     with attempt:
-                        async with httpx.AsyncClient(timeout=self.timeout) as client:
-                            return await self._fetch_and_parse_page(client, url)
+                        # 공유 클라이언트 재사용 (attempt마다 새 연결 생성 금지)
+                        return await self._fetch_and_parse_page(client, url)
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # 재시도 소진: 기존과 동일하게 None 반환
                 logger.error(f"Failed to fetch {url} after {self.max_retries} retries: {e}")
@@ -95,16 +112,17 @@ class SitemapConnector(IIngestionConnector):
                 return None
         return None
 
-    async def _parse_sitemap(self, sitemap_url: str) -> list[str]:
-        """사이트맵 XML에서 <loc> 태그의 URL 목록 추출"""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(sitemap_url)
-            response.raise_for_status()
+    async def _parse_sitemap(
+        self, sitemap_url: str, client: httpx.AsyncClient
+    ) -> list[str]:
+        """사이트맵 XML에서 <loc> 태그의 URL 목록 추출 (공유 클라이언트 사용)"""
+        response = await client.get(sitemap_url)
+        response.raise_for_status()
 
-            soup = BeautifulSoup(response.content, "xml")
-            urls = [loc.text.strip() for loc in soup.find_all("loc")]
-            logger.info(f"Found {len(urls)} URLs in sitemap {sitemap_url}")
-            return urls
+        soup = BeautifulSoup(response.content, "xml")
+        urls = [loc.text.strip() for loc in soup.find_all("loc")]
+        logger.info(f"Found {len(urls)} URLs in sitemap {sitemap_url}")
+        return urls
 
     async def _fetch_and_parse_page(self, client: httpx.AsyncClient, url: str) -> StandardDocument:
         """단일 HTML 페이지에서 본문 텍스트 추출"""

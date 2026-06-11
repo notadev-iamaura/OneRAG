@@ -27,6 +27,18 @@ from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Pinecone query API의 top_k 최대 허용값 (Pinecone 공식 제한: 10,000).
+# 서버측 메타데이터 필터 조회(fetch_objects 필터 경로)에서 사용하며,
+# 결과가 이 상한에 도달하면 잘림 가능성이 있으므로 warning 로그를 남긴다
+# (조용한 절단 방지 — 호출자가 데이터 누락 가능성을 인지할 수 있어야 함).
+PINECONE_QUERY_MAX_TOP_K = 10000
+
+# 메타데이터 필터 쿼리용 제로 벡터의 기본 차원.
+# describe_index_stats로 실제 인덱스 차원을 조회하지 못한 경우의 폴백 값이며,
+# config/features/pinecone.yaml의 index_guide.dimensions(=3072, Gemini
+# embedding-001 기준)와 동일하게 유지한다.
+DEFAULT_INDEX_DIMENSION = 3072
+
 
 class PineconeVectorStore(IVectorStore):
     """
@@ -74,6 +86,9 @@ class PineconeVectorStore(IVectorStore):
 
         # 인덱스 연결
         self._index = self._client.Index(index_name)
+
+        # 인덱스 차원 캐시 (메타데이터 필터 쿼리의 제로 벡터 구성용, 지연 조회)
+        self._index_dimension: int | None = None
 
         logger.info(
             f"PineconeVectorStore: 초기화 완료 (index={index_name})"
@@ -317,16 +332,20 @@ class PineconeVectorStore(IVectorStore):
         (ChromaVectorStore 파리티 백포트). chroma_store와 동일하게 각 객체는
         {"_id": str, "content": str, ...metadata} 형태로 반환한다.
 
-        Pinecone은 메타데이터 조회용 단일 API가 없으므로 두 단계로 처리한다:
-        1. list_paginated로 네임스페이스의 벡터 ID 목록을 페이지네이션 수집
-        2. fetch로 ID 배치의 메타데이터를 조회
+        조회 경로는 필터 종류에 따라 세 갈래로 나뉜다:
+        1. id/ids 필터: fetch로 직접 조회 (나머지 메타데이터 조건은 메모리 필터링)
+        2. 메타데이터 필터(id/ids 외): 서버측 필터 쿼리(query + filter)로 1회 조회
+           — 전수 ID 스캔 후 순차 fetch하던 기존 방식(네임스페이스 크기에 비례한
+           API 왕복)을 제거한다.
+        3. 필터 없음(전체 목록): list_paginated로 전체 ID 수집 후 fetch 배치 조회
 
         Args:
             collection: 네임스페이스 이름 (Pinecone namespace)
             filters: 메타데이터 필터.
                 - id: str - 단일 ID 직접 조회
                 - ids: list[str] - 여러 ID 직접 조회
-                - 그 외 필드: list_paginated로 전수 조회 후 메모리 필터링
+                - 그 외 필드: 서버측 메타데이터 필터 쿼리 (top_k 상한
+                  ``PINECONE_QUERY_MAX_TOP_K``, 도달 시 잘림 경고)
 
         Returns:
             조회 결과 리스트. 각 항목은 {"_id": str, "content": str, ...metadata} 형식.
@@ -334,25 +353,28 @@ class PineconeVectorStore(IVectorStore):
         filters_value = filters or {}
 
         def _fetch_sync() -> list[dict[str, Any]]:
+            # 메타데이터 조건 분리 (id/ids 제외)
+            meta_filters = {
+                key: value
+                for key, value in filters_value.items()
+                if key not in ("id", "ids")
+            }
+
             # 1) 조회 대상 ID 목록 결정
             target_ids: list[str]
             if "id" in filters_value:
                 target_ids = [str(filters_value["id"])]
             elif "ids" in filters_value:
                 target_ids = [str(value) for value in filters_value["ids"]]
+            elif meta_filters:
+                # 메타데이터 필터 경로: 전수 스캔 대신 서버측 필터 쿼리 1회로 조회
+                return self._query_by_metadata_filter(collection, meta_filters)
             else:
-                # 네임스페이스 전체 ID를 페이지네이션으로 수집
+                # 필터 없음: 네임스페이스 전체 ID를 페이지네이션으로 수집
                 target_ids = self._list_all_ids(collection)
 
             if not target_ids:
                 return []
-
-            # 메모리 필터링용 메타데이터 조건 (id/ids 제외)
-            meta_filters = {
-                key: value
-                for key, value in filters_value.items()
-                if key not in ("id", "ids")
-            }
 
             # 2) ID 배치 단위로 fetch (Pinecone fetch 권장 배치 크기 100)
             output: list[dict[str, Any]] = []
@@ -363,7 +385,7 @@ class PineconeVectorStore(IVectorStore):
                 vectors = self._extract_fetch_vectors(response)
                 for vec_id, vec in vectors.items():
                     metadata = self._extract_metadata(vec)
-                    # 메타데이터 필터 적용 (전수 조회 케이스)
+                    # 메타데이터 필터 적용 (id/ids 직접 조회 케이스)
                     if meta_filters and not all(
                         str(metadata.get(key)) == str(value)
                         for key, value in meta_filters.items()
@@ -401,6 +423,112 @@ class PineconeVectorStore(IVectorStore):
         if not object_ids:
             return 0
         return await self.delete(collection=collection, filters={"ids": object_ids})
+
+    def _query_by_metadata_filter(
+        self, namespace: str, meta_filters: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """메타데이터 필터를 서버측 query로 위임해 객체를 조회한다.
+
+        기존 구현은 list_paginated로 네임스페이스 전체 ID를 수집한 뒤 100개씩
+        순차 fetch하고 메모리에서 필터링했다(50k 벡터 기준 호출당 약 1,000회
+        API 왕복). Pinecone query는 메타데이터 필터를 서버측에서 지원하므로
+        제로 벡터 + filter 쿼리 1회로 동일 결과를 얻는다.
+
+        Args:
+            namespace: 네임스페이스 이름
+            meta_filters: 메타데이터 필터 (id/ids 제외된 조건).
+                값이 dict면 Pinecone 연산자 필터({"$in": ...} 등)로 그대로 전달,
+                아니면 동등 비교({"$eq": value})로 변환한다.
+
+        Returns:
+            조회 결과 리스트. 각 항목은 {"_id": str, "content": str, ...metadata} 형식
+            (기존 fetch 경로와 동일한 반환 계약).
+        """
+        # Pinecone filter 문법으로 변환 (단순 값은 $eq 동등 비교)
+        pinecone_filter = {
+            key: value if isinstance(value, dict) else {"$eq": value}
+            for key, value in meta_filters.items()
+        }
+
+        # 순수 메타데이터 조회 목적이므로 유사도 무의미 → 제로 벡터 사용.
+        # 차원은 인덱스 실제 차원과 일치해야 쿼리가 거부되지 않는다.
+        #
+        # 메트릭 제약: 이 패턴은 cosine 메트릭(출하 기본, pinecone.yaml) 전제다.
+        # dotproduct 인덱스에서는 제로 벡터와의 내적이 전부 0이라 매치가
+        # 반환되지 않을 수 있어 조용한 데이터 누락이 된다 — 인덱스 메트릭을
+        # dotproduct로 바꾼다면 이 경로를 list+fetch 방식으로 되돌리거나
+        # 더미 단위 벡터 등 대체 전략이 필요하다.
+        dimension = self._get_index_dimension()
+        response = self._index.query(
+            vector=[0.0] * dimension,
+            filter=pinecone_filter,
+            top_k=PINECONE_QUERY_MAX_TOP_K,
+            namespace=namespace,
+            include_metadata=True,
+        )
+
+        # 응답에서 matches 추출 (SDK 버전별 형태 차이 흡수)
+        matches = getattr(response, "matches", None)
+        if matches is None and isinstance(response, dict):
+            matches = response.get("matches")
+
+        output: list[dict[str, Any]] = []
+        for match in matches or []:
+            match_id = getattr(match, "id", None)
+            if match_id is None and isinstance(match, dict):
+                match_id = match.get("id")
+            metadata = self._extract_metadata(match)
+            item: dict[str, Any] = dict(metadata)
+            item["_id"] = str(match_id)
+            item["content"] = str(metadata.get("content", ""))
+            output.append(item)
+
+        # top_k 상한 도달 시 잘림 가능성 경고 (조용한 절단 금지).
+        # Pinecone query는 top_k를 넘는 결과를 반환하지 않으므로, 상한과 동일한
+        # 개수가 반환되면 필터 일치 객체가 더 존재할 수 있다.
+        if len(output) >= PINECONE_QUERY_MAX_TOP_K:
+            logger.warning(
+                f"PineconeVectorStore: 메타데이터 필터 조회 결과가 top_k 상한"
+                f"({PINECONE_QUERY_MAX_TOP_K})에 도달했습니다. 일부 객체가 누락되었을 "
+                f"수 있습니다 (namespace={namespace}, filter={pinecone_filter})"
+            )
+
+        return output
+
+    def _get_index_dimension(self) -> int:
+        """인덱스 벡터 차원을 조회한다 (최초 1회 조회 후 캐시).
+
+        메타데이터 필터 쿼리의 제로 벡터는 인덱스 차원과 일치해야 하므로
+        describe_index_stats에서 실제 차원을 읽는다. 조회 실패 또는 응답에
+        유효한 차원이 없으면 ``DEFAULT_INDEX_DIMENSION``으로 폴백한다
+        (차원 불일치 시 Pinecone이 쿼리를 거부하므로 오류가 은폐되지 않음).
+        """
+        if self._index_dimension is not None:
+            return self._index_dimension
+
+        dimension: Any = None
+        try:
+            stats = self._index.describe_index_stats()
+            dimension = getattr(stats, "dimension", None)
+            if dimension is None and isinstance(stats, dict):
+                dimension = stats.get("dimension")
+        except Exception as e:
+            logger.warning(
+                f"PineconeVectorStore: 인덱스 차원 조회 실패, 기본값 "
+                f"{DEFAULT_INDEX_DIMENSION} 사용 - {e}"
+            )
+
+        # bool은 int의 서브클래스이므로 명시적으로 제외하고 정수 차원만 수용
+        if (
+            isinstance(dimension, int | float)
+            and not isinstance(dimension, bool)
+            and int(dimension) > 0
+        ):
+            self._index_dimension = int(dimension)
+        else:
+            self._index_dimension = DEFAULT_INDEX_DIMENSION
+
+        return self._index_dimension
 
     def _list_all_ids(self, namespace: str) -> list[str]:
         """네임스페이스의 모든 벡터 ID를 list_paginated로 수집한다.

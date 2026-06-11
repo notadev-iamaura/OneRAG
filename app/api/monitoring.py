@@ -5,41 +5,28 @@ Circuit Breaker, 비용 추적, 성능 메트릭 모니터링
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ..lib.auth import get_api_key
 from ..lib.logger import get_logger
-
-# 순환 임포트 방지: 타입 힌트용으로만 임포트
-if TYPE_CHECKING:
-    from ..core.di_container import AppContainer
-
+from .container_registry import ContainerRegistry
 
 logger = get_logger(__name__)
 
-# 공유 DI 컨테이너 (main.py lifespan에서 주입)
+# 공유 DI 컨테이너 레지스트리 (main.py lifespan에서 set_container로 주입)
 # 새 AppContainer() 생성을 막아 실행 중 파이프라인과 동일한 싱글톤
 # (cost_tracker, performance_metrics 등)을 참조하게 한다.
-_shared_container: AppContainer | None = None
+_container_registry = ContainerRegistry(
+    owner="monitoring", fallback_hint="메트릭이 비어 있을 수 있음"
+)
 
-
-def set_container(container: AppContainer) -> None:
-    """공유 DI 컨테이너 주입 (main.py lifespan에서 호출)"""
-    global _shared_container
-    _shared_container = container
-
-
-def _get_container() -> AppContainer:
-    """공유 컨테이너를 반환한다 (미주입 시 경고 후 새 인스턴스 — 테스트 폴백)"""
-    if _shared_container is not None:
-        return _shared_container
-    from ..core.di_container import AppContainer
-
-    logger.warning("공유 컨테이너 미주입 — 새 AppContainer 생성 (메트릭이 비어 있을 수 있음)")
-    return AppContainer()
+# main.py 호환: 기존 모듈 함수 이름(set_container/_get_container)을 유지한 채
+# 내부 구현만 공용 레지스트리에 위임한다 (re-export 형태).
+set_container = _container_registry.set
+_get_container = _container_registry.get
 
 # ✅ H1 보안 패치: 라우터 레벨 인증 추가
 # Monitoring API는 비용, 성능 정보 등 민감한 데이터 노출

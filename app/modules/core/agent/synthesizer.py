@@ -58,9 +58,6 @@ def build_synthesizer_system_prompt(output_language: str = "한국어") -> str:
     )
 
 
-# 하위 호환: 한국어 기본 시스템 프롬프트(기존 상수명 유지)
-SYNTHESIZER_SYSTEM_PROMPT = build_synthesizer_system_prompt("한국어")
-
 SYNTHESIZER_USER_PROMPT = """## 사용자 질문:
 {query}
 

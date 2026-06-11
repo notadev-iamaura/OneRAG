@@ -191,8 +191,11 @@ class RateLimiter:
                     return False, "session", remaining
 
                 # 요청 기록 추가
+                # remaining도 limit 체크와 동일하게 override 반영 값(active_session_limit)을
+                # 사용한다. 기본 session_limit을 쓰면 override 시 X-RateLimit-Remaining에
+                # 음수/오류 값이 노출된다(IP 분기와 동일한 계산 방식으로 통일).
                 request_list.append((current_time, 1))
-                remaining = self.session_limit - (current_count + 1)
+                remaining = active_session_limit - (current_count + 1)
 
                 return True, "session", remaining
 

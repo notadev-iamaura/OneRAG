@@ -28,6 +28,15 @@ from ..schemas.enrichment_schema import EnrichmentConfig, EnrichmentResult
 logger = get_logger(__name__)
 
 
+def _is_falsy_result(result: Any) -> bool:
+    """결과가 falsy(빈 응답/파싱 실패)면 재시도 대상으로 판정한다.
+
+    RetryPolicy.retry_on_result에 주입되는 stateless 조건 함수입니다.
+    호출마다 재생성할 필요가 없도록 모듈 레벨로 정의합니다.
+    """
+    return not result
+
+
 class LLMEnricher(EnricherInterface):
     """
     LLM 기반 문서 보강 구현체
@@ -75,6 +84,25 @@ class LLMEnricher(EnricherInterface):
             "total_tokens_used": 0,
             "average_latency": 0.0,
         }
+
+        # 선언적 재시도 정책 (호출마다 재생성하지 않도록 인스턴스 레벨로 1회 구성):
+        # - 예외(APITimeoutError/APIError): 지수 백오프 1, 2, 4...초(+jitter, 상한 없음).
+        # - falsy result(빈 응답/파싱 실패): retry_on_result로 무대기 즉시 재시도
+        #   (기존 continue 동작 보존 — RetryPolicy가 결과 기반 재시도를 무대기로 처리).
+        # - 그 외 예외는 retry 조건에 안 걸려 즉시 전파 → 기존 break(재시도 안 함) 보존.
+        # frozen RetryPolicy와 tenacity wait 객체는 stateless이므로 재사용해도 안전하며,
+        # 상태를 가지는 AsyncRetrying은 _call_llm_with_retry에서 호출마다 새로 만듭니다.
+        self._retry_policy = RetryPolicy(
+            retry_exceptions=(APITimeoutError, APIError),
+            max_attempts=config.max_retries,
+            strategy=BackoffStrategy.EXPONENTIAL,
+            initial_delay_s=1.0,
+            max_delay_s=float("inf"),  # 기존 동작 보존: 지수 백오프 상한 없음
+            jitter_s=DEFAULT_BACKOFF_JITTER_S,
+            reraise=True,
+            before_sleep=self._log_retry_before_sleep,
+            retry_on_result=_is_falsy_result,
+        )
 
         logger.info(
             "LLMEnricher initialized",
@@ -263,6 +291,19 @@ class LLMEnricher(EnricherInterface):
             logger.error(f"Validation error: {e}")
             return False
 
+    def _log_retry_before_sleep(self, retry_state: RetryCallState) -> None:
+        """재시도 직전 로깅 (기존 로그 의미 보존)
+
+        RetryPolicy.before_sleep에 주입되는 콜백입니다. 호출마다 클로저를
+        재생성하지 않도록 인스턴스 메서드로 정의합니다.
+        """
+        attempt_num = retry_state.attempt_number
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        if isinstance(exc, APITimeoutError):
+            logger.warning(f"LLM timeout (attempt {attempt_num}/{self.config.max_retries})")
+        elif isinstance(exc, APIError):
+            logger.error(f"LLM API error (attempt {attempt_num}): {exc}")
+
     async def _call_llm_with_retry(
         self, system_prompt: str, user_prompt: str, timeout: int, expect_array: bool = False
     ) -> dict[str, Any] | list[dict[str, Any]] | None:
@@ -298,42 +339,14 @@ class LLMEnricher(EnricherInterface):
             result = self._parse_json_response(response_text, expect_array)
             return result if result else None
 
-        def _is_falsy(result: Any) -> bool:
-            """결과가 falsy(빈 응답/파싱 실패)면 재시도"""
-            return not result
-
-        def _log_before_sleep(retry_state: RetryCallState) -> None:
-            """재시도 직전 로깅 (기존 로그 의미 보존)"""
-            attempt_num = retry_state.attempt_number
-            exc = retry_state.outcome.exception() if retry_state.outcome else None
-            if isinstance(exc, APITimeoutError):
-                logger.warning(f"LLM timeout (attempt {attempt_num}/{self.config.max_retries})")
-            elif isinstance(exc, APIError):
-                logger.error(f"LLM API error (attempt {attempt_num}): {exc}")
-
-        # 선언적 재시도 정책:
-        # - 예외(APITimeoutError/APIError): 지수 백오프 1, 2, 4...초(+jitter, 상한 없음).
-        # - falsy result(빈 응답/파싱 실패): retry_on_result로 무대기 즉시 재시도
-        #   (기존 continue 동작 보존 — RetryPolicy가 결과 기반 재시도를 무대기로 처리).
-        # - 그 외 예외는 retry 조건에 안 걸려 즉시 전파 → 기존 break(재시도 안 함) 보존.
-        policy = RetryPolicy(
-            retry_exceptions=(APITimeoutError, APIError),
-            max_attempts=self.config.max_retries,
-            strategy=BackoffStrategy.EXPONENTIAL,
-            initial_delay_s=1.0,
-            max_delay_s=float("inf"),  # 기존 동작 보존: 지수 백오프 상한 없음
-            jitter_s=DEFAULT_BACKOFF_JITTER_S,
-            reraise=True,
-            before_sleep=_log_before_sleep,
-            retry_on_result=_is_falsy,
-        )
-
         # 결과 기반 재시도(retry_on_result)를 쓰려면 tenacity 공식 패턴에 따라
         # with 블록 안에서 return하지 않고, 블록 밖에서 set_result로 결과를
         # 명시적으로 전달해야 합니다. 최종 결과는 last_result에 보관합니다.
+        # 정책 자체(__init__에서 1회 구성)는 stateless이므로 재사용하고,
+        # 상태를 가지는 AsyncRetrying만 호출마다 새로 생성합니다.
         last_result: dict[str, Any] | list[dict[str, Any]] | None = None
         try:
-            async for attempt in policy.build_async_retrying():
+            async for attempt in self._retry_policy.build_async_retrying():
                 with attempt:
                     last_result = await _attempt()
                 # 예외가 아니면 결과를 retry 전략에 전달 (falsy면 재시도 트리거)

@@ -73,23 +73,25 @@ def test_monitoring_uses_injected_shared_container() -> None:
     """monitoring._get_container가 주입된 공유 컨테이너를 반환해야 한다."""
     from app.api import monitoring
 
-    original = monitoring._shared_container
+    # 공용 레지스트리 내부 상태를 백업/복원 (다른 테스트와의 격리)
+    original = monitoring._container_registry._container
     try:
         sentinel = object()
         monitoring.set_container(sentinel)  # type: ignore[arg-type]
         assert monitoring._get_container() is sentinel
     finally:
-        monitoring._shared_container = original
+        monitoring._container_registry._container = original
 
 
 def test_prompts_uses_injected_shared_container() -> None:
     """prompts._get_container가 주입된 공유 컨테이너를 반환해야 한다."""
     from app.api import prompts
 
-    original = prompts._shared_container
+    # 공용 레지스트리 내부 상태를 백업/복원 (다른 테스트와의 격리)
+    original = prompts._container_registry._container
     try:
         sentinel = object()
         prompts.set_container(sentinel)  # type: ignore[arg-type]
         assert prompts._get_container() is sentinel
     finally:
-        prompts._shared_container = original
+        prompts._container_registry._container = original
