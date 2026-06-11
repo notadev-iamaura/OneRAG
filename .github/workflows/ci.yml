@@ -181,22 +181,31 @@ jobs:
   # ============================================
   # Optional Provider 테스트 (Vector DB / BM25 / Reranker / Embedder)
   # ------------------------------------------------------------------
-  # 기본 Test 게이트는 conftest 의 pytest_ignore_collect 로 optional-provider
-  # 단위 테스트(tests/unit/retrieval/retrievers, rerankers, bm25_engine,
-  # infrastructure/storage/vector)를 수집 제외한다. 이 잡은 해당 extras 를
-  # 설치하고 ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1 로 그 경로를 실제 실행해,
+  # 기본 Test 게이트는 tests/conftest.py 의 pytest_ignore_collect 로
+  # optional-provider 단위 테스트를 수집 제외한다. 이 잡은 optional extras 를
+  # 설치하고 ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1 로 tests/unit 전체를 실행해,
   # provider/reranker/bm25/embedder 단위 테스트의 staleness 를 자동 차단한다.
+  #
+  # [단일 진실원] 제외 경로 목록은 tests/conftest.py 의 OPTIONAL_PROVIDER_TEST_PATHS
+  # 가 단일 진실원이다 — 여기에 경로를 중복 명시하지 말 것.
+  # ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1 이면 conftest 가 optional 경로를 수집에
+  # 포함하므로, 이 잡은 tests/unit 전체 실행만으로 optional 경로를 빠짐없이 커버한다.
+  # (기본 Test 잡과 일부 실행이 중복되지만, extras 설치 환경에서 전체 unit 테스트를
+  # 검증한다는 가치가 있어 의도적으로 허용한다.)
   #
   # all-vectordb: chroma/pinecone/qdrant/pgvector, bm25: kiwipiepy/rank-bm25,
   # local-embedding: sentence-transformers(reranker wiring 테스트). weaviate/mongodb
   # 는 base 의존성으로 충족된다. (pgvector store 테스트는 psycopg v3 미설치 시 self-skip)
   #
   # 결정성(determinism) 정책: 이 게이트는 외부 네트워크에 의존하지 않는다.
-  #   - HF_HUB_OFFLINE=1 / TRANSFORMERS_OFFLINE=1 로 HuggingFace 다운로드를 차단한다.
   #   - test_local_reranker.py 는 initialize()/rerank() 에서 실제 CrossEncoder 모델을
-  #     HF 에서 받아 추론하는 통합 성격이라 제외한다(429 rate-limit 등 flaky 원인).
-  #     LocalReranker 의 wiring(=lazy 생성)은 test_reranker_factory_v2 가 커버한다.
-  #     실모델 추론 검증은 integration verification(make verify-integration)에서 수행.
+  #     HF 에서 받아 추론하는 실모델 테스트라, 파일 스스로
+  #     ONERAG_RUN_REAL_MODEL_TESTS=1 게이트(skipif)로 기본 skip 을 선언한다
+  #     (--ignore 불필요). LocalReranker 의 wiring(=lazy 생성)은
+  #     test_reranker_factory_v2 가 커버하고, 실모델 추론 검증은
+  #     integration verification(make verify-integration)에서 수행한다.
+  #   - HF_HUB_OFFLINE=1 / TRANSFORMERS_OFFLINE=1 은 벨트앤서스펜더(이중 방어)로
+  #     유지한다 — 게이트가 누락된 새 테스트가 들어와도 HF 다운로드를 차단한다.
   # ============================================
   optional-providers:
     name: Optional Providers
@@ -232,15 +241,9 @@ jobs:
       - name: Install dependencies (optional providers)
         run: uv sync --frozen --extra dev --extra all-vectordb --extra bm25 --extra local-embedding
 
+      # 경로 목록을 명시하지 않는다 — conftest 단일 진실원 (위 주석 참조)
       - name: Run optional-provider tests
-        run: |
-          uv run pytest \
-            tests/unit/infrastructure/storage/vector \
-            tests/unit/retrieval/bm25_engine \
-            tests/unit/retrieval/rerankers \
-            tests/unit/retrieval/retrievers \
-            --ignore=tests/unit/retrieval/rerankers/test_local_reranker.py \
-            --tb=short -q --timeout=120
+        run: uv run pytest tests/unit -q --timeout=120 --tb=short
 
   # ============================================
   # 운영 안정성 Smoke (runtime 계약 + Docker config)

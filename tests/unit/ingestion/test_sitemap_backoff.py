@@ -93,6 +93,26 @@ async def test_retryable_all_fail_returns_none(sleep_recorder: list[float]) -> N
 
 
 @pytest.mark.asyncio
+async def test_linear_sequence_extends_2_4_6(sleep_recorder: list[float]) -> None:
+    """
+    max_retries=4: 선형 백오프 2,4,6초 시퀀스 보존 검증.
+
+    RetryPolicy(LINEAR) 이관 후에도 ``(attempt+1)*2`` 시퀀스가 유지되어야 합니다
+    (increment_s 미지정 → initial_delay_s(2.0)와 동일 증가 폭).
+    """
+    connector = SitemapConnector(url="https://x", max_retries=4)
+    fetch_mock = AsyncMock(side_effect=httpx.ConnectError("conn refused"))
+    connector._fetch_and_parse_page = fetch_mock  # type: ignore[method-assign]
+
+    result = await connector._safe_fetch_and_parse("https://x/p")
+
+    assert result is None
+    # 4회 시도, 재시도 대기 3번: base 2, 4, 6 (각 [base, base+jitter) 범위)
+    assert fetch_mock.call_count == 4
+    _assert_wait_sequence(sleep_recorder, [2.0, 4.0, 6.0])
+
+
+@pytest.mark.asyncio
 async def test_timeout_then_success(sleep_recorder: list[float]) -> None:
     """TimeoutException 한 번 후 성공: 2초 대기 후 결과 반환"""
     connector = SitemapConnector(url="https://x", max_retries=3)

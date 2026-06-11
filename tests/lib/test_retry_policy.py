@@ -95,6 +95,29 @@ async def test_linear_no_jitter(sleep_recorder: list[float]) -> None:
 
 
 @pytest.mark.asyncio
+async def test_linear_default_increment_equals_initial(
+    sleep_recorder: list[float],
+) -> None:
+    """
+    LINEAR increment 미지정: increment_s=None이면 initial_delay_s를 사용해
+    ``initial * (attempt + 1)`` 시퀀스와 등가 — initial=2 → 2,4,6 (재시도 대기)
+    """
+    policy = RetryPolicy(
+        retry_exceptions=(_MyError,),
+        max_attempts=4,
+        strategy=BackoffStrategy.LINEAR,
+        initial_delay_s=2.0,
+        # increment_s 미지정 (기본 None → initial_delay_s 사용)
+        max_delay_s=1000.0,
+        jitter_s=0.0,
+    )
+    with pytest.raises(_MyError):
+        await _run_failing(policy, fail_times=99)
+    # docstring의 등가성 주장 검증: 2*(0+1), 2*(1+1), 2*(2+1) = 2, 4, 6
+    assert sleep_recorder == [2.0, 4.0, 6.0]
+
+
+@pytest.mark.asyncio
 async def test_fixed_no_jitter(sleep_recorder: list[float]) -> None:
     """FIXED: initial=1.0 → 1.0, 1.0 (재시도 대기)"""
     policy = RetryPolicy(
@@ -161,3 +184,85 @@ async def test_reraise_false_wraps_in_retry_error(sleep_recorder: list[float]) -
     )
     with pytest.raises(RetryError):
         await _run_failing(policy, fail_times=99)
+
+
+@pytest.mark.asyncio
+async def test_retry_on_result_zero_wait(sleep_recorder: list[float]) -> None:
+    """retry_on_result: falsy 결과 재시도는 무대기(0초), 시도 횟수 소진까지 반복"""
+    from tenacity import RetryError
+
+    policy = RetryPolicy(
+        retry_exceptions=(_MyError,),
+        max_attempts=3,
+        strategy=BackoffStrategy.EXPONENTIAL,
+        initial_delay_s=1.0,
+        jitter_s=0.0,
+        retry_on_result=lambda result: not result,  # falsy 결과면 재시도
+    )
+    calls = {"n": 0}
+
+    async def _run() -> None:
+        async for attempt in policy.build_async_retrying():
+            with attempt:
+                calls["n"] += 1
+            # tenacity 공식 패턴: with 블록 밖에서 결과를 명시적으로 전달
+            if not attempt.retry_state.outcome.failed:  # type: ignore[union-attr]
+                attempt.retry_state.set_result(None)  # 항상 falsy
+
+    # 결과 기반 재시도 소진: 예외가 없으므로 RetryError 발생 (reraise=True여도 동일)
+    with pytest.raises(RetryError):
+        await _run()
+    assert calls["n"] == 3  # max_attempts 모두 시도
+    # 결과 기반 재시도는 모두 무대기 (백오프는 예외 기반에만 적용)
+    assert sleep_recorder == [0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_retry_on_result_exception_still_backs_off(
+    sleep_recorder: list[float],
+) -> None:
+    """retry_on_result 설정 시에도 예외 기반 재시도는 기존 백오프 적용"""
+    policy = RetryPolicy(
+        retry_exceptions=(_MyError,),
+        max_attempts=4,
+        strategy=BackoffStrategy.EXPONENTIAL,
+        initial_delay_s=1.0,
+        max_delay_s=100.0,
+        jitter_s=0.0,
+        retry_on_result=lambda result: not result,
+    )
+    calls = {"n": 0}
+
+    async def _run() -> int:
+        async for attempt in policy.build_async_retrying():
+            with attempt:
+                calls["n"] += 1
+                if calls["n"] <= 2:
+                    raise _MyError()
+            if not attempt.retry_state.outcome.failed:  # type: ignore[union-attr]
+                attempt.retry_state.set_result({"ok": True})  # truthy → 종료
+        return calls["n"]
+
+    total = await _run()
+    assert total == 3  # 예외 2번 + 성공 1번
+    # 예외 기반 재시도 대기: 지수 백오프 1, 2 (무대기 아님)
+    assert sleep_recorder == [1.0, 2.0]
+
+
+@pytest.mark.asyncio
+async def test_wait_override_takes_precedence(sleep_recorder: list[float]) -> None:
+    """wait_override: 커스텀 wait 주입 시 정책의 백오프 필드 대신 사용"""
+    from tenacity import wait_fixed
+
+    policy = RetryPolicy(
+        retry_exceptions=(_MyError,),
+        max_attempts=3,
+        strategy=BackoffStrategy.EXPONENTIAL,  # 무시되어야 함
+        initial_delay_s=99.0,  # 무시되어야 함
+        jitter_s=0.0,
+        wait_override=wait_fixed(7.0),
+    )
+    with pytest.raises(_MyError):
+        await _run_failing(policy, fail_times=99)
+    # 커스텀 wait(고정 7초)가 적용됨 — 지수 백오프(99,198) 아님
+    assert sleep_recorder == [7.0, 7.0]

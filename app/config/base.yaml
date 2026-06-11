@@ -42,3 +42,4 @@ imports:
   - features/graph_rag.yaml       # GraphRAG 지식 그래프 검색 (GraphRAGFactory 지원)
   - features/evaluation.yaml      # 평가 시스템 (EvaluatorFactory 지원)
   - features/openai_compat.yaml   # OpenAI 호환 API 설정
+  - features/tools.yaml           # Agent/MCP 도구 설정 (정본: mcp 섹션, tools는 별칭)

@@ -16,18 +16,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from tenacity import (
-    AsyncRetrying,
-    RetryCallState,
-    RetryError,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential_jitter,
-    wait_fixed,
-)
+from tenacity import RetryCallState, RetryError
 from tenacity.wait import wait_base
 
 from app.lib.logger import get_logger
+from app.lib.retry import (
+    DEFAULT_BACKOFF_JITTER_S,
+    BackoffStrategy,
+    RetryPolicy,
+    build_backoff_wait,
+)
 
 logger = get_logger(__name__)
 
@@ -70,6 +68,10 @@ class _NotionBackoffWait(wait_base):
     """
     Notion API 재시도 대기 전략 (발생 예외 타입별 분기)
 
+    예외 타입에 따라 다른 백오프를 적용하는 분기는 ``RetryPolicy`` 필드로
+    표현할 수 없는 진짜 커스텀 로직이므로 이 클래스에 유지하고,
+    개별 wait 구성(EXPONENTIAL/FIXED)은 공용 ``build_backoff_wait``에 위임합니다.
+
     동작 보존:
     - ``NotionRateLimitError``(429): 지수 백오프 ``BASE_DELAY * 2^(attempt-1)`` + jitter.
       tenacity의 ``attempt_number``는 1부터 시작하므로 기존 ``BASE_DELAY * 2^attempt``
@@ -80,18 +82,19 @@ class _NotionBackoffWait(wait_base):
     """
 
     def __init__(self, base_delay: float, jitter: float = 0.0) -> None:
-        # 지수 백오프: initial=base_delay, max는 충분히 큰 값(상한 없음, 기존 동작 유지)
-        self._exponential = wait_exponential_jitter(
-            initial=base_delay,
-            max=float("inf"),
-            jitter=jitter,
+        # 지수 백오프: initial=base_delay, 상한 없음(기존 동작 유지) — 429 경로용
+        self._exponential = build_backoff_wait(
+            BackoffStrategy.EXPONENTIAL,
+            initial_delay_s=base_delay,
+            max_delay_s=float("inf"),
+            jitter_s=jitter,
         )
         # 고정 백오프: timeout 경로용
-        self._fixed: wait_base = wait_fixed(base_delay)
-        if jitter > 0.0:
-            from tenacity import wait_random
-
-            self._fixed = self._fixed + wait_random(0, jitter)
+        self._fixed = build_backoff_wait(
+            BackoffStrategy.FIXED,
+            initial_delay_s=base_delay,
+            jitter_s=jitter,
+        )
 
     def __call__(self, retry_state: RetryCallState) -> float:
         exc = retry_state.outcome.exception() if retry_state.outcome else None
@@ -168,7 +171,8 @@ class NotionAPIClient:
     # 지수 백오프 설정
     MAX_RETRIES = 5
     BASE_DELAY = 1.0  # 초기 대기 시간 (초)
-    BACKOFF_JITTER = 0.5  # 재시도 폭주 완화용 무작위 지연 범위 (초, [0, JITTER) 추가)
+    # 재시도 폭주 완화용 무작위 지연 범위 (공용 상수로 통일, [0, JITTER) 추가)
+    BACKOFF_JITTER = DEFAULT_BACKOFF_JITTER_S
 
     def __init__(self, api_key: str | None = None):
         """
@@ -285,14 +289,17 @@ class NotionAPIClient:
                     f"Notion API 에러 (status={response.status_code}): {error_body}"
                 )
 
-        # tenacity 재시도: 429(NotionRateLimitError)와 timeout만 재시도 대상.
+        # RetryPolicy 재시도: 429(NotionRateLimitError)와 timeout만 재시도 대상.
         # 그 외 예외(Auth/NotFound/API/Value)는 retry 조건에 걸리지 않아 즉시 전파됩니다.
-        retrying = AsyncRetrying(
-            stop=stop_after_attempt(self.MAX_RETRIES),
-            wait=_NotionBackoffWait(base_delay=self.BASE_DELAY, jitter=self.BACKOFF_JITTER),
-            retry=retry_if_exception_type((NotionRateLimitError, httpx.TimeoutException)),
+        # 예외 타입별 백오프 분기는 wait_override로 커스텀 wait를 주입해 표현합니다.
+        retrying = RetryPolicy(
+            retry_exceptions=(NotionRateLimitError, httpx.TimeoutException),
+            max_attempts=self.MAX_RETRIES,
             reraise=False,  # 소진 시 RetryError로 감싸 아래에서 통일 변환
-        )
+            wait_override=_NotionBackoffWait(
+                base_delay=self.BASE_DELAY, jitter=self.BACKOFF_JITTER
+            ),
+        ).build_async_retrying()
         try:
             async for attempt in retrying:
                 with attempt:
