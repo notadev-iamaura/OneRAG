@@ -476,6 +476,38 @@ class TestMongoDBAtlasStoreDocumentManagement:
         assert query == {"metadata.document_id": "doc-1"}
 
     @pytest.mark.asyncio
+    async def test_fetch_objects_runs_in_worker_thread(
+        self, mock_client, mock_collection
+    ):
+        """동기 pymongo find가 메인(이벤트 루프) 스레드 밖에서 실행된다
+
+        필터 없는 fetch_objects는 전체 컬렉션 스캔이라 수 초 블로킹될 수 있다.
+        asyncio.to_thread 위임 없이는 이벤트 루프 전체(SSE/WS 포함)가 정지하므로
+        find 호출 스레드가 메인 스레드가 아님을 검증한다.
+        """
+        import threading
+
+        calling_threads: list[threading.Thread] = []
+
+        def _record_thread(*args, **kwargs):
+            # 실제 호출 시점의 스레드를 기록해 to_thread 위임 여부를 검증한다
+            calling_threads.append(threading.current_thread())
+            return [
+                {"_id": "id-1", "content": "본문1", "metadata": {"doc": "d-1"}},
+            ]
+
+        mock_collection.find.side_effect = _record_thread
+        store = self._make_store(mock_client)
+
+        results = await store.fetch_objects(collection="docs")
+
+        assert len(results) == 1
+        assert results[0]["_id"] == "id-1"
+        assert calling_threads, "find가 호출되지 않았습니다"
+        # 이벤트 루프(메인 스레드) 블로킹 방지: 워커 스레드에서 실행되어야 한다
+        assert calling_threads[0] is not threading.main_thread()
+
+    @pytest.mark.asyncio
     async def test_delete_objects(self, mock_client, mock_collection):
         """delete_objects는 _id $in 으로 delete_many를 호출한다"""
         store = self._make_store(mock_client)
