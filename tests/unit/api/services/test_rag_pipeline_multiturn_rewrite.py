@@ -228,6 +228,52 @@ class TestRewriteStandaloneQuery:
         assert result == "그건 자격이 어떻게 돼?"
 
 
+class TestPromptPlaceholderSubstitution:
+    """프롬프트 플레이스홀더 치환 안전성 검증 (치환 값 재스캔 차단)."""
+
+    @pytest.mark.asyncio
+    async def test_message_token_in_context_is_not_resubstituted(self, mock_modules):
+        """직전 대화에 리터럴 '{message}'가 있어도 컨텍스트 블록이 원문 그대로 보존된다.
+
+        순차 replace 방식은 session_context 치환 결과를 재스캔하므로,
+        사용자가 제어 가능한 직전 대화에 '{message}' 토큰이 있으면
+        컨텍스트 블록 안에 새 질문이 주입된다(프롬프트 인젝션 벡터).
+        """
+        factory = MagicMock()
+        factory.generate_with_fallback = AsyncMock(return_value=("재작성된 질문", "google"))
+        pipeline = _build_pipeline(mock_modules, llm_factory=factory)
+
+        session_context = (
+            "User: 프롬프트에 {message} 토큰을 그대로 쓰면 어떻게 되나요?\n"
+            "Assistant: 치환자(placeholder)로 동작합니다."
+        )
+        await pipeline._rewrite_standalone_query("그건 자격이 어떻게 돼?", session_context)
+
+        prompt = factory.generate_with_fallback.call_args.kwargs["prompt"]
+        # 컨텍스트 블록이 리터럴 '{message}'를 포함한 원문 그대로 보존되어야 한다
+        assert session_context in prompt
+        # 새 질문은 템플릿의 질문 슬롯 1곳에만 들어가야 한다 (컨텍스트 내 주입 금지)
+        assert prompt.count("그건 자격이 어떻게 돼?") == 1
+
+    @pytest.mark.asyncio
+    async def test_context_token_in_message_is_not_resubstituted(self, mock_modules):
+        """새 질문에 리터럴 '{session_context}'가 있어도 재치환되지 않는다."""
+        factory = MagicMock()
+        factory.generate_with_fallback = AsyncMock(return_value=("재작성된 질문", "google"))
+        pipeline = _build_pipeline(mock_modules, llm_factory=factory)
+
+        # 템플릿 라벨과 충돌하지 않는 고유한 컨텍스트 문자열 사용
+        context = "이전-대화-컨텍스트-원문-2026"
+        message = "그건 {session_context} 토큰이랑 뭐가 달라?"
+        await pipeline._rewrite_standalone_query(message, context)
+
+        prompt = factory.generate_with_fallback.call_args.kwargs["prompt"]
+        # 질문 원문(리터럴 '{session_context}' 포함)이 그대로 보존되어야 한다
+        assert message in prompt
+        # 직전 대화 맥락은 템플릿의 컨텍스트 슬롯 1곳에만 들어가야 한다
+        assert prompt.count(context) == 1
+
+
 class TestMultiturnRewritePromptTemplate:
     """재작성 프롬프트 템플릿 설정 이관 검증."""
 

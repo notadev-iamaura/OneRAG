@@ -727,6 +727,36 @@ class TestRouteQuery:
         assert decision.metadata.get("llm_route") == "blocked"
 
     @pytest.mark.asyncio
+    async def test_route_lazy_creates_router_via_shared_helper(
+        self, mock_config, mock_modules
+    ) -> None:
+        """
+        __init__ 생성 실패 시 route_query가 공용 헬퍼로 lazy 생성
+
+        Given: rule_based_router가 None (init 실패 상태 재현)
+        When: route_query 호출
+        Then: _create_rule_based_router 헬퍼로 생성 후 인스턴스에 캐시
+        """
+        pipeline = RAGPipeline(config=mock_config, **mock_modules)
+        pipeline.rule_based_router = None  # __init__ 생성 실패 상태 재현
+
+        mock_router = MagicMock()
+        mock_router.check_rules = AsyncMock(return_value=None)
+        with patch.object(
+            pipeline, "_create_rule_based_router", return_value=mock_router
+        ) as mock_create:
+            decision = await pipeline.route_query(
+                message="테스트 질문",
+                session_id="test-session",
+                start_time=time.time(),
+            )
+
+        # 검증: 헬퍼 1회 호출 + 생성 결과 캐시 + 정상 진행
+        mock_create.assert_called_once()
+        assert pipeline.rule_based_router is mock_router
+        assert decision.should_continue is True
+
+    @pytest.mark.asyncio
     async def test_route_rule_exception(
         self, mock_config, mock_modules
     ) -> None:
