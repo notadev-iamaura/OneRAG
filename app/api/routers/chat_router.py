@@ -178,10 +178,15 @@ async def chat(
             chat_request.message, session_id, options
         )
         message_id = str(uuid4())
-        # 스트리밍 경로와 동일한 인라인 저장 — read-your-writes 보장.
-        # BackgroundTask로 미루면 응답 직후 후속 질문이 직전 턴 없는 세션
-        # 컨텍스트를 읽는 경합(standalone rewrite 실패)이 발생하고, 저장 실패가
-        # 조용히 삼켜진다. 저장 실패는 아래 except에서 에러로 전파된다.
+        # 저장 순서는 양 경로(비스트리밍/스트리밍) 모두 인라인 await —
+        # read-your-writes 보장. BackgroundTask로 미루면 응답 직후 후속 질문이
+        # 직전 턴 없는 세션 컨텍스트를 읽는 경합(standalone rewrite 실패)이 발생한다.
+        # 단, 저장 실패 의미론은 두 경로가 의도적으로 다르다:
+        # - 비스트리밍(여기): 응답 전송 전 실패이므로 예외를 전파해 500으로
+        #   처리한다 — 클라이언트가 실패를 인지하고 재시도할 수 있다.
+        # - 스트리밍(chat_service.stream_rag_pipeline): 이미 답변 토큰을 전송한
+        #   뒤의 저장이므로 중간에 500을 보낼 수 없다 — 예외를 로그로 남기고
+        #   계속 진행한다(에러 숨김이 아니라 프로토콜상 불가피한 선택).
         await chat_service.add_conversation_to_session(
             session_id,
             chat_request.message,

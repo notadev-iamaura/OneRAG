@@ -43,16 +43,32 @@ class SitemapConnector(IIngestionConnector):
                 return
 
             # 병렬 태스크 생성 (공유 클라이언트 전달)
-            tasks = [self._safe_fetch_and_parse(url, client) for url in urls]
-
-            # 결과를 스트리밍하기 위해 as_completed 사용
-            for task in asyncio.as_completed(tasks):
-                try:
-                    doc = await task
-                    if doc:
-                        yield doc
-                except Exception as e:
-                    logger.error(f"Critical error during document fetch task: {e}")
+            # 명시적 Task로 생성해 조기 종료 시 finally에서 취소·회수할 수 있게 한다.
+            tasks = [
+                asyncio.ensure_future(self._safe_fetch_and_parse(url, client))
+                for url in urls
+            ]
+            try:
+                # 결과를 스트리밍하기 위해 as_completed 사용
+                for task in asyncio.as_completed(tasks):
+                    try:
+                        doc = await task
+                        if doc:
+                            yield doc
+                    except Exception as e:
+                        logger.error(f"Critical error during document fetch task: {e}")
+            finally:
+                # 소비자가 async-for를 break(GeneratorExit)하거나 취소된 경우에도
+                # 공유 클라이언트가 close되기 전에 잔여 태스크를 정리한다.
+                # 정리하지 않으면 in-flight 태스크들이 'client has been closed'
+                # 에러와 'Task exception was never retrieved' 경고를 발생시킨다.
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                # 취소된 태스크 회수 + 이미 완료됐지만 미회수된 예외까지 수거.
+                # (전체 tasks를 gather해야 break 이전에 예외로 끝난 태스크의
+                # 미회수 예외 경고도 함께 방지된다. 정상 완주 시 전부 done이라 즉시 반환)
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _safe_fetch_and_parse(
         self, url: str, client: httpx.AsyncClient | None = None
