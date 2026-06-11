@@ -1,28 +1,38 @@
-# Agent 도구 설정 (Tool Use / Function Calling)
-# 기능: LLM Agent가 사용할 도구(함수) 정의
-# 패턴: EmbedderFactory, RerankerFactory와 동일한 설정 구조
+# Agent/MCP 도구 설정 (Tool Use / Function Calling)
+# 기능: LLM Agent가 사용할 도구(함수)와 에이전트 동작 정의
+#
+# 정본(canonical) 섹션: mcp
+#   코드가 실제로 읽는 경로 기준으로 mcp 섹션이 단일 정본이다.
+#   - app/core/di_container.py:create_mcp_server_instance → mcp.enabled (활성화 게이트)
+#   - app/modules/core/agent/factory.py:AgentFactory       → mcp.enabled, mcp.agent.*
+#   - app/modules/core/tools/vector_search.py 등 도구 구현  → mcp.tools.<도구명>.parameters
+#
+# 하위 호환: tools 섹션은 mcp의 YAML 별칭(*alias)이다.
+#   - app/modules/core/tools/factory.py:ToolFactory가 tools 섹션을 우선 조회하므로
+#     동일 내용을 가리키도록 별칭으로 유지한다 (분열 시 활성화 판단이 갈라짐).
+#   - 주의: 별칭은 이 파일 로드 시점에만 동기화된다. 환경별 yaml에서
+#     오버라이드할 때는 mcp와 tools 두 섹션을 함께 오버라이드해야 한다.
 #
 # 사용 방법:
-#   - enabled: true/false로 각 도구를 On/Off
-#   - 새 도구 추가: 이 파일에 설정 추가 + tools/ 폴더에 구현
-#
-# 참고: 기존 mcp.yaml과 호환되며, 점진적으로 이 파일로 마이그레이션 권장
+#   - mcp.enabled: true로 변경하면 도구 서버 + 에이전트 경로가 활성화된다.
+#   - 개별 도구는 mcp.tools.<도구명>.enabled로 On/Off
+#   - 도구명은 app/modules/core/tools/factory.py의 SUPPORTED_TOOLS 레지스트리 기준
 
-tools:
+mcp: &mcp_section
   # ========================================
   # 전역 설정
   # ========================================
-  enabled: true                       # 도구 기능 전체 On/Off
+  enabled: false                      # 도구/에이전트 기능 전체 On/Off (기본 비활성)
   server_name: "rag-tools"            # 서버 이름 (로깅용)
   default_timeout: 30                 # 도구 실행 기본 타임아웃 (초)
   max_concurrent_tools: 3             # 동시 실행 가능한 도구 수
 
   # ========================================
-  # 검색 도구
+  # 도구 정의 (SUPPORTED_TOOLS 레지스트리와 1:1)
   # ========================================
   tools:
     # ------ 벡터 검색 도구 ------
-    search_vector:
+    search_weaviate:
       enabled: true
       description: "벡터 DB에서 정보를 하이브리드 검색합니다 (Dense + BM25)"
       timeout: 15
@@ -62,16 +72,49 @@ tools:
           - brave
           - duckduckgo
 
+    # ------ 구조화 데이터 검색 도구 ------
+    search_structured:
+      enabled: true
+      description: "구조화된 메타데이터 소스에서 정보를 검색합니다"
+      timeout: 10
+
+    # ------ SQL 검색 도구 ------
+    query_sql:
+      enabled: true
+      description: "자연어 질문을 SQL로 변환하여 메타데이터 DB를 검색합니다"
+      timeout: 20
+      parameters:
+        max_rows: 100
+
+    get_table_schema:
+      enabled: true
+      description: "테이블 스키마(컬럼 정보)를 조회합니다"
+      timeout: 5
+
+    # ------ 레거시 별칭 ------
+    # search_weaviate의 구 명칭. 런타임 레지스트리에는 없으므로 도구 등록에
+    # 사용되지 않으며, 기존 설정 계약(tests/unit/mcp/test_config.py) 호환을
+    # 위해서만 유지한다. 실제 설정은 위 search_weaviate 항목을 수정할 것.
+    search_vector:
+      enabled: true
+      description: "search_weaviate의 레거시 별칭 (도구 등록에는 사용되지 않음)"
+
   # ========================================
-  # 에이전트 설정 (Agentic RAG용)
+  # 에이전트 설정 (Agentic RAG용 — AgentFactory.create_config가 읽음)
   # ========================================
   agent:
     tool_selection: "llm"             # "llm" | "rule_based"
     selector_model: "google/gemini-2.5-flash-lite"
-    max_tool_calls: 5                 # 무한 루프 방지
-    fallback_tool: "search_vector"    # 기본 폴백 도구
+    max_tool_calls: 5                 # 무한 루프 방지 (AgentConfig.max_iterations로 매핑)
+    fallback_tool: "search_weaviate"  # 기본 폴백 도구 (레지스트리 명칭 사용)
+    # Self-Reflection 설정
+    enable_reflection: true
+    reflection_threshold: 7.0
+    max_reflection_iterations: 2
     # 에이전트(synthesizer/planner/reflector) 출력 언어.
     # 생략 시 한국어 기본값을 사용한다(하위 호환).
-    # 실제 로딩 경로는 mcp.agent.output_language이며, 비한국어 외주는
-    # 이 값을 해당 언어로 바꿔 답변/추론 출력 언어를 전환할 수 있다.
+    # 비한국어 외주는 이 값을 해당 언어로 바꿔 답변/추론 출력 언어를 전환한다.
     output_language: "한국어"
+
+# 레거시 호환 별칭 — mcp 섹션과 항상 동일 내용을 유지해야 한다 (위 주석 참고)
+tools: *mcp_section
