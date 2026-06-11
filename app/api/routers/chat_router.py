@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -140,47 +140,10 @@ def _get_confidence_level(score: float) -> str:
         return "low"
 
 
-async def _persist_conversation_background(
-    session_id: str,
-    user_message: str,
-    assistant_answer: str,
-    metadata: dict[str, Any],
-) -> None:
-    """
-    대화 기록을 백그라운드에서 세션에 저장한다.
-
-    응답 반환 후 BackgroundTask로 실행되므로 사용자는 저장(세션 기록 + DB
-    stats UPDATE) 완료를 기다리지 않는다. 저장 실패는 응답에 영향을 주지
-    않되, 데이터 유실을 추적할 수 있도록 반드시 로깅한다.
-
-    Args:
-        session_id: 세션 ID
-        user_message: 사용자 메시지
-        assistant_answer: 어시스턴트 응답
-        metadata: 추가 메타데이터
-    """
-    try:
-        await chat_service.add_conversation_to_session(
-            session_id,
-            user_message,
-            assistant_answer,
-            metadata,
-        )
-    except Exception as e:
-        # 백그라운드 저장 실패는 사용자 응답에 영향을 주지 않지만 반드시 기록한다.
-        logger.error(
-            "백그라운드 대화 저장 실패",
-            session_id=session_id,
-            error=str(e),
-            exc_info=True,
-        )
-
-
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: Request,
     chat_request: ChatRequest,
-    background_tasks: BackgroundTasks,
 ) -> ChatResponse:
     """
     채팅 처리 엔드포인트
@@ -215,11 +178,11 @@ async def chat(
             chat_request.message, session_id, options
         )
         message_id = str(uuid4())
-        # 대화 저장(세션 기록 + DB stats UPDATE)을 BackgroundTask로 분리한다.
-        # 사용자 응답이 저장 완료를 기다리지 않도록 응답 반환 후 비동기 실행된다.
-        # 저장 실패는 _persist_conversation_background 내부에서 로깅된다.
-        background_tasks.add_task(
-            _persist_conversation_background,
+        # 스트리밍 경로와 동일한 인라인 저장 — read-your-writes 보장.
+        # BackgroundTask로 미루면 응답 직후 후속 질문이 직전 턴 없는 세션
+        # 컨텍스트를 읽는 경합(standalone rewrite 실패)이 발생하고, 저장 실패가
+        # 조용히 삼켜진다. 저장 실패는 아래 except에서 에러로 전파된다.
+        await chat_service.add_conversation_to_session(
             session_id,
             chat_request.message,
             rag_result["answer"],
