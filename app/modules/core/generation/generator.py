@@ -65,6 +65,11 @@ _PII_HOLDBACK = 32
 # 공백이 전혀 없어도(일본어/중국어, 코드블록, 긴 URL) 토큰 중간 강제 분할하는 상한.
 # 공백 경계만 기다리다 스트리밍이 정지하거나 버퍼가 무한 증가하는 것을 방지한다.
 _PII_HARD_CAP = 512
+# 비상 경로(HARD_CAP*2) 후퇴 탐색의 스텝 폭(자).
+# 안전 분할점을 limit에서 왼쪽으로 이 폭만큼씩 후퇴하며 등식 검사로 찾는다.
+# 연속 PII 토큰의 폭은 수십 자 이내이므로 실제 텍스트에서는 몇 스텝 안에
+# 토큰 경계(안전점)에 도달한다.
+_PII_EMERGENCY_BACKOFF_STEP = 16
 
 
 class Stats(TypedDict):
@@ -933,8 +938,17 @@ class GenerationModule:
             - 토큰 중간 강제 분할(HARD_CAP)은 등식 검사가 방어한다.
               mask(prefix) + mask(suffix) == mask(전체)가 성립하지 않으면
               (분할이 마스킹 결과를 바꾸면) 해당 분할점에서는 emit하지 않는다.
-            - 한계: 이름과 접미사 사이 공백(\\s*)이 HOLDBACK(32자)을 초과하는
-              병리적 케이스는 보류 꼬리가 덮지 못한다.
+            - 비상 경로(HARD_CAP*2)도 후퇴 탐색으로 등식 검사를 통과하는
+              안전점을 먼저 찾고, 찾으면 일반 경로처럼 보류 꼬리를 버퍼에
+              유지한다. 즉 경계 스패닝 패턴은 HOLDBACK 보류로, 분할 내
+              패턴은 등식 검사로 방어된다.
+            - 한계(잔여 위험): ① 이름과 접미사 사이 공백(\\s*)이
+              HOLDBACK(32자)을 초과하는 병리적 케이스는 보류 꼬리가 덮지
+              못한다. ② 버퍼 절반 구간 전체에 안전 분할점이 하나도 없는
+              적대적 입력은 최후 수단 분할(limit)의 경계에서 마스킹이
+              불완전할 수 있으며, 이때 warning 로그를 남긴다. 이 경우에도
+              보류 꼬리는 raw로 유지되므로 미래 청크와 결합해야 하는
+              lookahead/연속 패턴은 방어된다.
 
             Args:
                 buffer: 누적된 미마스킹 원본 버퍼
@@ -972,13 +986,40 @@ class GenerationModule:
                     buffer = buffer[chosen:]
                     continue
 
-                # 안전 분할점 없음
+                # 안전 분할점 없음 → 비상 경로 (버퍼가 HARD_CAP*2 이상 비대)
                 if len(buffer) >= _PII_HARD_CAP * 2:
-                    # 트레이드오프: PII 누출 0을 보장하기 위해 버퍼 전체를 한 번에
-                    # 마스킹하여 emit한다. 순간적으로 큰 청크가 전달되지만,
-                    # 무한 버퍼 증가와 스트리밍 정지는 방지된다.
-                    pieces.append(_mask(buffer))
-                    buffer = ""
+                    # 1단계(후퇴 탐색): limit에서 왼쪽으로 BACKOFF_STEP씩
+                    # 후퇴하며 버퍼 절반까지 등식 검사로 안전 분할점을 찾는다.
+                    # 연속 PII 토큰의 폭은 수십 자 이내이므로 실제 텍스트에서는
+                    # 몇 스텝 안에 토큰 경계(안전점)가 나온다. 재마스킹 비용은
+                    # 드문 비상 경로에 한정되므로 허용한다.
+                    safe_floor = len(buffer) // 2
+                    backoff_at = limit
+                    emergency_chosen = -1
+                    while backoff_at >= safe_floor:
+                        if _mask(buffer[:backoff_at]) + _mask(buffer[backoff_at:]) == full_masked:
+                            emergency_chosen = backoff_at
+                            break
+                        backoff_at -= _PII_EMERGENCY_BACKOFF_STEP
+
+                    if emergency_chosen > 0:
+                        # 일반 경로와 동일: prefix만 마스킹 emit하고,
+                        # 보류 꼬리(HOLDBACK)를 포함한 나머지는 버퍼에 유지
+                        pieces.append(_mask(buffer[:emergency_chosen]))
+                        buffer = buffer[emergency_chosen:]
+                        continue
+
+                    # 2단계(최후 수단): 버퍼 절반까지 후퇴해도 안전점이 없는
+                    # 병리적 입력. limit까지만 마스킹 emit하고 보류 꼬리는
+                    # raw로 유지한다. 미래 청크와 결합해야 하는 경계 스패닝
+                    # lookahead/연속 패턴은 꼬리 보존으로 방어되며, 잔여
+                    # 위험은 '버퍼 절반 구간 전체에 안전 분할점이 하나도
+                    # 없는' 적대적 입력의 분할 경계로 한정된다.
+                    logger.warning(
+                        "PII 안전 분할 실패 — 비상 분할 수행, 분할 경계 마스킹 불완전 가능"
+                    )
+                    pieces.append(_mask(buffer[:limit]))
+                    buffer = buffer[limit:]
                 break  # 다음 청크 대기
             return pieces, buffer
 
