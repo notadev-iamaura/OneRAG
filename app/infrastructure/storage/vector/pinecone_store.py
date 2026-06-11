@@ -452,6 +452,12 @@ class PineconeVectorStore(IVectorStore):
 
         # 순수 메타데이터 조회 목적이므로 유사도 무의미 → 제로 벡터 사용.
         # 차원은 인덱스 실제 차원과 일치해야 쿼리가 거부되지 않는다.
+        #
+        # 메트릭 제약: 이 패턴은 cosine 메트릭(출하 기본, pinecone.yaml) 전제다.
+        # dotproduct 인덱스에서는 제로 벡터와의 내적이 전부 0이라 매치가
+        # 반환되지 않을 수 있어 조용한 데이터 누락이 된다 — 인덱스 메트릭을
+        # dotproduct로 바꾼다면 이 경로를 list+fetch 방식으로 되돌리거나
+        # 더미 단위 벡터 등 대체 전략이 필요하다.
         dimension = self._get_index_dimension()
         response = self._index.query(
             vector=[0.0] * dimension,
