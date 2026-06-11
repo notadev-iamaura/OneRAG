@@ -125,6 +125,40 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# 요청 수준(request-level) 오류로 분류하는 예외 타입.
+# 사용자 제어 가능한 입력(ChatRequest.options.filters 등)의 잘못된 값으로 발생하는
+# 입력·검증성 예외 — 같은 입력이면 항상 같은 결과인 결정적(per-request) 오류이므로
+# 백엔드 장애가 아니다.
+_REQUEST_LEVEL_ERROR_TYPES: tuple[type[Exception], ...] = (
+    ValueError,
+    TypeError,
+    KeyError,
+)
+
+
+def _is_request_level_error(exc: BaseException) -> bool:
+    """검색 예외를 '요청 수준'과 '인프라성/불명'으로 분류한다.
+
+    분류 기준:
+    - 요청 수준(True): ValueError/TypeError/KeyError 등 입력·검증성 예외.
+      사용자 입력 오류(잘못된 filters 값 등)로 발생하는 결정적 오류이므로
+      CircuitBreaker에 장애 신호를 보내지 않고 degradation(warning 로그 +
+      빈 결과)으로 처리한다. 장애로 오분류하면 한 클라이언트의 반복 오입력이
+      공유 document_retrieval CB의 threshold를 채워 전체 사용자의 검색을
+      fallback으로 강등시킬 수 있다.
+    - 인프라성/불명(False): ConnectionError/TimeoutError/OSError, 벤더
+      클라이언트 예외 등 그 외 전부. 장애 탐지 누락이 더 위험하므로
+      보수적으로 장애 쪽으로 분류해 SearchUnavailableError로 래핑·전파한다
+      (상위 CircuitBreaker가 OPEN 전환 판단에 사용).
+
+    Args:
+        exc: 분류할 예외
+
+    Returns:
+        요청 수준 오류이면 True, 인프라성/불명이면 False
+    """
+    return isinstance(exc, _REQUEST_LEVEL_ERROR_TYPES)
+
 
 class RetrievalOrchestrator:
     """
@@ -470,16 +504,28 @@ class RetrievalOrchestrator:
                         # 단일 쿼리: 이 한 번의 실패가 곧 '모든 쿼리 실패'와 동치이므로
                         # 다중 쿼리 경로(_search_and_merge)와 동일하게 전면 장애로
                         # 식별 가능한 전용 예외로 래핑해 전파한다.
+                        # 단, 요청 수준 오류(사용자 입력 오류)는 백엔드 장애가
+                        # 아니므로 CB 신호 없이 빈 결과로 degradation한다.
+                        # (CancelledError는 BaseException 계열이라 아래 except에
+                        #  잡히지 않고 취소 신호 그대로 전파된다)
                         try:
                             search_results = await self.retriever.search(query, top_k, filters)
                         except SearchUnavailableError:
                             raise
                         except Exception as single_query_exc:
-                            raise SearchUnavailableError(
-                                ErrorCode.SEARCH_BACKEND_UNAVAILABLE,
-                                reason=str(single_query_exc),
-                                query_count=1,
-                            ) from single_query_exc
+                            if _is_request_level_error(single_query_exc):
+                                logger.warning(
+                                    f"단일 쿼리 검색 요청 수준 오류: {single_query_exc}, "
+                                    "빈 결과 반환 (CircuitBreaker 장애 신호 없음)",
+                                    extra={"query": query[:100]},
+                                )
+                                search_results = []
+                            else:
+                                raise SearchUnavailableError(
+                                    ErrorCode.SEARCH_BACKEND_UNAVAILABLE,
+                                    reason=str(single_query_exc),
+                                    query_count=1,
+                                ) from single_query_exc
                         self.stats["retrieval_count"] += 1
                     else:
                         # 다중 쿼리: 병렬 검색 및 결과 병합
@@ -1132,15 +1178,26 @@ class RetrievalOrchestrator:
                 raise next(
                     r for r in results_per_query if isinstance(r, BaseException)
                 )
-            logger.error(
-                "모든 쿼리 검색 실패 — 백엔드 장애로 판단, 예외 전파",
-                extra={"query_count": len(queries), "error": str(first_exc)},
-            )
-            raise SearchUnavailableError(
-                ErrorCode.SEARCH_BACKEND_UNAVAILABLE,
-                reason=str(first_exc),
-                query_count=len(queries),
-            ) from first_exc
+            if _is_request_level_error(first_exc):
+                # 모든 쿼리가 요청 수준 오류(입력·검증성)로 실패한 경우:
+                # 같은 잘못된 filters가 모든 확장 쿼리에 적용되므로 전 쿼리
+                # 실패는 자연스러운 결과다 — 백엔드 장애가 아니므로 래핑하지
+                # 않고 아래 병합 단계로 진행해 부분 실패 degradation과 동일하게
+                # 빈 결과를 반환한다 (CircuitBreaker 장애 신호 없음).
+                logger.warning(
+                    "모든 쿼리가 요청 수준 오류로 실패 — 빈 결과로 degradation",
+                    extra={"query_count": len(queries), "error": str(first_exc)},
+                )
+            else:
+                logger.error(
+                    "모든 쿼리 검색 실패 — 백엔드 장애로 판단, 예외 전파",
+                    extra={"query_count": len(queries), "error": str(first_exc)},
+                )
+                raise SearchUnavailableError(
+                    ErrorCode.SEARCH_BACKEND_UNAVAILABLE,
+                    reason=str(first_exc),
+                    query_count=len(queries),
+                ) from first_exc
 
         logger.info(
             "병렬 검색 완료",

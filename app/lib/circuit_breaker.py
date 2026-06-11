@@ -124,9 +124,10 @@ class CircuitBreaker:
         # (success_threshold 개수만 허용해 복구 안 된 백엔드로의 쇄도를 막는다)
         self._half_open_in_flight = 0
         # HALF_OPEN 세대 토큰: OPEN → HALF_OPEN 전환마다 +1.
-        # 이전 사이클에서 시작된 시험 요청(stale trial)이 늦게 완료되더라도
-        # 새 사이클의 슬롯 카운터/연속 성공/상태 전환을 오염시키지 못하도록
-        # trial 진입 시점의 세대와 완료 시점의 세대를 비교해 stale을 식별한다.
+        # 모든 호출이 진입 시점의 세대를 캡처하고 완료 시점의 세대와 비교해
+        # stale 여부를 식별한다. 이전 사이클의 시험 요청(stale trial)뿐 아니라
+        # CLOSED 시기에 시작된 장기 호출의 늦은 결과도 새 HALF_OPEN 사이클의
+        # 슬롯 카운터/연속 성공·실패/상태 전환을 오염시키지 못하게 막는다.
         self._half_open_generation: int = 0
 
     async def call(
@@ -156,8 +157,6 @@ class CircuitBreaker:
         # 그래야 OPEN 상태의 느린 fallback이 breaker 전체를 직렬화하지 않는다.
         fast_fail = False
         half_open_trial = False
-        # 시험 요청이 진입한 HALF_OPEN 세대 (완료 시점에 stale 여부 판별용)
-        trial_generation = 0
 
         async with self._lock:
             # HALF_OPEN이 half_open_timeout을 넘기면 복구 실패로 보고 OPEN 복귀
@@ -194,8 +193,13 @@ class CircuitBreaker:
                 else:
                     self._half_open_in_flight += 1
                     half_open_trial = True
-                    # 현재 세대를 캡처 — 완료 시 세대가 다르면 stale trial이다
-                    trial_generation = self._half_open_generation
+
+            # 모든 호출이 진입 시점의 세대를 캡처한다 (위의 상태 전이 반영 후).
+            # - trial: 완료 시 세대가 다르면 이전 HALF_OPEN 사이클의 stale trial
+            # - 일반 호출(CLOSED 시기 시작 등): 실행 중 OPEN → HALF_OPEN 전환이
+            #   일어나면 세대가 달라지므로, 늦게 도착한 결과가 새 사이클의
+            #   연속 성공/실패 회계와 상태 전환을 오염시키지 못하게 식별한다
+            call_generation = self._half_open_generation
 
         # --- 여기부터는 lock 밖 (느린 작업) ---
         if fast_fail:
@@ -212,14 +216,14 @@ class CircuitBreaker:
                 result = await asyncio.to_thread(func, *args, **kwargs)
 
             await self._on_success(
-                half_open_trial=half_open_trial, trial_generation=trial_generation
+                half_open_trial=half_open_trial, call_generation=call_generation
             )
             return result
 
         except Exception as e:
             logger.error(f"❌ [{self.name}] 실행 실패: {e}")
             await self._on_failure(
-                half_open_trial=half_open_trial, trial_generation=trial_generation
+                half_open_trial=half_open_trial, call_generation=call_generation
             )
 
             if fallback:
@@ -236,7 +240,7 @@ class CircuitBreaker:
             #
             # 세대가 일치할 때만 감소: stale trial(이전 HALF_OPEN 사이클)이 새 사이클
             # 카운터를 잘못 감소시키면 threshold 초과 동시 진입이 발생한다.
-            if half_open_trial and trial_generation == self._half_open_generation:
+            if half_open_trial and call_generation == self._half_open_generation:
                 self._half_open_in_flight = max(0, self._half_open_in_flight - 1)
 
     async def _execute_fallback(
@@ -253,23 +257,28 @@ class CircuitBreaker:
             raise
 
     async def _on_success(
-        self, *, half_open_trial: bool = False, trial_generation: int = 0
+        self, *, half_open_trial: bool = False, call_generation: int = 0
     ) -> None:
         """성공 처리
 
         Args:
             half_open_trial: HALF_OPEN 시험 요청 여부
-            trial_generation: 시험 요청이 진입한 HALF_OPEN 세대 (stale 판별용)
+            call_generation: 호출이 진입한 시점의 HALF_OPEN 세대 (stale 판별용)
         """
         async with self._lock:
-            # stale 세대(이전 HALF_OPEN 사이클)의 시험 요청 결과는 현재 사이클의
-            # 통계/상태 전환에 반영하지 않는다. 반영하면 이전 사이클의 성공이
-            # consecutive_successes에 합산되어 복구가 확인되지 않은 백엔드로
-            # 조기 CLOSED 되는 결함이 발생한다.
-            if half_open_trial and trial_generation != self._half_open_generation:
+            # stale 호출(진입 세대 ≠ 현재 세대)의 성공은 HALF_OPEN 사이클의
+            # 통계/상태 전환에 반영하지 않는다 — 두 경우 모두 차단한다:
+            # 1) stale trial: 이전 HALF_OPEN 사이클의 시험 요청이 늦게 완료
+            # 2) CLOSED 등에서 시작된 장기 호출: 장애 → OPEN → HALF_OPEN 전환 후
+            #    완료된 과거 성공이 consecutive_successes에 합산되면 실제 probe
+            #    1건만으로 threshold를 채워 미복구 백엔드로 조기 CLOSED 된다
+            if call_generation != self._half_open_generation and (
+                half_open_trial or self.state == CircuitState.HALF_OPEN
+            ):
                 logger.debug(
-                    f"🕰️  [{self.name}] stale HALF_OPEN trial 성공 무시 "
-                    f"(세대 {trial_generation} != 현재 {self._half_open_generation})"
+                    f"🕰️  [{self.name}] stale 호출 성공 무시 "
+                    f"(세대 {call_generation} != 현재 {self._half_open_generation}, "
+                    f"trial={half_open_trial})"
                 )
                 return
 
@@ -286,21 +295,26 @@ class CircuitBreaker:
                     self.stats.state_change_time = time.time()
 
     async def _on_failure(
-        self, *, half_open_trial: bool = False, trial_generation: int = 0
+        self, *, half_open_trial: bool = False, call_generation: int = 0
     ) -> None:
         """실패 처리
 
         Args:
             half_open_trial: HALF_OPEN 시험 요청 여부
-            trial_generation: 시험 요청이 진입한 HALF_OPEN 세대 (stale 판별용)
+            call_generation: 호출이 진입한 시점의 HALF_OPEN 세대 (stale 판별용)
         """
         async with self._lock:
-            # stale 세대의 시험 요청 실패도 현재 사이클의 통계/상태 전환에 반영하지
-            # 않는다 (이전 사이클의 늦은 실패가 새 사이클을 잘못 OPEN시키는 것 방지).
-            if half_open_trial and trial_generation != self._half_open_generation:
+            # stale 호출의 실패도 성공과 대칭으로 현재 사이클의 통계/상태 전환에
+            # 반영하지 않는다 — 이전 사이클의 늦은 실패(stale trial)나 CLOSED
+            # 시기에 시작된 호출의 늦은 실패가 현재 probe와 무관하게
+            # HALF_OPEN → OPEN 복귀를 유발하는 것을 방지한다.
+            if call_generation != self._half_open_generation and (
+                half_open_trial or self.state == CircuitState.HALF_OPEN
+            ):
                 logger.debug(
-                    f"🕰️  [{self.name}] stale HALF_OPEN trial 실패 무시 "
-                    f"(세대 {trial_generation} != 현재 {self._half_open_generation})"
+                    f"🕰️  [{self.name}] stale 호출 실패 무시 "
+                    f"(세대 {call_generation} != 현재 {self._half_open_generation}, "
+                    f"trial={half_open_trial})"
                 )
                 return
 
