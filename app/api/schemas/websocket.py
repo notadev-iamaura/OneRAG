@@ -66,7 +66,9 @@ class StreamStartEvent(BaseModel):
     Attributes:
         type: 이벤트 타입 (항상 "stream_start")
         message_id: 메시지 고유 식별자
-        session_id: 세션 식별자
+        session_id: 서버 확정 세션 식별자 (비-UUID4 클라이언트 ID는 서버가
+            새 UUID4로 교체할 수 있으므로, 클라이언트는 이 값을 후속 메시지에
+            사용해야 대화 컨텍스트가 유지됨)
         timestamp: 스트리밍 시작 시각 (ISO 8601 형식)
     """
 
@@ -80,7 +82,7 @@ class StreamStartEvent(BaseModel):
     )
     session_id: str = Field(
         ...,
-        description="세션 식별자",
+        description="서버 확정 세션 식별자 (후속 메시지에 이 값을 사용)",
     )
     timestamp: str = Field(
         ...,

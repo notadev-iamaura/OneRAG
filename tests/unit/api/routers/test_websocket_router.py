@@ -449,6 +449,127 @@ class TestWebSocketErrorHandling:
         set_chat_service(None)
 
 
+class TestWebSocketServerConfirmedSessionId:
+    """stream_start가 서버 확정 세션 ID를 회신하는지 테스트
+
+    session_service는 비-UUID4 클라이언트 ID를 무통보로 새 UUID4로 교체한다.
+    클라이언트가 교체된 ID를 알 수 있도록 stream_start는 파이프라인 metadata
+    이벤트의 session_id(서버 확정 ID)를 담아 전송해야 한다.
+    """
+
+    @pytest.fixture
+    def app(self):
+        """테스트용 FastAPI 앱 생성"""
+        app = FastAPI()
+        app.include_router(router)
+        return app
+
+    @pytest.mark.asyncio
+    async def test_stream_start_uses_server_confirmed_session_id(self, app):
+        """metadata의 session_id(서버 확정 ID)가 stream_start에 담겨야 함"""
+        # Given: 파이프라인이 교체된 세션 ID를 metadata로 반환
+        service = MagicMock()
+
+        async def mock_stream():
+            # 서버가 비-UUID4 ID를 교체한 상황: metadata에 새 UUID 포함
+            yield {
+                "event": "metadata",
+                "data": {"session_id": "server-replaced-uuid", "search_results": 1},
+            }
+            yield {"event": "chunk", "data": "답변", "chunk_index": 0}
+            yield {"event": "done", "data": {"session_id": "server-replaced-uuid"}}
+
+        service.stream_rag_pipeline = MagicMock(return_value=mock_stream())
+        set_chat_service(service)
+
+        # When: 비-UUID4 커스텀 ID로 연결 후 메시지 전송
+        with TestClient(app) as client:
+            with client.websocket_connect("/chat-ws?session_id=my-custom-session") as websocket:
+                websocket.send_json({
+                    "type": "message",
+                    "message_id": "msg-001",
+                    "content": "테스트",
+                    "session_id": "my-custom-session",
+                })
+
+                # Then: stream_start에 서버 확정 ID가 담겨야 함 (원본 ID 아님)
+                start_event = websocket.receive_json()
+                assert start_event["type"] == "stream_start"
+                assert start_event["session_id"] == "server-replaced-uuid", (
+                    "stream_start는 metadata의 서버 확정 session_id를 회신해야 합니다"
+                )
+
+        set_chat_service(None)
+
+    @pytest.mark.asyncio
+    async def test_stream_start_fallback_to_original_id_without_metadata(self, app):
+        """metadata 없이 토큰이 시작되면 원본 ID로 stream_start 폴백 전송"""
+        # Given: metadata 없이 chunk부터 시작하는 비정상 파이프라인
+        service = MagicMock()
+
+        async def mock_stream():
+            yield {"event": "chunk", "data": "토큰", "chunk_index": 0}
+            yield {"event": "done", "data": {}}
+
+        service.stream_rag_pipeline = MagicMock(return_value=mock_stream())
+        set_chat_service(service)
+
+        # When: 메시지 전송
+        with TestClient(app) as client:
+            with client.websocket_connect("/chat-ws?session_id=fallback-session") as websocket:
+                websocket.send_json({
+                    "type": "message",
+                    "message_id": "msg-001",
+                    "content": "테스트",
+                    "session_id": "fallback-session",
+                })
+
+                # Then: 첫 이벤트는 원본 ID를 담은 stream_start (프로토콜 순서 보장)
+                start_event = websocket.receive_json()
+                assert start_event["type"] == "stream_start"
+                assert start_event["session_id"] == "fallback-session"
+
+                # 이어서 stream_token 수신
+                token_event = websocket.receive_json()
+                assert token_event["type"] == "stream_token"
+                assert token_event["token"] == "토큰"
+
+        set_chat_service(None)
+
+    @pytest.mark.asyncio
+    async def test_error_before_metadata_sends_only_stream_error(self, app):
+        """metadata 이전 에러 경로에서는 stream_error만 전송 (stream_start 생략 허용)"""
+        # Given: metadata 없이 즉시 에러를 반환하는 파이프라인
+        service = MagicMock()
+
+        async def mock_stream():
+            yield {
+                "event": "error",
+                "error_code": "GEN-004",
+                "message": "파이프라인 초기화 실패",
+            }
+
+        service.stream_rag_pipeline = MagicMock(return_value=mock_stream())
+        set_chat_service(service)
+
+        # When: 메시지 전송
+        with TestClient(app) as client:
+            with client.websocket_connect("/chat-ws?session_id=err-session") as websocket:
+                websocket.send_json({
+                    "type": "message",
+                    "message_id": "msg-001",
+                    "content": "테스트",
+                    "session_id": "err-session",
+                })
+
+                # Then: 첫 이벤트가 stream_error (stream_start 선전송 없음)
+                first_event = websocket.receive_json()
+                assert first_event["type"] == "stream_error"
+                assert first_event["error_code"] == "GEN-004"
+
+        set_chat_service(None)
+
+
 class TestWebSocketConnection:
     """WebSocket 연결 관리 테스트"""
 

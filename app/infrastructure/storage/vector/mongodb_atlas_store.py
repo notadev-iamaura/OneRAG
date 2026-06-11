@@ -18,6 +18,7 @@ Note:
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from abc import ABC, abstractmethod
 from typing import Any
@@ -417,7 +418,17 @@ class MongoDBAtlasStore(IVectorStore):
 
             # 벡터 필드는 제외하고 조회 (불필요한 대용량 전송 방지)
             projection = {self.embedding_field: 0}
-            results = list(coll.find(mongo_query, projection))
+
+            def _fetch_sync() -> list[dict[str, Any]]:
+                """동기 pymongo find를 워커 스레드에서 실행하기 위한 내부 함수.
+
+                필터 없는 조회는 전체 컬렉션 스캔이라 수 초 블로킹될 수 있고,
+                이벤트 루프에서 직접 실행하면 SSE/WebSocket을 포함한 모든 요청이
+                동반 정지하므로 asyncio.to_thread로 위임한다 (qdrant/pinecone 파리티).
+                """
+                return list(coll.find(mongo_query, projection))
+
+            results = await asyncio.to_thread(_fetch_sync)
 
             output: list[dict[str, Any]] = []
             for doc in results:

@@ -3,23 +3,28 @@
 # 목적: 정적 게이트(lint/mypy/test)를 넘어 실제 외부 서비스 연결로 integration
 #       테스트를 돌리기 위한 로컬 스택입니다.
 #
+# 포트: dev 스택(docker-compose.yml, make start)과 동시 실행이 가능하도록
+#       호스트 포트를 리맵했습니다 (8081/50052/55432).
+#       restart: "no" — 검증 전용 일회성 스택이므로 데몬 재시작 시 부활하지 않습니다.
+#
 # 사용:
 #   make verify-integration            # 전체 (서비스 기동 → 대기 → 테스트 → 종료)
 #   docker compose -f docker-compose.verify.yml up -d     # 서비스만 기동
 #   docker compose -f docker-compose.verify.yml down -v   # 종료 + 볼륨 삭제
 #
 # 환경변수(테스트 실행 시):
-#   WEAVIATE_URL=http://localhost:8080
-#   DATABASE_URL=postgresql://onerag:onerag-verify@localhost:5432/rag_db
+#   WEAVIATE_URL=http://localhost:8081
+#   WEAVIATE_GRPC_PORT=50052
+#   DATABASE_URL=postgresql://onerag:onerag-verify@localhost:55432/rag_db
 
 services:
   weaviate:
     image: cr.weaviate.io/semitechnologies/weaviate:1.27.8
     container_name: onerag-verify-weaviate
-    restart: unless-stopped
+    restart: "no"
     ports:
-      - "8080:8080"  # HTTP API
-      - "50051:50051"  # gRPC (Python client v4)
+      - "8081:8080"  # HTTP API (dev 스택 8080과 충돌 방지)
+      - "50052:50051"  # gRPC (Python client v4, dev 스택 50051과 충돌 방지)
     environment:
       ENABLE_TOKENIZER_KAGOME_KR: 'true'  # 한국어 토크나이저
       PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
@@ -38,9 +43,9 @@ services:
   postgres:
     image: postgres:16
     container_name: onerag-verify-postgres
-    restart: unless-stopped
+    restart: "no"
     ports:
-      - "5432:5432"
+      - "55432:5432"  # dev/로컬 PostgreSQL 5432와 충돌 방지
     environment:
       POSTGRES_USER: onerag
       POSTGRES_PASSWORD: onerag-verify

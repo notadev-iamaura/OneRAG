@@ -4,6 +4,7 @@ OneRAG FastAPI Application
 """
 
 import asyncio
+import inspect
 import os
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -178,16 +179,25 @@ class RAGChatbotApp:
         except Exception as e:
             logger.error(f"❌ Error during cleanup: {e}")
 
-    def get_modules_dict(self) -> dict[str, Any]:
+    async def get_modules_dict(self) -> dict[str, Any]:
         """
-        라우터 의존성 주입을 위한 모듈 딕셔너리 반환
+        라우터 의존성 주입을 위한 모듈 딕셔너리 반환 (async)
 
         기존 코드 호환성 유지:
         - chat.set_dependencies(rag_app.modules, rag_app.config) 패턴 지원
         - Container providers를 dict 형태로 변환
 
+        ⚠️ dependency-injector async Singleton의 Future 반환 특성:
+        비동기 팩토리(예: create_mcp_server_instance, create_cache_instance)에
+        의존하는 Singleton은 동기 호출 시 인스턴스 대신 asyncio.Future를
+        반환한다(초기화가 완료된 뒤에도 finished Future 그대로). 이를 unwrap
+        하지 않고 dict에 담으면 사용 지점에서 truthy Future로 인해
+        "'_asyncio.Future' object has no attribute ..." AttributeError가
+        발생한다 (예: use_agent=true의 agent_orchestrator.run, /v1의
+        retrieval.search). 따라서 반환 직전에 모든 값을 일괄 await로 해소한다.
+
         Returns:
-            모듈 이름 → 모듈 인스턴스 매핑 딕셔너리
+            모듈 이름 → 모듈 인스턴스 매핑 딕셔너리 (Future/awaitable 미포함)
         """
         # query_expansion은 추상 메서드 미구현으로 인해 optional 처리
         try:
@@ -196,7 +206,7 @@ class RAGChatbotApp:
             logger.warning(f"⚠️ Query expansion provider failed: {e}, using None")
             query_expansion = None
 
-        return {
+        modules: dict[str, Any] = {
             "llm_factory": self.container.llm_factory(),
             # "ip_geolocation": self.container.ip_geolocation(),  # 비활성화: 세션 생성 타임아웃 원인 (DI 컨테이너에서 제거됨)
             "session": self.container.session(),
@@ -221,6 +231,14 @@ class RAGChatbotApp:
             "grok_answer_provider": self.container.grok_answer_provider(),
             "agent_orchestrator": self.container.agent_orchestrator(),
         }
+
+        # dependency-injector async Singleton이 반환한 Future/awaitable을 일괄 해소
+        # (docstring 참조 — unwrap 누락 시 사용 지점에서 AttributeError P0 결함 발생)
+        for name, value in modules.items():
+            if asyncio.isfuture(value) or inspect.isawaitable(value):
+                modules[name] = await value
+
+        return modules
 
 
 # 글로벌 앱 인스턴스
@@ -382,7 +400,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await rag_app.initialize_modules()
 
         # Container providers → dict 변환 (라우터 호환성)
-        modules_dict = rag_app.get_modules_dict()
+        # async Singleton Future 해소를 위해 await 필요 (get_modules_dict docstring 참조)
+        modules_dict = await rag_app.get_modules_dict()
 
         # Config 초기화 검증 (타입 안전성)
         assert rag_app.config is not None, "Config must be initialized before router setup"

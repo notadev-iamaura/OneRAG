@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.lib.errors import SearchUnavailableError
 from app.modules.core.retrieval.interfaces import SearchResult
 from app.modules.core.retrieval.orchestrator import RetrievalOrchestrator
 
@@ -33,24 +34,27 @@ class TestOrchestratorFailures:
         )
 
     @pytest.mark.asyncio
-    async def test_retriever_failure_returns_empty_results(self, orchestrator):
+    async def test_retriever_failure_propagates_search_unavailable(self, orchestrator):
         """
-        Retriever 실패 시 빈 결과 반환
+        Retriever 전면 실패 시 전용 예외 전파 (Phase 2.7)
 
-        Given: Retriever에서 에러 발생
+        Given: Retriever에서 에러 발생 (단일 쿼리 = 모든 쿼리 실패와 동치)
         When: search_and_rerank() 호출
-        Then: 빈 리스트 반환 (서비스 중단 방지)
+        Then: SearchUnavailableError 전파 — 빈 결과로 위장하면 상위
+              CircuitBreaker가 장애를 감지하지 못한다. degradation(빈 결과)은
+              호출자(rag_pipeline의 CB fallback 등)가 담당한다.
         """
         # Mock: Retriever 실패
         orchestrator.retriever.search.side_effect = Exception("Weaviate connection lost")
 
-        result = await orchestrator.search_and_rerank(
-            query="테스트 쿼리",
-            top_k=10,
-        )
+        with pytest.raises(SearchUnavailableError) as exc_info:
+            await orchestrator.search_and_rerank(
+                query="테스트 쿼리",
+                top_k=10,
+            )
 
-        # 검증: 빈 결과 (서비스 계속 동작)
-        assert result == []
+        # 검증: 원인 예외가 체이닝으로 보존된다
+        assert "Weaviate connection lost" in str(exc_info.value.__cause__)
         orchestrator.retriever.search.assert_called_once()
 
     @pytest.mark.asyncio

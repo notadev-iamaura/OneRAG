@@ -126,11 +126,13 @@ class ErrorCode(str, Enum):
     VECTOR_011 = "VECTOR-011"  # add_documents 중 예외
     VECTOR_012 = "VECTOR-012"  # delete 중 예외
 
-    # SEARCH (검색) - 4개
+    # SEARCH (검색) - 6개
     SEARCH_001 = "SEARCH-001"  # 검색 쿼리 실행 실패
     SEARCH_002 = "SEARCH-002"  # 검색 결과 없음
     SEARCH_003 = "SEARCH-003"  # Retrieval 모듈 검색 실패
+    SEARCH_004 = "SEARCH-004"  # 검색 백엔드 전면 불능 (모든 쿼리 실패)
     RETRIEVAL_SEARCH_FAILED = "SEARCH-003"  # 별칭: Retrieval 검색 실패
+    SEARCH_BACKEND_UNAVAILABLE = "SEARCH-004"  # 별칭: 검색 백엔드 불능
 
     # DB (데이터베이스) - 6개
     DB_001 = "DB-001"  # DATABASE_URL 미설정

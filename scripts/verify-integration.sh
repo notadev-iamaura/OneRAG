@@ -19,14 +19,15 @@ set -euo pipefail
 
 COMPOSE_FILE="docker-compose.verify.yml"
 export ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1
-export WEAVIATE_URL="${WEAVIATE_URL:-http://localhost:8080}"
-export DATABASE_URL="${DATABASE_URL:-postgresql://onerag:onerag-verify@localhost:5432/rag_db}"
+export WEAVIATE_URL="${WEAVIATE_URL:-http://localhost:8081}"
+export WEAVIATE_GRPC_PORT="${WEAVIATE_GRPC_PORT:-50052}"
+export DATABASE_URL="${DATABASE_URL:-postgresql://onerag:onerag-verify@localhost:55432/rag_db}"
 export ENVIRONMENT=test
 
 cleanup() {
   if [ "${KEEP_SERVICES:-0}" != "1" ]; then
-    echo "🧹 검증 서비스 종료..."
-    docker compose -f "$COMPOSE_FILE" down
+    echo "🧹 검증 서비스 종료 (볼륨 포함 — 매 실행 깨끗한 상태 보장)..."
+    docker compose -f "$COMPOSE_FILE" down -v
   else
     echo "ℹ️  KEEP_SERVICES=1 — 서비스를 유지합니다 (수동 종료: docker compose -f $COMPOSE_FILE down -v)"
   fi
@@ -38,6 +39,7 @@ docker compose -f "$COMPOSE_FILE" up -d --wait
 
 echo "🔬 통합 테스트 실행 (optional provider + 외부 서비스)..."
 echo "   WEAVIATE_URL=$WEAVIATE_URL"
+echo "   WEAVIATE_GRPC_PORT=$WEAVIATE_GRPC_PORT"
 echo "   DATABASE_URL=$DATABASE_URL"
 
 # 1) optional provider 단위 테스트 (spaCy 한국어 NER, 로컬 임베더)

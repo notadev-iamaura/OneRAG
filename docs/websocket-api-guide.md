@@ -43,6 +43,8 @@ wss://{host}/chat-ws?session_id={session_id}
 |------|------|------|------|
 | `session_id` | string | ✅ | 세션 식별자 (대화 컨텍스트 유지용) |
 
+> **중요**: UUID4 형식이 아닌 커스텀 `session_id`(예: `my-session`)는 서버가 보안상 새 UUID4로 교체합니다. 서버가 확정한 세션 ID는 `stream_start` 이벤트의 `session_id` 필드로 회신되며, **대화 컨텍스트를 유지하려면 후속 메시지에 이 서버 확정 ID를 사용해야 합니다.**
+
 **연결 방법:**
 
 ```javascript
@@ -84,7 +86,7 @@ async with websockets.connect('wss://your-domain.com/chat-ws?session_id=my-sessi
 | `type` | string | ✅ | 메시지 타입 (항상 `"message"`) |
 | `message_id` | string | ✅ | 메시지 고유 식별자 (클라이언트가 생성, UUID 권장) |
 | `content` | string | ✅ | 사용자 질문 내용 (1~10,000자) |
-| `session_id` | string | ✅ | 세션 식별자 (연결 시 사용한 것과 동일) |
+| `session_id` | string | ✅ | 세션 식별자 (첫 메시지는 연결 시 사용한 값, 이후에는 `stream_start`로 회신된 서버 확정 ID 사용) |
 
 **예시:**
 ```javascript
@@ -112,7 +114,7 @@ RAG 파이프라인이 시작되었음을 알립니다.
 {
   "type": "stream_start",
   "message_id": "unique-message-id-123",
-  "session_id": "my-session-123",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
   "timestamp": "2026-01-16T12:34:56.789Z"
 }
 ```
@@ -121,8 +123,10 @@ RAG 파이프라인이 시작되었음을 알립니다.
 |------|------|------|
 | `type` | string | 이벤트 타입 (`"stream_start"`) |
 | `message_id` | string | 클라이언트가 보낸 메시지 ID |
-| `session_id` | string | 세션 ID |
+| `session_id` | string | **서버 확정 세션 ID** (비-UUID4 커스텀 ID는 서버가 새 UUID4로 교체. 후속 메시지에 이 값을 사용해야 대화 컨텍스트 유지) |
 | `timestamp` | string | 스트리밍 시작 시각 (ISO 8601 형식) |
+
+> **참고**: `session_id`는 연결 시 전달한 값과 다를 수 있습니다. 클라이언트는 `stream_start.session_id`를 저장해 두고 이후 메시지의 `session_id`로 사용하세요.
 
 #### 2. stream_token - 토큰 스트리밍
 
@@ -277,6 +281,9 @@ class RAGWebSocketClient {
     switch (event.type) {
       case 'stream_start':
         console.log('스트리밍 시작:', event.timestamp);
+        // 서버 확정 세션 ID 채택 (비-UUID4 커스텀 ID는 서버가 교체함)
+        // 후속 메시지가 이 ID를 사용해야 대화 컨텍스트가 유지된다
+        this.sessionId = event.session_id;
         break;
 
       case 'stream_token':
@@ -415,6 +422,8 @@ export function useWebSocketRAG(baseUrl: string, sessionId: string) {
   });
 
   const wsRef = useRef<WebSocket | null>(null);
+  // 서버 확정 세션 ID (비-UUID4 커스텀 ID는 서버가 새 UUID4로 교체함)
+  const serverSessionIdRef = useRef<string>(sessionId);
 
   // WebSocket 연결
   useEffect(() => {
@@ -432,6 +441,9 @@ export function useWebSocketRAG(baseUrl: string, sessionId: string) {
 
       switch (data.type) {
         case 'stream_start':
+          // 서버 확정 세션 ID 채택 — 후속 메시지가 이 ID를 사용해야
+          // 대화 컨텍스트가 유지된다
+          serverSessionIdRef.current = data.session_id;
           setState(prev => ({
             ...prev,
             tokens: [],
@@ -513,11 +525,12 @@ export function useWebSocketRAG(baseUrl: string, sessionId: string) {
       type: 'message',
       message_id: crypto.randomUUID(),
       content,
-      session_id: sessionId,
+      // 서버 확정 세션 ID 사용 (stream_start로 회신된 값)
+      session_id: serverSessionIdRef.current,
     };
 
     ws.send(JSON.stringify(message));
-  }, [sessionId]);
+  }, []);
 
   // 전체 텍스트 반환 (토큰 조합)
   const fullText = state.tokens.join('');
@@ -695,6 +708,9 @@ class RAGWebSocketClient:
 
                 if event_type == "stream_start":
                     print(f"스트리밍 시작: {event.get('timestamp')}")
+                    # 서버 확정 세션 ID 채택 (비-UUID4 커스텀 ID는 서버가 교체함)
+                    # 후속 메시지가 이 ID를 사용해야 대화 컨텍스트가 유지된다
+                    self.session_id = event.get("session_id", self.session_id)
 
                 elif event_type == "stream_token":
                     token = event.get("token", "")
@@ -1015,23 +1031,37 @@ function sendMessage(content) {
 
 ### Q2: 세션은 얼마나 유지되나요?
 
-기본적으로 세션은 **30분**간 유지됩니다. 같은 `session_id`를 사용하면 대화 컨텍스트가 유지됩니다.
+기본적으로 세션은 **30분**간 유지됩니다. **서버가 확정한** `session_id`를 사용하면 대화 컨텍스트가 유지됩니다.
+
+> **주의**: UUID4 형식이 아닌 커스텀 ID(예: `my-session`)는 서버가 새 UUID4로 교체합니다. 교체된 ID는 `stream_start.session_id`로 회신되므로, 커스텀 ID를 그대로 재사용하면 매번 새 세션이 생성되어 컨텍스트가 유지되지 않습니다.
 
 ```javascript
-// 같은 세션으로 여러 질문 가능
+// 서버 확정 세션 ID를 저장해서 재사용
+let serverSessionId = null;
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === 'stream_start') {
+    // 서버가 확정(필요 시 교체)한 세션 ID 저장
+    serverSessionId = data.session_id;
+  }
+  // ... 다른 이벤트 처리
+};
+
+// 첫 번째 질문 (연결 시 사용한 ID 그대로)
 ws.send(JSON.stringify({
   type: 'message',
   message_id: 'msg-1',
   content: '첫 번째 질문',
-  session_id: 'my-session'
+  session_id: sessionId
 }));
 
-// 잠시 후
+// 잠시 후 — 서버 확정 ID로 후속 질문 (대화 컨텍스트 유지)
 ws.send(JSON.stringify({
   type: 'message',
   message_id: 'msg-2',
   content: '이전 답변에 대한 추가 질문',
-  session_id: 'my-session' // 동일한 세션 ID
+  session_id: serverSessionId // stream_start로 회신된 서버 확정 ID
 }));
 ```
 

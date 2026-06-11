@@ -316,15 +316,22 @@ async def get_realtime_metrics():
                     for s in all_stats.values()
                     if isinstance(s, dict) and "avg_latency_ms" in s
                 ]
-                total_calls = sum(s.get("count", 0) for s in func_stats)
+                # total_calls는 누적 성공 호출 수(total_calls 필드), count는 최근 윈도우(≤100).
+                # error_rate 분모에 윈도우 count를 쓰면 누적 에러 ÷ 최근 100건이 되어
+                # 100%를 초과하는 왜곡이 생기므로 누적 분모를 사용한다.
+                total_calls = sum(s.get("total_calls", 0) for s in func_stats)
                 total_errors = sum(s.get("errors", 0) for s in func_stats)
-                if total_calls > 0:
-                    # 호출 수 가중 평균 응답시간(ms → s)
+                window_calls = sum(s.get("count", 0) for s in func_stats)
+                if window_calls > 0:
+                    # 최근 윈도우 기준 가중 평균 응답시간(ms → s) — '최근' 평균임을 명시
                     weighted = sum(
                         s.get("avg_latency_ms", 0) * s.get("count", 0) for s in func_stats
                     )
-                    average_response_time = round(weighted / total_calls / 1000, 2)
-                    error_rate = round(total_errors / total_calls * 100, 2)
+                    average_response_time = round(weighted / window_calls / 1000, 2)
+                if total_calls + total_errors > 0:
+                    # 에러 발생 호출은 record_latency가 호출되지 않으므로
+                    # 분모 = 성공(누적 total_calls) + 에러(누적 errors)
+                    error_rate = round(total_errors / (total_calls + total_errors) * 100, 2)
             except Exception as e:
                 logger.warning(
                     "성능 메트릭 조회 실패",

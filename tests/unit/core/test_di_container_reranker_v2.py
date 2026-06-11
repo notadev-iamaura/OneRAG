@@ -104,3 +104,32 @@ class TestDIContainerRerankerV2:
         }
         reranker = await create_reranker_instance_v2(config)
         assert reranker is None
+
+    @pytest.mark.asyncio
+    @patch.dict("os.environ", {"GOOGLE_API_KEY": "dummy-key-for-construction"})
+    async def test_shipped_config_creates_reranker_with_google_key_only(self):
+        """회귀 테스트: 출하 기본 설정이 GOOGLE_API_KEY만으로 리랭커를 생성해야 한다.
+
+        과거 출하 기본값(late-interaction/jina)은 GOOGLE_API_KEY만 설정한
+        quickstart 배포에서 JINA_API_KEY 부재로 리랭커가 조용히 비활성화되는
+        결함이 있었다. 출하 기본값은 GOOGLE_API_KEY만으로 동작해야 한다.
+        """
+        import os
+
+        from app.core.di_container import create_reranker_instance_v2
+        from app.lib.config_loader import load_config
+
+        # quickstart 환경 재현: JINA_API_KEY 부재 (patch.dict가 종료 시 복원)
+        os.environ.pop("JINA_API_KEY", None)
+
+        config = load_config()
+        reranking = config.get("reranking", {})
+
+        # 출하 기본값이 GOOGLE_API_KEY만으로 동작하는 조합인지 확인
+        assert reranking.get("approach") == "llm"
+        assert reranking.get("provider") == "google"
+
+        # 리랭커가 실제로 생성되어야 함 (조용한 비활성화 회귀 방지)
+        reranker = await create_reranker_instance_v2(config)
+        assert reranker is not None
+        assert reranker.__class__.__name__ == "GeminiFlashReranker"

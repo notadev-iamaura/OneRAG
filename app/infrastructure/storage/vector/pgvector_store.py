@@ -18,6 +18,7 @@ Note:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from abc import ABC, abstractmethod
@@ -26,6 +27,51 @@ from typing import Any
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _build_metadata_filter_clauses(
+    filters: dict[str, Any],
+    exclude_keys: frozenset[str] = frozenset(),
+) -> tuple[list[str], list[str]]:
+    """메타데이터(JSONB) 필터를 SQL WHERE 절과 파라미터 목록으로 변환하는 순수 헬퍼.
+
+    보안 근거:
+        PostgreSQL JSONB `->>` 연산자의 우변(키)은 텍스트 표현식이므로
+        값과 마찬가지로 파라미터(%s)로 전달할 수 있다. 필터 키는
+        ChatRequest.options.filters(자유 형식 dict)를 통해 사용자가 직접
+        제어 가능하므로, f-string으로 SQL에 보간하면 WHERE 절 SQL 주입이
+        가능해진다. 따라서 키와 값을 모두 placeholder로 파라미터화한다.
+
+    Args:
+        filters: 메타데이터 필터 dict (key: 메타데이터 필드명, value: 일치 값)
+        exclude_keys: 절 구성에서 제외할 키 집합 (예: id/ids는 별도 처리)
+
+    Returns:
+        (절 목록, 파라미터 목록) 튜플.
+        절은 "metadata->>%s = %s" 형태이며 파라미터는 (키, 값) 순서로 나열된다.
+
+    Raises:
+        ValueError: 필터 키가 문자열이 아닌 경우 (추가 방어 — 로그 후 raise)
+    """
+    clauses: list[str] = []
+    params: list[str] = []
+    for key, value in filters.items():
+        if key in exclude_keys:
+            continue
+        if not isinstance(key, str):
+            # 에러 숨김 금지: 비정상 키 타입은 로그를 남기고 명시적으로 거부한다
+            logger.error(
+                f"pgvector 메타데이터 필터 키 타입 오류: {type(key).__name__} ({key!r})"
+            )
+            raise ValueError(
+                f"메타데이터 필터 키는 문자열이어야 합니다 "
+                f"(받은 타입: {type(key).__name__})"
+            )
+        # 키도 placeholder(%s)로 파라미터화 — SQL 텍스트에 키를 보간하지 않는다
+        clauses.append("metadata->>%s = %s")
+        params.append(key)
+        params.append(str(value))
+    return clauses, params
 
 
 class IVectorStore(ABC):
@@ -289,20 +335,21 @@ class PgVectorStore(IVectorStore):
         """
         conn = self._ensure_connection()
 
-        try:
-            # 필터 조건 구성
-            filter_clause = ""
-            filter_params: list[Any] = []
-            if filters:
-                filter_conditions = []
-                for key, value in filters.items():
-                    if key == "ids":
-                        continue  # ID 필터는 별도 처리
-                    filter_conditions.append(f"metadata->>'{key}' = %s")
-                    filter_params.append(str(value))
-                if filter_conditions:
-                    filter_clause = "WHERE " + " AND ".join(filter_conditions)
+        # 필터 조건 구성 (try 밖에서 수행 — 검증 ValueError가
+        # 검색 실패 RuntimeError로 감싸지지 않도록 분리)
+        # 보안: 사용자 도달 가능한 필터 키를 SQL에 보간하지 않고 파라미터화한다
+        filter_clause = ""
+        filter_params: list[Any] = []
+        if filters:
+            filter_conditions, key_value_params = _build_metadata_filter_clauses(
+                filters,
+                exclude_keys=frozenset({"ids"}),  # ID 필터는 별도 처리
+            )
+            filter_params = list(key_value_params)
+            if filter_conditions:
+                filter_clause = "WHERE " + " AND ".join(filter_conditions)
 
+        try:
             # 유사도 검색 쿼리 (코사인 거리 사용)
             query = f"""
                 SELECT id, content, 1 - (embedding <=> %s::vector) as score, metadata
@@ -420,42 +467,54 @@ class PgVectorStore(IVectorStore):
         conn = self._ensure_connection()
         filters_value = filters or {}
 
-        try:
-            where_clauses: list[str] = []
-            params: list[Any] = []
+        # WHERE 절 구성 (try 밖에서 수행 — 검증 ValueError가
+        # 조회 실패 RuntimeError로 감싸지지 않도록 분리)
+        where_clauses: list[str] = []
+        params: list[Any] = []
 
-            # ID 직접 조회
-            if "id" in filters_value:
-                where_clauses.append("id = %s")
-                params.append(str(filters_value["id"]))
-            elif "ids" in filters_value:
-                ids = [str(value) for value in filters_value["ids"]]
-                if not ids:
-                    return []
-                placeholders = ",".join(["%s"] * len(ids))
-                where_clauses.append(f"id IN ({placeholders})")
-                params.extend(ids)
+        # ID 직접 조회
+        if "id" in filters_value:
+            where_clauses.append("id = %s")
+            params.append(str(filters_value["id"]))
+        elif "ids" in filters_value:
+            ids = [str(value) for value in filters_value["ids"]]
+            if not ids:
+                return []
+            placeholders = ",".join(["%s"] * len(ids))
+            where_clauses.append(f"id IN ({placeholders})")
+            params.extend(ids)
 
-            # 메타데이터 필터
-            for key, value in filters_value.items():
-                if key in ("id", "ids"):
-                    continue
-                where_clauses.append(f"metadata->>'{key}' = %s")
-                params.append(str(value))
+        # 메타데이터 필터 (보안: 키도 placeholder로 파라미터화 — SQL 주입 방지)
+        metadata_clauses, metadata_params = _build_metadata_filter_clauses(
+            filters_value,
+            exclude_keys=frozenset({"id", "ids"}),
+        )
+        where_clauses.extend(metadata_clauses)
+        params.extend(metadata_params)
 
-            where_clause = ""
-            if where_clauses:
-                where_clause = "WHERE " + " AND ".join(where_clauses)
+        where_clause = ""
+        if where_clauses:
+            where_clause = "WHERE " + " AND ".join(where_clauses)
 
-            query = f"""
-                SELECT id, content, metadata
-                FROM {self.table_name}
-                {where_clause}
+        query = f"""
+            SELECT id, content, metadata
+            FROM {self.table_name}
+            {where_clause}
+        """
+
+        def _fetch_sync() -> list[Any]:
+            """동기 psycopg 조회를 워커 스레드에서 실행하기 위한 내부 함수.
+
+            필터 없는 조회는 전체 테이블 스캔이라 수 초 블로킹될 수 있고,
+            이벤트 루프에서 직접 실행하면 SSE/WebSocket을 포함한 모든 요청이
+            동반 정지하므로 asyncio.to_thread로 위임한다 (qdrant/pinecone 파리티).
             """
-
             with conn.cursor() as cursor:
                 cursor.execute(query, params)
-                rows = cursor.fetchall()
+                return list(cursor.fetchall())
+
+        try:
+            rows = await asyncio.to_thread(_fetch_sync)
 
             output: list[dict[str, Any]] = []
             for row in rows:

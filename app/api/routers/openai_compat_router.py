@@ -13,6 +13,7 @@ OneRAG에 바로 연결할 수 있도록 표준 형식을 제공합니다.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -113,6 +114,12 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     # 4. 문서 검색 (RAG)
     documents: list[dict[str, Any]] = []
     retriever = _modules.get("retrieval")
+    # 방어선: dependency-injector async Singleton 구성에서 retrieval 모듈이
+    # 코루틴/Future로 지연 제공될 수 있어 사용 직전에 해소한다
+    # ('_asyncio.Future' object has no attribute 'search' 방지,
+    # chat_service의 Future-unwrap 가드와 동일 패턴).
+    if asyncio.iscoroutine(retriever) or isinstance(retriever, asyncio.Future):
+        retriever = await retriever
     if retriever:
         try:
             # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict
@@ -172,6 +179,12 @@ async def _stream_completion(
         # 1. 문서 검색
         documents: list[dict[str, Any]] = []
         retriever = _modules.get("retrieval")
+        # 방어선: dependency-injector async Singleton 구성에서 retrieval 모듈이
+        # 코루틴/Future로 지연 제공될 수 있어 사용 직전에 해소한다
+        # ('_asyncio.Future' object has no attribute 'search' 방지,
+        # chat_service의 Future-unwrap 가드와 동일 패턴).
+        if asyncio.iscoroutine(retriever) or isinstance(retriever, asyncio.Future):
+            retriever = await retriever
         if retriever:
             try:
                 # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict
