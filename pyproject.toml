@@ -158,12 +158,14 @@ ragas = [
 chroma = ["chromadb>=0.4.0"]
 pinecone = ["pinecone>=7.0.1"]
 qdrant = ["qdrant-client>=1.7.0"]
-pgvector = ["pgvector>=0.2.0"]
+# psycopg(v3): pgvector_store.py가 지연 import하는 실제 드라이버 — extra 없이는 provider 설치 불가
+pgvector = ["pgvector>=0.2.0", "psycopg[binary]>=3.1"]
 all-vectordb = [
     "chromadb>=0.4.0",
     "pinecone>=7.0.1",
     "qdrant-client>=1.7.0",
     "pgvector>=0.2.0",
+    "psycopg[binary]>=3.1",
 ]
 
 # BM25 엔진 (Phase 1: Dense 전용 DB의 하이브리드 검색 지원)
