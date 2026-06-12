@@ -1,0 +1,112 @@
+# 라이브 프로바이더 스모크 (주간 스케줄)
+#
+# 목적:
+#   Pinecone·MongoDB Atlas는 컨테이너화가 불가/제한적이라 로컬 verify 스택으로
+#   검증할 수 없다. 직전 사이클에서 "문서로만 확인"한 외부 API 계약을 실제
+#   API에 대해 주기적으로 실측해 잔여 리스크를 해소한다.
+#   - Pinecone: $in 혼합 타입 필터 수용 여부, 단위 기저 벡터 쿼리,
+#     include_metadata=True 시 top_k 상한(1,000)
+#   - MongoDB Atlas: 문서 관리 경로(add/fetch/delete) 라운드트립
+#     ($vectorSearch는 사전 인덱스가 필요해 스코프 제외)
+#
+# 필요한 저장소 시크릿 (Settings → Secrets and variables → Actions):
+#   - PINECONE_API_KEY    : Pinecone API 키
+#   - PINECONE_TEST_INDEX : 사전 프로비저닝된 "테스트 전용" 인덱스 이름.
+#                           프로덕션 인덱스 금지 — 테스트가 고유(uuid)
+#                           네임스페이스에 벡터를 upsert/삭제한다.
+#                           벡터 차원은 테스트가 describe_index_stats로 자동
+#                           감지하므로 임의 차원의 서버리스 인덱스면 충분하다.
+#   - MONGODB_ATLAS_URI   : Atlas 연결 문자열(mongodb+srv://...).
+#                           테스트 전용 클러스터/사용자 권장 — 테스트가 고유
+#                           (uuid) 컬렉션을 생성/삭제한다.
+#   - MONGODB_ATLAS_DB    : (선택) 사용할 데이터베이스 이름.
+#                           미설정 시 onerag_live_smoke 사용.
+#
+# 시크릿 부재 시 동작 (graceful skip):
+#   시크릿이 등록되지 않은 저장소에서도 스케줄 실행이 실패(빨간색)로 표시되지
+#   않도록, 시크릿이 비어 있으면 한국어 notice를 출력하고 해당 스모크를
+#   건너뛴 뒤 잡을 success로 종료한다. GitHub Actions는 if: 조건에서
+#   secrets 컨텍스트를 직접 참조할 수 없으므로, 잡 수준 env로 옮긴 뒤
+#   if: env.X != '' 패턴으로 검사한다. 테스트 모듈 자체도 환경 변수 부재 시
+#   모듈 수준 skip을 수행하므로 이중 방어가 된다.
+#
+# 실패 알림:
+#   스케줄 실행 실패는 GitHub 기본 동작에 따라 워크플로 파일 마지막 수정자/
+#   저장소 watcher에게 알림이 간다(별도 설정 불필요).
+
+name: Live Provider Smoke
+
+on:
+  schedule:
+    # 일요일 21:00 UTC = 월요일 06:00 KST (주 1회)
+    - cron: "0 21 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 동시 실행 방지: 수동 트리거와 스케줄이 겹쳐도 한 번에 하나만 실행
+concurrency:
+  group: live-provider-smoke
+  cancel-in-progress: false
+
+jobs:
+  live-smoke:
+    name: Live Provider Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # if: 조건에서 secrets를 직접 참조할 수 없으므로 env로 노출해 검사한다
+      PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+      PINECONE_TEST_INDEX: ${{ secrets.PINECONE_TEST_INDEX }}
+      MONGODB_ATLAS_URI: ${{ secrets.MONGODB_ATLAS_URI }}
+      MONGODB_ATLAS_DB: ${{ secrets.MONGODB_ATLAS_DB }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+
+      # pinecone/pymongo는 base 의존성이므로 별도 extra 없이 설치된다
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # 시크릿 존재 검사: 비어 있는 프로바이더는 한국어 notice로 안내한다
+      # (해당 테스트 모듈은 환경 변수 부재 시 자체적으로 skip 처리됨)
+      - name: 시크릿 존재 검사
+        run: |
+          if [ -z "$PINECONE_API_KEY" ] || [ -z "$PINECONE_TEST_INDEX" ]; then
+            echo "::notice::PINECONE_API_KEY 또는 PINECONE_TEST_INDEX 시크릿이 없어 Pinecone 라이브 스모크를 건너뜁니다. 테스트 전용 인덱스를 프로비저닝한 뒤 두 시크릿을 등록하세요."
+          fi
+          if [ -z "$MONGODB_ATLAS_URI" ]; then
+            echo "::notice::MONGODB_ATLAS_URI 시크릿이 없어 MongoDB Atlas 라이브 스모크를 건너뜁니다. 테스트 전용 클러스터 연결 문자열을 시크릿으로 등록하세요."
+          fi
+          if { [ -z "$PINECONE_API_KEY" ] || [ -z "$PINECONE_TEST_INDEX" ]; } && [ -z "$MONGODB_ATLAS_URI" ]; then
+            echo "::notice::라이브 프로바이더 시크릿이 하나도 등록되지 않아 전체 스모크를 건너뜁니다 (잡은 success로 종료). 워크플로 파일 상단 주석의 시크릿 안내를 참고하세요."
+          fi
+
+      # 시크릿이 하나라도 있으면 라이브 스모크 실행.
+      # 시크릿이 없는 프로바이더의 테스트 모듈은 모듈 수준 skip으로 깨끗하게
+      # 건너뛰므로 단일 pytest 호출로 충분하다.
+      - name: 라이브 프로바이더 스모크 실행
+        if: (env.PINECONE_API_KEY != '' && env.PINECONE_TEST_INDEX != '') || env.MONGODB_ATLAS_URI != ''
+        env:
+          ONERAG_RUN_LIVE_PROVIDER_TESTS: "1"
+          ENVIRONMENT: test
+        run: uv run pytest tests/integration/live -m integration -q --timeout=300

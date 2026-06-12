@@ -1,10 +1,11 @@
-# 통합 검증 전용 인프라 (Weaviate + PostgreSQL)
+# 통합 검증 전용 인프라 (Weaviate + PostgreSQL/pgvector + Qdrant)
 # ===================================================
 # 목적: 정적 게이트(lint/mypy/test)를 넘어 실제 외부 서비스 연결로 integration
-#       테스트를 돌리기 위한 로컬 스택입니다.
+#       테스트를 돌리기 위한 로컬 스택입니다. 컨테이너 가능한 vector DB
+#       프로바이더(Weaviate, pgvector, Qdrant)를 실연결로 검증합니다.
 #
 # 포트: dev 스택(docker-compose.yml, make start)과 동시 실행이 가능하도록
-#       호스트 포트를 리맵했습니다 (8081/50052/55432).
+#       호스트 포트를 리맵했습니다 (8081/50052/55432/16333/16334).
 #       restart: "no" — 검증 전용 일회성 스택이므로 데몬 재시작 시 부활하지 않습니다.
 #
 # 사용:
@@ -16,6 +17,7 @@
 #   WEAVIATE_URL=http://localhost:8081
 #   WEAVIATE_GRPC_PORT=50052
 #   DATABASE_URL=postgresql://onerag:onerag-verify@localhost:55432/rag_db
+#   QDRANT_URL=http://localhost:16333
 
 services:
   weaviate:
@@ -41,7 +43,9 @@ services:
       start_period: 30s
 
   postgres:
-    image: postgres:16
+    # pgvector 확장이 포함된 공식 이미지 — postgres:16과 완전 호환되므로
+    # 같은 컨테이너가 세션 영속화 테스트와 pgvector VectorStore 검증을 겸용한다.
+    image: pgvector/pgvector:pg16
     container_name: onerag-verify-postgres
     restart: "no"
     ports:
@@ -59,8 +63,30 @@ services:
       retries: 12
       start_period: 10s
 
+  qdrant:
+    # 안정 버전 태그 고정 (latest 금지) — v1.18.2는 2026-06 기준 최신 안정 릴리즈
+    image: qdrant/qdrant:v1.18.2
+    container_name: onerag-verify-qdrant
+    restart: "no"
+    ports:
+      - "16333:6333"  # HTTP API (dev 스택 기본 6333과 충돌 방지)
+      - "16334:6334"  # gRPC (dev 스택 기본 6334와 충돌 방지)
+    volumes:
+      - verify_qdrant_data:/qdrant/storage
+    healthcheck:
+      # qdrant 이미지(debian:13-slim 기반)에는 curl/wget이 없어 /readyz HTTP 호출이
+      # 불가하다. entrypoint가 bash 스크립트라 bash는 존재하므로, bash 내장
+      # /dev/tcp 의사 디바이스로 HTTP 포트(6333) TCP 연결을 검사한다.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
 volumes:
   verify_weaviate_data:
     name: onerag_verify_weaviate_data
   verify_postgres_data:
     name: onerag_verify_postgres_data
+  verify_qdrant_data:
+    name: onerag_verify_qdrant_data

@@ -131,11 +131,32 @@ backend test suite all pass. These are necessary but NOT sufficient for
 production confidence — they exercise external services via strict-signature
 fakes, not live connections.
 
-### Integration verification (PR #74, reproducible)
+### Integration verification (PR #74, extended by the live-provider matrix)
 
 `make verify-integration` (see `docs/INTEGRATION_VERIFICATION.md`) stands up a
-local **Weaviate + PostgreSQL** stack (`docker-compose.verify.yml`) and runs the
-integration suite plus optional-provider tests with real connections.
+local **Weaviate + PostgreSQL(pgvector) + Qdrant** stack
+(`docker-compose.verify.yml`) and runs the integration suite plus
+optional-provider tests with real connections.
+
+### Live provider matrix
+
+Mock-based unit tests cannot catch external API contract violations (a pinecone
+regression passed CI exactly this way). Coverage is now tiered:
+
+| Provider | Tier | How |
+|---|---|---|
+| Weaviate | local verify stack | hybrid-search integration suite |
+| PostgreSQL (sessions) | local verify stack | race/persistence suite |
+| pgvector | local verify stack | `tests/integration/vector_stores/test_pgvector_live.py` (real parameterized-filter contract) |
+| Qdrant | local verify stack | `tests/integration/vector_stores/test_qdrant_live.py` |
+| Chroma | no service needed | `test_chroma_live.py` (PersistentClient — runs everywhere) |
+| Pinecone | weekly cloud smoke | `.github/workflows/live-provider-smoke.yml` + `tests/integration/live/` (measures the `$in` mixed-type and unit-vector/top_k contracts) |
+| MongoDB Atlas | weekly cloud smoke | document-management roundtrip (vector search needs a pre-built index — out of scope) |
+
+The weekly smoke skips gracefully (success + notice) until the repository
+secrets (`PINECONE_API_KEY`, `PINECONE_TEST_INDEX`, `MONGODB_ATLAS_URI`) are
+configured. The `pgvector` extra now includes `psycopg[binary]` (the driver the
+store actually imports — previously in no extra at all).
 
 Verified against live services on 2026-06-10:
 

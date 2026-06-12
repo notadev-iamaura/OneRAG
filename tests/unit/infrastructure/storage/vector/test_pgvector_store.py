@@ -367,7 +367,12 @@ class TestPgVectorStoreDocumentManagement:
 
     @pytest.mark.asyncio
     async def test_fetch_objects_metadata_filter(self, mock_connection):
-        """메타데이터 필터는 metadata->>'key' = %s 조건으로 변환된다"""
+        """메타데이터 필터는 키·값 모두 파라미터화된 조건으로 변환된다
+
+        SQL 주입 수정(PR #80) 이후 필터 키는 f-string 보간이 아니라
+        placeholder(metadata->>%s = %s)로 전달된다 — 키가 SQL 본문에
+        리터럴로 등장하면 회귀다.
+        """
         from app.infrastructure.storage.vector.pgvector_store import PgVectorStore
 
         cursor = mock_connection.cursor.return_value
@@ -379,8 +384,10 @@ class TestPgVectorStoreDocumentManagement:
         )
 
         sql, params = cursor.execute.call_args.args
-        assert "metadata->>'document_id' = %s" in sql
-        assert params == ["doc-1"]
+        assert "metadata->>%s = %s" in sql
+        # 키가 SQL 본문에 보간되지 않고 파라미터로만 전달된다
+        assert "document_id" not in sql
+        assert params == ["document_id", "doc-1"]
 
     @pytest.mark.asyncio
     async def test_fetch_objects_handles_json_string_metadata(self, mock_connection):
