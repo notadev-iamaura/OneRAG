@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 통합 검증 실행 스크립트
 # ============================================================================
-# 정적 게이트(lint/mypy/test)를 넘어 실제 외부 서비스(Weaviate, PostgreSQL)와
-# optional provider(spaCy 한국어, sentence-transformers)까지 포함해 integration
-# 테스트를 실행한다.
+# 정적 게이트(lint/mypy/test)를 넘어 실제 외부 서비스(Weaviate, PostgreSQL/pgvector,
+# Qdrant)와 optional provider(spaCy 한국어, sentence-transformers)까지 포함해
+# integration 테스트를 실행한다.
 #
 # 사용:
 #   ./scripts/verify-integration.sh            # 서비스 기동 → 대기 → 테스트 → 종료
@@ -12,8 +12,10 @@
 # 전제:
 #   - Docker daemon 실행 중
 #   - LLM 키(.env의 GOOGLE_API_KEY 등) — 실 LLM 테스트에 필요(없으면 해당 테스트 skip)
-#   - 선택 의존성 설치: uv sync --extra dev --extra local-embedding
-#                       uv pip install <ko_core_news_sm wheel>  (README 참조)
+#   - 선택 의존성 설치: uv sync --extra dev --extra local-embedding \
+#                               --extra qdrant --extra pgvector
+#     (pgvector extra에는 실 DB 연결용 psycopg[binary]가 보강될 예정)
+#   - spaCy 한국어 모델: uv pip install <ko_core_news_sm wheel>  (README 참조)
 # ============================================================================
 set -euo pipefail
 
@@ -25,6 +27,8 @@ export ONERAG_RUN_REAL_MODEL_TESTS=1
 export WEAVIATE_URL="${WEAVIATE_URL:-http://localhost:8081}"
 export WEAVIATE_GRPC_PORT="${WEAVIATE_GRPC_PORT:-50052}"
 export DATABASE_URL="${DATABASE_URL:-postgresql://onerag:onerag-verify@localhost:55432/rag_db}"
+# Qdrant 실연결 검증 (verify 스택 호스트 포트 16333 — dev 스택과 충돌 회피)
+export QDRANT_URL="${QDRANT_URL:-http://localhost:16333}"
 export ENVIRONMENT=test
 
 cleanup() {
@@ -37,13 +41,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "🐳 Weaviate + PostgreSQL 기동..."
+echo "🐳 Weaviate + PostgreSQL(pgvector) + Qdrant 기동..."
 docker compose -f "$COMPOSE_FILE" up -d --wait
 
 echo "🔬 통합 테스트 실행 (optional provider + 외부 서비스)..."
 echo "   WEAVIATE_URL=$WEAVIATE_URL"
 echo "   WEAVIATE_GRPC_PORT=$WEAVIATE_GRPC_PORT"
 echo "   DATABASE_URL=$DATABASE_URL"
+echo "   QDRANT_URL=$QDRANT_URL"
 
 # 1) optional provider 단위 테스트 (spaCy 한국어 NER, 로컬 임베더, 실모델 reranker)
 #    test_local_reranker.py 는 ONERAG_RUN_REAL_MODEL_TESTS=1 게이트로만 실행되는
@@ -55,6 +60,9 @@ uv run pytest \
   -p no:warnings -q
 
 # 2) 외부 서비스 연결 integration 테스트
+#    tests/integration 하위 전체를 -m integration marker로 수집하므로,
+#    신규 tests/integration/vector_stores/ 테스트(pgvector/Qdrant 등)도
+#    별도 경로 추가 없이 자동 포함된다.
 uv run pytest tests/integration -m integration -p no:warnings -q
 
 echo "✅ 통합 검증 완료"
