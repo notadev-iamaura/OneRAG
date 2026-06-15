@@ -352,7 +352,9 @@ async def test_shared_store_worker_entrypoint_uses_atomic_claim(monkeypatch, tmp
                 **updates,
             }
 
-    async def fake_process_document_background(job_id, file_path, filename, file_type):
+    async def fake_process_document_background(
+        job_id, file_path, filename, file_type, processing_attempt_id=None
+    ):
         calls.append(f"process:{job_id}")
         upload.upload_jobs[job_id]["status"] = "completed"
 

@@ -91,6 +91,20 @@ class ErrorCode(str, Enum):
     UPLOAD_013 = "UPLOAD-013"  # 문서 삭제 중 예외
     UPLOAD_014 = "UPLOAD-014"  # retrieval_module 없음 (bulk_delete)
     UPLOAD_015 = "UPLOAD-015"  # 일괄 삭제 중 예외
+    # --- 분할/취소/재시도 업로드 (jprag 차용 통합, #10/#11/#30) ---
+    UPLOAD_016 = "UPLOAD-016"  # 분할 업로드 offset 불일치 (409)
+    UPLOAD_017 = "UPLOAD-017"  # 분할 업로드 선언 크기 초과 (400)
+    UPLOAD_018 = "UPLOAD-018"  # 분할 업로드 완료 시 크기 검증 실패 (409)
+    UPLOAD_019 = "UPLOAD-019"  # 분할 업로드 작업 상태가 receiving 아님 (409)
+    UPLOAD_020 = "UPLOAD-020"  # 업로드 작업을 찾을 수 없음
+    UPLOAD_021 = "UPLOAD-021"  # 종결 작업은 취소 불가 (409)
+    UPLOAD_022 = "UPLOAD-022"  # 재시도 불가 상태 (409)
+    UPLOAD_023 = "UPLOAD-023"  # 재시도용 원본 파일 사용 불가 (409)
+
+    # STORAGE (원본 파일 보관) - 3개 (#10)
+    STORAGE_001 = "STORAGE-001"  # 원본 파일을 찾을 수 없음 (404)
+    STORAGE_002 = "STORAGE-002"  # 원본 스토리지 구성 오류
+    STORAGE_003 = "STORAGE-003"  # 원본 스토리지 입출력 실패
 
     # IMAGE (이미지 처리) - 5개
     IMAGE_001 = "IMAGE-001"  # 이미지 개수 > 3600

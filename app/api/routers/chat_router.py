@@ -24,7 +24,12 @@ from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from ...lib.auth import create_websocket_session_token, get_api_key_auth
+from ...lib.auth import (
+    create_upload_access_token,
+    create_websocket_session_token,
+    get_api_key_auth,
+    get_upload_token_ttl_seconds,
+)
 from ...lib.errors import ErrorCode, GenerationError, RetrievalError, SessionError, wrap_exception
 from ...lib.logger import get_logger
 from ..schemas.chat_schemas import (
@@ -380,15 +385,30 @@ async def create_session(
             },
         )
         ws_token = None
+        upload_token = None
+        upload_token_expires_at = None
+        upload_token_ttl_seconds = None
         auth = get_api_key_auth()
         if auth.api_key:
             ws_token = create_websocket_session_token(new_session["session_id"], auth.api_key)
+            # 브라우저가 서버 API 키를 보유하지 않고도 업로드할 수 있도록
+            # 세션에 바인딩된 단기 업로드 토큰을 함께 발급한다(#22).
+            upload_token_ttl_seconds = get_upload_token_ttl_seconds()
+            upload_token_expires_at = int(time.time()) + upload_token_ttl_seconds
+            upload_token = create_upload_access_token(
+                new_session["session_id"],
+                auth.api_key,
+                ttl_seconds=upload_token_ttl_seconds,
+            )
 
         return SessionResponse(
             session_id=new_session["session_id"],
             message="Session created successfully",
             timestamp=datetime.now().isoformat(),
             ws_token=ws_token,
+            upload_token=upload_token,
+            upload_token_expires_at=upload_token_expires_at,
+            upload_token_ttl_seconds=upload_token_ttl_seconds,
         )
     except HTTPException:
         logger.error(f"❌ HTTPException 발생 ({(time.time() - start_time)*1000:.2f}ms)")

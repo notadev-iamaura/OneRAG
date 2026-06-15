@@ -175,6 +175,10 @@ bm25 = ["kiwipiepy>=0.18.0", "rank-bm25>=0.2.2"]
 # 미설치 시 graceful degradation 하므로 코어 의존성에 추가하지 않는다(opt-in).
 extraction-quality = ["pymupdf>=1.24.0,<2"]
 
+# 원본 파일 보관(#10) GCS 백엔드 전용. original_file_storage.py가 지연 import하며
+# 미설치 시 OriginalFileStorageConfigurationError로 graceful 실패(local 기본은 0-dep).
+gcs = ["google-cloud-storage>=2.0"]
+
 [project.scripts]
 rag-chatbot = "main:main"
 
