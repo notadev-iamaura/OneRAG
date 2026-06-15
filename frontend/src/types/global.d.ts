@@ -6,6 +6,9 @@ interface RuntimeConfig {
   ACCESS_CODE?: string;
   API_BASE_URL?: string;
   WS_BASE_URL?: string;
+  // 빈 화면(Empty State) 등 관리자 쓰기 API에 사용하는 X-API-Key.
+  // 배포 시 주입되면 운영자가 키를 수동 입력하지 않아도 관리자 저장이 동작한다.
+  ADMIN_API_KEY?: string;
   NODE_ENV?: string;
   TIMESTAMP?: string;
   RAILWAY_ENVIRONMENT?: string | null;

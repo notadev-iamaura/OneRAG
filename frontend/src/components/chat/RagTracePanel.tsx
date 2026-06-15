@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { ApiLog, ChatMessage, Source as SourceType } from '../../types';
+import { formatModelDisplayName } from './formatModelDisplayName';
 
 interface RagTracePanelProps {
   messages: ChatMessage[];
@@ -92,7 +93,7 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
           <TraceMetric icon={FileSearch} label="Sources" value={sources.length} />
           <TraceMetric icon={Timer} label="Latency" value={processingTime ? `${processingTime}ms` : 'N/A'} />
           <TraceMetric icon={Gauge} label="Tokens" value={formatValue(tokensUsed)} />
-          <TraceMetric icon={Bot} label="Model" value={formatValue(modelInfo?.model ?? modelInfo?.provider)} />
+          <TraceMetric icon={Bot} label="Model" value={formatValue(formatModelDisplayName(modelInfo?.model) ?? modelInfo?.provider)} />
         </div>
 
         <Card className="rounded-2xl border-border/60 bg-card/60">
