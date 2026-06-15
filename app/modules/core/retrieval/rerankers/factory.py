@@ -41,7 +41,7 @@ APPROACH_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "cross-encoder": {
         "description": "Cross-Encoder 전용 리랭커 (쿼리+문서 쌍 인코딩)",
-        "providers": ["jina", "cohere"],
+        "providers": ["jina", "cohere", "vertex"],
     },
     "late-interaction": {
         "description": "Late-Interaction 리랭커 (토큰 레벨 상호작용, ColBERT)",
@@ -98,6 +98,22 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
             "model": "rerank-multilingual-v3.0",
             "top_n": 10,
             "timeout": 30,
+        },
+    },
+    "vertex": {
+        "class": "VertexRankingReranker",
+        "api_key_env": None,  # Application Default Credentials(ADC) 사용 — 키 불필요
+        "default_config": {
+            "project_id": None,
+            "location": "global",
+            "ranking_config": "default_ranking_config",
+            "model": "semantic-ranker-default-004",
+            "top_n": 10,
+            "max_documents": 16,
+            "timeout": 1.5,
+            "max_retries": 1,
+            "ignore_record_details_in_response": True,
+            "user_labels": {},
         },
     },
     "openrouter": {
@@ -258,11 +274,13 @@ class RerankerFactoryV2:
     ) -> IReranker:
         """Cross-encoder approach 리랭커 생성"""
         provider_info = PROVIDER_REGISTRY[provider]
-        api_key = os.getenv(provider_info["api_key_env"])
+        # api_key_env가 None인 provider(vertex 등)는 ADC 인증이라 API 키를 강제하지 않는다.
+        api_key_env = provider_info["api_key_env"]
+        api_key = os.getenv(api_key_env) if api_key_env else None
 
-        if not api_key:
+        if api_key_env and not api_key:
             raise ValueError(
-                f"{provider_info['api_key_env']} 환경변수가 설정되지 않았습니다. "
+                f"{api_key_env} 환경변수가 설정되지 않았습니다. "
                 f"API key가 필요합니다."
             )
 
@@ -274,7 +292,7 @@ class RerankerFactoryV2:
             from .jina_reranker import JinaReranker
 
             reranker = JinaReranker(
-                api_key=api_key,
+                api_key=str(api_key),
                 model=provider_config.get("model", defaults["model"]),
                 timeout=provider_config.get("timeout", defaults.get("timeout", 30)),
             )
@@ -282,9 +300,37 @@ class RerankerFactoryV2:
             from .cohere_reranker import CohereReranker
 
             reranker = CohereReranker(
-                api_key=api_key,
+                api_key=str(api_key),
                 model=provider_config.get("model", defaults["model"]),
                 timeout=provider_config.get("timeout", defaults.get("timeout", 30)),
+            )
+        elif provider == "vertex":
+            # ADC(키리스) provider — google-auth 미설치 시 인증 시점에 안내 에러.
+            from .vertex_ranking_reranker import VertexRankingReranker
+
+            reranker = VertexRankingReranker(
+                project_id=provider_config.get("project_id", defaults["project_id"]),
+                location=provider_config.get("location", defaults["location"]),
+                ranking_config=provider_config.get(
+                    "ranking_config",
+                    defaults["ranking_config"],
+                ),
+                model=provider_config.get("model", defaults["model"]),
+                top_n=provider_config.get("top_n", defaults["top_n"]),
+                max_documents=provider_config.get(
+                    "max_documents",
+                    defaults["max_documents"],
+                ),
+                timeout=provider_config.get("timeout", defaults["timeout"]),
+                max_retries=provider_config.get(
+                    "max_retries",
+                    defaults["max_retries"],
+                ),
+                ignore_record_details_in_response=provider_config.get(
+                    "ignore_record_details_in_response",
+                    defaults["ignore_record_details_in_response"],
+                ),
+                user_labels=provider_config.get("user_labels", defaults["user_labels"]),
             )
         else:
             raise ValueError(

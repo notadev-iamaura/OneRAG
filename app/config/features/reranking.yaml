@@ -12,7 +12,7 @@
 # ║  provider (서비스 제공자)                                              ║
 # ╠═══════════════════════════════════════════════════════════════════════╣
 # ║  llm:              google, openai, openrouter                         ║
-# ║  cross-encoder:    jina, cohere                                       ║
+# ║  cross-encoder:    jina, cohere, vertex                               ║
 # ║  late-interaction: jina                                               ║
 # ║  local:            sentence-transformers                              ║
 # ╚═══════════════════════════════════════════════════════════════════════╝
@@ -90,6 +90,27 @@ reranking:
     model: "rerank-multilingual-v3.0"
     top_n: 10
     timeout: 30
+
+  # Vertex AI Discovery Engine Ranking - cross-encoder용 (ADC/키리스, 선택적 extra)
+  # GOOGLE_API_KEY 없이 Application Default Credentials(ADC)로 인증한다.
+  # 사용하려면 approach: "cross-encoder", provider: "vertex"로 변경하세요.
+  #
+  # ⚠️ 선택적 의존성: google-auth가 필요합니다.
+  #    설치: uv sync --extra vertex
+  #    (미설치 시 리랭킹 시점에 설치 안내 에러가 발생합니다)
+  #
+  # 인증: GOOGLE_APPLICATION_CREDENTIALS 또는 ADC(gcloud auth application-default login)
+  vertex:
+    model: "semantic-ranker-default-004"
+    # GCP 프로젝트 ID (미지정 시 환경변수에서 조회:
+    #   VERTEX_RERANK_PROJECT_ID / VERTEX_AI_PROJECT_ID / GOOGLE_CLOUD_PROJECT)
+    project_id: "${VERTEX_RERANK_PROJECT_ID:-}"
+    location: "global"
+    ranking_config: "default_ranking_config"
+    top_n: 10
+    max_documents: 16
+    timeout: 1.5
+    max_retries: 1
 
   # Sentence-Transformers - local용
   # API 키 불필요, 오프라인 사용 가능

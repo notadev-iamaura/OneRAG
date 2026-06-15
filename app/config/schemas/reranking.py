@@ -157,6 +157,59 @@ class LocalProviderConfig(BaseConfig):
     )
 
 
+class VertexRankingProviderConfig(BaseConfig):
+    """Vertex AI Discovery Engine Ranking API 설정 (ADC 인증, API 키 불필요)"""
+
+    project_id: str | None = Field(
+        default=None,
+        description="GCP 프로젝트 ID. None이면 Vertex/Google Cloud 환경변수에서 조회",
+    )
+    location: str = Field(
+        default="global",
+        description="Discovery Engine ranking config 위치",
+    )
+    ranking_config: str = Field(
+        default="default_ranking_config",
+        description="rankingConfigs 리소스 이름 또는 전체 리소스 경로",
+    )
+    model: str = Field(
+        default="semantic-ranker-default-004",
+        description="Discovery Engine ranking 모델",
+    )
+    top_n: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="반환할 상위 결과 수",
+    )
+    max_documents: int = Field(
+        default=16,
+        ge=1,
+        le=100,
+        description="Ranking API로 점수화할 최대 후보 문서 수",
+    )
+    timeout: float = Field(
+        default=1.5,
+        ge=0.1,
+        le=30.0,
+        description="타임아웃 (초)",
+    )
+    max_retries: int = Field(
+        default=1,
+        ge=0,
+        le=5,
+        description="일시적 API 오류 재시도 횟수",
+    )
+    ignore_record_details_in_response: bool = Field(
+        default=True,
+        description="응답에서 record 본문을 생략할지 여부",
+    )
+    user_labels: dict[str, str] = Field(
+        default_factory=dict,
+        description="Discovery Engine request userLabels",
+    )
+
+
 # ========================================
 # 메인 설정 스키마
 # ========================================
@@ -164,7 +217,7 @@ class LocalProviderConfig(BaseConfig):
 # approach-provider 유효 조합 정의
 VALID_APPROACH_PROVIDERS: dict[str, list[str]] = {
     "llm": ["google", "openai", "openrouter"],
-    "cross-encoder": ["jina", "cohere"],
+    "cross-encoder": ["jina", "cohere", "vertex"],
     "late-interaction": ["jina"],
     "local": ["sentence-transformers"],
 }
@@ -195,7 +248,13 @@ class RerankingConfigV2(BaseConfig):
     )
 
     provider: Literal[
-        "google", "openai", "jina", "cohere", "openrouter", "sentence-transformers"
+        "google",
+        "openai",
+        "jina",
+        "cohere",
+        "vertex",
+        "openrouter",
+        "sentence-transformers",
     ] = Field(
         default="jina",
         description="서비스 제공자",
@@ -217,6 +276,10 @@ class RerankingConfigV2(BaseConfig):
     cohere: CohereProviderConfig | None = Field(
         default=None,
         description="Cohere 설정",
+    )
+    vertex: VertexRankingProviderConfig | None = Field(
+        default=None,
+        description="Vertex AI Discovery Engine Ranking 설정 (ADC, API 키 불필요)",
     )
     openrouter: OpenRouterProviderConfig | None = Field(
         default=None,

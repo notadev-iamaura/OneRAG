@@ -117,6 +117,30 @@ llm:
     timeout: 300
 
   # ========================================
+  # Vertex AI 설정 (ADC/키리스 - 선택적 extra, opt-in)
+  # ========================================
+  # GOOGLE_API_KEY 없이 Application Default Credentials(ADC, 서비스 계정/워크로드 ID)로
+  # 인증한다. GCP(Cloud Run/GKE) 운영처럼 키 배포 없이 내부 보조 LLM(쿼리 재작성/확장)이
+  # 동작해야 하는 환경에서 사용한다. 사용하려면 default_provider를 "vertex"로 변경하세요.
+  #
+  # ⚠️ 선택적 의존성: google-auth가 필요합니다.
+  #    설치: uv sync --extra vertex
+  #    (미설치 시 호출 시점에 설치 안내 에러가 발생합니다)
+  #
+  # 인증: GOOGLE_APPLICATION_CREDENTIALS 또는 ADC(gcloud auth application-default login)
+  vertex:
+    # OpenAI 호환 형식 모델명(google/ 접두사 자동 부여)
+    default_model: "google/gemini-2.5-flash"
+    # GCP 프로젝트 ID (미지정 시 환경변수에서 조회:
+    #   VERTEX_AI_PROJECT_ID / GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT)
+    project_id: "${VERTEX_AI_PROJECT_ID:-}"
+    # Vertex AI 리전 (미지정 시 us-central1)
+    location: "${VERTEX_AI_LOCATION:-us-central1}"
+    temperature: 0.3
+    max_tokens: 8000
+    timeout: 120
+
+  # ========================================
   # 레거시 설정 (deprecated - 제거 예정)
   # ========================================
   # 기존 코드 호환을 위해 유지, 새 코드에서는 사용하지 않음

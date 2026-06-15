@@ -77,6 +77,7 @@ class EnvValidator:
             "anthropic": ("ANTHROPIC_API_KEY",),
             "openrouter": ("OPENROUTER_API_KEY",),
             "ollama": (),
+            "vertex": (),  # ADC(키리스) 인증 — API 키 불필요, project_id는 config/env로 검증
         },
     }
 

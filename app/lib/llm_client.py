@@ -5,6 +5,7 @@ LLM Client Factory - 통합 LLM 클라이언트 관리
 
 import asyncio
 import os
+import threading
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from typing import Any, Literal
@@ -880,6 +881,218 @@ class OllamaLLMClient(BaseLLMClient):
         return []
 
 
+class VertexLLMClient(BaseLLMClient):
+    """Vertex AI Gemini 클라이언트 (OpenAI 호환 endpoint + ADC 인증, 선택적 provider).
+
+    GOOGLE_API_KEY 없이 Application Default Credentials(ADC, 서비스 계정/워크로드 ID)로
+    인증한다. GCP(Cloud Run/GKE) 운영처럼 키 배포 없이 동작해야 하는 환경에서, 내부
+    보조 LLM 경로(쿼리 재작성/확장 등)에 Vertex 인증을 llm_factory로 제공한다.
+
+    의존성: google-auth(ADC 토큰 발급)는 코어 의존성이 아닌 선택적 extra(`vertex`)다.
+    미설치 환경에서도 모듈 import는 성공하며, 인증 시점에 친절한 설치 안내 에러를 던진다.
+
+    개선점(JapanRAG 대비): _refresh_token을 threading.Lock으로 직렬화해, 멀티스레드
+    동시 갱신 시 토큰이 순간 None이 되는 race를 차단한다(임베딩 provider와 일관).
+    """
+
+    _BASE_URL_TEMPLATE = (
+        "https://aiplatform.googleapis.com/v1/projects/{project_id}"
+        "/locations/{location}/endpoints/openapi"
+    )
+    _AUTH_SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+    _DEFAULT_LOCATION = "us-central1"
+    _DEFAULT_MODEL = "google/gemini-2.5-flash"
+    # google-auth 미설치 시 사용자에게 보여줄 설치 안내 메시지.
+    _INSTALL_HINT = (
+        "Vertex AI LLM을 사용하려면 google-auth가 필요합니다. "
+        "설치: uv sync --extra vertex"
+    )
+
+    def __init__(self, config: dict[str, Any]):
+        """ADC 기반 Vertex AI OpenAI 호환 클라이언트를 초기화한다.
+
+        Args:
+            config: llm.vertex 섹션 설정(project_id/location/default_model 등).
+
+        Raises:
+            ValueError: project_id를 설정/환경변수에서 해석할 수 없는 경우.
+            RuntimeError: google-auth 미설치(설치 안내 포함).
+        """
+        super().__init__(config)
+        import httpx
+
+        self._credentials: Any = None
+        # 동시 토큰 갱신 race 차단용 lock(임베딩 provider 패턴과 일관).
+        self._token_lock = threading.Lock()
+        self.model = self._normalize_model(
+            self.model or config.get("default_model") or self._DEFAULT_MODEL
+        )
+        project_id = self._resolve_project_id(config)
+        location = self._resolve_location(config)
+        base_url = config.get("base_url") or self._BASE_URL_TEMPLATE.format(
+            project_id=project_id, location=location
+        )
+        self.client = OpenAI(
+            base_url=base_url,
+            api_key=self._refresh_token(),
+            timeout=self.timeout,
+            max_retries=0,  # 재시도 없이 상위 fallback에 위임
+            http_client=httpx.Client(
+                timeout=httpx.Timeout(self.timeout, connect=10.0),
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            ),
+        )
+        logger.info(
+            "Vertex AI 클라이언트 생성 완료",
+            extra={"model": self.model, "location": location},
+        )
+
+    @staticmethod
+    def _resolve_project_id(config: dict[str, Any]) -> str:
+        """project_id를 설정 → Vertex/Google Cloud 표준 환경변수 순으로 해석한다."""
+        project_id = (
+            config.get("project_id")
+            or os.getenv("VERTEX_AI_PROJECT_ID")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+            or os.getenv("GCLOUD_PROJECT")
+        )
+        if not project_id:
+            raise ValueError(
+                "Vertex AI 프로젝트 ID가 설정되지 않았습니다. "
+                "llm.vertex.project_id 또는 VERTEX_AI_PROJECT_ID/GOOGLE_CLOUD_PROJECT를 "
+                "설정하세요."
+            )
+        return str(project_id)
+
+    @classmethod
+    def _resolve_location(cls, config: dict[str, Any]) -> str:
+        """location을 환경변수/설정 폴백 순으로 해석한다."""
+        return str(
+            os.getenv("VERTEX_AI_GENERATION_LOCATION")
+            or config.get("location")
+            or os.getenv("VERTEX_AI_LOCATION")
+            or os.getenv("GOOGLE_CLOUD_LOCATION")
+            or cls._DEFAULT_LOCATION
+        )
+
+    def _refresh_token(self) -> str:
+        """ADC 토큰을 발급/갱신한다(만료 시 자동 refresh, lock으로 직렬화).
+
+        google-auth가 선택적 의존성이므로 지연 import + 가드로 처리한다.
+
+        Returns:
+            유효한 OAuth2 액세스 토큰 문자열.
+
+        Raises:
+            RuntimeError: google-auth 미설치(설치 안내 포함).
+            ValueError: 토큰을 가져오지 못한 경우.
+        """
+        try:
+            from google.auth import default as google_auth_default
+            from google.auth.transport.requests import Request
+        except ImportError as error:  # google-auth 미설치(vertex extra 없음)
+            raise RuntimeError(self._INSTALL_HINT) from error
+
+        # 여러 스레드가 동시 호출해도 자격증명 공유/갱신이 안전하도록 직렬화한다.
+        with self._token_lock:
+            if self._credentials is None:
+                self._credentials, _ = google_auth_default(scopes=self._AUTH_SCOPES)
+            if not self._credentials.valid:
+                self._credentials.refresh(Request())
+            token = getattr(self._credentials, "token", None)
+            if not token:
+                raise ValueError(
+                    "Vertex AI 인증 토큰을 가져오지 못했습니다. "
+                    "GOOGLE_APPLICATION_CREDENTIALS 또는 ADC를 확인하세요."
+                )
+            return str(token)
+
+    @classmethod
+    def _normalize_model(cls, model: str) -> str:
+        """모델명에 google/ 접두사를 부여해 Vertex OpenAI 호환 형식으로 정규화한다."""
+        if not model:
+            return cls._DEFAULT_MODEL
+        if model.startswith("google/"):
+            return model
+        if model.startswith("gemini-"):
+            return f"google/{model}"
+        return model
+
+    async def generate_text(
+        self, prompt: str, system_prompt: str | None = None, **kwargs: Any
+    ) -> str:
+        """Vertex AI Gemini 텍스트 생성 (OpenAI 호환). 호출마다 ADC 토큰을 갱신한다."""
+        self.client.api_key = self._refresh_token()
+        model, temperature, max_tokens = self._resolve_params(**kwargs)
+        model = self._normalize_model(model)
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        api_params: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "timeout": self.timeout,
+        }
+        # reasoning_effort 전달(Vertex Gemini는 thinking 예산을 이 값으로 제어).
+        # thinking 모델은 추론에 토큰을 소진해 짧은 max_tokens로는 출력이 굶겨 빈 응답이
+        # 되는 회귀가 있다. 호출측이 reasoning_effort="low"를 주면 추론을 최소화해 짧은
+        # 출력(예: 한 줄 재작성)이 안정적으로 생성된다.
+        reasoning_effort = kwargs.get("reasoning_effort")
+        if reasoning_effort:
+            api_params["reasoning_effort"] = reasoning_effort
+        response = await asyncio.to_thread(
+            self.client.chat.completions.create,
+            **api_params,  # type: ignore[arg-type]
+        )
+        # 방어적 None 처리: thinking(추론) 모델은 max_tokens가 부족하면 추론에 토큰을
+        # 모두 소진해 choices가 비거나 message/content가 None으로 반환될 수 있다.
+        # 이 경우 AttributeError로 상위 fallback을 무의미하게 유발하는 대신, 빈 문자열로
+        # graceful 반환한다(호출측이 원본 폴백 등으로 처리). finish_reason을 로깅한다.
+        if not response.choices:
+            logger.warning("Vertex 응답 choices 비어있음", extra={"model": model})
+            return ""
+        choice = response.choices[0]
+        message = getattr(choice, "message", None)
+        content = getattr(message, "content", None) if message is not None else None
+        if not content:
+            logger.warning(
+                "Vertex 응답 content 비어있음(추론 토큰 소진 가능)",
+                extra={
+                    "model": model,
+                    "finish_reason": getattr(choice, "finish_reason", None),
+                    "max_tokens": max_tokens,
+                },
+            )
+            return ""
+        return str(content)
+
+    async def stream_text(
+        self, prompt: str, system_prompt: str | None = None, **kwargs: Any
+    ) -> AsyncGenerator[str, None]:
+        """Vertex AI Gemini 스트리밍 생성 (OpenAI 호환 stream=True)."""
+        self.client.api_key = self._refresh_token()
+        model, temperature, max_tokens = self._resolve_params(**kwargs)
+        model = self._normalize_model(model)
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        response = self.client.chat.completions.create(
+            model=model,
+            messages=messages,  # type: ignore[arg-type]
+            stream=True,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=self.timeout,
+        )
+        for chunk in response:  # type: ignore[union-attr]
+            if chunk.choices and chunk.choices[0].delta.content:  # type: ignore[union-attr]
+                yield chunk.choices[0].delta.content  # type: ignore[union-attr]
+
+
 class LLMClientFactory:
     """
     LLM 클라이언트 팩토리
@@ -894,6 +1107,7 @@ class LLMClientFactory:
         "anthropic": AnthropicLLMClient,
         "openrouter": OpenRouterLLMClient,  # OpenRouter 통합 게이트웨이
         "ollama": OllamaLLMClient,  # Ollama 로컬 LLM
+        "vertex": VertexLLMClient,  # Vertex AI Gemini (ADC 인증, api_key 불필요)
     }
 
     # 환경 변수 자동 매핑
@@ -979,7 +1193,11 @@ class LLMClientFactory:
         )
 
     def get_client(
-        self, provider: Literal["google", "openai", "anthropic", "openrouter", "ollama"] | None = None
+        self,
+        provider: Literal[
+            "google", "openai", "anthropic", "openrouter", "ollama", "vertex"
+        ]
+        | None = None,
     ) -> BaseLLMClient:
         """
         LLM 클라이언트 가져오기
