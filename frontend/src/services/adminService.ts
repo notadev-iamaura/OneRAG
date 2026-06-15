@@ -1,26 +1,39 @@
 /**
  * 관리자 시스템 API 서비스
- * Railway 배포된 백엔드 서버와 통신하는 서비스 레이어
+ * 백엔드 서버와 통신하는 서비스 레이어
  * 실시간 모니터링, 세션 관리, WebSocket 지원
  */
 
 import { logger } from '../utils/logger';
 import { getOperatorApiBaseUrl, getOperatorWsBaseUrl } from '../config/operatorSettings';
 
-// API 기본 설정 - Railway 배포된 백엔드 서버 사용
-const getAPIBaseURL = (): string => {
+// RUNTIME_CONFIG에 특정 키가 "정의되어 있는지"(빈 문자열 포함) 확인하는 공통 헬퍼.
+// 빈 문자열은 same-origin 의도이므로 truthy 체크가 아니라 hasOwnProperty로 판별해야 한다.
+const hasRuntimeConfigKey = (key: 'API_BASE_URL' | 'WS_BASE_URL'): boolean => (
+  typeof window !== 'undefined'
+  && Boolean(window.RUNTIME_CONFIG)
+  && Object.prototype.hasOwnProperty.call(window.RUNTIME_CONFIG, key)
+);
+
+// 현재 페이지 origin 기반 same-origin WebSocket URL을 만든다(https→wss, http→ws).
+const getSameOriginWSBaseURL = (): string => {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}`;
+};
+
+// API 기본 설정 - 운영 설정 → 런타임 설정 → 빌드 설정 → 개발 모드 → same-origin 순으로 해석.
+export const getAdminAPIBaseURL = (): string => {
   const operatorApiUrl = getOperatorApiBaseUrl();
   if (operatorApiUrl) {
     return operatorApiUrl;
   }
 
-  // 런타임 설정이 있는 경우 우선 사용 (Railway 환경). 빈 문자열은 same-origin.
-  if (
-    typeof window !== 'undefined' &&
-    window.RUNTIME_CONFIG &&
-    Object.prototype.hasOwnProperty.call(window.RUNTIME_CONFIG, 'API_BASE_URL')
-  ) {
-    return window.RUNTIME_CONFIG.API_BASE_URL || '';
+  // 런타임 설정이 있는 경우 우선 사용. 빈 문자열은 same-origin.
+  if (hasRuntimeConfigKey('API_BASE_URL')) {
+    return window.RUNTIME_CONFIG?.API_BASE_URL || '';
   }
 
   // 빌드 타임 환경 변수가 설정된 경우 사용
@@ -33,40 +46,20 @@ const getAPIBaseURL = (): string => {
     return import.meta.env.VITE_DEV_API_BASE_URL || 'http://localhost:8000';
   }
 
-  // Railway 환경 자동 감지
-  if (typeof window !== 'undefined') {
-    const currentHost = window.location.host;
-    const currentProtocol = window.location.protocol;
-
-    // Railway 도메인 패턴 감지
-    if (currentHost.includes('railway.app')) {
-      return `${currentProtocol}//${currentHost}`;
-    }
-
-    // Railway public domain 패턴 감지
-    if (currentHost.includes('-production') || currentHost.includes('-staging')) {
-      return `${currentProtocol}//${currentHost}`;
-    }
-  }
-
-  // 프로덕션 기본값: same-origin
+  // 프로덕션 기본값은 same-origin (특정 외부 호스트 하드코딩/도메인 휴리스틱 제거)
   return '';
 };
 
-const getWSBaseURL = (): string => {
+// WebSocket 기본 설정 - 해석 순서를 API와 동일하게 맞춰 비일관성을 제거한다.
+export const getAdminWSBaseURL = (): string => {
   const operatorWsUrl = getOperatorWsBaseUrl();
   if (operatorWsUrl) {
     return operatorWsUrl;
   }
 
-  // 개발 모드: 로컬 백엔드 WebSocket 사용
-  if (import.meta.env.DEV) {
-    return import.meta.env.VITE_DEV_WS_BASE_URL || 'ws://localhost:8000';
-  }
-
-  // 런타임 설정이 있는 경우 우선 사용
-  if (typeof window !== 'undefined' && window.RUNTIME_CONFIG?.WS_BASE_URL) {
-    return window.RUNTIME_CONFIG.WS_BASE_URL;
+  // 런타임 설정이 있는 경우 우선 사용. 빈 문자열은 same-origin WebSocket.
+  if (hasRuntimeConfigKey('WS_BASE_URL')) {
+    return window.RUNTIME_CONFIG?.WS_BASE_URL || getSameOriginWSBaseURL();
   }
 
   // 빌드 타임 환경 변수가 설정된 경우 사용
@@ -74,27 +67,17 @@ const getWSBaseURL = (): string => {
     return import.meta.env.VITE_WS_BASE_URL;
   }
 
-  // Railway 환경 자동 감지
-  if (typeof window !== 'undefined') {
-    const currentHost = window.location.host;
-
-    // Railway 도메인 패턴 감지 (WebSocket은 wss 사용)
-    if (currentHost.includes('railway.app')) {
-      return `wss://${currentHost}`;
-    }
-
-    // Railway public domain 패턴 감지
-    if (currentHost.includes('-production') || currentHost.includes('-staging')) {
-      return `wss://${currentHost}`;
-    }
+  // 개발 모드: 로컬 백엔드 WebSocket 사용
+  if (import.meta.env.DEV) {
+    return import.meta.env.VITE_DEV_WS_BASE_URL || 'ws://localhost:8000';
   }
 
-  // 기본값: Railway 프로덕션 WebSocket URL
-  return 'wss://simple-rag-production-bb72.up.railway.app';
+  // 프로덕션 기본값은 same-origin (특정 Railway 인스턴스 하드코딩 폴백 제거)
+  return getSameOriginWSBaseURL();
 };
 
-const API_BASE_URL = getAPIBaseURL();
-const WS_BASE_URL = getWSBaseURL();
+const API_BASE_URL = getAdminAPIBaseURL();
+const WS_BASE_URL = getAdminWSBaseURL();
 
 class AdminService {
   private wsConnection: WebSocket | null = null;
@@ -113,7 +96,7 @@ class AdminService {
    * API 호출 헬퍼 함수
    */
   private async apiCall(endpoint: string, options?: RequestInit) {
-    const url = `${getAPIBaseURL()}/api/admin${endpoint}`;
+    const url = `${getAdminAPIBaseURL()}/api/admin${endpoint}`;
     logger.log('🌐 API 호출:', url);
 
     try {
@@ -150,9 +133,10 @@ class AdminService {
     }
 
     try {
-      const wsBaseUrl = getWSBaseURL();
-      logger.log('🔗 WebSocket 연결 시도:', `${wsBaseUrl}/admin-ws`);
-      this.wsConnection = new WebSocket(`${wsBaseUrl}/api/admin/ws`);
+      const wsBaseUrl = getAdminWSBaseURL();
+      const wsUrl = `${wsBaseUrl}/api/admin/ws`;
+      logger.log('🔗 WebSocket 연결 시도:', wsUrl);
+      this.wsConnection = new WebSocket(wsUrl);
 
       this.wsConnection.onopen = () => {
         logger.log('✅ Admin WebSocket 연결됨');
@@ -328,7 +312,7 @@ class AdminService {
    */
   async downloadLogs() {
     try {
-      const url = `${getAPIBaseURL()}/api/admin/logs/download`;
+      const url = `${getAdminAPIBaseURL()}/api/admin/logs/download`;
       logger.log('📥 로그 다운로드:', url);
 
       const response = await fetch(url);
@@ -376,5 +360,6 @@ class AdminService {
 }
 
 // 싱글톤 인스턴스 생성 및 내보내기
+export { AdminService };
 export const adminService = new AdminService();
 export default adminService;

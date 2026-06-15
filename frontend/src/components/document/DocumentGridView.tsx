@@ -70,7 +70,8 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
             />
           </CardHeader>
           <CardContent className="px-4 pb-2">
-            <h3 className="text-sm font-black text-foreground truncate mb-1" title={doc.originalName || doc.filename}>
+            {/* 긴 파일명도 카드 안에서 줄바꿈되도록 break-words 적용 + 2줄 제한 */}
+            <h3 className="text-sm font-black text-foreground leading-snug break-words [overflow-wrap:anywhere] line-clamp-2 mb-1" title={doc.originalName || doc.filename}>
               {doc.originalName || doc.filename}
             </h3>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold text-muted-foreground/60 uppercase tracking-wider">

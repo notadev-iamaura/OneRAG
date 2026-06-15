@@ -50,9 +50,11 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
   );
 
   const responseData = asChatResponseLogData(latestResponseLog?.data);
-  const modelInfo = responseData.model_info;
-  const processingTime = responseData.processing_time ?? latestResponseLog?.duration;
-  const tokensUsed = responseData.tokens_used;
+  // 메트릭은 "현재 표시 중인 메시지" 값을 우선하고, 없으면 전역 로그를 보조로 사용한다.
+  // 이렇게 하면 방을 전환했을 때 이전 방의 마지막 응답 로그가 새 방 메트릭을 덮어쓰지 않는다.
+  const modelInfo = assistantMessage?.model_info ?? responseData.model_info;
+  const processingTime = assistantMessage?.processing_time ?? responseData.processing_time ?? latestResponseLog?.duration;
+  const tokensUsed = assistantMessage?.tokens_used ?? responseData.tokens_used;
 
   return (
     <aside className="hidden xl:flex w-80 shrink-0 flex-col border-l border-border/60 bg-background/85 backdrop-blur-sm">

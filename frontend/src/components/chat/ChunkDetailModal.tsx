@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
@@ -19,6 +19,7 @@ import {
     Source as SourceType,
     DocumentInfoItem,
 } from '../../types/chat';
+import type { SourceDetail } from '../../types';
 import { formatFullContent } from '../../utils/chat/formatters';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -28,6 +29,12 @@ interface ChunkDetailModalProps {
     onClose: () => void;
     selectedChunk: SourceType | null;
     documentInfoItems: DocumentInfoItem[];
+    /** lazy 조회된 청크 전체 상세(없으면 content_preview로 fallback) */
+    sourceDetail?: SourceDetail | null;
+    /** 상세 조회 로딩 상태 */
+    sourceDetailLoading?: boolean;
+    /** 상세 조회 실패 메시지(있어도 미리보기로 graceful degradation) */
+    sourceDetailError?: string | null;
 }
 
 export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
@@ -35,7 +42,13 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
     onClose,
     selectedChunk,
     documentInfoItems,
+    sourceDetail,
+    sourceDetailLoading = false,
+    sourceDetailError = null,
 }) => {
+    // 표시할 청크 본문 결정: 전체 원문(full_content/content) 우선, 없으면 미리보기로 fallback.
+    const fullContent = sourceDetail?.full_content ?? sourceDetail?.content ?? null;
+    const displayContent = fullContent ?? selectedChunk?.content_preview ?? '';
     return (
         <Dialog open={open} onOpenChange={onClose}>
             <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl">
@@ -101,16 +114,29 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
                                         <div className="h-4 w-1 bg-primary rounded-full" />
                                         청크 내용
                                     </h3>
+                                    {/* 상세 조회 실패 시 미리보기로 대체한다는 안내(graceful degradation) */}
+                                    {sourceDetailError && (
+                                        <p className="text-xs font-medium text-muted-foreground">
+                                            {sourceDetailError}
+                                        </p>
+                                    )}
                                     <div className="rounded-xl border bg-muted/20 border-border/40 p-6 relative group transition-all hover:bg-muted/30">
-                                        {/* HTML 테이블인 경우 및 일반 텍스트 렌더링 */}
-                                        <div className={cn(
-                                            "text-sm leading-relaxed prose prose-sm max-w-none prose-slate dark:prose-invert",
-                                            "font-sans antialiased"
-                                        )}>
-                                            <div className="whitespace-pre-wrap leading-[1.8] font-medium text-foreground/90">
-                                                {formatFullContent(selectedChunk.content_preview)}
+                                        {sourceDetailLoading ? (
+                                            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                전체 원문을 불러오는 중...
                                             </div>
-                                        </div>
+                                        ) : (
+                                            /* HTML 테이블인 경우 및 일반 텍스트 렌더링 */
+                                            <div className={cn(
+                                                "text-sm leading-relaxed prose prose-sm max-w-none prose-slate dark:prose-invert",
+                                                "font-sans antialiased"
+                                            )}>
+                                                <div className="whitespace-pre-wrap leading-[1.8] font-medium text-foreground/90">
+                                                    {formatFullContent(displayContent)}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

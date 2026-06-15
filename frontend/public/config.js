@@ -16,6 +16,10 @@ window.RUNTIME_CONFIG = {
   
   // 환경 설정 (production, development, staging)
   NODE_ENV: 'production',
-  
+
+  // 관리자 접근 코드 (런타임 설정). 빈 문자열이면 기본 접근 코드로 폴백한다.
+  // 배포 시 generate-config.js가 ACCESS_CODE 환경변수로 이 값을 덮어쓴다.
+  ACCESS_CODE: '',
+
   // 추가 런타임 설정이 필요한 경우 여기에 추가
 };

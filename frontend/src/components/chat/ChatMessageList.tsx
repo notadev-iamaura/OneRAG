@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { ArrowDown, Loader2 } from 'lucide-react';
 import { ChatMessage, Source as SourceType } from '../../types';
-import { StreamingMessage } from '../../types/chatStreaming';
+import { StreamingMessage, RagProgressState } from '../../types/chatStreaming';
 import { ChatMessageItem } from './ChatMessageItem';
 import { ChatEmptyState } from '../ChatEmptyState';
 import { ChatbotIcon } from '../icons';
@@ -28,6 +28,10 @@ interface ChatMessageListProps {
     scrollToBottom?: (behavior: ScrollBehavior) => void;
     streamingMessage?: StreamingMessage | null;
     isStreaming?: boolean;
+    /** SSE 스트리밍 중 여부(점진 렌더 중 스켈레톤 억제용) */
+    isSseStreaming?: boolean;
+    /** RAG 진행 단계 상태(검색/생성 안내 표시용) */
+    ragProgress?: RagProgressState;
 }
 
 const StreamingMessageItem: React.FC<{
@@ -76,6 +80,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     scrollToBottom,
     streamingMessage,
     isStreaming,
+    isSseStreaming = false,
+    ragProgress,
 }) => {
     const lastContentLengthRef = useRef(0);
 
@@ -99,7 +105,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                 className="h-full w-full px-4 pt-6"
                 onScrollCapture={handleScroll}
             >
-                {messages.length === 0 && !loading && !isStreaming ? (
+                {messages.length === 0 && !loading && !isStreaming && !isSseStreaming ? (
                     <ChatEmptyState onSuggestionClick={onSuggestionClick} />
                 ) : (
                     <div className="max-w-4xl mx-auto pb-6">
@@ -117,7 +123,16 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                             <StreamingMessageItem streamingMessage={streamingMessage} />
                         )}
 
-                        {loading && !isStreaming && (
+                        {/* SSE 진행 단계 안내(검색/생성 등) — placeholder 말풍선 아래에 표시 */}
+                        {isSseStreaming && ragProgress && ragProgress.label && ragProgress.phase !== 'completed' && (
+                            <div className="flex items-center gap-1.5 px-1 mb-4 animate-in fade-in duration-300" data-testid="rag-progress">
+                                <Loader2 className="h-2.5 w-2.5 animate-spin text-primary opacity-80" />
+                                <span className="text-[10px] text-muted-foreground opacity-70 font-bold tracking-tight">{ragProgress.label}</span>
+                            </div>
+                        )}
+
+                        {/* SSE 스트리밍 중에는 placeholder 말풍선이 이미 보이므로 스켈레톤을 억제한다. */}
+                        {loading && !isStreaming && !isSseStreaming && (
                             <div className="flex gap-3 mb-8 items-start px-1 animate-in fade-in duration-500">
                                 <Avatar className="h-8 w-8 border shadow-sm shrink-0 bg-background border-border">
                                     <div className="flex items-center justify-center w-full h-full bg-background mt-0.5">

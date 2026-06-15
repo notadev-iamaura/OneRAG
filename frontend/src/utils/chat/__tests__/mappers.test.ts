@@ -76,5 +76,36 @@ describe('mappers', () => {
             const resultTs = mapHistoryEntryToChatMessage(entryTs, 2);
             expect(resultTs.id).toBe('ts-id');
         });
+
+        // #47: role 대신 type 필드로도 역할을 추론해야 함
+        it('should infer role from entry.type when role is missing', () => {
+            const entry: ChatHistoryEntry = { type: 'assistant', answer: 'Ans' };
+            const result = mapHistoryEntryToChatMessage(entry, 0);
+            expect(result.role).toBe('assistant');
+        });
+
+        // #47: 어시스턴트 메시지에 트레이스 메트릭이 매핑되어야 함
+        it('should map trace metrics (processing_time/tokens_used/model_info) onto assistant message', () => {
+            const entry: ChatHistoryEntry = {
+                role: 'assistant',
+                answer: 'Ans',
+                processing_time: 1.23,
+                tokens_used: 456,
+                model_info: { provider: 'google', model: 'gemini-2.0' },
+            };
+            const result = mapHistoryEntryToChatMessage(entry, 1);
+            expect(result.processing_time).toBe(1.23);
+            expect(result.tokens_used).toBe(456);
+            expect(result.model_info).toEqual({ provider: 'google', model: 'gemini-2.0' });
+        });
+
+        // #47: 트레이스 메트릭이 없으면 메시지에 해당 필드를 추가하지 않아야 함
+        it('should not attach trace metrics when entry has none', () => {
+            const entry: ChatHistoryEntry = { role: 'user', message: 'Q' };
+            const result = mapHistoryEntryToChatMessage(entry, 0);
+            expect(result.processing_time).toBeUndefined();
+            expect(result.tokens_used).toBeUndefined();
+            expect(result.model_info).toBeUndefined();
+        });
     });
 });

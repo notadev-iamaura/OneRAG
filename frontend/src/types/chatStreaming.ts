@@ -99,6 +99,93 @@ export type ChatWebSocketResponse =
   | StreamErrorMessage;
 
 // ============================================
+// SSE (POST /chat/stream) 이벤트 타입
+//
+// 백엔드 계약(app/api/schemas/streaming.py)과 1:1로 매핑한다.
+// SSE 라인 포맷: `event: {type}\ndata: {json}\n\n`
+// WebSocket 프로토콜과 별도 네임스페이스로 둔다.
+// ============================================
+
+/** 메타데이터 이벤트: 검색 결과 수/리랭킹 여부 등 (백엔드 StreamMetadataEvent) */
+export interface StreamMetadataEvent {
+  event: 'metadata';
+  session_id: string;
+  search_results: number;
+  reranking_applied?: boolean;
+  query_expansion?: string | null;
+  timestamp?: string | null;
+}
+
+/** 청크 이벤트: LLM 응답 텍스트 조각 (백엔드 StreamChunkEvent) */
+export interface StreamChunkEvent {
+  event: 'chunk';
+  data: string;
+  chunk_index: number;
+}
+
+/** 완료 이벤트: 토큰 수/처리 시간/소스 등 (백엔드 StreamDoneEvent) */
+export interface StreamDoneEvent {
+  event: 'done';
+  session_id: string;
+  message_id: string;
+  total_chunks: number;
+  tokens_used?: number;
+  processing_time?: number;
+  sources?: Source[];
+}
+
+/** 에러 이벤트 (백엔드 StreamErrorEvent) */
+export interface SseStreamErrorEvent {
+  event: 'error';
+  error_code: string;
+  message: string;
+  suggestion?: string | null;
+}
+
+/** SSE 이벤트 유니온 */
+export type StreamChatEvent =
+  | StreamMetadataEvent
+  | StreamChunkEvent
+  | StreamDoneEvent
+  | SseStreamErrorEvent;
+
+/**
+ * POST /chat/stream 클라이언트 옵션
+ */
+export interface StreamChatClientOptions {
+  /** 중단(abort) 시그널 */
+  signal?: AbortSignal;
+  /** 백엔드로 전달할 추가 옵션(temperature 등) */
+  options?: Record<string, unknown>;
+  /** 모든 이벤트 콜백 */
+  onEvent?: (event: StreamChatEvent) => void;
+  /** chunk 이벤트 콜백 */
+  onChunk?: (event: StreamChunkEvent) => void;
+  /** done 이벤트 콜백 */
+  onDone?: (event: StreamDoneEvent) => void;
+  /** error 이벤트 콜백 */
+  onError?: (event: SseStreamErrorEvent) => void;
+}
+
+/** RAG 진행 단계 (검색 → 재순위 → 생성 → 완료) */
+export type RagProgressPhase =
+  | 'idle'
+  | 'searching'
+  | 'retrieval_done'
+  | 'generating'
+  | 'completed'
+  | 'error';
+
+/** RAG 진행 상태 */
+export interface RagProgressState {
+  phase: RagProgressPhase;
+  label?: string;
+  searchResults?: number;
+  rerankingApplied?: boolean;
+  updatedAt?: string;
+}
+
+// ============================================
 // 상태 타입
 // ============================================
 

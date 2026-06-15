@@ -4,9 +4,11 @@ export const pickFirstString = (...values: Array<string | null | undefined>): st
     values.find((value): value is string => typeof value === 'string' && value.trim().length > 0);
 
 export const mapHistoryEntryToChatMessage = (entry: ChatHistoryEntry, index: number): ChatMessage => {
+    // 백엔드 히스토리는 role 또는 type 중 하나로 역할을 표현하므로 둘 다 후보로 본다.
+    const roleCandidate = entry.role ?? entry.type;
     const role: 'user' | 'assistant' =
-        entry.role === 'assistant' || entry.role === 'user'
-            ? entry.role
+        roleCandidate === 'assistant' || roleCandidate === 'user'
+            ? roleCandidate
             : index % 2 === 0
                 ? 'user'
                 : 'assistant';
@@ -43,6 +45,18 @@ export const mapHistoryEntryToChatMessage = (entry: ChatHistoryEntry, index: num
 
     if (sources) {
         message.sources = sources;
+    }
+
+    // 백엔드 히스토리가 메시지별 트레이스 메트릭을 제공하면 메시지에 보존한다.
+    // (RAG Trace 패널이 전역 로그가 아닌 메시지 값을 우선 표시하도록 — 방 전환 시 고정 버그 방지)
+    if (typeof entry.processing_time === 'number') {
+        message.processing_time = entry.processing_time;
+    }
+    if (typeof entry.tokens_used === 'number') {
+        message.tokens_used = entry.tokens_used;
+    }
+    if (entry.model_info) {
+        message.model_info = entry.model_info;
     }
 
     return message;

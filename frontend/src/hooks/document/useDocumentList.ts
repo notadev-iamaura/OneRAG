@@ -58,6 +58,36 @@ export interface UseDocumentListReturn {
 const PAGE_SIZE = 50;
 
 /**
+ * 전역 정렬/검색을 위한 over-fetch 페이지 크기.
+ *
+ * OneRAG 백엔드 list_documents는 search/sort_field/sort_direction 파라미터를
+ * 지원하지 않으므로(2026-06 기준), 한 번에 충분히 많은 문서를 받아와
+ * 클라이언트에서 검색 필터 → 전역 정렬 → 페이지 슬라이스를 수행한다.
+ * (백엔드가 server-side 검색/정렬을 지원하게 되면 이 over-fetch를 제거하고
+ *  sort_field/sort_direction/search를 그대로 전달하도록 전환하면 된다.)
+ */
+const GLOBAL_FETCH_PAGE_SIZE = 10000;
+
+/**
+ * 문서가 검색어와 일치하는지 판별한다(파일명/원본명/타입/상태 결합, 대소문자 무시).
+ * 검색어가 비어 있으면 모든 문서를 통과시킨다.
+ */
+const matchesSearch = (doc: Document, normalizedQuery: string): boolean => {
+  if (!normalizedQuery) return true;
+  const haystack = [
+    doc.originalName,
+    doc.filename,
+    doc.mimeType,
+    doc.status,
+    doc.id,
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(normalizedQuery);
+};
+
+/**
  * 문서 목록 관리 훅
  *
  * 마운트 시 자동으로 문서를 조회하며,
@@ -83,32 +113,48 @@ export const useDocumentList = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
-  // 정렬 유틸리티 래퍼 (현재 정렬 상태를 바인딩)
-  const sortDocuments = useCallback(
-    (docs: Document[]) => sortDocumentsUtil(docs, sortField, sortDirection),
-    [sortField, sortDirection],
-  );
-
-  /** 문서 목록을 서버에서 조회합니다 */
+  /**
+   * 문서 목록을 서버에서 조회합니다.
+   *
+   * 백엔드가 검색/정렬을 지원하지 않으므로 한 번에 많은 문서를 받아온 뒤
+   * 클라이언트에서 검색 필터 → 전역 정렬 → 현재 페이지 슬라이스를 수행한다.
+   * 이렇게 하면 (1) 검색이 실제로 동작하고, (2) 정렬이 페이지 단위가 아닌
+   * 전역 정렬이 되며, (3) totalPages가 필터링 결과 기준으로 정확해진다.
+   */
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setFetchError(false);
     try {
       const response = await documentAPI.getDocuments({
-        page,
-        limit: PAGE_SIZE,
+        page: 1,
+        page_size: GLOBAL_FETCH_PAGE_SIZE,
+        // server-side 검색이 지원되면 활용되도록 search도 함께 전달한다(미지원 시 무시됨).
         search: searchQuery,
       });
-      const sortedDocuments = sortDocuments(response.data.documents);
-      setDocuments(sortedDocuments);
-      setTotalPages(Math.ceil(response.data.total / PAGE_SIZE));
+
+      const allDocuments = response.data.documents;
+      const normalizedQuery = searchQuery.trim().toLowerCase();
+
+      // 1) 검색 필터 (백엔드가 검색을 무시해도 클라이언트에서 보정)
+      const filtered = allDocuments.filter((doc) => matchesSearch(doc, normalizedQuery));
+
+      // 2) 전역 정렬 (페이지 경계와 무관하게 전체 집합 정렬)
+      const sorted = sortDocumentsUtil(filtered, sortField, sortDirection);
+
+      // 3) 현재 페이지 슬라이스
+      const startIndex = (page - 1) * PAGE_SIZE;
+      const pageItems = sorted.slice(startIndex, startIndex + PAGE_SIZE);
+
+      setDocuments(pageItems);
+      // 0건일 때 totalPages=0 유령 상태를 방지하기 위해 최소 1로 가드한다.
+      setTotalPages(Math.max(1, Math.ceil(sorted.length / PAGE_SIZE)));
     } catch {
       setFetchError(true);
       showToast({ type: 'error', message: '문서 목록 로드 실패' });
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, showToast, sortDocuments]);
+  }, [page, searchQuery, sortField, sortDirection, showToast]);
 
   // 마운트 및 의존성 변경 시 자동 조회
   useEffect(() => {

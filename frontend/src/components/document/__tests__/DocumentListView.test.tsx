@@ -101,4 +101,15 @@ describe('DocumentListView', () => {
     const deleteButton = screen.getByTestId('delete-button-temp-123');
     expect(deleteButton).toBeDisabled();
   });
+
+  it('긴 파일명은 줄바꿈 클래스를 적용해 레이아웃 깨짐을 방지합니다', () => {
+    const longName = 'very-long-document-name-without-natural-breaks-2026-final-final-final.pdf';
+    const doc = createMockDocument({ originalName: longName });
+    render(<DocumentListView {...defaultProps} documents={[doc]} />);
+    expect(screen.getByText(longName)).toHaveClass(
+      'break-words',
+      '[overflow-wrap:anywhere]',
+      'line-clamp-2'
+    );
+  });
 });
