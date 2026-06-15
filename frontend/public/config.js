@@ -21,5 +21,12 @@ window.RUNTIME_CONFIG = {
   // 배포 시 generate-config.js가 ACCESS_CODE 환경변수로 이 값을 덮어쓴다.
   ACCESS_CODE: '',
 
+  // 임베드(embed) 허용 부모 origin 화이트리스트.
+  // 외부 사이트에 /embed/chat을 iframe(onerag-embed.js)으로 임베드할 때
+  // postMessage 통신을 허용할 origin 목록이다.
+  // 예: ['https://docs.example.com', 'https://app.example.com']
+  // 빈 배열이면 현재 origin(same-origin)만 허용한다. 와일드카드('*')는 지원하지 않는다.
+  EMBED_ALLOWED_ORIGINS: [],
+
   // 추가 런타임 설정이 필요한 경우 여기에 추가
 };

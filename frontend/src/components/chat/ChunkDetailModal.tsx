@@ -23,6 +23,8 @@ import type { SourceDetail } from '../../types';
 import { formatFullContent } from '../../utils/chat/formatters';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { PdfCitationPreview } from './PdfCitationPreview';
 
 interface ChunkDetailModalProps {
     open: boolean;
@@ -46,6 +48,8 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
     sourceDetailLoading = false,
     sourceDetailError = null,
 }) => {
+    // i18n: 모달 라벨
+    const { messages } = useMenuMessages();
     // 표시할 청크 본문 결정: 전체 원문(full_content/content) 우선, 없으면 미리보기로 fallback.
     const fullContent = sourceDetail?.full_content ?? sourceDetail?.content ?? null;
     const displayContent = fullContent ?? selectedChunk?.content_preview ?? '';
@@ -58,11 +62,11 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
                             <FileText className="h-5 w-5" />
                         </div>
                         <DialogTitle className="text-xl font-bold tracking-tight">
-                            RAG 참고 자료 상세
+                            {messages.chunkDetail.modalTitle}
                         </DialogTitle>
                     </div>
                     <DialogDescription className="sr-only">
-                        선택한 RAG 참고 자료의 문서 정보와 청크 내용을 확인합니다.
+                        {messages.chunkDetail.modalDesc}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -77,7 +81,7 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
                                             <AccordionItem value="doc-info" className="border-none">
                                                 <AccordionTrigger className="px-5 py-4 hover:no-underline bg-muted/50 hover:bg-muted transition-all">
                                                     <span className="flex items-center gap-2 font-bold text-sm">
-                                                        📄 문서 정보
+                                                        📄 {messages.chunkDetail.documentInfo}
                                                     </span>
                                                 </AccordionTrigger>
                                                 <AccordionContent className="px-5 py-5 border-t">
@@ -101,18 +105,32 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
                                         </Accordion>
                                     ) : (
                                         <div className="text-sm text-muted-foreground italic py-2">
-                                            문서 정보를 불러올 수 없습니다.
+                                            {messages.chunkDetail.documentInfoUnavailable}
                                         </div>
                                     )}
                                 </div>
 
                                 <hr className="border-border/50" />
 
+                                {/*
+                                  PDF 인용 하이라이트 뷰어(#55).
+                                  selectedChunk에 citation_regions/page_dimensions(백엔드 제공)가 있으면 표시되고,
+                                  없으면 PdfCitationPreview가 null을 반환하여 자동으로 생략된다(graceful).
+                                */}
+                                <PdfCitationPreview
+                                    documentId={selectedChunk.document_id ?? null}
+                                    documentName={selectedChunk.document_name ?? selectedChunk.document}
+                                    fileType={selectedChunk.file_type ?? null}
+                                    citationRegions={selectedChunk.citation_regions ?? []}
+                                    pageDimensions={selectedChunk.page_dimensions ?? null}
+                                    page={selectedChunk.page ?? null}
+                                />
+
                                 {/* 청크 내용 */}
                                 <div className="space-y-4">
                                     <h3 className="text-lg font-bold flex items-center gap-2">
                                         <div className="h-4 w-1 bg-primary rounded-full" />
-                                        청크 내용
+                                        {messages.chunkDetail.chunkContent}
                                     </h3>
                                     {/* 상세 조회 실패 시 미리보기로 대체한다는 안내(graceful degradation) */}
                                     {sourceDetailError && (
@@ -124,7 +142,7 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
                                         {sourceDetailLoading ? (
                                             <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
                                                 <Loader2 className="h-4 w-4 animate-spin" />
-                                                전체 원문을 불러오는 중...
+                                                {messages.chunkDetail.loadingFullContent}
                                             </div>
                                         ) : (
                                             /* HTML 테이블인 경우 및 일반 텍스트 렌더링 */
@@ -149,7 +167,7 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
                         onClick={onClose}
                         className="font-bold px-8 h-10 shadow-md hover:scale-105 transition-transform"
                     >
-                        닫기
+                        {messages.chunkDetail.close}
                     </Button>
                 </DialogFooter>
             </DialogContent>

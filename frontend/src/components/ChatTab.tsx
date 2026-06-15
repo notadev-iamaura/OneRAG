@@ -10,6 +10,7 @@ import { useChatSession } from '../hooks/chat/useChatSession';
 import { useChatMessages } from '../hooks/chat/useChatMessages';
 import { useChatInteraction } from '../hooks/chat/useChatInteraction';
 import { useOfflineDetection } from '../hooks/useOfflineDetection';
+import { useEmbedBridge } from '../embed/useEmbedBridge';
 
 // Components
 import { ChatDevTools } from './chat/ChatDevTools';
@@ -27,9 +28,11 @@ interface DocumentInfoItem {
 
 interface ChatTabProps {
   showToast: (message: Omit<ToastMessage, 'id'>) => void;
+  /** 임베드(embed) 모드 여부. true면 사이드바/디버그 UI를 숨기고 임베드 브리지를 활성화한다. */
+  embedMode?: boolean;
 }
 
-export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
+export const ChatTab: React.FC<ChatTabProps> = ({ showToast, embedMode = false }) => {
   // API Logs State
   const [apiLogs, setApiLogs] = React.useState<ApiLog[]>([]);
   const { isOnline } = useOfflineDetection();
@@ -94,6 +97,17 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
     scrollToBottom,
   } = useChatInteraction({ messages, showToast });
 
+  // 임베드 모드일 때만 부모 윈도우와의 postMessage 브리지를 활성화한다.
+  // host가 보낸 메시지는 handleSend(directMessage)로 정확히 전달된다.
+  useEmbedBridge({
+    enabled: embedMode,
+    loading,
+    isStreaming,
+    messageCount: messages.length,
+    onSend: handleSend,
+    onStop: handleStop,
+  });
+
   const documentInfoItems = useMemo<DocumentInfoItem[]>(() => {
     if (!selectedChunk) return [];
 
@@ -139,32 +153,57 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
   };
 
   return (
-    <div className="flex h-[85vh] bg-muted/20 overflow-hidden font-sans antialiased">
-      <ChatSessionSidebar
-        sessionId={sessionId}
-        messages={messages}
-        onNewSession={handleNewSession}
-        onSelectSession={switchSession}
-      />
+    <div
+      className={
+        embedMode
+          // 임베드 모드: 뷰포트 전체를 채우고 부가 패널을 숨긴다.
+          ? 'flex h-screen bg-muted/20 overflow-hidden font-sans antialiased'
+          : 'flex h-[85vh] bg-muted/20 overflow-hidden font-sans antialiased'
+      }
+    >
+      {/* 임베드 모드에서는 세션 사이드바를 숨긴다(외부 사이트 위젯은 단일 대화). */}
+      {!embedMode && (
+        <ChatSessionSidebar
+          sessionId={sessionId}
+          messages={messages}
+          onNewSession={handleNewSession}
+          onSelectSession={switchSession}
+        />
+      )}
 
-      <ChatDevTools
-        showDevTools={showDevTools}
-        setShowDevTools={setShowDevTools}
-        leftPanelTab={leftPanelTab}
-        setLeftPanelTab={setLeftPanelTab}
-        sessionId={sessionId}
-        sessionInfo={sessionInfo}
-        apiLogs={apiLogs}
-        expandedLogs={expandedLogs}
-        toggleLogExpansion={toggleLogExpansion}
-        isDebugExpanded={isDebugExpanded}
-        setIsDebugExpanded={setIsDebugExpanded}
-        handleNewSession={handleNewSession}
-        copyToClipboard={copyToClipboard}
-      />
+      {/* 임베드 모드에서는 개발자 도구 패널을 숨긴다. */}
+      {!embedMode && (
+        <ChatDevTools
+          showDevTools={showDevTools}
+          setShowDevTools={setShowDevTools}
+          leftPanelTab={leftPanelTab}
+          setLeftPanelTab={setLeftPanelTab}
+          sessionId={sessionId}
+          sessionInfo={sessionInfo}
+          apiLogs={apiLogs}
+          expandedLogs={expandedLogs}
+          toggleLogExpansion={toggleLogExpansion}
+          isDebugExpanded={isDebugExpanded}
+          setIsDebugExpanded={setIsDebugExpanded}
+          handleNewSession={handleNewSession}
+          copyToClipboard={copyToClipboard}
+        />
+      )}
 
-      <div className="flex-grow flex justify-center items-center px-4 md:px-6 py-4">
-        <div className="w-full max-w-4xl h-[80vh] flex flex-col min-h-0 bg-background rounded-2xl shadow-xl overflow-hidden border border-border/60">
+      <div
+        className={
+          embedMode
+            ? 'flex-grow flex flex-col px-0 py-0'
+            : 'flex-grow flex justify-center items-center px-4 md:px-6 py-4'
+        }
+      >
+        <div
+          className={
+            embedMode
+              ? 'w-full h-full flex flex-col min-h-0 bg-background overflow-hidden'
+              : 'w-full max-w-4xl h-[80vh] flex flex-col min-h-0 bg-background rounded-2xl shadow-xl overflow-hidden border border-border/60'
+          }
+        >
           <ChatHeader
             sessionId={sessionId}
             showDevTools={showDevTools}
@@ -201,12 +240,15 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
         </div>
       </div>
 
-      <RagTracePanel
-        messages={messages}
-        apiLogs={apiLogs}
-        selectedChunk={selectedChunk}
-        isStreaming={isStreaming}
-      />
+      {/* 임베드 모드에서는 RAG 추적(디버그) 패널을 숨긴다. */}
+      {!embedMode && (
+        <RagTracePanel
+          messages={messages}
+          apiLogs={apiLogs}
+          selectedChunk={selectedChunk}
+          isStreaming={isStreaming}
+        />
+      )}
 
       <ChunkDetailModal
         open={modalOpen}

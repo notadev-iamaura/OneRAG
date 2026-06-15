@@ -60,7 +60,9 @@ interface UseChatMessagesReturn {
     setInput: React.Dispatch<React.SetStateAction<string>>;
     loading: boolean;
     setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-    handleSend: () => Promise<void>;
+    // 선택적 인자로 보낼 메시지를 직접 지정할 수 있다(임베드 host send 등).
+    // 미지정 시 기존처럼 input 상태값을 전송한다.
+    handleSend: (directMessage?: string) => Promise<void>;
     handleStop: () => void;
     // 스트리밍 관련 상태
     isStreaming: boolean;
@@ -512,18 +514,22 @@ export const useChatMessages = ({
     /**
      * 메시지 전송 (스트리밍/REST 분기)
      */
-    const handleSend = async () => {
-        if (!input.trim() || loading) return;
+    const handleSend = async (directMessage?: string) => {
+        // 임베드 host가 메시지를 직접 전달한 경우(directMessage) 그것을 사용하고,
+        // 아니면 기존처럼 입력창(input) 상태값을 사용한다.
+        const rawMessage = directMessage ?? input;
+        const messageContent = rawMessage.trim();
+        if (!messageContent || loading) return;
 
         const userMessage: ChatMessage = {
             id: createClientId('msg-user'),
             role: 'user',
-            content: input,
+            content: messageContent,
             timestamp: new Date().toISOString(),
         };
 
         setMessages((prev) => [...prev, userMessage]);
-        const messageContent = input;
+        // 입력창에서 보낸 경우에만 입력창을 비운다(host send는 입력창과 무관).
         setInput('');
         setLoading(true);
 
