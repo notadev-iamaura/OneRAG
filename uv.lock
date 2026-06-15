@@ -3320,6 +3320,9 @@ security = [
     { name = "bcrypt" },
     { name = "python-jose", extra = ["cryptography"] },
 ]
+vertex = [
+    { name = "google-auth" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -3355,6 +3358,7 @@ requires-dist = [
     { name = "dependency-injector", specifier = "==4.49.0" },
     { name = "duckduckgo-search", specifier = ">=8.1.1" },
     { name = "fastapi", specifier = "==0.104.1" },
+    { name = "google-auth", marker = "extra == 'vertex'", specifier = ">=2.0.0,<3" },
     { name = "google-cloud-storage", marker = "extra == 'gcs'", specifier = ">=2.0" },
     { name = "google-generativeai", specifier = ">=0.6.0,<1" },
     { name = "httpx", specifier = ">=0.23.0,<1" },
@@ -3427,7 +3431,7 @@ requires-dist = [
     { name = "weaviate-client", specifier = ">=4.0.0" },
     { name = "websockets", specifier = "==12.0" },
 ]
-provides-extras = ["dev", "monitoring", "local-embedding", "security", "redis", "ragas", "chroma", "pinecone", "qdrant", "pgvector", "all-vectordb", "bm25", "extraction-quality", "gcs"]
+provides-extras = ["dev", "monitoring", "local-embedding", "security", "redis", "ragas", "chroma", "pinecone", "qdrant", "pgvector", "all-vectordb", "bm25", "extraction-quality", "vertex", "gcs"]
 
 [package.metadata.requires-dev]
 dev = [

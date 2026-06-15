@@ -40,6 +40,12 @@ from .gemini_embedder import GeminiEmbedder
 from .interfaces import IEmbedder
 from .local_embedder import DEFAULT_LOCAL_MODEL, LocalEmbedder
 from .openai_embedder import OpenAIEmbedder, OpenRouterEmbedder
+from .vertex_embedder import (
+    DEFAULT_VERTEX_EMBEDDING_DIMENSIONS,
+    DEFAULT_VERTEX_EMBEDDING_LOCATION,
+    DEFAULT_VERTEX_EMBEDDING_MODEL,
+    VertexAIEmbedder,
+)
 
 logger = get_logger(__name__)
 
@@ -89,6 +95,13 @@ SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "default_dimensions": 3072,
         "supports_dimensions_param": True,
         "description": "Google Gemini Embedding (직접 API, legacy alias)",
+    },
+    # Vertex AI (ADC/GCP 운영용) 모델
+    "vertex/gemini-embedding-001": {
+        "provider": "vertex",
+        "default_dimensions": 3072,
+        "supports_dimensions_param": True,
+        "description": "Vertex AI Gemini Embedding (ADC 인증, GCP 운영용)",
     },
     "models/embedding-001": {
         "provider": "google",
@@ -163,6 +176,8 @@ class EmbedderFactory:
 
         if provider == "google":
             return EmbedderFactory._create_google_embedder(config, embeddings_config)
+        elif provider == "vertex":
+            return EmbedderFactory._create_vertex_embedder(config, embeddings_config)
         elif provider == "openai":
             return EmbedderFactory._create_openai_embedder(config, embeddings_config)
         elif provider == "openrouter":
@@ -172,7 +187,7 @@ class EmbedderFactory:
         else:
             raise ValueError(
                 f"지원하지 않는 임베딩 provider: {provider}. "
-                f"지원 목록: google, openai, openrouter, local"
+                f"지원 목록: google, vertex, openai, openrouter, local"
             )
 
     @staticmethod
@@ -236,6 +251,85 @@ class EmbedderFactory:
             output_dimensionality=output_dim,
             batch_size=batch_size,
             task_type=task_type,
+        )
+
+    @staticmethod
+    def _as_int(value: Any, default: int) -> int:
+        """None/빈 문자열이면 기본값, 그 외에는 int로 캐스팅한다."""
+        if value in (None, ""):
+            return default
+        return int(value)
+
+    @staticmethod
+    def _as_float(value: Any, default: float) -> float:
+        """None/빈 문자열이면 기본값, 그 외에는 float로 캐스팅한다."""
+        if value in (None, ""):
+            return default
+        return float(value)
+
+    @staticmethod
+    def _create_vertex_embedder(
+        config: dict[str, Any],
+        embeddings_config: dict[str, Any],
+    ) -> VertexAIEmbedder:
+        """Vertex AI(ADC) 임베더 생성.
+
+        project_id/location은 설정(embeddings.vertex) → generation.vertex →
+        Vertex/Google Cloud 표준 환경변수 순으로 해석한다. ADC 인증이므로 API 키는
+        사용하지 않으며, google-auth 미설치 시 인증 시점에 안내 에러가 발생한다.
+
+        Args:
+            config: 전체 설정 딕셔너리.
+            embeddings_config: embeddings 섹션 설정.
+
+        Returns:
+            VertexAIEmbedder 인스턴스.
+        """
+        vertex_config = embeddings_config.get("vertex", {})
+        generation_vertex_config = config.get("generation", {}).get("vertex", {})
+
+        model_name = (
+            vertex_config.get("model")
+            or os.getenv("VERTEX_AI_EMBEDDING_MODEL")
+            or DEFAULT_VERTEX_EMBEDDING_MODEL
+        )
+        output_dim = EmbedderFactory._as_int(
+            vertex_config.get("output_dimensionality")
+            or os.getenv("VERTEX_AI_EMBEDDING_DIMENSIONS"),
+            DEFAULT_VERTEX_EMBEDDING_DIMENSIONS,
+        )
+        batch_size = EmbedderFactory._as_int(vertex_config.get("batch_size"), 16)
+        timeout = EmbedderFactory._as_float(vertex_config.get("timeout"), 60.0)
+
+        # project_id 폴백: OneRAG에는 Document AI가 없으므로 관련 환경변수는 제외한다.
+        project_id = (
+            vertex_config.get("project_id")
+            or generation_vertex_config.get("project_id")
+            or os.getenv("VERTEX_AI_PROJECT_ID")
+            or os.getenv("GOOGLE_CLOUD_PROJECT")
+            or os.getenv("GCLOUD_PROJECT")
+        )
+        location = (
+            os.getenv("VERTEX_AI_EMBEDDING_LOCATION")
+            or vertex_config.get("location")
+            or generation_vertex_config.get("location")
+            or os.getenv("VERTEX_AI_LOCATION")
+            or os.getenv("GOOGLE_CLOUD_LOCATION")
+            or DEFAULT_VERTEX_EMBEDDING_LOCATION
+        )
+
+        logger.info(
+            f"✅ Vertex AI 임베더 생성: model={model_name}, "
+            f"dim={output_dim}, location={location}"
+        )
+
+        return VertexAIEmbedder(
+            project_id=project_id,
+            location=str(location),
+            model_name=str(model_name),
+            output_dimensionality=output_dim,
+            batch_size=batch_size,
+            timeout=timeout,
         )
 
     @staticmethod

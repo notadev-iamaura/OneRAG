@@ -41,6 +41,7 @@
 # 지원 제공자:
 #   - "local"     : 로컬 임베딩 (API 키 불필요 - Easy Start/오프라인용)
 #   - "google"    : Google Gemini Embedding (직접 API)
+#   - "vertex"    : Vertex AI Gemini Embedding (ADC 인증, GCP 운영용 — 선택적 extra)
 #   - "openai"    : OpenAI Embedding (직접 API)
 #   - "openrouter": OpenRouter 통합 게이트웨이 (권장 - 다양한 모델 지원)
 embeddings:
@@ -119,6 +120,33 @@ embeddings:
 
     # API 키 (환경 변수 사용 권장)
     api_key: "${GOOGLE_API_KEY:-}"
+
+  # ============================================================
+  # Vertex AI 설정 (ADC/GCP 운영용 - 선택적 extra)
+  # ============================================================
+  # provider: "vertex" 선택 시 사용. GOOGLE_API_KEY 없이 Application Default
+  # Credentials(ADC, 서비스 계정/워크로드 ID)로 인증한다.
+  #
+  # ⚠️ 선택적 의존성: google-auth가 필요합니다.
+  #    설치: uv sync --extra vertex
+  #    (미설치 시 임베딩 시점에 설치 안내 에러가 발생합니다)
+  #
+  # 인증: GOOGLE_APPLICATION_CREDENTIALS 또는 ADC(gcloud auth application-default login)
+  vertex:
+    # ⚠️ 모델 변경 시 기존 문서 재인덱싱 필수!
+    model: "gemini-embedding-001"
+    output_dimensionality: 3072
+    batch_size: 16
+
+    # GCP 프로젝트 ID (미지정 시 환경변수에서 조회:
+    #   VERTEX_AI_PROJECT_ID / GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT)
+    project_id: "${VERTEX_AI_PROJECT_ID:-}"
+
+    # Vertex AI 리전 (미지정 시 us-central1)
+    location: "${VERTEX_AI_LOCATION:-us-central1}"
+
+    # HTTP 타임아웃 (초)
+    timeout: 60
 
   # ============================================================
   # OpenAI 직접 API 설정 (대체)
