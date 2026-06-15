@@ -118,12 +118,17 @@ async def test_guarded_processing_times_out_marks_failed_and_cleans_up(
     job_id = "job-proc-timeout"
     file_path = tmp_path / "sample.txt"
     file_path.write_text("sample", encoding="utf-8")
+    # 보관 원본이 있으면 타임아웃 후 retry_safe=True가 된다 (#10 재처리 게이트).
+    original = tmp_path / "originals" / f"{job_id}_sample.txt"
+    original.parent.mkdir(parents=True, exist_ok=True)
+    original.write_text("sample", encoding="utf-8")
     upload.upload_jobs[job_id] = {
         "job_id": job_id,
         "status": "pending",
         "progress": 0,
         "message": "queued",
         "start_time": 1.0,
+        "original_file_path": str(original),
     }
 
     # 처리를 제한 시간보다 오래 걸리게 만들어 타임아웃을 유발한다.

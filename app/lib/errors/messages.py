@@ -220,6 +220,51 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "ko": "일괄 삭제 실패: {reason}",
         "en": "Bulk deletion failed: {reason}",
     },
+    "UPLOAD-016": {
+        "ko": "업로드 위치 불일치: 서버 기대 offset과 요청 offset이 다릅니다",
+        "en": "Upload offset mismatch: server expected a different offset",
+    },
+    "UPLOAD-017": {
+        "ko": "수신된 파일 조각이 선언된 전체 파일 크기를 초과했습니다",
+        "en": "Received chunk exceeds the declared file size",
+    },
+    "UPLOAD-018": {
+        "ko": "분할 업로드 미완료: 전체 파일 크기만큼 조각이 수신되지 않았습니다",
+        "en": "Chunked upload incomplete: not all bytes were received",
+    },
+    "UPLOAD-019": {
+        "ko": "현재 상태에서는 파일 조각을 받을 수 없습니다",
+        "en": "Cannot accept chunks in the current job state",
+    },
+    "UPLOAD-020": {
+        "ko": "요청하신 업로드 작업을 찾을 수 없습니다",
+        "en": "The requested upload job was not found",
+    },
+    "UPLOAD-021": {
+        "ko": "이미 완료되었거나 실패한 업로드 작업은 취소할 수 없습니다",
+        "en": "A completed or failed upload job cannot be cancelled",
+    },
+    "UPLOAD-022": {
+        "ko": "현재 상태에서는 업로드 작업을 재시도할 수 없습니다",
+        "en": "The upload job cannot be retried in its current state",
+    },
+    "UPLOAD-023": {
+        "ko": "재시도에 필요한 원본 파일을 사용할 수 없습니다",
+        "en": "The retained original file required for retry is unavailable",
+    },
+    # STORAGE (원본 파일 보관) - 3개
+    "STORAGE-001": {
+        "ko": "원본 파일을 찾을 수 없습니다",
+        "en": "The original file could not be found",
+    },
+    "STORAGE-002": {
+        "ko": "원본 스토리지 구성 오류: {reason}",
+        "en": "Original storage configuration error: {reason}",
+    },
+    "STORAGE-003": {
+        "ko": "원본 스토리지 입출력 실패: {reason}",
+        "en": "Original storage I/O failure: {reason}",
+    },
     # IMAGE (이미지 처리) - 5개
     "IMAGE-001": {
         "ko": "이미지 개수 제한 초과: {count}개 (최대 {max_count}개)",

@@ -14,6 +14,7 @@ import {
     Avatar,
 } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 interface ChatMessageListProps {
     messages: ChatMessage[];
@@ -37,6 +38,7 @@ interface ChatMessageListProps {
 const StreamingMessageItem: React.FC<{
     streamingMessage: StreamingMessage;
 }> = ({ streamingMessage }) => {
+    const { messages } = useMenuMessages();
     return (
         <div className="flex gap-3 mb-6 items-start px-1 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <Avatar className="h-8 w-8 border shadow-sm shrink-0 bg-background border-border">
@@ -54,7 +56,7 @@ const StreamingMessageItem: React.FC<{
                     ) : (
                         <div className="flex items-center gap-2 py-1">
                             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground opacity-60" />
-                            <span className="text-[11px] text-muted-foreground opacity-80 font-medium">응답을 준비하고 있습니다...</span>
+                            <span className="text-[11px] text-muted-foreground opacity-80 font-medium">{messages.chat.message.preparingResponse}</span>
                         </div>
                     )}
                 </div>
@@ -83,6 +85,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     isSseStreaming = false,
     ragProgress,
 }) => {
+    // i18n: prop의 messages(채팅 메시지 목록)와 이름 충돌을 피하기 위해 별칭(i18n)으로 받는다.
+    const { messages: i18n } = useMenuMessages();
     const lastContentLengthRef = useRef(0);
 
     useEffect(() => {
@@ -163,7 +167,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                     size="icon"
                     className="absolute bottom-6 right-6 rounded-full shadow-lg border border-border bg-background/80 backdrop-blur-sm z-50 hover:scale-110 active:scale-95 transition-all animate-in fade-in zoom-in duration-300"
                     onClick={() => scrollToBottom?.('smooth')}
-                    aria-label="맨 아래로 이동"
+                    aria-label={i18n.chat.message.scrollToBottom}
                 >
                     <ArrowDown className="h-4 w-4" />
                 </Button>

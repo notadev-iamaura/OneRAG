@@ -55,6 +55,7 @@
     "clsx": "^2.1.1",
     "dompurify": "^3.4.2",
     "lucide-react": "^0.562.0",
+    "pdfjs-dist": "^4.10.38",
     "react": "^19.1.0",
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",

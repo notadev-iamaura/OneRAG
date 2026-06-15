@@ -94,6 +94,12 @@ class UploadError(RAGException):
     pass
 
 
+class StorageError(RAGException):
+    """원본 파일 보관(스토리지) 관련 예외 (#10)."""
+
+    pass
+
+
 class ImageError(RAGException):
     """이미지 처리 관련 예외."""
 
@@ -197,6 +203,7 @@ def get_exception_class(error_code: str | ErrorCode) -> type[RAGException]:
         "SERVICE": ServiceError,
         "DOC": DocumentError,
         "UPLOAD": UploadError,
+        "STORAGE": StorageError,
         "IMAGE": ImageError,
         "LLM": LLMError,
         "VECTOR": VectorError,

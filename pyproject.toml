@@ -181,6 +181,10 @@ extraction-quality = ["pymupdf>=1.24.0,<2"]
 # 미설치 시 vertex provider 인증 시점에 설치 안내 에러가 발생한다(코어 동작 영향 0).
 vertex = ["google-auth>=2.0.0,<3"]
 
+# 원본 파일 보관(#10) GCS 백엔드 전용. original_file_storage.py가 지연 import하며
+# 미설치 시 OriginalFileStorageConfigurationError로 graceful 실패(local 기본은 0-dep).
+gcs = ["google-cloud-storage>=2.0"]
+
 [project.scripts]
 rag-chatbot = "main:main"
 
