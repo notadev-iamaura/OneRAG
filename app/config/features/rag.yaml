@@ -109,11 +109,37 @@ document_processing:
   chunk_size: 1400
   chunk_overlap: 200
   splitter_type: "recursive"
-  file_types: ["pdf", "txt", "docx", "pptx", "xlsx", "csv", "html", "md", "json"]
+  # doc: 레거시 Word(.doc)는 LibreOffice/soffice가 설치된 환경에서만 변환된다(#26).
+  file_types: ["pdf", "txt", "docx", "doc", "pptx", "xlsx", "csv", "html", "md", "json"]
   semantic_threshold: 0.3
   target_chunk_size: 1400
   min_chunk_size: 1100
   max_chunk_size: 1700
+
+  # ==========================================================================
+  # 표(xlsx/csv) 행 단위 청킹 (#21) - opt-in, 기본 OFF
+  # ==========================================================================
+  # 활성화 시 xlsx/csv 표 문서를 행(row) 단위로 묶고 각 청크에 헤더행을 반복
+  # 포함해 검색 시 컬럼 의미를 보존한다. enabled=false면 기존 recursive 경로 유지.
+  table_chunking:
+    enabled: false
+    rows_per_chunk: 12       # 청크당 데이터 행 수(대형 표 행 묶음 크기)
+    row_overlap: 2           # 청크 간 겹치는 행 수
+    include_header_each_chunk: true  # 각 청크 첫머리에 헤더 행 반복 포함
+
+  # ==========================================================================
+  # 파일명 연도/분기 메타 추출 (#27) - 기본 ON, 도메인 비종속
+  # ==========================================================================
+  # 파일명에서 범용 연도(19xx/20xx)와 분기(영어 Q1-4 / 한국어 N분기)를 추출해
+  # doc_years/quarter 메타로 주입한다(추출 실패 시 키 미저장). 일본어 第N四半期 등
+  # 도메인 특화 분기 패턴은 extra_quarter_patterns로 주입한다(각 패턴의 첫 캡처 그룹이
+  # 분기 숫자 1~4를 담아야 함).
+  period_extraction:
+    enabled: true
+    extra_quarter_patterns: []
+    # 예) 일본어 분기 패턴 추가:
+    # extra_quarter_patterns:
+    #   - "第\\s*([1-4])\\s*四半期"
 
 # ==========================================================================
 # 스코어링 시스템 설정 (Scoring System)

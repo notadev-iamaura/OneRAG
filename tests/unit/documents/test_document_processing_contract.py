@@ -90,8 +90,11 @@ async def test_legacy_xlsx_loader_accepts_date_headers(tmp_path) -> None:
     assert "2026-01-01" in documents[0].page_content
 
 
-def test_doc_extension_is_not_mapped_to_docx_loader() -> None:
-    assert LoaderFactory.get_loader("legacy.doc") is None
+def test_doc_extension_is_mapped_to_docx_loader() -> None:
+    # #26: 레거시 .doc는 LibreOffice 변환 후 DOCX 경로를 재사용하도록 DOCXLoader에 매핑된다.
+    from app.modules.core.documents.loaders.docx_loader import DOCXLoader
+
+    assert isinstance(LoaderFactory.get_loader("legacy.doc"), DOCXLoader)
 
 
 def test_pptx_extension_is_mapped_to_pptx_loader() -> None:

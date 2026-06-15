@@ -38,6 +38,7 @@ class LoaderFactory:
         ".txt": TextLoader(),
         ".text": TextLoader(),
         ".docx": DOCXLoader(),
+        ".doc": DOCXLoader(),  # #26: 레거시 .doc는 LibreOffice 변환 후 DOCX 경로 재사용
         ".pptx": PPTXLoader(),
         ".xlsx": XLSXLoader(),
         ".xls": XLSXLoader(),
