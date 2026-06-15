@@ -391,6 +391,7 @@ markers = [
     "system: marks tests that require system Python environment",
     "e2e: marks tests as end-to-end tests with real APIs (costs money, slower)",
     "eval: marks tests as evaluation tests for CI/CD quality gates",
+    "performance: marks in-process concurrency/performance acceptance tests (mock-based, no external cost)",
 ]
 
 # Test discovery patterns
