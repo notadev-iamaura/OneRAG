@@ -9,7 +9,13 @@ import {
   ChatResponse,
   ChatHistoryEntry,
   SessionInfo,
+  Source,
+  SourceDetail,
 } from '../types';
+import type {
+  StreamChatEvent,
+  StreamChatClientOptions,
+} from '../types/chatStreaming';
 import { logger } from '../utils/logger';
 import { maskPhoneNumberDeep } from '../utils/privacy';
 import { getOperatorApiBaseUrl } from '../config/operatorSettings';
@@ -508,6 +514,117 @@ export const documentAPI = {
     }),
 };
 
+// ============================================
+// POST /chat/stream SSE 클라이언트
+//
+// EventSource는 POST body를 지원하지 않으므로 fetch + ReadableStream으로 구현한다.
+// OneRAG 백엔드 SSE 라인 포맷: `event: {type}\ndata: {json}\n\n`
+// (JapanRAG의 data-envelope 포맷과 달리, event 라인으로 타입을, data 라인으로 payload를 추출)
+// ============================================
+
+/** SSE 스트리밍 채팅 엔드포인트 절대 URL을 만든다(런타임 base URL 반영). */
+const buildChatStreamUrl = (): string => {
+  const baseUrl = getAPIBaseURL();
+  // baseUrl이 빈 문자열(same-origin)이면 상대 경로로 호출한다.
+  return `${baseUrl}/api/chat/stream`;
+};
+
+/**
+ * 단일 SSE 블록(`event: ...\ndata: ...`)을 파싱해 StreamChatEvent로 만든다.
+ * - event 라인: 이벤트 타입(metadata/chunk/done/error)
+ * - data 라인(들): JSON payload (여러 줄이면 줄바꿈으로 결합)
+ * data JSON에 event 필드가 없으면 event 라인 값으로 보강한다.
+ */
+const parseChatStreamBlock = (block: string): StreamChatEvent | null => {
+  let eventType: string | undefined;
+  const dataLines: string[] = [];
+
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith('event:')) {
+      eventType = line.slice('event:'.length).trim();
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice('data:'.length).trimStart());
+    }
+  }
+
+  const dataText = dataLines.join('\n');
+  if (!dataText) {
+    return null;
+  }
+
+  const parsed = JSON.parse(dataText) as Record<string, unknown>;
+  // data payload에 event 필드가 없으면 event 라인으로 보강한다.
+  if (typeof parsed.event !== 'string' && eventType) {
+    parsed.event = eventType;
+  }
+  return parsed as unknown as StreamChatEvent;
+};
+
+/** 파싱된 이벤트를 타입별 콜백으로 디스패치한다. */
+const dispatchChatStreamEvent = (
+  event: StreamChatEvent,
+  options?: StreamChatClientOptions
+): void => {
+  options?.onEvent?.(event);
+  if (event.event === 'chunk') {
+    options?.onChunk?.(event);
+  } else if (event.event === 'done') {
+    options?.onDone?.(event);
+  } else if (event.event === 'error') {
+    options?.onError?.(event);
+  }
+};
+
+/** SSE 응답 스트림을 읽어 블록 단위로 파싱·디스패치하고 전체 이벤트 배열을 반환한다. */
+const collectChatStreamEvents = async (
+  response: Response,
+  options?: StreamChatClientOptions
+): Promise<StreamChatEvent[]> => {
+  if (!response.ok) {
+    throw new Error(`SSE chat request failed with status ${response.status}`);
+  }
+  if (!response.body) {
+    throw new Error('SSE chat response body is not readable.');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const events: StreamChatEvent[] = [];
+  let buffer = '';
+
+  const consumeBlock = (block: string) => {
+    if (!block.trim()) return;
+    const event = parseChatStreamBlock(block);
+    if (!event) return;
+    events.push(event);
+    dispatchChatStreamEvent(event, options);
+  };
+
+  // 빈 줄(\n\n 또는 \r\n\r\n) 기준으로 SSE 블록을 분리한다(CRLF/LF 혼용 안전).
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+
+    let delimiterIndex = buffer.search(/\r?\n\r?\n/);
+    while (delimiterIndex >= 0) {
+      const blockText = buffer.slice(0, delimiterIndex);
+      const delimiterLength = buffer.startsWith('\r\n\r\n', delimiterIndex) ? 4 : 2;
+      buffer = buffer.slice(delimiterIndex + delimiterLength);
+      consumeBlock(blockText);
+      delimiterIndex = buffer.search(/\r?\n\r?\n/);
+    }
+
+    if (done) break;
+  }
+
+  // 스트림 종료 후 남은 버퍼도 마지막 블록으로 처리한다.
+  if (buffer.trim()) {
+    consumeBlock(buffer);
+  }
+
+  return events;
+};
+
 // Chat API
 export const chatAPI = {
   // 메시지 전송
@@ -516,6 +633,62 @@ export const chatAPI = {
       message,
       session_id: sessionId || localStorage.getItem('chatSessionId')
     }),
+
+  /**
+   * POST /chat/stream SSE 스트리밍 채팅.
+   *
+   * fetch + ReadableStream으로 SSE를 수신하며, options.signal로 중단할 수 있다.
+   * 각 이벤트는 onEvent/onChunk/onDone/onError 콜백으로 전달된다.
+   */
+  streamMessage: async (
+    message: string,
+    sessionId?: string,
+    options?: StreamChatClientOptions
+  ): Promise<StreamChatEvent[]> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    };
+
+    // JWT Access Token (axios 인터셉터와 동일한 출처)
+    const tokens = localStorage.getItem('auth_tokens');
+    if (tokens) {
+      try {
+        const { accessToken } = JSON.parse(tokens);
+        if (accessToken) {
+          headers.Authorization = `Bearer ${accessToken}`;
+        }
+      } catch (error) {
+        logger.warn('JWT 토큰 파싱 실패:', error);
+      }
+    }
+
+    const effectiveSessionId = sessionId || localStorage.getItem('chatSessionId') || undefined;
+    if (effectiveSessionId) {
+      headers['X-Session-Id'] = effectiveSessionId;
+    }
+
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers['X-XSRF-TOKEN'] = csrfToken;
+    }
+
+    const requestInit: RequestInit = {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        message,
+        session_id: effectiveSessionId ?? null,
+        options: options?.options,
+      }),
+    };
+    if (options?.signal) {
+      requestInit.signal = options.signal;
+    }
+
+    const response = await fetch(buildChatStreamUrl(), requestInit);
+    return collectChatStreamEvents(response, options);
+  },
 
   // 채팅 기록 조회
   getChatHistory: (sessionId: string) =>
@@ -537,6 +710,33 @@ export const chatAPI = {
   // 세션 정보 조회
   getSessionInfo: (sessionId: string) =>
     api.get<SessionInfo>(`/api/chat/session/${sessionId}/info`),
+
+  /**
+   * 청크(인용 출처) 전체 상세 조회 (lazy).
+   *
+   * content_preview([:300] 절단본) 대신 전체 원문을 받아오기 위한 호출.
+   * source_id/document_id가 없으면 호출 자체를 거부한다.
+   *
+   * 주의: 이 엔드포인트는 백엔드 지원이 필요하다(GET /api/upload/documents/{document_id}/sources/{source_id}).
+   * 백엔드가 아직 미지원이면 호출이 실패하므로, 호출부(useChatInteraction)에서
+   * content_preview로 graceful fallback 처리한다.
+   */
+  getSourceDetail: (source: Pick<Source, 'source_id' | 'document_id' | 'page' | 'chunk'>) => {
+    const documentId = source.document_id;
+    const sourceId = source.source_id;
+    if (!documentId || !sourceId) {
+      return Promise.reject(new Error('source_id 또는 document_id가 없어 상세 조회를 할 수 없습니다.'));
+    }
+    return api.get<SourceDetail>(
+      `/api/upload/documents/${encodeURIComponent(documentId)}/sources/${encodeURIComponent(sourceId)}`,
+      {
+        params: {
+          page: source.page ?? undefined,
+          chunk: source.chunk ?? undefined,
+        },
+      }
+    );
+  },
 };
 
 export default api;

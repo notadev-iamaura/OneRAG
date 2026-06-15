@@ -56,12 +56,25 @@ export interface UploadStatus {
   error?: string; // 백워드 호환성을 위해 유지
 }
 
+/** 메시지/세션에 부착되는 모델 메타데이터 */
+export interface ModelInfo {
+  provider?: string;
+  model?: string;
+  generation_time?: number;
+  model_config?: Record<string, unknown>;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   sources?: Source[];
+  // RAG Trace 메트릭(메시지별로 보존). 방 전환 시 이전 방 메트릭이 고정 표시되는 문제를
+  // 해결하기 위해, 전역 로그가 아닌 메시지 자체에 트레이스를 부착한다.
+  processing_time?: number;
+  tokens_used?: number;
+  model_info?: ModelInfo;
 }
 
 export interface SourceAdditionalMetadata {
@@ -133,6 +146,27 @@ export interface Source {
   additional_metadata?: SourceAdditionalMetadata | null;
 }
 
+/**
+ * 청크(인용 출처)의 전체 상세 정보.
+ *
+ * Source.content_preview는 백엔드에서 [:300]으로 절단되므로,
+ * 청크 클릭 시 lazy 조회로 전체 원문(full_content/content)을 받아오기 위한 타입.
+ * PDF citation_regions/page_dimensions는 후속 작업(#66)에서 확장 예정이라 여기서는 제외한다.
+ */
+export interface SourceDetail {
+  source_id?: string | null;
+  document_id?: string | null;
+  document_name?: string | null;
+  document?: string | null;
+  page?: number | null;
+  chunk?: number | null;
+  section?: string | null;
+  content?: string | null;
+  full_content?: string | null;
+  source_uri?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface ChatResponse {
   answer: string;
   sources: Source[];
@@ -151,6 +185,8 @@ export interface ChatResponse {
 export interface ChatHistoryEntry {
   id?: string | number;
   role?: 'user' | 'assistant';
+  // 백엔드 히스토리 API는 role 대신 type 필드를 사용할 수 있으므로 함께 받는다.
+  type?: 'user' | 'assistant';
   message?: string;
   question?: string;
   prompt?: string;
@@ -164,6 +200,10 @@ export interface ChatHistoryEntry {
   created_at?: string;
   updated_at?: string;
   sources?: Source[];
+  // 백엔드 히스토리가 메시지별로 반환하는 트레이스 메트릭(memory_service 기준).
+  processing_time?: number;
+  tokens_used?: number;
+  model_info?: ModelInfo;
 }
 
 // 세션 정보 API 응답 타입

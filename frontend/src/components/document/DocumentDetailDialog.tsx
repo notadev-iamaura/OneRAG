@@ -29,6 +29,17 @@ export interface DocumentDetailDialogProps {
   onClose: () => void;
 }
 
+/**
+ * 양수 카운트 타입 가드.
+ *
+ * React는 false/null/undefined만 렌더링에서 건너뛰고 숫자 0은 그대로 "0" 텍스트로 표시한다.
+ * 따라서 `{count && <Row/>}` 형태는 count가 0일 때 화면에 길잃은 '0'을 남긴다.
+ * 이 가드로 0/undefined를 모두 걸러내고, 양수일 때만 행을 렌더링한다.
+ */
+const hasPositiveCount = (value: number | undefined): value is number => (
+  typeof value === 'number' && value > 0
+);
+
 /** 상세 정보 행 컴포넌트 (라벨 + 값) */
 const DetailRow = ({ label, value, copyable }: { label: string; value: string | number | undefined | null; copyable?: boolean }) => (
   <div className="group/row">
@@ -71,9 +82,9 @@ export const DocumentDetailDialog: React.FC<DocumentDetailDialogProps> = ({
                 <DetailRow label="MIME 타입" value={doc.mimeType} />
                 <DetailRow label="업로드 일시" value={new Date(doc.uploadedAt).toLocaleString()} />
                 <DetailRow label="상태" value={doc.status} />
-                {doc.chunks && <DetailRow label="청크 수" value={`${doc.chunks}개`} />}
-                {doc.metadata?.pageCount && <DetailRow label="페이지 수" value={`${doc.metadata.pageCount}P`} />}
-                {doc.metadata?.wordCount && <DetailRow label="단어 수" value={`${doc.metadata.wordCount}개`} />}
+                {hasPositiveCount(doc.chunks) && <DetailRow label="청크 수" value={`${doc.chunks}개`} />}
+                {hasPositiveCount(doc.metadata?.pageCount) && <DetailRow label="페이지 수" value={`${doc.metadata?.pageCount}P`} />}
+                {hasPositiveCount(doc.metadata?.wordCount) && <DetailRow label="단어 수" value={`${doc.metadata?.wordCount}개`} />}
               </div>
             )}
           </ScrollArea>

@@ -57,6 +57,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
     // 스트리밍 관련 상태
     isStreaming,
     streamingMessage,
+    isSseStreaming,
+    ragProgress,
   } = useChatMessages({
     sessionId,
     initialMessages,
@@ -72,6 +74,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
     messagesEndRef,
     modalOpen,
     selectedChunk,
+    sourceDetail,
+    sourceDetailLoading,
+    sourceDetailError,
     handleChunkClick,
     handleCloseModal,
     leftPanelTab,
@@ -180,6 +185,8 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
             scrollToBottom={scrollToBottom}
             isStreaming={isStreaming}
             streamingMessage={streamingMessage}
+            isSseStreaming={isSseStreaming}
+            ragProgress={ragProgress}
           />
 
           <ChatInput
@@ -206,6 +213,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast }) => {
         onClose={handleCloseModal}
         selectedChunk={selectedChunk}
         documentInfoItems={documentInfoItems}
+        sourceDetail={sourceDetail}
+        sourceDetailLoading={sourceDetailLoading}
+        sourceDetailError={sourceDetailError}
       />
     </div>
   );

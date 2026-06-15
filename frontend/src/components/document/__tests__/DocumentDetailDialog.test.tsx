@@ -85,4 +85,31 @@ describe('DocumentDetailDialog', () => {
     render(<DocumentDetailDialog {...defaultProps} document={null} />);
     expect(screen.queryByText('detail-original.pdf')).not.toBeInTheDocument();
   });
+
+  it('카운트가 0이면 해당 행을 숨기고 길잃은 "0"을 렌더링하지 않습니다', () => {
+    const zeroCountDoc = createMockDocument({
+      chunks: 0,
+      metadata: { pageCount: 0, wordCount: 0 },
+    });
+    render(<DocumentDetailDialog {...defaultProps} document={zeroCountDoc} />);
+
+    // 0인 카운트 행은 라벨/값 모두 표시되지 않아야 한다.
+    expect(screen.queryByText('0개')).not.toBeInTheDocument();
+    expect(screen.queryByText('0P')).not.toBeInTheDocument();
+    expect(screen.queryByText('청크 수')).not.toBeInTheDocument();
+    expect(screen.queryByText('페이지 수')).not.toBeInTheDocument();
+    expect(screen.queryByText('단어 수')).not.toBeInTheDocument();
+  });
+
+  it('카운트가 undefined여도 행을 숨깁니다', () => {
+    const noCountDoc = createMockDocument({
+      chunks: undefined,
+      metadata: {},
+    });
+    render(<DocumentDetailDialog {...defaultProps} document={noCountDoc} />);
+
+    expect(screen.queryByText('청크 수')).not.toBeInTheDocument();
+    expect(screen.queryByText('페이지 수')).not.toBeInTheDocument();
+    expect(screen.queryByText('단어 수')).not.toBeInTheDocument();
+  });
 });

@@ -141,6 +141,9 @@ export function useChatSessionCore(
 
     setMessages([]);
     setSessionInfo(null);
+    // 이전 방의 API 로그를 초기화한다. RAG Trace 패널이 메시지에 트레이스가 없을 때
+    // 보조로 참조하는 전역 로그가 새 방으로 넘어와 이전 방 메트릭을 고정 표시하는 것을 방지한다.
+    setApiLogs([]);
     setSessionId(targetSessionId);
     localStorage.setItem('chatSessionId', targetSessionId);
 
@@ -174,7 +177,7 @@ export function useChatSessionCore(
         message: '선택한 대화 기록을 불러올 수 없습니다.',
       });
     }
-  }, [chatAPI, sessionId, setMessages, setSessionInfo, showToast]);
+  }, [chatAPI, sessionId, setMessages, setSessionInfo, setApiLogs, showToast]);
 
   /**
    * 세션 초기화

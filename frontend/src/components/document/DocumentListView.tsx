@@ -111,7 +111,8 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
                   <div className="w-8 h-8 rounded-lg bg-primary/5 flex items-center justify-center shrink-0">
                     {getStatusIcon(doc.status)}
                   </div>
-                  <p className="text-sm font-bold truncate max-w-[300px]" title={doc.originalName || doc.filename}>
+                  {/* 긴 파일명(공백 없는 CJK/URL)도 셀 안에서 줄바꿈되도록 break-words 적용 + 2줄 제한 */}
+                  <p className="min-w-0 text-sm font-bold leading-snug whitespace-normal break-words [overflow-wrap:anywhere] line-clamp-2" title={doc.originalName || doc.filename}>
                     {doc.originalName || doc.filename}
                   </p>
                 </div>

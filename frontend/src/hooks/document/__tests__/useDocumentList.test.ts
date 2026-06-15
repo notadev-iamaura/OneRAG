@@ -77,7 +77,7 @@ describe('useDocumentList', () => {
   // fetchDocuments 테스트
   // ============================================================
 
-  it('마운트 시 fetchDocuments를 호출해야 한다', async () => {
+  it('마운트 시 over-fetch 파라미터로 fetchDocuments를 호출해야 한다', async () => {
     const docs = [createMockDocument()];
     mockGetDocuments.mockResolvedValue({
       data: { documents: docs, total: 1 },
@@ -91,9 +91,10 @@ describe('useDocumentList', () => {
       expect(result.current.loading).toBe(false);
     });
 
+    // 전역 정렬/검색을 위해 page=1, 큰 page_size로 over-fetch한다.
     expect(mockGetDocuments).toHaveBeenCalledWith({
       page: 1,
-      limit: 50,
+      page_size: 10000,
       search: '',
     });
     expect(result.current.documents).toHaveLength(1);
@@ -118,9 +119,13 @@ describe('useDocumentList', () => {
     });
   });
 
-  it('fetch 성공 시 totalPages가 올바르게 계산되어야 한다', async () => {
+  it('fetch 성공 시 totalPages가 필터링된 문서 수 기준으로 계산되어야 한다', async () => {
+    // over-fetch로 받은 120건을 클라이언트에서 페이지네이션 → 120/50 = 2.4 → 3페이지
+    const docs = Array.from({ length: 120 }, (_, i) =>
+      createMockDocument({ id: `doc-${i}`, originalName: `doc-${i}.pdf` }),
+    );
     mockGetDocuments.mockResolvedValue({
-      data: { documents: [], total: 120 },
+      data: { documents: docs, total: 120 },
     });
 
     const { result } = renderHook(() =>
@@ -131,8 +136,26 @@ describe('useDocumentList', () => {
       expect(result.current.loading).toBe(false);
     });
 
-    // 120 / 50 = 2.4 → Math.ceil → 3
     expect(result.current.totalPages).toBe(3);
+    // 첫 페이지에는 PAGE_SIZE(50)건만 노출
+    expect(result.current.documents).toHaveLength(50);
+  });
+
+  it('문서가 0건이어도 totalPages는 최소 1로 가드되어야 한다 (유령 0페이지 방지)', async () => {
+    mockGetDocuments.mockResolvedValue({
+      data: { documents: [], total: 0 },
+    });
+
+    const { result } = renderHook(() =>
+      useDocumentList({ showToast: mockShowToast }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.totalPages).toBe(1);
+    expect(result.current.documents).toHaveLength(0);
   });
 
   // ============================================================
@@ -264,5 +287,71 @@ describe('useDocumentList', () => {
     expect(typeof result.current.handleSearch).toBe('function');
     expect(typeof result.current.setViewMode).toBe('function');
     expect(typeof result.current.setPage).toBe('function');
+  });
+
+  // ============================================================
+  // #48: 클라이언트 측 검색 필터 / 전역 정렬 회귀 테스트
+  // ============================================================
+
+  it('검색어로 클라이언트 측 필터링이 동작해야 한다 (백엔드 검색 미지원 보정)', async () => {
+    const docs = [
+      createMockDocument({ id: 'a', originalName: '보험약관.pdf' }),
+      createMockDocument({ id: 'b', originalName: 'invoice-2026.xlsx' }),
+      createMockDocument({ id: 'c', originalName: '보험청구서.docx' }),
+    ];
+    // 백엔드는 search를 무시하고 전체를 반환한다고 가정한다.
+    mockGetDocuments.mockResolvedValue({ data: { documents: docs, total: 3 } });
+
+    const { result } = renderHook(() =>
+      useDocumentList({ showToast: mockShowToast }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+    expect(result.current.documents).toHaveLength(3);
+
+    act(() => {
+      result.current.handleSearch('보험');
+    });
+
+    await waitFor(() => {
+      expect(result.current.documents).toHaveLength(2);
+    });
+    const names = result.current.documents.map((d) => d.originalName);
+    expect(names).toContain('보험약관.pdf');
+    expect(names).toContain('보험청구서.docx');
+    expect(names).not.toContain('invoice-2026.xlsx');
+  });
+
+  it('정렬이 페이지 경계와 무관하게 전역으로 적용되어야 한다', async () => {
+    // 파일명 정렬 시 페이지 단위가 아니라 전체 집합 기준으로 정렬되어야 한다.
+    const docs = [
+      createMockDocument({ id: '1', originalName: 'banana.pdf' }),
+      createMockDocument({ id: '2', originalName: 'apple.pdf' }),
+      createMockDocument({ id: '3', originalName: 'cherry.pdf' }),
+    ];
+    mockGetDocuments.mockResolvedValue({ data: { documents: docs, total: 3 } });
+
+    const { result } = renderHook(() =>
+      useDocumentList({ showToast: mockShowToast }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    act(() => {
+      result.current.handleSort('filename');
+      result.current.handleSortDirection(); // desc → asc
+    });
+
+    await waitFor(() => {
+      expect(result.current.documents.map((d) => d.originalName)).toEqual([
+        'apple.pdf',
+        'banana.pdf',
+        'cherry.pdf',
+      ]);
+    });
   });
 });
