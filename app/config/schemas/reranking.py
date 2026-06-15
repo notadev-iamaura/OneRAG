@@ -8,8 +8,9 @@ Reranking 설정 스키마 v2.0
 
 approach-provider 유효 조합:
 - llm: google, openai, openrouter (LLM 기반 리랭킹)
-- cross-encoder: jina, cohere (전용 리랭킹 API)
+- cross-encoder: jina, cohere, vertex (전용 리랭킹 API)
 - late-interaction: jina (ColBERT 방식)
+- local: sentence-transformers, bge (로컬 모델, API 키 불필요)
 """
 
 from typing import Literal
@@ -157,6 +158,62 @@ class LocalProviderConfig(BaseConfig):
     )
 
 
+class BGEProviderConfig(BaseConfig):
+    """BGE 다국어 로컬 리랭커 provider 설정 (API 키 불필요)
+
+    BAAI/bge-reranker-v2-m3는 다국어를 지원하는 로컬 리랭킹 모델이다.
+    torch/transformers(local-embedding extra)가 필요하며, 미설치 시
+    리랭킹 시점에 설치 안내 에러가 발생한다.
+    """
+
+    model: str = Field(
+        default="BAAI/bge-reranker-v2-m3",
+        description="HuggingFace BGE reranker 모델명 (다국어)",
+    )
+    top_n: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="반환할 상위 결과 수",
+    )
+    max_documents: int = Field(
+        default=16,
+        ge=1,
+        le=100,
+        description="점수화할 최대 후보 문서 수",
+    )
+    batch_size: int = Field(
+        default=8,
+        ge=1,
+        le=256,
+        description="추론 배치 크기",
+    )
+    max_length: int = Field(
+        default=384,
+        ge=32,
+        le=8192,
+        description="토크나이저 최대 토큰 길이",
+    )
+    normalize_scores: bool = Field(
+        default=True,
+        description="sigmoid로 [0,1] 정규화 여부",
+    )
+    use_fp16: bool = Field(
+        default=False,
+        description="CUDA에서 fp16 추론 사용 여부",
+    )
+    device: str | None = Field(
+        default=None,
+        description="실행 디바이스 (None이면 자동 감지: cuda > mps > cpu)",
+    )
+    timeout: float | None = Field(
+        default=None,
+        ge=0.1,
+        le=300.0,
+        description="점수 계산 deadline(초). None이면 무제한(기본 30초 권장)",
+    )
+
+
 class VertexRankingProviderConfig(BaseConfig):
     """Vertex AI Discovery Engine Ranking API 설정 (ADC 인증, API 키 불필요)"""
 
@@ -219,7 +276,7 @@ VALID_APPROACH_PROVIDERS: dict[str, list[str]] = {
     "llm": ["google", "openai", "openrouter"],
     "cross-encoder": ["jina", "cohere", "vertex"],
     "late-interaction": ["jina"],
-    "local": ["sentence-transformers"],
+    "local": ["sentence-transformers", "bge"],
 }
 
 
@@ -255,6 +312,7 @@ class RerankingConfigV2(BaseConfig):
         "vertex",
         "openrouter",
         "sentence-transformers",
+        "bge",
     ] = Field(
         default="jina",
         description="서비스 제공자",
@@ -289,6 +347,10 @@ class RerankingConfigV2(BaseConfig):
         default=None,
         alias="sentence-transformers",
         description="로컬 CrossEncoder 설정 (API 키 불필요)",
+    )
+    bge: BGEProviderConfig | None = Field(
+        default=None,
+        description="BGE 다국어 로컬 리랭커 설정 (API 키 불필요)",
     )
 
     @model_validator(mode="after")

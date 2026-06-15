@@ -14,7 +14,7 @@
 # ║  llm:              google, openai, openrouter                         ║
 # ║  cross-encoder:    jina, cohere, vertex                               ║
 # ║  late-interaction: jina                                               ║
-# ║  local:            sentence-transformers                              ║
+# ║  local:            sentence-transformers, bge                         ║
 # ╚═══════════════════════════════════════════════════════════════════════╝
 
 reranking:
@@ -120,6 +120,27 @@ reranking:
     # 대안: "cross-encoder/ms-marco-MiniLM-L-6-v2"  # 90MB, 빠름
     batch_size: 32
 
+  # BGE - local용 (다국어 로컬 리랭커, API 키 불필요)
+  # BAAI/bge-reranker-v2-m3는 100+ 언어를 지원하는 로컬 리랭킹 모델이다.
+  # sentence-transformers의 영어 중심 ms-marco 대비 한국어/일본어 등 다국어
+  # 품질이 우수하다. 사용하려면 approach: "local", provider: "bge"로 변경하세요.
+  #
+  # ⚠️ 선택적 의존성: torch + transformers가 필요합니다.
+  #    설치: uv sync --extra local-embedding
+  #    (미설치 시 리랭킹 시점에 설치 안내 에러가 발생합니다)
+  bge:
+    model: "BAAI/bge-reranker-v2-m3"
+    top_n: 10
+    max_documents: 16
+    batch_size: 8
+    max_length: 384
+    normalize_scores: true
+    use_fp16: false
+    # device: null  # 미지정 시 자동 감지(cuda > mps > cpu)
+    # timeout: CPU 바운드 추론 deadline(초). 미설정(null)이면 무제한.
+    #   동시 요청 폭주 시 이벤트 루프 점유/워커 고갈을 막으려면 30초 권장.
+    timeout: 30
+
 # ========================================
 # approach 선택 가이드
 # ========================================
@@ -140,6 +161,11 @@ reranking:
 #   → approach: cross-encoder, provider: cohere
 #   → Cohere의 강력한 다국어 모델
 #
-# 💻 API 키 없이 로컬 실행:
+# 💻 API 키 없이 로컬 실행 (영어 중심):
 #   → approach: local, provider: sentence-transformers
 #   → 오프라인 사용 가능, 빠른 추론
+#
+# 🌏 API 키 없이 로컬 실행 (다국어):
+#   → approach: local, provider: bge
+#   → BAAI/bge-reranker-v2-m3, 한국어/일본어 등 다국어 품질 우수
+#   → torch + transformers 필요 (uv sync --extra local-embedding)

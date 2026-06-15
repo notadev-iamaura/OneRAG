@@ -48,8 +48,8 @@ APPROACH_REGISTRY: dict[str, dict[str, Any]] = {
         "providers": ["jina"],
     },
     "local": {
-        "description": "로컬 CrossEncoder 리랭커 (API 키 불필요)",
-        "providers": ["sentence-transformers"],
+        "description": "로컬 모델 리랭커 (API 키 불필요, sentence-transformers / BGE 다국어)",
+        "providers": ["sentence-transformers", "bge"],
     },
 }
 
@@ -131,6 +131,20 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
         "default_config": {
             "model": "cross-encoder/ms-marco-MiniLM-L-12-v2",
             "batch_size": 32,
+        },
+    },
+    "bge": {
+        "class": "BGEReranker",
+        "api_key_env": None,  # API 키 불필요 (로컬 다국어 모델)
+        "default_config": {
+            "model": "BAAI/bge-reranker-v2-m3",
+            "top_n": 10,
+            "max_documents": 16,
+            "batch_size": 8,
+            "max_length": 384,
+            "normalize_scores": True,
+            "use_fp16": False,
+            "device": None,
         },
     },
 }
@@ -384,23 +398,62 @@ class RerankerFactoryV2:
     def _create_local_reranker(
         provider: str, config: dict[str, Any]
     ) -> IReranker:
-        """Local approach 리랭커 생성 (API 키 불필요)"""
-        try:
-            from .local_reranker import LocalReranker
-        except ImportError:
-            raise ImportError(
-                "LocalReranker를 사용하려면 sentence-transformers가 필요합니다. "
-                "설치: uv sync --extra local-embedding"
+        """Local approach 리랭커 생성 (API 키 불필요)
+
+        provider 분기:
+        - sentence-transformers: 기존 CrossEncoder 리랭커(영어 중심 ms-marco).
+        - bge: BAAI/bge-reranker-v2-m3 로컬 다국어 리랭커(timeout/협조적 중단 포함).
+        """
+        reranker: IReranker
+        if provider == "sentence-transformers":
+            try:
+                from .local_reranker import LocalReranker
+            except ImportError:
+                raise ImportError(
+                    "LocalReranker를 사용하려면 sentence-transformers가 필요합니다. "
+                    "설치: uv sync --extra local-embedding"
+                )
+
+            # config에서 sentence-transformers 또는 local 키로 설정 조회
+            provider_config = config.get(
+                "sentence-transformers", config.get("local", {})
             )
+            defaults = PROVIDER_REGISTRY["sentence-transformers"]["default_config"]
 
-        # config에서 sentence-transformers 또는 local 키로 설정 조회
-        provider_config = config.get("sentence-transformers", config.get("local", {}))
-        defaults = PROVIDER_REGISTRY["sentence-transformers"]["default_config"]
+            reranker = LocalReranker(
+                model_name=provider_config.get("model", defaults["model"]),
+                batch_size=provider_config.get("batch_size", defaults["batch_size"]),
+            )
+        elif provider == "bge":
+            # 무거운 의존성(torch/transformers)은 BGEReranker 모듈 내부 import 가드로
+            # 보호된다. 미설치 환경에서도 모듈 import는 성공하며, 실제 사용(런타임
+            # 검증/모델 로드) 시점에 명확한 설치 안내 에러가 발생한다.
+            from .bge_reranker import BGEReranker
 
-        reranker = LocalReranker(
-            model_name=provider_config.get("model", defaults["model"]),
-            batch_size=provider_config.get("batch_size", defaults["batch_size"]),
-        )
+            provider_config = config.get("bge", {})
+            defaults = PROVIDER_REGISTRY["bge"]["default_config"]
+
+            reranker = BGEReranker(
+                model_name=provider_config.get("model", defaults["model"]),
+                top_n=provider_config.get("top_n", defaults["top_n"]),
+                max_documents=provider_config.get(
+                    "max_documents", defaults["max_documents"]
+                ),
+                batch_size=provider_config.get("batch_size", defaults["batch_size"]),
+                max_length=provider_config.get("max_length", defaults["max_length"]),
+                normalize_scores=provider_config.get(
+                    "normalize_scores", defaults["normalize_scores"]
+                ),
+                use_fp16=provider_config.get("use_fp16", defaults["use_fp16"]),
+                device=provider_config.get("device", defaults["device"]),
+                # P1-B: BGE 점수 계산 timeout(초). 미설정이면 무제한(기존 동작).
+                # reranking.yaml의 bge.timeout으로 조절한다(기본 30초 권장).
+                timeout=provider_config.get("timeout"),
+            )
+        else:
+            raise ValueError(
+                f"Local approach에서 {provider}는 아직 지원되지 않습니다."
+            )
 
         logger.info(f"✅ {reranker.__class__.__name__} 생성 완료")
         return reranker
