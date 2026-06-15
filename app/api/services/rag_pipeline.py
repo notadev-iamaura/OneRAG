@@ -23,8 +23,9 @@ import asyncio
 import os
 import re
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from ...lib.circuit_breaker import CircuitBreakerOpenError
@@ -72,6 +73,32 @@ def _extract_fallback_document_preview(document: Any, max_chars: int = 300) -> s
 
 _RERANK_METADATA_KEYS = {"rerank_score", "rerank_method", "original_score"}
 _CONTEXT_EXPANSION_MAX_WINDOW = 3
+
+# 환각 방지 게이트(GAP C): 질문 기간과 문서 기간이 완전 불일치할 때 사용하는 보류 메시지.
+# JP의 전체 i18n(RESPONSE_LANGUAGE_PROFILES)은 차용하지 않고 한국어 기본 문자열만 둔다.
+HALLUCINATION_GATE_NO_ANSWER_MESSAGE = (
+    "질문하신 기간에 해당하는 내용을 제공된 문서에서 확인하지 못했습니다. "
+    "다른 기간의 데이터로 추정하지 않았습니다. 정확한 기간을 확인하시거나 "
+    "관련 문서를 추가해 주세요."
+)
+
+# ============================================================================
+# 정확 식별자(exact-identifier) 검색 보강 패턴 (GAP A) - 언어무관/도메인무관
+# ============================================================================
+# dense·BM25가 공히 놓치기 쉬운 고유 식별자(모델코드/에러코드 등)의 리콜을 보완한다.
+# JP 휴리스틱(目次/向上/年度)은 제거하고 generic 식별자/라틴 구문만 채택한다.
+#
+# 식별자: 대문자 시작 + (대문자/숫자) 토큰이 하이픈(각종 대시/장음)으로 연결된 형태.
+# 예) GP-1200X, ERR-404, RTX-4090. 좌우 경계로 알파벳·숫자 인접 시 매칭 제외.
+_EXACT_IDENTIFIER_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])"
+    r"[A-Z][A-Z0-9]{1,}(?:[-‐‑‒–—―ー－][A-Z0-9]{2,})+"
+    r"(?![A-Za-z0-9])"
+)
+# 라틴 다중 단어 구문(예: "error handling"). 너무 짧은 구문은 소비자가 별도로 필터링.
+_LATIN_PHRASE_PATTERN = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z0-9]*)+\b")
+# 캘린더 연도(20xx)만 매칭(언어무관). JP fiscal(N年度) 휴리스틱은 채택하지 않는다.
+_CALENDAR_YEAR_PATTERN = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 
 
 def _is_numeric_score(value: Any) -> bool:
@@ -233,6 +260,15 @@ def _coerce_optional_int(value: Any) -> int | None:
         return None
 
 
+def _coerce_positive_int(value: Any, default: int) -> int:
+    """value를 양의 int로 변환한다(GAP A). 변환 불가/0 이하면 최소 1 보장."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, parsed)
+
+
 def _document_value(document: Any, *keys: str) -> Any:
     if isinstance(document, dict):
         for key in keys:
@@ -256,6 +292,65 @@ def _document_value(document: Any, *keys: str) -> Any:
 def _document_content(document: Any) -> str:
     value = _document_value(document, "content", "page_content", "text")
     return value if isinstance(value, str) else ""
+
+
+def _normalize_exact_match_text(value: str | None) -> str:
+    """정확 매칭 비교용 정규화(GAP A).
+
+    NFKC 정규화 + casefold 후 하이픈/공백/구분기호를 제거해, 표기 차이(전각/반각,
+    하이픈 종류, 공백)에 무관하게 식별자 포함 여부를 비교할 수 있게 한다.
+    """
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKC", value).casefold()
+    return re.sub(r"[-‐‑‒–—―ー－\s_./:：]+", "", normalized)
+
+
+def _exact_identifier_terms(query: str) -> list[str]:
+    """질문에서 정확 식별자 토큰을 추출한다(GAP A, 언어무관).
+
+    NFKC 정규화 후 _EXACT_IDENTIFIER_PATTERN으로 매칭하며, 정규화 키 기준 중복 제거.
+    """
+    seen: set[str] = set()
+    terms: list[str] = []
+    for match in _EXACT_IDENTIFIER_PATTERN.finditer(unicodedata.normalize("NFKC", query)):
+        term = match.group(0).strip()
+        key = _normalize_exact_match_text(term)
+        if key and key not in seen:
+            seen.add(key)
+            terms.append(term)
+    return terms
+
+
+def _latin_phrase_terms(query: str) -> list[str]:
+    """질문에서 라틴 다중 단어 구문을 추출한다(GAP A, 언어무관).
+
+    4자 미만 구문은 신호가 약하므로 제외하고, casefold 기준 중복을 제거한다.
+    """
+    seen: set[str] = set()
+    terms: list[str] = []
+    for match in _LATIN_PHRASE_PATTERN.finditer(unicodedata.normalize("NFKC", query)):
+        term = re.sub(r"\s+", " ", match.group(0)).strip()
+        if len(term) < 4:
+            continue
+        key = term.casefold()
+        if key not in seen:
+            seen.add(key)
+            terms.append(term)
+    return terms
+
+
+def _document_text_for_exact_signals(document: Any) -> str:
+    """정확 신호 매칭에 사용할 문서 텍스트(본문 + 식별 메타) 결합(GAP A)."""
+    metadata = _document_metadata(document)
+    parts = [
+        _document_content(document),
+        metadata.get("source_file"),
+        metadata.get("source"),
+        metadata.get("document_name"),
+        metadata.get("title"),
+    ]
+    return "\n".join(str(part) for part in parts if part)
 
 
 def _context_document_id(document: Any) -> str | None:
@@ -380,6 +475,8 @@ class PreparedContext:
     original_query: str
     expanded_queries: list[str] = field(default_factory=list)  # Multi-Query RRF용
     query_weights: list[float] = field(default_factory=list)  # 쿼리 가중치
+    # 멀티턴 anchor soft boost(GAP B)용 직전 인용 문서. 기본 OFF면 항상 빈 리스트.
+    anchor_sources: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -601,6 +698,12 @@ class RAGPipeline:
     FALLBACK_MIN_SCORE = 0.05
     FALLBACK_RERANK_TOP_N = 8
 
+    # 정확 식별자 보강용 candidate pool 확장 상수 (GAP A)
+    # exact_identifier.enabled=true일 때만 candidate_limit이 확장되며, 기본 OFF면 no-op.
+    RETRIEVAL_CANDIDATE_MAX = 40
+    RETRIEVAL_CANDIDATE_MIN_EXTRA = 10
+    RETRIEVAL_CANDIDATE_MULTIPLIER = 3
+
     def __init__(
         self,
         config: dict[str, Any],
@@ -689,6 +792,50 @@ class RAGPipeline:
             if isinstance(configured_prompt, str) and configured_prompt.strip()
             else self._DEFAULT_MULTITURN_REWRITE_PROMPT
         )
+
+        # 정확 식별자(exact-identifier) 검색 보강 설정 (GAP A, 기본 OFF)
+        # dense·BM25가 공히 놓치는 고유 식별자(모델코드/에러코드 등) 리콜을 보완한다.
+        # OFF면 쿼리 보강·candidate 확장·rescue·rerank 안정화가 모두 no-op이다.
+        exact_config = rag_config.get("exact_identifier", {})
+        self.exact_identifier_enabled = bool(
+            exact_config.get("enabled", False)
+            if isinstance(exact_config, dict)
+            else False
+        )
+
+        # 환각 방지 게이트 설정 (GAP C, 기본 OFF)
+        # 질문에 명시된 연도가 검색 문서 연도집합과 완전 disjoint이면 최종답변을
+        # '확인 불가'로 교체한다. OFF면 generation_result를 그대로 반환(no-op).
+        hallucination_config = rag_config.get("hallucination_gate", {})
+        self.hallucination_gate_enabled = bool(
+            hallucination_config.get("enabled", False)
+            if isinstance(hallucination_config, dict)
+            else False
+        )
+        self.hallucination_gate_require_period_match = bool(
+            hallucination_config.get("require_period_match", True)
+            if isinstance(hallucination_config, dict)
+            else True
+        )
+
+        # 멀티턴 anchor soft boost 설정 (GAP B, 기본 OFF, 보수적)
+        # 직전 대화에서 인용된 문서(anchor)를 후속 질문 리랭킹 후처리에서 hard-filter
+        # 없이 약하게(boost_multiplier) 우대한다. 강한 우대/하드 필터는 옛 문서 고착
+        # (staleness) 위험이 커서 금지한다. 자립(주제전환) 질문이면 anchor를 폐기한다.
+        anchor_config = rag_config.get("multiturn_anchor", {})
+        if not isinstance(anchor_config, dict):
+            anchor_config = {}
+        self.multiturn_anchor_enabled = bool(anchor_config.get("enabled", False))
+        # 기본 배수 1.05(=+5%). 비정상/범위 밖 값은 1.05로 보정(상한 1.10).
+        raw_anchor_multiplier = anchor_config.get("boost_multiplier", 1.05)
+        try:
+            anchor_multiplier = float(raw_anchor_multiplier)
+        except (TypeError, ValueError):
+            anchor_multiplier = 1.05
+        self.multiturn_anchor_boost_multiplier = (
+            anchor_multiplier if 1.0 < anchor_multiplier <= 1.10 else 1.05
+        )
+
         retrieval_config = config.get("retrieval", {})
 
         self.retrieval_limit = rag_config.get(
@@ -965,15 +1112,584 @@ class RAGPipeline:
             )
             return None
 
-    def _build_retrieval_filters(self, options: dict[str, Any]) -> dict[str, Any] | None:
-        """요청 옵션에서 검색 메타데이터 필터를 구성한다(#12).
+    def _retrieval_candidate_limit(self, requested_limit: int) -> int:
+        """검색 candidate pool 크기를 계산한다(GAP A).
 
-        options['filters'](dict)를 그대로 사용하고, 비어있으면 None을 반환해
-        기존 무필터 동작과 100% 동일하게 동작한다(회귀 방지).
+        exact_identifier.enabled=true일 때만 candidate pool을 확장한다(×MULTIPLIER,
+        +MIN_EXTRA, 상한 MAX). 정확 식별자가 dense·BM25 상위에서 밀려도 rescue·rerank
+        안정화가 더 넓은 후보에서 끌어올릴 수 있게 한다. OFF면 요청 한도 그대로(no-op).
+
+        Args:
+            requested_limit: 사용자가 요청한 검색 결과 수
+
+        Returns:
+            확장된 candidate 한도(OFF면 requested_limit 그대로).
+        """
+        if not self.exact_identifier_enabled:
+            return requested_limit
+        if requested_limit >= self.RETRIEVAL_CANDIDATE_MAX:
+            return requested_limit
+        expanded_limit = max(
+            requested_limit * self.RETRIEVAL_CANDIDATE_MULTIPLIER,
+            requested_limit + self.RETRIEVAL_CANDIDATE_MIN_EXTRA,
+        )
+        return max(requested_limit, min(expanded_limit, self.RETRIEVAL_CANDIDATE_MAX))
+
+    @staticmethod
+    def _exact_identifier_terms(query: str) -> list[str]:
+        """질문에서 정확 식별자 토큰을 추출한다(GAP A). 모듈 헬퍼 위임."""
+        return _exact_identifier_terms(query)
+
+    @staticmethod
+    def _latin_phrase_terms(query: str) -> list[str]:
+        """질문에서 라틴 다중 단어 구문을 추출한다(GAP A). 모듈 헬퍼 위임."""
+        return _latin_phrase_terms(query)
+
+    def _augment_search_queries_with_exact_terms(
+        self,
+        original_query: str,
+        search_queries: list[str],
+        query_weights: list[float],
+    ) -> tuple[list[str], list[float]]:
+        """정확 매칭 프로브 쿼리를 의미 쿼리를 대체하지 않고 추가 주입한다(GAP A).
+
+        식별자(가중치 1.25)와 라틴 구문(1.1)을 별도 검색 쿼리로 추가해, dense/BM25가
+        놓치기 쉬운 고유 식별자의 리콜을 보강한다. exact_identifier.enabled=false면
+        입력을 그대로 반환(no-op). 정규화 키 기준 중복은 추가하지 않으며 최대 8개로 제한.
+
+        Args:
+            original_query: 원본(또는 재작성된) 질문
+            search_queries: 기존 검색 쿼리 리스트
+            query_weights: 기존 쿼리 가중치 리스트
+
+        Returns:
+            (보강된 쿼리 리스트, 보강된 가중치 리스트). OFF면 입력 그대로.
+        """
+        if not self.exact_identifier_enabled:
+            return search_queries, query_weights
+
+        augmented_queries = list(search_queries)
+        augmented_weights = list(query_weights)
+        existing = {_normalize_exact_match_text(q) for q in augmented_queries}
+        candidates: list[tuple[str, float]] = []
+        for term in _exact_identifier_terms(original_query):
+            candidates.append((term, 1.25))
+        for term in _latin_phrase_terms(original_query):
+            candidates.append((term, 1.1))
+
+        for term, weight in candidates:
+            key = _normalize_exact_match_text(term)
+            if not key or key in existing:
+                continue
+            augmented_queries.append(term)
+            augmented_weights.append(weight)
+            existing.add(key)
+            if len(augmented_queries) >= 8:
+                break
+        return augmented_queries, augmented_weights
+
+    def _exact_signal_score(self, query: str, document: Any) -> float:
+        """문서가 질문의 정확 신호(식별자/라틴 구문/연도)와 얼마나 일치하는지 점수화(GAP A).
+
+        JP 휴리스틱(目次/向上 등)은 제거하고 언어무관 신호만 채택한다.
+        - 식별자 매칭: +12.0 (가장 강한 신호)
+        - 라틴 구문 매칭: +5.0
+        - 캘린더 연도 일치: +5.0 / 문서에 다른 연도만 존재: -8.0
+        """
+        text = _document_text_for_exact_signals(document)
+        normalized_text = _normalize_exact_match_text(text)
+        score = 0.0
+
+        for term in _exact_identifier_terms(query):
+            if _normalize_exact_match_text(term) in normalized_text:
+                score += 12.0
+
+        for term in _latin_phrase_terms(query):
+            if _normalize_exact_match_text(term) in normalized_text:
+                score += 5.0
+
+        query_years = {int(y) for y in _CALENDAR_YEAR_PATTERN.findall(query)}
+        if query_years:
+            doc_years = self._document_calendar_years(document)
+            if query_years & doc_years:
+                score += 5.0
+            elif doc_years:
+                score -= 8.0
+
+        return score
+
+    @staticmethod
+    def _document_calendar_years(document: Any) -> set[int]:
+        """문서의 식별 메타(파일명 등)에서 캘린더 연도(20xx)를 추출한다(GAP A/C).
+
+        OneRAG의 파일명 연도 추출(doc_years 메타)을 우선 사용하고, 없으면 식별 메타
+        문자열에서 직접 20xx를 추출한다(언어무관).
+        """
+        metadata = _document_metadata(document)
+        years: set[int] = set()
+        raw_doc_years = metadata.get("doc_years")
+        if isinstance(raw_doc_years, list | tuple | set):
+            for value in raw_doc_years:
+                parsed = _coerce_optional_int(value)
+                if parsed is not None:
+                    years.add(parsed)
+        source = str(
+            metadata.get("source_file")
+            or metadata.get("source")
+            or metadata.get("document_name")
+            or ""
+        )
+        for match in _CALENDAR_YEAR_PATTERN.findall(source):
+            years.add(int(match))
+        return years
+
+    def _stabilize_reranked_results_with_exact_signals(
+        self, query: str, ranked_results: list[Any]
+    ) -> list[Any]:
+        """정확 신호가 강한 문서를 상위로 안정화한다(GAP A).
+
+        exact_identifier.enabled=false면 no-op. 질문에 식별자/연도 등 2차 신호가 없거나
+        최고 점수가 임계(2.5) 미만이면 그대로 반환한다. 조건 충족 시 정확 신호 점수
+        내림차순(동점은 기존 순서)으로 재정렬해, 리랭커가 정확 식별자 문서를 하위로
+        밀어버린 경우를 보정한다.
+
+        Args:
+            query: 검색 질문
+            ranked_results: 리랭킹된 문서 리스트
+
+        Returns:
+            안정화된 문서 리스트(미적용 시 입력 그대로).
+        """
+        if not self.exact_identifier_enabled:
+            return ranked_results
+        if len(ranked_results) < 2:
+            return ranked_results
+        has_secondary_signal = bool(
+            _exact_identifier_terms(query)
+            or _latin_phrase_terms(query)
+            or _CALENDAR_YEAR_PATTERN.search(query)
+        )
+        if not has_secondary_signal:
+            return ranked_results
+        scored = [
+            (self._exact_signal_score(query, document), index, document)
+            for index, document in enumerate(ranked_results)
+        ]
+        if max(score for score, _, _ in scored) < 2.5:
+            return ranked_results
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [document for _, _, document in scored]
+
+    async def _rescue_exact_identifier_candidates(
+        self,
+        retrieval_module: Any,
+        query: str,
+        results: list[SearchResult],
+        filters: dict[str, Any] | None,
+        limit: int,
+    ) -> list[SearchResult]:
+        """정확 식별자를 직접 타깃 재검색해 매칭 후보를 병합한다(GAP A).
+
+        exact_identifier.enabled=false거나 식별자가 없으면 results를 그대로 반환(no-op).
+        식별자별로 직접 검색을 돌려, 식별자가 문서 텍스트에 포함된 후보만 추려 기존
+        결과 앞쪽으로 병합한다(_document_identity 기준 중복 제거). 검색 실패는 graceful.
+
+        Args:
+            retrieval_module: 검색 모듈(search 메서드 또는 orchestrator.search)
+            query: 검색 질문
+            results: 기존 검색 결과
+            filters: 검색 메타 필터
+            limit: 최대 결과 수
+
+        Returns:
+            병합된 결과(no-op 시 results 그대로).
+        """
+        if not self.exact_identifier_enabled:
+            return results
+        identifiers = _exact_identifier_terms(query)
+        if not identifiers:
+            return results
+
+        search_func = getattr(retrieval_module, "search", None)
+        if search_func is None:
+            orchestrator = getattr(retrieval_module, "orchestrator", None)
+            search_func = (
+                getattr(orchestrator, "search", None) if orchestrator is not None else None
+            )
+        if search_func is None:
+            return results
+
+        rescued: list[SearchResult] = []
+        for identifier in identifiers[:3]:
+            try:
+                candidates = await search_func(
+                    identifier, {"limit": limit, "filters": filters}
+                )
+            except Exception as exc:
+                logger.debug(
+                    "정확 식별자 보강 검색 실패",
+                    extra={"identifier": identifier, "error": str(exc)},
+                )
+                continue
+            identifier_key = _normalize_exact_match_text(identifier)
+            for candidate in candidates or []:
+                text_key = _normalize_exact_match_text(
+                    _document_text_for_exact_signals(candidate)
+                )
+                if identifier_key and identifier_key in text_key:
+                    rescued.append(candidate)
+
+        if not rescued:
+            return results
+
+        merged: list[SearchResult] = []
+        seen: set[Any] = set()
+        for candidate in [*rescued, *results]:
+            key = _document_identity(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(candidate)
+        logger.info(
+            "정확 식별자 후보 보강 완료",
+            extra={
+                "identifiers": identifiers[:3],
+                "rescued_count": len(rescued),
+                "merged_count": len(merged),
+            },
+        )
+        return merged[:limit]
+
+    def _hallucination_gate_period_mismatch(
+        self, message: str, documents: list[Any]
+    ) -> bool:
+        """질문에 명시된 연도가 검색 문서들의 연도와 전혀 일치하지 않는지 판정(GAP C).
+
+        다른 기간 데이터로 단정하는 negative 환각을 막기 위한 판정. 캘린더 연도(20xx)만
+        매칭하며(언어무관), JP fiscal(N年度) 휴리스틱은 채택하지 않는다. 오탐 방지를
+        위해 질문 또는 문서에 연도 정보가 없으면 False(게이트 미적용)를 반환한다.
+
+        Args:
+            message: 사용자 질문
+            documents: 검색/리랭킹된 컨텍스트 문서
+
+        Returns:
+            기간 불일치면 True(보류 대상), 아니면 False.
+        """
+        query_years = {int(y) for y in _CALENDAR_YEAR_PATTERN.findall(message)}
+        if not query_years:
+            return False
+        doc_years: set[int] = set()
+        for document in documents:
+            doc_years |= self._document_calendar_years(document)
+        if not doc_years:
+            return False
+        return query_years.isdisjoint(doc_years)
+
+    def _apply_hallucination_gate(
+        self,
+        message: str,
+        generation_result: GenerationResult,
+        documents: list[Any],
+        options: dict[str, Any] | None,
+    ) -> GenerationResult:
+        """기간 불일치 환각 게이트(GAP C, 기본 OFF, opt-in).
+
+        hallucination_gate.enabled=true이고 질문 기간이 문서 기간과 전혀 일치하지
+        않으면, 답변을 '확인 불가' 메시지로 교체해 환각을 차단한다. 비활성(기본)이면
+        generation_result를 그대로 반환해 기존 동작을 유지한다. self_rag_verify 이후에
+        호출되어 최종 답변 기준으로 1회만 판정한다.
+
+        Args:
+            message: 사용자 질문
+            generation_result: 현재 생성 결과
+            documents: 컨텍스트 문서
+            options: 요청 옵션(예약, 현재 미사용)
+
+        Returns:
+            게이트 통과 시 원본, 차단 시 보류 메시지로 교체된 GenerationResult.
+        """
+        if not self.hallucination_gate_enabled:
+            return generation_result
+        if not self.hallucination_gate_require_period_match:
+            return generation_result
+        if not self._hallucination_gate_period_mismatch(message, documents):
+            return generation_result
+        logger.info("환각 게이트: 질문 기간과 문서 기간 불일치 → '확인 불가' 응답으로 교체")
+        return replace(
+            generation_result,
+            answer=HALLUCINATION_GATE_NO_ANSWER_MESSAGE,
+            text=HALLUCINATION_GATE_NO_ANSWER_MESSAGE,
+        )
+
+    @staticmethod
+    def _conversation_pairs_from_history(
+        chat_history: dict[str, Any], max_exchanges: int = 5
+    ) -> list[dict[str, str]]:
+        """채팅 히스토리(messages)에서 user/assistant 교환 쌍을 추출한다(GAP B).
+
+        Args:
+            chat_history: get_chat_history 반환 형태({"messages": [...]})
+            max_exchanges: 최근 교환 최대 수
+
+        Returns:
+            [{"user": ..., "assistant": ...}, ...] (최근 max_exchanges개)
+        """
+        messages = chat_history.get("messages", []) if isinstance(chat_history, dict) else []
+        conversations: list[dict[str, str]] = []
+        i = 0
+        while i < len(messages) - 1:
+            cur = messages[i]
+            nxt = messages[i + 1]
+            if (
+                isinstance(cur, dict)
+                and isinstance(nxt, dict)
+                and cur.get("type") == "user"
+                and nxt.get("type") == "assistant"
+            ):
+                conversations.append(
+                    {"user": cur.get("content", ""), "assistant": nxt.get("content", "")}
+                )
+                i += 2
+            else:
+                i += 1
+        return conversations[-max_exchanges:] if conversations else []
+
+    async def _extract_anchor_sources(
+        self,
+        message: str,
+        session_id: str,
+        chat_history: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """직전 대화에서 인용된 문서(anchor)를 추출하고 오염 게이트로 유지/폐기 결정(GAP B).
+
+        멀티턴 anchor soft boost의 입력. 직전 assistant 메시지의 sources에서 문서
+        식별자(`document`=파일명, `document_id`)를 anchor로 추출한다.
+
+        오염 방지 게이트(고착 방지의 핵심):
+        - `_needs_standalone_rewrite`를 재사용한다. True(대명사/생략/축약 → 같은 주제의
+          후속 질문)면 anchor 유지, False(충분히 길고 자립적 → 주제 전환 가능성)면 폐기.
+        - 기능 비활성(multiturn_anchor_enabled=False)/session_module 부재/직전 sources
+          부재 시 빈 리스트를 반환해 기존 동작과 100% 동일(no-op)하게 만든다.
+
+        Args:
+            message: 후속 사용자 질문(원본)
+            session_id: 세션 ID
+            chat_history: 이미 조회된 채팅 히스토리(중복 조회 방지). None이면 직접 조회.
+
+        Returns:
+            anchor 리스트(각 {"document", "document_id"}), 폐기/부재 시 빈 리스트.
+        """
+        if not self.multiturn_anchor_enabled:
+            return []
+        if self.session_module is None:
+            return []
+
+        # 오염 게이트: 자립적(주제 전환) 질문이면 anchor 폐기
+        if not self._needs_standalone_rewrite(message):
+            logger.debug(
+                "anchor 폐기: 자립적 질문(주제 전환 가능성)",
+                extra={"message": message[:40]},
+            )
+            return []
+
+        if chat_history is not None:
+            history: dict[str, Any] | None = chat_history
+        else:
+            get_history = getattr(self.session_module, "get_chat_history", None)
+            if get_history is None:
+                return []
+            try:
+                history = await get_history(session_id)
+            except Exception as e:
+                logger.debug(
+                    "anchor 추출 생략: 채팅 히스토리 조회 실패",
+                    extra={"error": str(e)},
+                )
+                return []
+
+        messages = history.get("messages", []) if isinstance(history, dict) else []
+        if not messages:
+            return []
+
+        # 가장 최근 assistant 메시지를 역순 탐색
+        last_sources: list[Any] = []
+        for msg in reversed(messages):
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("type") == "assistant":
+                raw_sources = msg.get("sources", [])
+                if isinstance(raw_sources, list):
+                    last_sources = raw_sources
+                break
+
+        if not last_sources:
+            return []
+
+        anchors: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for src in last_sources:
+            if not isinstance(src, dict):
+                continue
+            document = src.get("document") or src.get("source_file")
+            document_id = src.get("document_id") or src.get("source_id")
+            if not document and not document_id:
+                continue
+            identity = f"{document_id or ''}|{document or ''}"
+            if identity in seen:
+                continue
+            seen.add(identity)
+            anchors.append({"document": document, "document_id": document_id})
+
+        if anchors:
+            logger.debug(
+                "anchor 유지(후속 질문, soft boost 대상)",
+                extra={"anchor_count": len(anchors), "message": message[:40]},
+            )
+        return anchors
+
+    @staticmethod
+    def _document_matches_anchor(
+        document: Any, anchor_sources: list[dict[str, Any]]
+    ) -> bool:
+        """문서가 anchor(직전 인용 문서)와 일치하는지 판정(GAP B).
+
+        document_id 우선, 없으면 source_file(파일명)로 일치 여부를 확인한다.
+        """
+        metadata = _document_metadata(document)
+        doc_id = metadata.get("document_id") or metadata.get("source_id")
+        doc_file = metadata.get("source_file") or metadata.get("document")
+        for anchor in anchor_sources:
+            anchor_id = anchor.get("document_id")
+            anchor_file = anchor.get("document")
+            if anchor_id and doc_id and str(anchor_id) == str(doc_id):
+                return True
+            if anchor_file and doc_file and str(anchor_file) == str(doc_file):
+                return True
+        return False
+
+    def _apply_anchor_soft_boost(
+        self, anchor_sources: list[dict[str, Any]], ranked_results: list[Any]
+    ) -> list[Any]:
+        """리랭킹 결과에 직전 인용 문서(anchor) soft boost를 적용한다(GAP B).
+
+        고착(staleness) 방지를 위해 hard filter(anchor 문서만 남기기)는 절대 쓰지 않고,
+        anchor 일치 문서만 boosted 점수만큼 제자리에서 위로 끌어올린다(anchor-only
+        stable-insert). 점수 격차가 크면 anchor라도 끌어올리지 못한다.
+
+        불변식(회귀 방지): "anchor 미일치 문서끼리의 상대 순서는 입력과 100% 동일"하게
+        보존한다. 직전 fusion(_fuse_reranked_results_with_original_signals)이 의도적으로
+        점수 내림차순이 아닌 순서를 만들 수 있으므로 전면 sort를 쓰지 않고 anchor만
+        bubble-up 한다.
+
+        no-op 조건(기존 랭킹과 100% 동일):
+        - 기능 비활성(multiturn_anchor_enabled=False)
+        - anchor 없음 / 결과 2개 미만 / anchor 일치 문서 없음
+
+        Args:
+            anchor_sources: anchor 리스트({"document", "document_id"})
+            ranked_results: 리랭킹된 문서 리스트(직전 fusion 순서)
+
+        Returns:
+            soft boost 후 재정렬된 문서 리스트(no-op 시 입력 그대로).
+        """
+        if not self.multiturn_anchor_enabled:
+            return ranked_results
+        if not anchor_sources or len(ranked_results) < 2:
+            return ranked_results
+
+        multiplier = self.multiturn_anchor_boost_multiplier
+        matches = [
+            self._document_matches_anchor(doc, anchor_sources) for doc in ranked_results
+        ]
+        if not any(matches):
+            return ranked_results
+
+        # 비교용 점수: anchor는 base*multiplier, 비-anchor는 base 그대로.
+        # _document_score는 None을 반환할 수 있으므로 0.0으로 보정한다.
+        effective_scores = [
+            (_document_score(doc) or 0.0) * (multiplier if matches[index] else 1.0)
+            for index, doc in enumerate(ranked_results)
+        ]
+
+        # anchor-only stable-insert: 비-anchor는 항상 맨 뒤 append(상대순서 불변),
+        # anchor는 result 뒤쪽부터 위로 스캔하며 자신보다 "엄격히 작은" 문서만 추월.
+        result: list[Any] = []
+        result_scores: list[float] = []
+        for index, document in enumerate(ranked_results):
+            if not matches[index]:
+                result.append(document)
+                result_scores.append(effective_scores[index])
+                continue
+            boosted = effective_scores[index]
+            insert_at = len(result)
+            while insert_at > 0 and result_scores[insert_at - 1] < boosted:
+                insert_at -= 1
+            result.insert(insert_at, document)
+            result_scores.insert(insert_at, boosted)
+
+        if [id(d) for d in result] != [id(d) for d in ranked_results]:
+            logger.info(
+                "anchor soft boost 적용(순서 변경)",
+                extra={
+                    "boost_multiplier": multiplier,
+                    "anchor_match_count": sum(matches),
+                },
+            )
+        return result
+
+    def _build_retrieval_filters(self, options: dict[str, Any]) -> dict[str, Any] | None:
+        """요청 옵션에서 검색 메타데이터 필터를 구성한다(#12, GAP G).
+
+        options['filters'](dict)에 더해, 라우팅 결과(data_source)에 대응하는 config
+        기반 메타 필터를 병합한다(GAP G). filter_mappings가 비어있으면(기본) 기존
+        무필터 동작과 100% 동일하게 동작한다(회귀 방지).
         """
         raw_filters = options.get("filters")
         filters = dict(raw_filters) if isinstance(raw_filters, dict) else {}
+
+        # 라우팅 data_source → config 매핑 필터 병합 (GAP G).
+        # 매핑이 비어있으면 추가 필터 없음(no-op) — 운영 회귀 방지 핵심 안전장치.
+        data_source_filter = self._resolve_data_source_filter(options.get("data_source"))
+        for key, value in data_source_filter.items():
+            filters.setdefault(key, value)
+
         return filters or None
+
+    def _resolve_data_source_filter(self, data_source: str | None) -> dict[str, Any]:
+        """라우팅 data_source 값에 대응하는 config 기반 메타 필터를 반환한다(GAP G).
+
+        매핑 설정 위치: ``query_routing.data_source_routing.filter_mappings``
+        (app/config/features/routing.yaml). 기본값은 빈 dict이며, 이 경우 어떤
+        data_source에 대해서도 추가 필터를 만들지 않는다(no-op, 회귀 0).
+
+        Args:
+            data_source: 라우팅 결과 data_source 값(예: "structured"/"general"/"both").
+                None이면 빈 필터를 반환한다.
+
+        Returns:
+            병합 대상 메타 필터 dict(매핑 미설정/미일치 시 빈 dict).
+        """
+        if not data_source:
+            return {}
+
+        query_routing = self.config.get("query_routing", {})
+        if not isinstance(query_routing, dict):
+            return {}
+        data_source_routing = query_routing.get("data_source_routing", {})
+        if not isinstance(data_source_routing, dict):
+            return {}
+
+        filter_mappings = data_source_routing.get("filter_mappings") or {}
+        if not isinstance(filter_mappings, dict):
+            return {}
+
+        mapped = filter_mappings.get(str(data_source))
+        if not isinstance(mapped, dict):
+            return {}
+
+        # 얕은 복사로 호출자 측 변형을 방지한다.
+        return dict(mapped)
 
     def _resolve_context_expansion(self, options: dict[str, Any]) -> tuple[bool, int]:
         """Resolve adjacent chunk expansion as an explicit opt-in feature."""
@@ -1619,6 +2335,13 @@ class RAGPipeline:
         if enable_debug_trace:
             debug_trace_data["original_query"] = message
 
+        # 라우팅 결과(data_source)를 검색 옵션에 주입한다(GAP G).
+        # data_source는 질문 텍스트 기반으로 매 요청 재판단되며, filter_mappings가
+        # 비어있으면 _build_retrieval_filters에서 no-op으로 처리된다(회귀 0).
+        data_source = route_decision.metadata.get("data_source")
+        if data_source is not None:
+            options["data_source"] = data_source
+
         rag_mode = self._resolve_rag_mode(options)
         route_decision.metadata["rag_mode"] = rag_mode
         if rag_mode == "grok_answer":
@@ -1681,6 +2404,36 @@ class RAGPipeline:
                 reranked=True,
             )
 
+        # 정확 식별자 rerank 안정화(GAP A, 기본 OFF): 리랭커가 정확 식별자 문서를
+        # 하위로 밀어버린 경우를 NFKC 정규화 정확매칭 기준으로 상위 보정한다.
+        # exact_identifier.enabled=false면 no-op. 리랭킹 미수행 시에도 검색 단계의
+        # 정확매칭을 보존하기 위해 항상 적용한다(2차 신호/임계 게이트로 내부 no-op 보호).
+        stabilized_documents = self._stabilize_reranked_results_with_exact_signals(
+            prepared_context.expanded_query,
+            rerank_results.documents,
+        )
+        if stabilized_documents is not rerank_results.documents:
+            rerank_results = RerankResults(
+                documents=stabilized_documents,
+                count=len(stabilized_documents),
+                reranked=rerank_results.reranked,
+            )
+
+        # 멀티턴 anchor soft boost(GAP B, 기본 OFF): 직전 인용 문서를 약하게 우대한다.
+        # anchor_sources가 있고 같은 주제(후속)일 때만 의미가 있으며, 없으면 no-op.
+        # hard filter가 아니므로 고착 위험을 최소화한다(stabilize 이후 최종 후처리).
+        if prepared_context.anchor_sources:
+            boosted_documents = self._apply_anchor_soft_boost(
+                prepared_context.anchor_sources,
+                rerank_results.documents,
+            )
+            if boosted_documents is not rerank_results.documents:
+                rerank_results = RerankResults(
+                    documents=boosted_documents,
+                    count=len(boosted_documents),
+                    reranked=rerank_results.reranked,
+                )
+
         if enable_debug_trace and rerank_results.reranked:
             for i, doc in enumerate(rerank_results.documents):
                 if i < len(debug_trace_data["retrieved_documents"]):
@@ -1722,6 +2475,11 @@ class RAGPipeline:
                 message, session_id, generation_result, context_documents, options_with_debug
             ),
             remaining_budget=self._remaining_total_budget(start_time),
+        )
+        # 환각 방지 게이트(GAP C, 기본 OFF): 질문 기간과 문서 기간이 완전 불일치하면
+        # 최종 답변을 '확인 불가'로 교체한다. self_rag_verify 이후 최종 답변 기준 1회.
+        generation_result = self._apply_hallucination_gate(
+            message, generation_result, context_documents, options
         )
         tracker.end_stage("self_rag_verify")
 
@@ -2034,6 +2792,19 @@ class RAGPipeline:
             expanded_queries = [search_message]
             query_weights = [1.0]
 
+        # 정확 식별자 보강(GAP A, 기본 OFF): 재작성된 검색 질문을 시드로 식별자/라틴
+        # 구문 프로브 쿼리를 추가 주입한다. exact_identifier.enabled=false면 no-op.
+        expanded_queries, query_weights = self._augment_search_queries_with_exact_terms(
+            search_message,
+            expanded_queries,
+            query_weights,
+        )
+        expanded_query = expanded_queries[0] if expanded_queries else expanded_query
+
+        # 멀티턴 anchor 추출(GAP B, 기본 OFF): 원본 질문(message)으로 오염 게이트를
+        # 판정한다. multiturn_anchor.enabled=false면 빈 리스트(no-op).
+        anchor_sources = await self._extract_anchor_sources(message, session_id)
+
         logger.debug(
             "[3단계] 컨텍스트 준비 완료",
             extra={"expanded_query": expanded_query[:50]}
@@ -2044,6 +2815,7 @@ class RAGPipeline:
             original_query=message,
             expanded_queries=expanded_queries,
             query_weights=query_weights,
+            anchor_sources=anchor_sources,
         )
 
     @observe(name="Document Retrieval (Hybrid Search)")
@@ -2105,13 +2877,21 @@ class RAGPipeline:
 
         cb = self.circuit_breaker_factory.get("document_retrieval")
 
+        # 정확 식별자 보강(GAP A): candidate pool을 확장해 식별자 문서가 상위에서
+        # 밀려도 rescue/안정화가 끌어올릴 여지를 만든다. exact_identifier OFF면
+        # candidate_limit == requested_limit이라 기존 동작과 동일(no-op).
+        requested_limit = _coerce_positive_int(
+            options.get("limit", self.retrieval_limit), self.retrieval_limit
+        )
+        candidate_limit = self._retrieval_candidate_limit(requested_limit)
+
         async def _search() -> list[SearchResult]:
             """실제 검색 로직 (Circuit Breaker 내부) - Multi-Query RRF"""
             # ✅ #12 수정: 요청 옵션의 메타데이터 필터를 실제 검색에 연결한다.
             # 필터가 없으면 None을 반환해 기존 무필터 동작과 100% 동일하다(회귀 방지).
             retrieval_filters = self._build_retrieval_filters(options)
             search_options = {
-                "limit": options.get("limit", self.retrieval_limit),
+                "limit": candidate_limit,
                 "min_score": options.get("min_score", self.min_score),
                 "context": context,
                 "filters": retrieval_filters,
@@ -2150,6 +2930,23 @@ class RAGPipeline:
         try:
             start_time = time.time()
             search_results = await cb.call(_search, fallback=lambda: [])
+            # 정확 식별자 rescue(GAP A): 식별자 직접 재검색으로 매칭 후보를 병합한다.
+            # exact_identifier OFF거나 식별자가 없으면 no-op이다.
+            search_results = await self._rescue_exact_identifier_candidates(
+                retrieval_module,
+                " ".join(search_queries),
+                search_results,
+                self._build_retrieval_filters(options),
+                candidate_limit,
+            )
+            # 리랭킹이 켜져 있으면 확장된 candidate를 그대로 넘겨 리랭커가 더 넓은
+            # 풀에서 정렬하게 하고, 그렇지 않으면 요청 한도로 잘라 기존 동작을 유지한다.
+            if (
+                self.exact_identifier_enabled
+                and len(search_results) > requested_limit
+                and not self._should_preserve_candidates_for_rerank()
+            ):
+                search_results = search_results[:requested_limit]
             latency_ms = (time.time() - start_time) * 1000
             self.performance_metrics.record_latency("retrieve_documents", latency_ms)
             logger.info(
@@ -2175,6 +2972,19 @@ class RAGPipeline:
                 queries=[q[:50] for q in search_queries],
                 error=str(e),
             ) from e
+
+    def _should_preserve_candidates_for_rerank(self) -> bool:
+        """리랭킹이 활성화되어 확장 candidate를 보존해야 하는지 판단(GAP A).
+
+        리랭킹이 켜져 있으면 확장된 candidate pool을 리랭커에 넘겨 더 넓은 풀에서
+        정렬하게 한다. 리랭킹이 꺼져 있으면 요청 한도로 잘라 기존 응답 크기를 유지한다.
+        """
+        reranking_config = self.config.get("reranking", {})
+        retrieval_config = self.config.get("retrieval", {})
+        return bool(
+            (isinstance(reranking_config, dict) and reranking_config.get("enabled", False))
+            or (isinstance(retrieval_config, dict) and retrieval_config.get("enable_reranking", False))
+        )
 
     def _rerank_fusion_enabled(
         self,
