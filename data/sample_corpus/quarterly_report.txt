@@ -1,0 +1,8 @@
+Acme Robotics Quarterly Report
+
+Total revenue for Q1 2026 was 4500000 USD, up 12% from the previous quarter.
+The flagship product AR-200 shipped 3200 units at a unit price of 980 USD.
+Net profit margin reached 18% with operating costs of 2100000 USD.
+The board approved a dividend of 0.45 USD per share on 2026-04-15.
+Headcount grew to 540 employees across 4 regional offices.
+The next earnings call is scheduled for 2026-07-22 at 14:00 UTC.
