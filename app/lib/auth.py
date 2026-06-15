@@ -40,6 +40,49 @@ from .logger import get_logger
 
 logger = get_logger(__name__)
 
+# 브라우저용 단기 업로드 토큰 TTL 기본값/최대값(초)
+DEFAULT_UPLOAD_TOKEN_TTL_SECONDS = 900  # 15분
+MAX_UPLOAD_TOKEN_TTL_SECONDS = 86400  # 24시간
+
+
+def get_upload_token_ttl_seconds() -> int:
+    """브라우저 업로드 토큰 TTL(초)을 환경변수에서 해석한다.
+
+    우선순위: ONERAG_UPLOAD_TOKEN_TTL_SECONDS(env) > 기본값(900초).
+    범위를 벗어나거나 잘못된 값은 기본/최대값으로 클램프한다.
+
+    Returns:
+        클램프된 TTL(초).
+    """
+    raw_value = os.getenv("ONERAG_UPLOAD_TOKEN_TTL_SECONDS")
+    if raw_value is None or not raw_value.strip():
+        return DEFAULT_UPLOAD_TOKEN_TTL_SECONDS
+
+    try:
+        ttl_seconds = int(raw_value)
+    except ValueError:
+        logger.warning(
+            "잘못된 ONERAG_UPLOAD_TOKEN_TTL_SECONDS — 기본값 사용",
+            extra={"value": raw_value, "default": DEFAULT_UPLOAD_TOKEN_TTL_SECONDS},
+        )
+        return DEFAULT_UPLOAD_TOKEN_TTL_SECONDS
+
+    if ttl_seconds <= 0:
+        logger.warning(
+            "ONERAG_UPLOAD_TOKEN_TTL_SECONDS는 양수여야 함 — 기본값 사용",
+            extra={"value": ttl_seconds, "default": DEFAULT_UPLOAD_TOKEN_TTL_SECONDS},
+        )
+        return DEFAULT_UPLOAD_TOKEN_TTL_SECONDS
+
+    if ttl_seconds > MAX_UPLOAD_TOKEN_TTL_SECONDS:
+        logger.warning(
+            "ONERAG_UPLOAD_TOKEN_TTL_SECONDS가 최대값 초과 — 클램프",
+            extra={"value": ttl_seconds, "maximum": MAX_UPLOAD_TOKEN_TTL_SECONDS},
+        )
+        return MAX_UPLOAD_TOKEN_TTL_SECONDS
+
+    return ttl_seconds
+
 
 class APIKeyAuth:
     """
@@ -440,6 +483,109 @@ def verify_websocket_session_token(
 
     expected_signature = _websocket_token_signature(session_id, expires_at, secret)
     return secrets.compare_digest(parts[2], expected_signature)
+
+
+def _urlsafe_b64_encode(value: str) -> str:
+    """문자열을 패딩 없는 URL-safe base64로 인코딩한다(토큰 컴포넌트용)."""
+    return base64.urlsafe_b64encode(value.encode("utf-8")).rstrip(b"=").decode("ascii")
+
+
+def _urlsafe_b64_decode(value: str) -> str:
+    """패딩 없는 URL-safe base64 문자열을 디코딩한다(실패 시 빈 문자열)."""
+    padding = "=" * (-len(value) % 4)
+    try:
+        return base64.urlsafe_b64decode(value + padding).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return ""
+
+
+def _upload_access_token_signature(
+    scope: str,
+    session_id: str,
+    expires_at: int,
+    secret: str,
+) -> str:
+    """업로드 토큰 서명(HMAC-SHA256)을 계산한다.
+
+    단일 테넌트인 OneRAG에 맞춰 company_id 대신 session_id에 바인딩한다.
+    """
+    payload = f"{scope}.{session_id}.{expires_at}".encode()
+    digest = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
+def create_upload_access_token(
+    session_id: str,
+    secret: str,
+    ttl_seconds: int = DEFAULT_UPLOAD_TOKEN_TTL_SECONDS,
+    scope: str = "upload",
+    now: int | None = None,
+) -> str:
+    """브라우저 안전 단기 업로드 토큰을 발급한다.
+
+    서버 API 키(FASTAPI_AUTH_KEY)를 브라우저에 노출하지 않고 업로드를 허용하기
+    위한 토큰으로, 단일 세션 + scope에 바인딩된다.
+
+    Args:
+        session_id: 토큰을 바인딩할 채팅/업로드 세션 식별자.
+        secret: 서명에 사용할 비밀키(서버 API 키).
+        ttl_seconds: 유효 기간(초).
+        scope: 토큰 용도(기본 "upload").
+        now: 현재 epoch(테스트용 주입).
+
+    Returns:
+        `v1.{exp}.{scope_b64}.{session_b64}.{sig}` 형식의 토큰.
+    """
+    issued_at = int(time.time()) if now is None else now
+    expires_at = issued_at + ttl_seconds
+    scope_part = _urlsafe_b64_encode(scope)
+    session_part = _urlsafe_b64_encode(session_id)
+    signature = _upload_access_token_signature(scope, session_id, expires_at, secret)
+    return f"v1.{expires_at}.{scope_part}.{session_part}.{signature}"
+
+
+def verify_upload_access_token(
+    session_id: str,
+    token: str | None,
+    secret: str,
+    scope: str = "upload",
+    now: int | None = None,
+) -> bool:
+    """업로드 토큰을 검증한다(FASTAPI_AUTH_KEY 노출 없이).
+
+    Args:
+        session_id: 검증 기준 세션 식별자.
+        token: 검증할 토큰.
+        secret: 서명 검증용 비밀키.
+        scope: 기대 scope(기본 "upload").
+        now: 현재 epoch(테스트용 주입).
+
+    Returns:
+        토큰이 유효하면 True.
+    """
+    if not token:
+        return False
+
+    parts = token.split(".")
+    if len(parts) != 5 or parts[0] != "v1":
+        return False
+
+    try:
+        expires_at = int(parts[1])
+    except ValueError:
+        return False
+
+    current_time = int(time.time()) if now is None else now
+    if expires_at < current_time:
+        return False
+
+    token_scope = _urlsafe_b64_decode(parts[2])
+    token_session_id = _urlsafe_b64_decode(parts[3])
+    if token_scope != scope or token_session_id != session_id:
+        return False
+
+    expected_signature = _upload_access_token_signature(scope, session_id, expires_at, secret)
+    return secrets.compare_digest(parts[4], expected_signature)
 
 
 def get_api_key(request: Request) -> str:

@@ -111,6 +111,10 @@ class SessionResponse(BaseModel):
     message: str
     timestamp: str
     ws_token: str | None = None
+    # 브라우저용 단기 업로드 토큰(서버 API 키 노출 회피, #22)
+    upload_token: str | None = None
+    upload_token_expires_at: int | None = None
+    upload_token_ttl_seconds: int | None = None
 
 
 class ChatHistoryResponse(BaseModel):

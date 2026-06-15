@@ -1,0 +1,33 @@
+# 업로드/스토리지 설정 (jprag 차용 통합: #10/#11/#22/#30/#36/#38)
+# 기능:
+#   - 업로드 디렉토리/크기/타임아웃
+#   - 원본 파일 보관 백엔드(local 기본 0-dep, gcs optional)
+#   - 운영 감사 이벤트 스토어(SQLite 기본 0-dep)
+# 사용: app/api/upload.py가 config["uploads"]를 읽어 해석한다.
+# 주의: 모든 키는 환경변수(ONERAG_*) 오버라이드 경로를 함께 가진다(코드 참조).
+
+uploads:
+  # 업로드 임시/원본 파일이 저장되는 루트 디렉토리
+  directory: "${ONERAG_UPLOAD_DIR:-./uploads}"
+  # 단일 업로드 최대 파일 크기(바이트). 기본 50MB.
+  max_file_size: 52428800
+  # 백그라운드 문서 처리 최대 허용 시간(초). 프론트 polling보다 짧게(기본 1500s).
+  processing_timeout_seconds: 1500
+
+  # 업로드 잡 상태 스토어(기본 sqlite 0-dep; postgres는 멀티워커 공유용)
+  job_store:
+    type: "${ONERAG_UPLOAD_JOB_STORE:-sqlite}"
+    # 종결(terminal) 잡 보존 시간(초). 기본 24시간.
+    retention_seconds: 86400
+
+  # 원본 파일 보관(#10): local(기본, 의존성 0) 또는 gcs(optional extra [gcs])
+  original_storage:
+    backend: "${ONERAG_ORIGINAL_STORAGE_BACKEND:-local}"
+    # gcs 백엔드 사용 시에만 필요(환경변수 ONERAG_ORIGINAL_GCS_* 오버라이드 가능)
+    # bucket: ""
+    # prefix: "originals"
+
+  # 운영 감사 이벤트 스토어(#36): 파괴적 작업(삭제/취소 등) 추적. SQLite 기본(0-dep).
+  # type을 disabled/none/off로 두면 감사 기록을 비활성화한다.
+  audit_event_store:
+    type: "${ONERAG_AUDIT_EVENT_STORE:-sqlite}"

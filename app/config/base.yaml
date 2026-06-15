@@ -44,3 +44,4 @@ imports:
   - features/openai_compat.yaml   # OpenAI 호환 API 설정
   - features/tools.yaml           # Agent/MCP 도구 설정 (정본: mcp 섹션, tools는 별칭)
   - features/enrichment.yaml      # LLM 문서 보강 (EnrichmentService가 enrichment 섹션을 읽음)
+  - features/uploads.yaml         # 업로드/원본보관/감사 (app/api/upload.py가 uploads 섹션을 읽음)
