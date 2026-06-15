@@ -31,8 +31,14 @@ from .interface import (
 
 logger = structlog.get_logger(__name__)
 
-_SIMPLE_QUERY_MAX_CHARS = 32
-_SIMPLE_QUERY_MAX_TOKENS = 3
+# 단순(키워드성) 쿼리 판정 임계값.
+# - _SIMPLE_QUERY_MAX_TOKENS: 공백 토큰이 이 값 이상이면 문장성으로 보아 복합 쿼리로 판정.
+# - _SIMPLE_QUERY_MAX_CHARS: 의문 신호·토큰 조건을 통과한 뒤, 이 길이 미만일 때만 단순으로 판정.
+# 임계값은 언어 중립적이다. 공백 없는 CJK 질의는 토큰 수가 거의 항상 1이므로,
+# 길이 기준을 별도로 적용해(AND 결합 제거) 다중 키워드 CJK 질의가 단순으로
+# 오판되어 LLM 확장이 누락되던 문제를 해소한다.
+_SIMPLE_QUERY_MAX_CHARS = 10
+_SIMPLE_QUERY_MAX_TOKENS = 4
 _QUERY_PUNCTUATION = ("?", "？", "!", "！")
 _KOREAN_JAPANESE_QUESTION_MARKERS = (
     "어떻게",
@@ -345,11 +351,13 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         if has_question_signal:
             return False
 
+        # token-first 판정: 공백 토큰이 충분히 많으면(영어 등 문장성) 복합 쿼리.
         token_count = len(normalized.split())
-        return (
-            len(normalized) <= _SIMPLE_QUERY_MAX_CHARS
-            and token_count <= _SIMPLE_QUERY_MAX_TOKENS
-        )
+        if token_count >= _SIMPLE_QUERY_MAX_TOKENS:
+            return False
+        # 의문 신호가 없고 토큰이 적을 때만 길이로 최종 판정한다.
+        # (공백 없는 CJK 다중 키워드 질의는 1토큰이라도 길이가 길어 복합으로 분류됨)
+        return len(normalized) < _SIMPLE_QUERY_MAX_CHARS
 
     async def _call_gpt5_nano(self, query: str) -> dict[str, Any] | None:
         """GPT-5-nano API 호출 (강화된 JSON 파싱)"""
