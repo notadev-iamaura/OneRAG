@@ -118,6 +118,7 @@ class PgVectorRetriever:
         query: str,
         top_k: int = 10,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,  # #35: IRetriever 계약 호환용(pgvector는 dense 전용)
     ) -> list[SearchResult]:
         """
         Dense 벡터 검색 수행
@@ -131,6 +132,7 @@ class PgVectorRetriever:
             query: 검색 쿼리 문자열
             top_k: 반환할 최대 결과 수
             filters: 메타데이터 필터링 조건 (예: {"file_type": "PDF"})
+            alpha: 하이브리드 가중치(#35). pgvector는 dense 전용이라 무시한다.
 
         Returns:
             검색 결과 리스트 (SearchResult)

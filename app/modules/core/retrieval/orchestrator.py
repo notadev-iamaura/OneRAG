@@ -109,6 +109,7 @@ Facade 패턴으로 재구성한 것입니다.
 ⚠️ 주의: 기존 검증된 워크플로우를 재사용합니다. 새로 작성하지 않았습니다.
 """
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from ....lib.errors import ErrorCode, SearchUnavailableError
@@ -124,6 +125,12 @@ if TYPE_CHECKING:
     from .hybrid_search.interfaces import IHybridSearchStrategy
 
 logger = get_logger(__name__)
+
+# 언어 중립 lexical 질의 기본 패턴(#35):
+# - \d{2,}: 2자리 이상 숫자(연도/수량/코드 일부)
+# - [A-Za-z]{2,}[-_]?\d{2,}: 모델코드 형태(영문+구분자+숫자, 예: VPS-1210B)
+# 한/일 등 도메인 특화 패턴은 코드 하드코딩 대신 config.extra_patterns로 주입한다.
+_LEXICAL_ALPHA_PATTERN = re.compile(r"\d{2,}|[A-Za-z]{2,}[-_]?\d{2,}")
 
 # 요청 수준(request-level) 오류로 분류하는 예외 타입.
 # 사용자 제어 가능한 입력(ChatRequest.options.filters 등)의 잘못된 값으로 발생하는
@@ -209,6 +216,25 @@ class RetrievalOrchestrator:
         scoring_config = self.config.get("scoring", {})
         self.scoring_service = ScoringService(scoring_config)
 
+        # 🆕 동적 하이브리드 alpha 설정 초기화(#35)
+        # retrieval.dynamic_alpha.{enabled(기본 false), lexical_alpha, extra_patterns}
+        dynamic_alpha_config = self.config.get("retrieval", {}).get("dynamic_alpha", {})
+        self._dynamic_alpha_enabled: bool = bool(dynamic_alpha_config.get("enabled", False))
+        self._lexical_alpha: float = float(dynamic_alpha_config.get("lexical_alpha", 0.4))
+        # 언어 중립 기본 패턴 + config extra_patterns를 `|`로 합성(다국어 일반화)
+        extra_patterns = dynamic_alpha_config.get("extra_patterns", []) or []
+        self._lexical_pattern: re.Pattern[str]
+        if extra_patterns:
+            combined = "|".join([_LEXICAL_ALPHA_PATTERN.pattern, *extra_patterns])
+            self._lexical_pattern = re.compile(combined)
+        else:
+            self._lexical_pattern = _LEXICAL_ALPHA_PATTERN
+        if self._dynamic_alpha_enabled:
+            logger.info(
+                "동적 하이브리드 alpha 활성화",
+                extra={"lexical_alpha": self._lexical_alpha, "extra_patterns": len(extra_patterns)},
+            )
+
         # 🆕 하이브리드 검색 전략 설정
         # 우선순위: 직접 주입 > graph_store 기반 자동 생성
         self._hybrid_strategy = hybrid_strategy
@@ -267,6 +293,42 @@ class RetrievalOrchestrator:
                 "scoring_service": self.scoring_service
             }
         )
+
+    def _resolve_alpha(self, query: str) -> float | None:
+        """질의 특성에 따라 동적 하이브리드 alpha를 결정한다(#35).
+
+        lexical(모델코드/숫자/코드) 질의에서는 dense 의미검색이 정확 토큰 매칭을
+        압도하는 문제가 있다. 이때 lexical_alpha(낮은 alpha)로 BM25 가중을 강화한다.
+
+        Args:
+            query: 검색 쿼리
+
+        Returns:
+            dynamic_alpha 비활성화이거나 lexical 신호가 없으면 None(기존 alpha 사용),
+            lexical 질의면 설정된 lexical_alpha.
+        """
+        if not self._dynamic_alpha_enabled:
+            return None
+        if self._lexical_pattern.search(query):
+            return self._lexical_alpha
+        return None
+
+    async def _search_with_alpha(
+        self,
+        query: str,
+        top_k: int,
+        filters: dict[str, Any] | None,
+        alpha: float | None,
+    ) -> list[SearchResult]:
+        """alpha 유무에 따라 retriever.search를 분기 호출한다(하위 호환, #35).
+
+        alpha가 None이면 기존 시그니처(query, top_k, filters)로 호출해 dynamic_alpha를
+        쓰지 않는 환경과 100% 동일하게 동작한다. alpha가 있으면 키워드 인자로 전달하며,
+        dense-only 구현체는 이 인자를 무시한다(IRetriever.search 계약).
+        """
+        if alpha is None:
+            return await self.retriever.search(query, top_k, filters)
+        return await self.retriever.search(query, top_k, filters, alpha=alpha)
 
     async def initialize(self) -> None:
         """오케스트레이터 및 모든 구성요소 초기화"""
@@ -464,9 +526,13 @@ class RetrievalOrchestrator:
 
                 try:
                     # 하이브리드 검색 실행 (벡터 + 그래프 RRF 결합)
+                    # #39: filters를 전달 — vector_graph_search가 **kwargs를 받아
+                    # self._retriever.search(query, top_k, **kwargs)로 전파하므로
+                    # 하이브리드 경로의 vector 검색까지 필터가 실제로 도달한다.
                     hybrid_result = await self._hybrid_strategy.search(
                         query=query,
                         top_k=top_k * 2,  # 리랭킹용 여유분
+                        filters=filters,
                     )
                     search_results = hybrid_result.documents
                     self.stats["hybrid_search_count"] += 1
@@ -509,7 +575,11 @@ class RetrievalOrchestrator:
                         # (CancelledError는 BaseException 계열이라 아래 except에
                         #  잡히지 않고 취소 신호 그대로 전파된다)
                         try:
-                            search_results = await self.retriever.search(query, top_k, filters)
+                            # 동적 alpha 적용(#35): lexical 질의면 BM25 가중 강화
+                            alpha = self._resolve_alpha(query)
+                            search_results = await self._search_with_alpha(
+                                query, top_k, filters, alpha
+                            )
                         except SearchUnavailableError:
                             raise
                         except Exception as single_query_exc:
@@ -768,15 +838,21 @@ class RetrievalOrchestrator:
         # min_score는 현재 Orchestrator에서 지원하지 않음 (향후 추가 가능)
         # context는 query_expansion에서 사용 가능
 
+        # options.filters 추출 (#39): 어댑터 경로에서 filters가 조용히 사라지던 결함 보강.
+        # 빈 dict는 None으로 처리해 무필터 검색이 회귀하지 않도록 한다(빈 필터 == 전체 검색).
+        raw_filters = options.get("filters")
+        filters = raw_filters if isinstance(raw_filters, dict) and raw_filters else None
+
         logger.debug(
             "[Adapter] search() 호출",
-            extra={"query": query[:50], "top_k": top_k}
+            extra={"query": query[:50], "top_k": top_k, "has_filters": filters is not None}
         )
 
         # search_and_rerank() 호출 (리랭킹 비활성화)
         results = await self.search_and_rerank(
             query=query,
             top_k=top_k,
+            filters=filters,  # #39: 추출한 filters를 전달
             rerank_enabled=False,  # 리랭킹은 별도 rerank() 메서드에서 수행
             query_expansion_enabled=self.config.get("query_expansion_enabled", True),
         )
@@ -1135,8 +1211,12 @@ class RetrievalOrchestrator:
 
         # 모든 쿼리를 병렬로 검색 (각각 top_k*2개 검색)
         # top_k*2로 검색하는 이유: RRF 통합 시 더 많은 후보 확보
+        # 동적 alpha(#35): 각 확장 쿼리별로 lexical 신호를 보고 alpha를 분기 결정한다.
         search_top_k = top_k * 2
-        search_tasks = [self.retriever.search(q, search_top_k, filters) for q in queries]
+        search_tasks = [
+            self._search_with_alpha(q, search_top_k, filters, self._resolve_alpha(q))
+            for q in queries
+        ]
 
         logger.info(
             "Multi-Query 병렬 검색 시작",

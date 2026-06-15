@@ -155,6 +155,7 @@ class PineconeRetriever:
         query: str,
         top_k: int = 10,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,
     ) -> list[SearchResult]:
         """
         하이브리드/Dense 검색 수행
@@ -169,6 +170,9 @@ class PineconeRetriever:
             query: 검색 쿼리 문자열
             top_k: 반환할 최대 결과 수
             filters: 메타데이터 필터링 조건 (예: {"file_type": "PDF"})
+            alpha: 하이브리드 가중치 동적 오버라이드(#35). None이면 인스턴스 기본
+                hybrid_alpha를 사용한다. alpha<1.0이면 Sparse(BM25) 벡터를 생성해
+                하이브리드 검색을 수행한다(lexical 질의에서 낮은 alpha → BM25 강화).
 
         Returns:
             검색 결과 리스트 (SearchResult)
@@ -182,13 +186,16 @@ class PineconeRetriever:
             RuntimeError: 검색 실패 시
         """
         try:
+            # alpha 오버라이드 적용(없으면 인스턴스 기본값, #35)
+            effective_alpha = alpha if alpha is not None else self.hybrid_alpha
+
             # 1. Dense 쿼리 벡터화 (원본 쿼리 - 의미 보존)
             logger.debug(f"쿼리 임베딩 생성 중: '{query[:50]}...'")
             query_vector = self.embedder.embed_query(query)
 
             # 2. Sparse 벡터 생성 (하이브리드 모드)
             sparse_vector = None
-            if self.hybrid_alpha < 1.0 and self._sparse_encoder is not None:
+            if effective_alpha < 1.0 and self._sparse_encoder is not None:
                 # BM25 전처리 적용
                 processed_query = self._preprocess_query(query)
                 sparse_vector = self._sparse_encoder.encode(processed_query)

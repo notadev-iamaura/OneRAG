@@ -33,7 +33,7 @@ from datetime import UTC
 from typing import Any
 
 from weaviate.classes.data import DataObject
-from weaviate.classes.query import Filter, MetadataQuery
+from weaviate.classes.query import Filter, HybridFusion, MetadataQuery
 from weaviate.collections.collection import Collection
 from weaviate.exceptions import WeaviateQueryError
 
@@ -99,6 +99,20 @@ _TEXT_ARRAY_PROPERTIES = {"keys"}
 # 주의: document_id/file_hash/source_file 등 정확매칭 키는 절대 포함하면 안 된다.
 _CASE_FOLDED_TEXT_PROPERTIES = {"file_type"}
 
+# 문서 목록 화면에 필요한 메타데이터 허용목록(#7).
+# 청크 본문(content)을 제외해 대형 코퍼스에서 gRPC 메시지 한도 초과로 인한
+# 문서 목록 API 장애를 방지한다. 목록 표시/그룹화에 필요한 키만 포함한다.
+_DOCUMENT_LIST_PROPERTIES = [
+    "document_id",
+    "source_file",
+    "filename",
+    "file_name",
+    "file_type",
+    "file_size",
+    "original_file_size",
+    "created_at",
+]
+
 
 class WeaviateRetriever:
     """
@@ -129,6 +143,7 @@ class WeaviateRetriever:
         weaviate_client: WeaviateClient,
         collection_name: str = "Documents",
         alpha: float = 0.6,
+        fusion_type: "HybridFusion | str | None" = HybridFusion.RANKED,
         # Phase 2: BM25 고도화 모듈 (Optional)
         synonym_manager: Any | None = None,
         stopword_filter: Any | None = None,
@@ -148,6 +163,11 @@ class WeaviateRetriever:
                   - 0: BM25(키워드) 100%
                   - 1: Vector(의미) 100%
                   - 0.6: 60% Vector + 40% BM25 (MongoDB 기존 가중치와 동일)
+            fusion_type: 하이브리드 점수 융합 방식 (기본: RANKED=RRF 스타일).
+                  문자열("ranked"/"rrf"/"relative_score"/"relative") 또는
+                  HybridFusion enum을 받으며, 미지원 값은 ValueError로 fail-fast.
+                  relative_score는 점수 정규화가 필요한 시나리오(리랭커 fusion,
+                  점수 임계값 필터링)에서 사용한다.
             synonym_manager: Phase 2 동의어 관리자 (Optional)
             stopword_filter: Phase 2 불용어 필터 (Optional)
             user_dictionary: Phase 2 사용자 사전 (Optional)
@@ -162,6 +182,8 @@ class WeaviateRetriever:
         self.embedder = embedder
         self.collection_name = collection_name
         self.alpha = alpha
+        # 하이브리드 점수 융합 방식 리졸브(미지원 값은 fail-fast, #28)
+        self.fusion_type = self._resolve_hybrid_fusion_type(fusion_type)
         self.additional_collections = additional_collections or []
         self.collection_properties = collection_properties or {}
 
@@ -197,8 +219,50 @@ class WeaviateRetriever:
         )
         logger.info(
             f"WeaviateRetriever 초기화: collection={collection_name}, "
-            f"alpha={alpha}, bm25_preprocessing={bm25_status}, "
+            f"alpha={alpha}, fusion_type={self.fusion_type.name}, "
+            f"bm25_preprocessing={bm25_status}, "
             f"additional_collections={multi_col_status}"
+        )
+
+    @staticmethod
+    def _resolve_hybrid_fusion_type(
+        fusion_type: "HybridFusion | str | None",
+    ) -> HybridFusion:
+        """설정/사용자 입력을 Weaviate HybridFusion enum으로 리졸브한다(#28).
+
+        - None: RANKED(RRF 스타일 기본값)
+        - HybridFusion 인스턴스: 그대로 통과
+        - 문자열: 정규화(strip/lower/'-'→'_') 후 별칭 매핑
+        - 그 외/오타: ValueError로 fail-fast (조용한 묵시 기본값 의존 방지)
+
+        Args:
+            fusion_type: 융합 방식 (None | HybridFusion | str)
+
+        Returns:
+            HybridFusion: 리졸브된 융합 방식 enum
+
+        Raises:
+            ValueError: 미지원 fusion_type 문자열인 경우
+        """
+        if fusion_type is None:
+            return HybridFusion.RANKED
+        if isinstance(fusion_type, HybridFusion):
+            return fusion_type
+
+        normalized = str(fusion_type).strip().lower().replace("-", "_")
+        if normalized in {"ranked", "rrf", "ranked_fusion", "fusion_type_ranked"}:
+            return HybridFusion.RANKED
+        if normalized in {
+            "relative",
+            "relative_score",
+            "relative_score_fusion",
+            "fusion_type_relative_score",
+        }:
+            return HybridFusion.RELATIVE_SCORE
+
+        raise ValueError(
+            "지원하지 않는 Weaviate hybrid fusion_type입니다: "
+            f"{fusion_type!r}. 'ranked' 또는 'relative_score'를 사용하세요."
         )
 
     async def initialize(self) -> None:
@@ -314,6 +378,7 @@ class WeaviateRetriever:
         query: str,
         top_k: int = 10,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,
     ) -> list[SearchResult]:
         """
         하이브리드 검색 수행 (Dense + Sparse with Weaviate 내장 RRF)
@@ -331,6 +396,9 @@ class WeaviateRetriever:
             query: 검색 쿼리 문자열
             top_k: 반환할 최대 결과 수
             filters: 메타데이터 필터링 조건 (예: {"file_type": "pdf"})
+            alpha: 하이브리드 가중치 동적 오버라이드(#35). None이면 인스턴스
+                기본 alpha(self.alpha)를 사용한다. lexical(모델코드/숫자) 질의에서
+                BM25 가중을 강화하려고 오케스트레이터가 낮은 alpha를 주입할 수 있다.
 
         Returns:
             검색 결과 리스트 (SearchResult)
@@ -361,6 +429,9 @@ class WeaviateRetriever:
                     f"Embedding은 list 타입이어야 합니다. 받은 타입: {type(query_embedding)}"
                 )
 
+            # alpha 오버라이드 적용(없으면 인스턴스 기본값 사용, #35)
+            effective_alpha = alpha if alpha is not None else self.alpha
+
             # 2. Phase 3: 다중 컬렉션 검색 (메인 + 추가 컬렉션)
             if self._additional_collection_objects:
                 # 다중 컬렉션 검색 (병렬 실행 + RRF 병합)
@@ -370,6 +441,7 @@ class WeaviateRetriever:
                     query_embedding=query_embedding,
                     top_k=top_k,
                     filters=filters,
+                    alpha=effective_alpha,
                 )
                 self.stats["multi_collection_searches"] += 1
             else:
@@ -381,6 +453,7 @@ class WeaviateRetriever:
                     query_embedding=query_embedding,
                     top_k=top_k,
                     filters=filters,
+                    alpha=effective_alpha,
                 )
 
             # 3. 통계 업데이트
@@ -417,6 +490,7 @@ class WeaviateRetriever:
         query_embedding: list[float],
         top_k: int,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,
     ) -> list[SearchResult]:
         """
         단일 컬렉션에서 하이브리드 검색 수행
@@ -427,6 +501,7 @@ class WeaviateRetriever:
             processed_query: BM25용 전처리된 쿼리
             query_embedding: Dense embedding 벡터
             top_k: 반환할 결과 수
+            alpha: 하이브리드 가중치(None이면 인스턴스 기본값, #35)
 
         Returns:
             검색 결과 리스트
@@ -435,10 +510,12 @@ class WeaviateRetriever:
 
         # weaviate-client v4.19+ 호환성: return_properties를 사용하지 않음
         # 모든 프로퍼티를 반환하고 결과 처리 시 필요한 것만 사용
+        effective_alpha = alpha if alpha is not None else self.alpha
         query_kwargs: dict[str, Any] = {
             "query": processed_query,
             "vector": query_embedding,
-            "alpha": self.alpha,
+            "alpha": effective_alpha,
+            "fusion_type": self.fusion_type,
             "limit": top_k,
             "return_metadata": MetadataQuery(score=True),
         }
@@ -481,6 +558,7 @@ class WeaviateRetriever:
         query_embedding: list[float],
         top_k: int,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,
     ) -> list[SearchResult]:
         """
         다중 컬렉션에서 병렬 검색 후 RRF로 결과 병합
@@ -496,6 +574,7 @@ class WeaviateRetriever:
             query_embedding: Dense embedding 벡터
             top_k: 최종 반환할 결과 수
             filters: 필터링 조건
+            alpha: 하이브리드 가중치(None이면 인스턴스 기본값, #35)
 
         Returns:
             RRF로 병합된 검색 결과 리스트
@@ -517,6 +596,7 @@ class WeaviateRetriever:
                 query_embedding=query_embedding,
                 top_k=top_k,
                 filters=filters,
+                alpha=alpha,
             )
         )
 
@@ -530,6 +610,7 @@ class WeaviateRetriever:
                     query_embedding=query_embedding,
                     top_k=top_k,
                     filters=filters,
+                    alpha=alpha,
                 )
             )
 
@@ -976,41 +1057,50 @@ class WeaviateRetriever:
                 "Weaviate 'Documents' 컬렉션이 초기화되지 않았습니다."
             )
 
-        # 모든 객체 조회 후 document_id별 그룹화
-        response = self.collection.query.fetch_objects(limit=10000)
+        # 청크 본문(content)을 제외한 메타데이터 허용목록만 조회한다(#7).
+        # 본문까지 적재하면 대형 코퍼스에서 gRPC 메시지 한도를 초과해 목록 API가 실패한다.
+        response = self.collection.query.fetch_objects(
+            limit=10000,
+            return_properties=_DOCUMENT_LIST_PROPERTIES,
+        )
 
-        # document_id별 그룹화
-        doc_groups: dict[str, list[dict[str, Any]]] = {}
+        # document_id별 단일 패스 집계(청크 전문 누적 없이 chunk_count만 카운트, #7)
+        doc_map: dict[str, dict[str, Any]] = {}
         for obj in response.objects:
             props = dict(obj.properties)
-            doc_id = str(props.get("document_id", str(obj.uuid)))
-            if doc_id not in doc_groups:
-                doc_groups[doc_id] = []
-            doc_groups[doc_id].append(props)
+            doc_id = str(props.get("document_id") or obj.uuid)
+            if doc_id not in doc_map:
+                # upload_date 추출 (created_at 필드에서)
+                created_at = props.get("created_at", "")
+                upload_date: float = 0.0
+                if isinstance(created_at, str) and created_at:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                        upload_date = dt.timestamp()
+                    except (ValueError, TypeError):
+                        upload_date = 0.0
 
-        # 문서 정보 구성
-        all_documents = []
-        for doc_id, chunks in doc_groups.items():
-            first_chunk = chunks[0]
-            # upload_date 추출 (created_at 필드에서)
-            created_at = first_chunk.get("created_at", "")
-            upload_date: float = 0.0
-            if isinstance(created_at, str) and created_at:
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                    upload_date = dt.timestamp()
-                except (ValueError, TypeError):
-                    upload_date = 0.0
+                doc_map[doc_id] = {
+                    "id": doc_id,
+                    "filename": (
+                        props.get("source_file")
+                        or props.get("filename")
+                        or props.get("file_name")
+                        or "unknown"
+                    ),
+                    "file_type": props.get("file_type", "unknown"),
+                    "file_size": (
+                        props.get("file_size")
+                        or props.get("original_file_size")
+                        or 0
+                    ),
+                    "upload_date": upload_date,
+                    "chunk_count": 0,
+                }
+            doc_map[doc_id]["chunk_count"] += 1
 
-            all_documents.append({
-                "id": doc_id,
-                "filename": first_chunk.get("source_file", "unknown"),
-                "file_type": first_chunk.get("file_type", "unknown"),
-                "file_size": first_chunk.get("file_size", 0),
-                "upload_date": upload_date,
-                "chunk_count": len(chunks),
-            })
+        all_documents = list(doc_map.values())
 
         # 페이지네이션 적용
         total_count = len(all_documents)

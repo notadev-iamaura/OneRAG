@@ -11,6 +11,19 @@ retrieval:
   hybrid_alpha: 0.6
   top_k: 8
 
+  # 질의 특성 기반 동적 하이브리드 alpha (#35)
+  # lexical(모델코드/숫자/코드) 질의에서 BM25 가중을 강화해 정확 토큰 매칭을 보존한다.
+  # 하이브리드 지원 retriever(weaviate/pinecone/qdrant)에만 효과가 있고
+  # dense-only(pgvector/mongodb)에는 무영향이다. 기본 비활성화(하위 호환).
+  dynamic_alpha:
+    enabled: false
+    # lexical 질의에 적용할 낮은 alpha(BM25 가중 강화). 0=BM25만, 1=Vector만.
+    lexical_alpha: 0.4
+    # 도메인/언어 특화 lexical 패턴(정규식)을 코드 수정 없이 추가 주입한다.
+    # 언어 중립 기본 패턴(숫자/모델코드)에 `|`로 합성된다.
+    # 예(일본어): ["円台", "第\\d+条"] / 예(코드): ["[A-Z]{3,}_[A-Z]+"]
+    extra_patterns: []
+
 rag:
   enabled: true
   use_rerank: false

@@ -213,6 +213,39 @@ class RerankerChain:
 
         return current_results
 
+    async def initialize(self) -> None:
+        """체인 내 각 리랭커의 initialize를 위임 호출(워밍업).
+
+        orchestrator는 reranker에 initialize가 있으면 위임하는데, 체인 자체에
+        이 메서드가 없으면 내부 리랭커(예: CrossEncoder 모델 로드)의 워밍업이
+        통째로 스킵돼 첫 쿼리에서 수십 초 지연이 발생한다. 개별 리랭커 실패는
+        경고만 남기고 계속 진행한다(rerank 시점에 lazy 재시도되므로 안전).
+        """
+        for reranker in self.rerankers:
+            init = getattr(reranker, "initialize", None)
+            if not callable(init):
+                continue
+            try:
+                await init()
+            except Exception as e:
+                logger.warning(f"[{reranker.name}] 리랭커 초기화 실패(워밍업 생략): {e}")
+
+    async def close(self) -> None:
+        """initialize와 대칭으로 close 가능한 리랭커의 자원을 정리한다.
+
+        체인에 close가 없으면 orchestrator 종료 시 내부 리랭커가 보유한 자원
+        (예: httpx 클라이언트, 모델 참조)이 누수된다. 개별 정리 실패는 경고만
+        남기고 계속 진행해 한 리랭커의 실패가 다른 리랭커 정리를 막지 않는다.
+        """
+        for reranker in self.rerankers:
+            close = getattr(reranker, "close", None)
+            if not callable(close):
+                continue
+            try:
+                await close()
+            except Exception as e:
+                logger.warning(f"[{reranker.name}] 리랭커 정리 실패: {e}")
+
     def supports_caching(self) -> bool:
         """
         캐싱 지원 여부 반환

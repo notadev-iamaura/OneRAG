@@ -109,6 +109,8 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         cache_ttl: int = 86400,  # 1일
         llm_factory: Any = None,  # 필수 (None이면 에러)
         provider: str = "google",  # LLM Factory의 선호 제공자 (google = Gemini Flash)
+        model: str | None = None,  # 쿼리 확장 전용 모델 핀 (None이면 provider 기본 모델)
+        reasoning_effort: str | None = None,  # thinking 모델용 추론 강도 (None이면 미전달)
         circuit_breaker_factory: CircuitBreakerFactory | None = None,
         expansion_language: str = "한국어",  # 한국어 프롬프트용 언어 이름
         expansion_language_en: str = "Korean",  # 영어 시스템 메시지용 언어 이름
@@ -124,6 +126,11 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
             cache_ttl: 캐시 유효 시간 (초)
             llm_factory: LLM Factory 인스턴스 (필수)
             provider: LLM Factory의 선호 제공자 (google, openai, anthropic)
+            model: 쿼리 확장 전용 경량 모델명. None이면 provider 기본 모델을
+                사용한다. 선호 provider에만 핀되며 폴백 provider로 전환되면
+                해당 provider 기본 모델이 사용된다(generate_with_fallback 안전 로직).
+            reasoning_effort: thinking 모델용 추론 강도(예: "minimal"). None이면
+                LLM 호출에 전달하지 않는다(기존 동작 유지).
             circuit_breaker_factory: DI Container의 CircuitBreaker 팩토리
             expansion_language: 한국어 프롬프트에 삽입되는 언어 이름
                 (기본값: "한국어"). 비한국어 외주는 이 값만 바꿔 확장 대상
@@ -148,6 +155,9 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         self.temperature = temperature
         self.llm_factory = llm_factory
         self.provider = provider  # 선호 제공자 저장
+        # 쿼리 확장 전용 모델/추론 강도 (config 기반, None=provider 기본 동작)
+        self.model = model
+        self.reasoning_effort = reasoning_effort
         self.circuit_breaker_factory = circuit_breaker_factory
         # 확장 언어 및 질문 마커 (설정 기반, 기본값=기존 한국어 동작)
         self.expansion_language = expansion_language
@@ -362,6 +372,21 @@ User: {self.expansion_prompt.format(query=query)}"""
                 # circuit_breaker_factory가 없으면 breaker 없이 직접 호출
                 breaker = None
 
+            # 쿼리 확장 전용 호출 파라미터 구성.
+            # - model: 선호 provider에만 핀(generate_with_fallback 1041-1053이 폴백 안전 처리)
+            # - reasoning_effort: thinking 모델용(미설정 시 미전달)
+            # - None 값은 제거해 기존 동작(provider 기본 모델/파라미터)을 보존한다.
+            call_kwargs: dict[str, Any] = {
+                "model": self.model,
+                "max_tokens": self.max_tokens,
+                "temperature": self.temperature,
+            }
+            if self.reasoning_effort:
+                call_kwargs["reasoning_effort"] = self.reasoning_effort
+            call_kwargs = {
+                key: value for key, value in call_kwargs.items() if value is not None
+            }
+
             # LLM Factory 사용 (Multi-LLM fallback)
             if breaker:
                 content, provider = await breaker.call(
@@ -369,6 +394,7 @@ User: {self.expansion_prompt.format(query=query)}"""
                     prompt=input_text,
                     system_prompt=None,
                     preferred_provider=self.provider,
+                    **call_kwargs,
                 )
             else:
                 # Circuit Breaker 없이 직접 호출
@@ -376,10 +402,12 @@ User: {self.expansion_prompt.format(query=query)}"""
                     prompt=input_text,
                     system_prompt=None,
                     preferred_provider=self.provider,
+                    **call_kwargs,
                 )
             logger.debug(
                 "쿼리 확장 응답 (LLM Factory)",
                 provider=provider,
+                model=self.model or "provider-default",
                 length=len(content),
             )
 
@@ -739,6 +767,9 @@ User: {self.expansion_prompt.format(query=query)}"""
         # Provider 설정 읽기 (query_expansion.llm.provider 우선, 없으면 기본값: openai)
         # 설정 파일 구조: query_expansion.llm.provider
         provider = llm_config.get("provider", query_expansion_config.get("provider", "openai"))
+        # 쿼리 확장 전용 경량 모델/추론 강도 (config 데드 키 해소: #8)
+        model = llm_config.get("model")
+        reasoning_effort = llm_config.get("reasoning_effort")
 
         # 언어/질문 마커 설정 읽기 (없으면 기존 한국어 동작 유지)
         expansion_language = query_expansion_config.get("expansion_language", "한국어")
@@ -750,14 +781,24 @@ User: {self.expansion_prompt.format(query=query)}"""
         question_markers = tuple(markers_cfg) if markers_cfg else None
 
         # 생성자 호출
+        # max_tokens/temperature는 llm 블록을 우선 참조하고, 없으면 multi_query로 폴백한다.
+        # cache_size/cache_ttl도 설정에서 읽어 하드코딩 데드 키를 제거한다(#8).
         return cls(
-            num_expansions=multi_query_config.get("num_expansions", 5),
-            max_tokens=multi_query_config.get("max_tokens", 500),
-            temperature=multi_query_config.get("temperature", 0.7),
-            cache_size=1000,  # 고정값 (레거시 호환)
-            cache_ttl=86400,  # 1일 (레거시 호환)
+            num_expansions=query_expansion_config.get(
+                "num_expansions", multi_query_config.get("num_expansions", 5)
+            ),
+            max_tokens=llm_config.get(
+                "max_tokens", multi_query_config.get("max_tokens", 500)
+            ),
+            temperature=llm_config.get(
+                "temperature", multi_query_config.get("temperature", 0.7)
+            ),
+            cache_size=query_expansion_config.get("cache_size", 1000),
+            cache_ttl=query_expansion_config.get("cache_ttl", 86400),
             llm_factory=llm_factory,
             provider=provider,  # 설정에서 읽은 provider 전달
+            model=model,
+            reasoning_effort=reasoning_effort,
             circuit_breaker_factory=circuit_breaker_factory,
             expansion_language=expansion_language,
             expansion_language_en=expansion_language_en,
