@@ -1,20 +1,28 @@
 /**
- * ChatEmptyState 설정 관리 컴포넌트
+ * ChatEmptyState 설정 관리 컴포넌트 (서버 기반, 로케일별)
  *
- * 챗봇 Empty State의 메시지와 추천 질문을 관리하는 UI를 제공합니다.
+ * 챗봇 Empty State의 메시지와 추천 질문을 **로케일별(ko/en)**로 서버에 저장/관리합니다.
+ * 상단 언어 탭으로 편집 대상 로케일을 선택하고, 저장 시 서버에 반영되어 모든 사용자에게
+ * 적용됩니다. 관리자 저장에는 관리자 API 키(X-API-Key)가 필요하며, 키가 없으면 인라인
+ * 입력 프롬프트로 운영 설정에 저장한 뒤 작업을 이어갑니다.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Save,
   RotateCcw,
   Plus,
   Trash2,
   Info,
-  AlertCircle
+  AlertCircle,
 } from 'lucide-react';
-import { chatSettingsService } from '../services/chatSettingsService';
+import {
+  chatSettingsService,
+  ChatSettingsValidationError,
+  MissingAdminKeyError,
+} from '../services/chatSettingsService';
 import { ChatEmptyStateSettings } from '../types';
+import { MENU_LOCALES, type MenuLocale } from '../i18n/menuMessages';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,10 +34,18 @@ import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger
+  TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useMenuMessages } from '../i18n/useMenuLocale';
+import { readOperatorSettings, writeOperatorSettings } from '../config/operatorSettings';
+
+// 편집 언어 탭 라벨 (각 로케일의 자국어 표기 — UI 로케일과 무관하게 고정).
+const LOCALE_LABELS: Record<MenuLocale, string> = {
+  ko: '한국어',
+  en: 'English',
+};
 
 interface ChatSettingsManagerProps {
   onSave?: (settings: ChatEmptyStateSettings) => void;
@@ -37,40 +53,79 @@ interface ChatSettingsManagerProps {
 
 export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave }) => {
   const { toast } = useToast();
+  // 현재 UI 로케일을 편집 대상의 기본값으로 사용한다.
+  const { locale } = useMenuMessages();
+
+  // 편집 대상 로케일 (기본: 현재 UI 로케일)
+  const [activeLocale, setActiveLocale] = useState<MenuLocale>(locale);
+  // 서버/캐시에서 로드한 전 로케일 설정 (저장 기준선)
+  const [allSettings, setAllSettings] = useState(() => chatSettingsService.getCachedAll());
+  // 현재 편집 중인 버퍼 (activeLocale 설정의 사본)
   const [settings, setSettings] = useState<ChatEmptyStateSettings>(
-    chatSettingsService.getSettings()
+    () => chatSettingsService.getSettings(locale)
   );
   const [errors, setErrors] = useState<string[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // 관리자 키 입력 프롬프트 상태 (저장/리셋 클릭 시 키가 없으면 표시)
+  const [keyPromptOpen, setKeyPromptOpen] = useState(false);
+  const [keyInput, setKeyInput] = useState('');
+  const [pendingAction, setPendingAction] = useState<'save' | 'reset' | null>(null);
 
-  // 초기 설정 로드
+  // 마운트 시 1회 서버에서 전 로케일 설정 로드 (실패 시 캐시/기본값 유지 — graceful).
   useEffect(() => {
-    const loadedSettings = chatSettingsService.getSettings();
-    setSettings(loadedSettings);
+    let active = true;
+    chatSettingsService
+      .fetchAll()
+      .then((all) => {
+        if (!active) {
+          return;
+        }
+        setAllSettings(all);
+        // 사용자가 아직 편집하지 않았으면 편집 버퍼도 최신값으로 갱신한다.
+        setSettings((prev) => (hasChanges ? prev : { ...all[activeLocale] }));
+      })
+      .catch(() => {
+        /* graceful: 캐시/기본값 유지 */
+      });
+    return () => {
+      active = false;
+    };
+    // 마운트 시 1회만 실행 (activeLocale/hasChanges는 의도적으로 의존성에서 제외)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 변경 사항 감지
+  // 편집 대상 로케일 변경 시: 해당 로케일의 기준선을 편집 버퍼로 로드한다.
+  const handleLocaleTabChange = useCallback(
+    (next: MenuLocale) => {
+      setActiveLocale(next);
+      setSettings({ ...allSettings[next] });
+      setErrors([]);
+      setHasChanges(false);
+    },
+    [allSettings]
+  );
+
+  // 변경 사항 감지 (현재 기준선 대비)
   useEffect(() => {
-    const currentSettings = chatSettingsService.getSettings();
+    const baseline = allSettings[activeLocale];
     const changed =
-      settings.mainMessage !== currentSettings.mainMessage ||
-      settings.subMessage !== currentSettings.subMessage ||
-      JSON.stringify(settings.suggestions) !== JSON.stringify(currentSettings.suggestions);
+      settings.mainMessage !== baseline.mainMessage ||
+      settings.subMessage !== baseline.subMessage ||
+      JSON.stringify(settings.suggestions) !== JSON.stringify(baseline.suggestions);
     setHasChanges(changed);
-  }, [settings]);
+  }, [settings, allSettings, activeLocale]);
 
   // 메인 메시지 변경
   const handleMainMessageChange = (value: string) => {
     setSettings((prev) => ({ ...prev, mainMessage: value }));
     setErrors([]);
-    setSuccessMessage('');
   };
 
   // 서브 메시지 변경
   const handleSubMessageChange = (value: string) => {
     setSettings((prev) => ({ ...prev, subMessage: value }));
     setErrors([]);
-    setSuccessMessage('');
   };
 
   // 추천 질문 변경
@@ -79,7 +134,6 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
     newSuggestions[index] = value;
     setSettings((prev) => ({ ...prev, suggestions: newSuggestions }));
     setErrors([]);
-    setSuccessMessage('');
   };
 
   // 추천 질문 추가
@@ -93,7 +147,6 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       suggestions: [...prev.suggestions, ''],
     }));
     setErrors([]);
-    setSuccessMessage('');
   };
 
   // 추천 질문 삭제
@@ -105,62 +158,134 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
     const newSuggestions = settings.suggestions.filter((_, i) => i !== index);
     setSettings((prev) => ({ ...prev, suggestions: newSuggestions }));
     setErrors([]);
-    setSuccessMessage('');
   };
 
-  // 저장
-  const handleSave = () => {
-    try {
-      const validationErrors = chatSettingsService.validateSettings(settings);
-      if (validationErrors.length > 0) {
-        setErrors(validationErrors);
-        setSuccessMessage('');
-        return;
-      }
+  // 저장/리셋 실패 처리 (공통)
+  const handleActionError = (error: unknown) => {
+    if (error instanceof ChatSettingsValidationError) {
+      setErrors(error.errors);
+      return;
+    }
+    if (error instanceof MissingAdminKeyError) {
+      const message = '관리자 API 키가 필요합니다';
+      setErrors([message]);
+      toast({
+        variant: 'destructive',
+        title: '저장 실패',
+        description: message,
+      });
+      return;
+    }
+    const detail = error instanceof Error ? error.message : '설정 저장 중 오류가 발생했습니다';
+    setErrors([detail]);
+    toast({
+      variant: 'destructive',
+      title: '저장 실패',
+      description: detail,
+    });
+  };
 
-      const savedSettings = chatSettingsService.updateSettings(settings);
-      setSettings(savedSettings);
+  // 실제 저장 (서버 PUT) — 관리자 키가 확보된 뒤 호출한다.
+  const doSave = async () => {
+    setSaving(true);
+    try {
+      const saved = await chatSettingsService.saveSettings(activeLocale, settings);
+      setAllSettings((prev) => ({ ...prev, [activeLocale]: saved }));
+      setSettings({ ...saved });
       setErrors([]);
       setHasChanges(false);
-
       toast({
-        title: "설정 저장 완료",
-        description: "✅ 대화 시작 화면 설정이 저장되었습니다.",
+        title: '설정 저장 완료',
+        description: '대화 시작 화면 설정이 저장되었습니다.',
       });
-
-      // 콜백 호출
       if (onSave) {
-        onSave(savedSettings);
+        onSave(saved);
       }
     } catch (error) {
-      setErrors([error instanceof Error ? error.message : '설정 저장 중 오류가 발생했습니다']);
-
-      toast({
-        variant: "destructive",
-        title: "저장 실패",
-        description: error instanceof Error ? error.message : "설정 저장 중 오류가 발생했습니다.",
-      });
+      handleActionError(error);
+    } finally {
+      setSaving(false);
     }
   };
 
-  // 초기화
-  const handleReset = () => {
-    if (window.confirm('기본 설정으로 초기화하시겠습니까?')) {
-      const defaultSettings = chatSettingsService.resetToDefaults();
-      setSettings(defaultSettings);
+  // 실제 초기화 (서버 DELETE → 기본값) — 관리자 키가 확보된 뒤 호출한다.
+  const doReset = async () => {
+    setSaving(true);
+    try {
+      const def = await chatSettingsService.resetSettings(activeLocale);
+      setAllSettings((prev) => ({ ...prev, [activeLocale]: def }));
+      setSettings({ ...def });
       setErrors([]);
       setHasChanges(false);
-
       toast({
-        title: "설정 초기화",
-        description: "✅ 기본 설정으로 복원되었습니다.",
+        title: '설정 초기화',
+        description: '기본 설정으로 복원되었습니다.',
       });
-
-      // 콜백 호출
       if (onSave) {
-        onSave(defaultSettings);
+        onSave(def);
       }
+    } catch (error) {
+      handleActionError(error);
+    } finally {
+      setSaving(false);
     }
+  };
+
+  // 관리자 키가 있으면 즉시 실행, 없으면 키 입력 프롬프트를 띄운다.
+  const runWithAdminKey = (action: 'save' | 'reset') => {
+    if (chatSettingsService.hasAdminKey()) {
+      if (action === 'save') {
+        void doSave();
+      } else {
+        void doReset();
+      }
+    } else {
+      setPendingAction(action);
+      setKeyPromptOpen(true);
+    }
+  };
+
+  // 저장 클릭 (검증 → 키 확인 → 저장)
+  const handleSave = () => {
+    const validationErrors = chatSettingsService.validateSettings(settings);
+    if (validationErrors.length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
+    runWithAdminKey('save');
+  };
+
+  // 초기화 클릭 (확인 → 키 확인 → 초기화)
+  const handleReset = () => {
+    if (!window.confirm('기본 설정으로 초기화하시겠습니까?')) {
+      return;
+    }
+    runWithAdminKey('reset');
+  };
+
+  // 키 입력 프롬프트 확인: 운영 설정에 키 저장 후 보류 작업 실행
+  const handleKeyConfirm = () => {
+    const key = keyInput.trim();
+    if (!key) {
+      return;
+    }
+    writeOperatorSettings({ ...readOperatorSettings(), adminApiKey: key });
+    setKeyInput('');
+    setKeyPromptOpen(false);
+    const action = pendingAction;
+    setPendingAction(null);
+    if (action === 'save') {
+      void doSave();
+    } else if (action === 'reset') {
+      void doReset();
+    }
+  };
+
+  // 키 입력 프롬프트 취소
+  const handleKeyCancel = () => {
+    setKeyPromptOpen(false);
+    setKeyInput('');
+    setPendingAction(null);
   };
 
   return (
@@ -185,13 +310,75 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
           </Badge>
         </div>
         <CardDescription className="text-sm">
-          사용자가 채팅을 시작할 때 표시되는 환영 메시지와 추천 질문을 관리할 수 있습니다
+          사용자가 채팅을 시작할 때 표시되는 환영 메시지와 추천 질문을 로케일별로 서버에서 관리합니다
         </CardDescription>
       </CardHeader>
 
       <Separator />
 
       <CardContent className="pt-6 space-y-8">
+        {/* 편집 언어 탭 */}
+        <div className="space-y-2">
+          <Label className="text-sm font-bold">편집 언어</Label>
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="편집 언어 선택">
+            {MENU_LOCALES.map((loc) => (
+              <Button
+                key={loc}
+                type="button"
+                role="tab"
+                aria-selected={activeLocale === loc}
+                variant={activeLocale === loc ? 'default' : 'outline'}
+                size="sm"
+                className="rounded-xl font-bold h-9"
+                onClick={() => handleLocaleTabChange(loc)}
+              >
+                {LOCALE_LABELS[loc]}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* 관리자 키 입력 프롬프트 (저장/리셋 클릭 시 키 미설정이면 표시) */}
+        {keyPromptOpen && (
+          <Alert className="bg-amber-500/5 border-amber-500/30">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle className="text-xs font-bold">관리자 API 키가 필요합니다</AlertTitle>
+            <AlertDescription>
+              <div className="flex flex-col sm:flex-row gap-2 mt-2">
+                <Input
+                  type="password"
+                  autoFocus
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleKeyConfirm(); }}
+                  placeholder="X-API-Key (관리자 키)"
+                  className="rounded-xl h-9 text-xs"
+                  autoComplete="off"
+                  data-testid="admin-key-input"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="rounded-xl font-bold h-9"
+                    onClick={handleKeyConfirm}
+                    disabled={!keyInput.trim()}
+                  >
+                    확인
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-xl font-bold h-9"
+                    onClick={handleKeyCancel}
+                  >
+                    취소
+                  </Button>
+                </div>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* 에러 메시지 */}
         {errors.length > 0 && (
           <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 text-destructive animate-in fade-in slide-in-from-top-2">
@@ -273,6 +460,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
                 <div key={index} className="flex gap-2 items-start group animate-in slide-in-from-left-2 duration-300">
                   <div className="flex-1 space-y-1">
                     <Input
+                      data-testid={`suggestion-input-${index}`}
                       value={suggestion}
                       onChange={(e) => handleSuggestionChange(index, e.target.value)}
                       placeholder={`추천 질문 ${index + 1}`}
@@ -314,6 +502,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
           size="sm"
           className="rounded-xl font-bold border-border/60 h-10 w-full sm:w-auto"
           onClick={handleReset}
+          disabled={saving}
         >
           <RotateCcw className="h-4 w-4 mr-2 opacity-60" />
           기본값으로 초기화
@@ -322,7 +511,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
           size="sm"
           className="rounded-xl font-bold bg-primary hover:bg-primary/90 h-10 w-full sm:w-auto shadow-md shadow-primary/20"
           onClick={handleSave}
-          disabled={!hasChanges}
+          disabled={saving}
         >
           <Save className="h-4 w-4 mr-2" />
           설정 저장

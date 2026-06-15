@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { chatSettingsService } from '../services/chatSettingsService';
-import { ChatEmptyStateSettings } from '../types';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Sparkles } from 'lucide-react';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 
 /**
  * 챗봇 빈 상태 컴포넌트
@@ -40,22 +40,33 @@ interface ChatEmptyStateProps {
 }
 
 export const ChatEmptyState: React.FC<ChatEmptyStateProps> = ({ onSuggestionClick }) => {
-  // 설정 상태 관리
-  const [settings, setSettings] = useState<ChatEmptyStateSettings>(
-    chatSettingsService.getSettings()
-  );
+  // 현재 UI 로케일(ko/en). 언어 토글 시 자동으로 해당 로케일 설정을 다시 계산한다.
+  const { locale } = useMenuMessages();
 
-  // 설정 변경 감지 (localStorage 변경 이벤트 리스너)
+  // 설정 상태: 캐시/기본값으로 즉시 렌더한 뒤, 서버 최신값을 fetch 하여 갱신한다.
+  // 서버가 source of truth이며 localStorage는 오프라인/즉시 렌더용 캐시다.
+  const [allSettings, setAllSettings] = useState(() => chatSettingsService.getCachedAll());
+
+  // 마운트 시 1회 서버 조회 (실패 시 캐시/기본값 유지 — graceful).
   useEffect(() => {
-    const handleStorageChange = () => {
-      setSettings(chatSettingsService.getSettings());
-    };
-
-    window.addEventListener('storage', handleStorageChange);
+    let active = true;
+    chatSettingsService
+      .fetchAll()
+      .then((all) => {
+        if (active) {
+          setAllSettings(all);
+        }
+      })
+      .catch(() => {
+        /* graceful: 실패 시 캐시/기본값 유지 */
+      });
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+      active = false;
     };
   }, []);
+
+  // 현재 로케일 설정 (서버/캐시 → 기본값 폴백). 언어 토글 시 자동 재계산.
+  const settings = allSettings[locale] ?? chatSettingsService.getDefaults(locale);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] py-12 px-6 w-full max-w-2xl mx-auto animate-in fade-in zoom-in-95 duration-1000 ease-out">
