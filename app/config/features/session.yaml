@@ -27,3 +27,23 @@ session:
     llm_provider: "google"        # 요약 LLM (google=Gemini)
     llm_model: "gemini-2.0-flash-lite"  # 경량 모델 사용
     cache_ttl: 3600               # 요약 캐시 TTL (초, 기본: 1시간)
+
+  # 채팅 히스토리 PostgreSQL 영속화 설정 (선택적 백엔드)
+  # 0-dependency 기본 보존: 기본 비활성화(인메모리 세션만 사용, 추가 인프라 불필요).
+  # enabled=true + DATABASE_URL 연결 시에만 chat_messages 테이블에 영속/복원합니다.
+  # 활성화하더라도 DB 미연결 시 graceful 하게 영속화를 건너뜁니다(채팅 영향 없음).
+  chat_persistence:
+    enabled: false                # 채팅 영속화 온/오프 (기본 OFF = 인메모리)
+
+# 빈 화면(Empty State) 설정 — 챗봇 시작 화면 문구/추천 질문 (서버 영속화)
+# 관리자가 PUT /api/admin/chat-empty-state/{locale}로 저장하면 전 사용자에게 반영됩니다.
+# supported_locales / defaults 미설정 시 라우터의 도메인 중립 코드 기본값(ko/en)으로 폴백.
+empty_state:
+  supported_locales: ["ko", "en"]  # 지원 로케일 (도메인/언어 하드코딩 회피)
+  # defaults: 로케일별 기본 텍스트를 여기서 외부화할 수 있습니다(생략 시 코드 기본값 사용).
+  # 예시:
+  #   defaults:
+  #     ko:
+  #       mainMessage: "무엇을 도와드릴까요?"
+  #       subMessage: "AI가 참고 문서를 분석하여 정확한 답변을 제공합니다"
+  #       suggestions: ["질문1", "질문2"]

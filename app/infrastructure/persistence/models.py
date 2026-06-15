@@ -235,6 +235,127 @@ class ChatSessionModel(Base):
         return f"<ChatSession(id={self.session_id}, country={self.country}, messages={self.message_count})>"
 
 
+class ChatMessageModel(Base):
+    """채팅 메시지 영속화 모델 (PostgreSQL).
+
+    좌측 대화방 목록에서 기존 세션을 클릭했을 때 과거 질문/답변을 복원하기 위한
+    영구 저장 테이블입니다. 인메모리(`MemoryService.memories`)가 휘발되어도
+    이 테이블에서 대화 내역을 복원할 수 있습니다.
+
+    설계 결정:
+    - 기존 `chat_sessions` 테이블은 절대 변경하지 않고 신규 테이블만 추가합니다.
+    - `session_id`에는 FK 제약을 두지 않습니다. `chat_sessions` row가 항상
+      존재한다고 보장할 수 없기 때문이며(인메모리 세션 등), 인덱스만 둡니다.
+    - `company_id`는 멀티테넌트 확장 대비용 컬럼으로만 유지합니다(nullable). 범용
+      단일테넌트 OSS 기본 동작에서는 항상 None이며 테넌트 필터를 적용하지 않습니다.
+    """
+
+    __tablename__ = "chat_messages"
+
+    # Primary Key (UUID 형식 문자열)
+    id = Column(
+        String,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+        comment="메시지 고유 ID (UUID)",
+    )
+
+    # 세션 식별자 (FK 없음 - 인덱스만)
+    session_id = Column(String, nullable=False, index=True, comment="채팅 세션 ID (FK 없음)")
+
+    # 테넌트 범위(회사) 식별자 — 멀티테넌트 확장 대비 컬럼(단일테넌트는 None).
+    # JSON 메타데이터가 아닌 전용 컬럼으로 분리한 이유: 표준 컬럼 등호 비교가
+    # PostgreSQL/SQLite 모두에서 동일하게 동작하여 이식성/검증성이 높기 때문.
+    company_id = Column(String, nullable=True, index=True, comment="테넌트(회사) 식별자")
+
+    # 역할: 'user' | 'assistant'
+    role = Column(String(16), nullable=False, comment="메시지 역할 (user 또는 assistant)")
+
+    # 메시지 본문
+    content = Column(Text, nullable=False, comment="메시지 내용")
+
+    # 메타데이터 (sources, tokens_used, processing_time 등)
+    extra_metadata = Column(
+        JSON, nullable=True, comment="추가 메타데이터 (sources, tokens_used 등)"
+    )
+
+    # 생성 시간 (정렬 기준)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="메시지 생성 시간",
+    )
+
+    # 복합 인덱스 (세션별 시간순 조회 + 세션·회사 범위 조회 최적화)
+    __table_args__ = (
+        Index("idx_chat_messages_session_created", "session_id", "created_at"),
+        Index("idx_chat_messages_session_company", "session_id", "company_id"),
+    )
+
+    def to_dict(self) -> dict:
+        """모델을 딕셔너리로 변환 (JSON 직렬화 가능)"""
+        return {
+            "id": self.id,
+            "session_id": self.session_id,
+            "company_id": self.company_id,
+            "role": self.role,
+            "content": self.content,
+            "metadata": self.extra_metadata if self.extra_metadata else {},
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<ChatMessage(id={self.id}, session={self.session_id}, role={self.role})>"
+
+
+class ChatEmptyStateSettingsModel(Base):
+    """빈 화면(Empty State) 설정 영속화 모델 (PostgreSQL).
+
+    챗봇 시작 화면의 메인/보조 메시지와 추천 질문을 **로케일별 1행**으로 서버에
+    저장합니다. 기존에는 관리자 브라우저 localStorage에만 저장되어 다른 사용자에게
+    반영되지 않았으나, 이 테이블로 옮겨 관리자가 저장하면 모든 사용자에게 반영되도록
+    합니다. 행이 없는 로케일은 코드 기본값으로 폴백합니다(라우터에서 병합).
+    """
+
+    __tablename__ = "chat_empty_state_settings"
+
+    # Primary Key: 로케일 코드 — 로케일당 1행
+    locale = Column(String(8), primary_key=True, comment="로케일 코드 (예: ko|en)")
+
+    # 메인 환영 메시지
+    main_message = Column(Text, nullable=False, comment="메인 환영 메시지")
+
+    # 보조 메시지
+    sub_message = Column(Text, nullable=False, comment="보조 메시지")
+
+    # 추천 질문 목록 (list[str])
+    suggestions = Column(
+        JSON, nullable=False, default=list, comment="추천 질문 목록(list[str])"
+    )
+
+    # 수정 시간 (생성/갱신 시 자동 갱신)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="수정 시간",
+    )
+
+    def to_dict(self) -> dict:
+        """프론트엔드 ChatEmptyStateSettings 형식(camelCase)으로 변환."""
+        return {
+            "mainMessage": self.main_message,
+            "subMessage": self.sub_message,
+            "suggestions": list(self.suggestions) if self.suggestions else [],
+            "updatedAt": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+    def __repr__(self) -> str:
+        return f"<ChatEmptyStateSettings(locale={self.locale})>"
+
+
 class PromptModel(Base):
     """프롬프트 데이터 모델 (PostgreSQL 마이그레이션)"""
 

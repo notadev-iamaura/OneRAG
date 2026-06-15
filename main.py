@@ -60,6 +60,7 @@ from app.api import (
 )
 from app.api.routers import (
     admin_eval_router,  # 관리자 평가 API 라우터
+    empty_state_router,  # 빈 화면(Empty State) 설정 라우터
     set_admin_config,  # 관리자 라우터 설정 주입
     set_session_module,  # ✅ Task 5: 세션 모듈 주입
     tools_router,  # Tool Use API 라우터
@@ -77,6 +78,9 @@ from app.core.di_container import (
     initialize_async_resources_graceful,  # Graceful Degradation 지원
 )
 from app.infrastructure.persistence.connection import db_manager  # PostgreSQL 연결 관리자
+from app.infrastructure.storage.chat.empty_state_settings_store import (
+    ChatEmptyStateSettingsStore,  # 빈 화면 설정 서버 영속화 스토어
+)
 from app.lib.auth import get_api_key_auth  # API Key 인증
 from app.lib.config_loader import ConfigLoader
 from app.lib.env_validator import EnvValidator, validate_all_env, validate_provider_env
@@ -476,6 +480,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         })
         logger.info("✅ OpenAI 호환 API 모듈 주입 완료")
 
+        # 빈 화면(Empty State) 설정 스토어 주입 (서버 영속화).
+        # DB 미연결 환경에서도 graceful 하게 동작하며(공개 조회는 코드 기본값 폴백),
+        # 기존 공유 DatabaseManager 싱글톤을 재사용한다(추가 연결 없음).
+        empty_state_db_manager = rag_app.container.database_manager()
+        empty_state_router.set_store(
+            ChatEmptyStateSettingsStore(db_manager=empty_state_db_manager)
+        )
+        logger.info("✅ 빈 화면 설정 스토어 주입 완료")
+
         # Rate Limiter cleanup task 시작 (24시간 주기 메모리 정리)
         rate_limiter.start_cleanup_task()
         logger.info("✅ Rate Limiter cleanup task started")
@@ -753,6 +766,7 @@ app.include_router(weaviate_admin_router.router, tags=["Weaviate Admin"])
 app.include_router(admin_eval_router, prefix="/api", tags=["Admin Evaluation"])
 app.include_router(websocket_router.router, tags=["WebSocket"])  # ✅ Task 4: WebSocket 채팅
 app.include_router(openai_compat_router)  # OpenAI 호환 API (prefix="/v1"은 라우터에 포함)
+app.include_router(empty_state_router.router, prefix="/api", tags=["EmptyState"])  # 빈 화면 설정
 
 
 @app.get("/")
