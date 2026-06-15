@@ -5,7 +5,10 @@ Phase 3.3: chat.py에서 추출한 검증된 라우터 모듈
 """
 
 # WebSocket 라우터 (Task 3)
-from . import websocket_router
+from . import (
+    empty_state_router,  # 빈 화면(Empty State) 설정 라우터
+    websocket_router,
+)
 from .admin_router import router as admin_eval_router
 from .admin_router import set_config as set_admin_config
 from .admin_router import set_session_module  # ✅ Task 5: 세션 모듈 주입
@@ -26,4 +29,6 @@ __all__ = [
     "websocket_chat_router",
     "set_ws_chat_service",
     "ws_manager",
+    # 빈 화면(Empty State) 설정
+    "empty_state_router",
 ]

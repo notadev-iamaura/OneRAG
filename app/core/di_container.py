@@ -131,6 +131,32 @@ def _create_memory_service(*args: Any, **kwargs: Any) -> Any:
     return MemoryService(*args, **kwargs)
 
 
+def _create_chat_store(config: dict[str, Any] | None, db_manager: Any) -> Any | None:
+    """채팅 영속화 스토어를 생성합니다(선택적 백엔드).
+
+    0-dependency 기본 보존: `session.chat_persistence.enabled`가 명시적으로 true일
+    때만 PostgresChatStore를 생성하고, 그 외에는 None을 반환하여 MemoryService가
+    인메모리만 사용하도록 합니다(추가 인프라 불필요). 활성화하더라도 DATABASE_URL
+    미연결 시 스토어 내부에서 graceful 하게 영속화를 건너뜁니다.
+
+    Args:
+        config: 전체 설정 딕셔너리(session.chat_persistence.enabled 확인용)
+        db_manager: 공유 DatabaseManager (기존 PostgreSQL 연결 재사용)
+
+    Returns:
+        PostgresChatStore 또는 None(비활성화 시)
+    """
+    session_config = (config or {}).get("session", {})
+    persistence_config = session_config.get("chat_persistence", {})
+    if not persistence_config.get("enabled", False):
+        # 기본 비활성화: 인메모리만 사용 (0-dependency 기본)
+        return None
+
+    from app.infrastructure.storage.chat.postgres_chat_store import PostgresChatStore
+
+    return PostgresChatStore(db_manager=db_manager)
+
+
 def _create_enhanced_session_module(*args: Any, **kwargs: Any) -> Any:
     """Create EnhancedSessionModule lazily so session storage imports stay optional."""
     from app.modules.core.session.facade import EnhancedSessionModule
@@ -1512,11 +1538,24 @@ class AppContainer(containers.DeclarativeContainer):
     #     config=config
     # )
 
+    # PostgreSQL DatabaseManager (기존 연결 재사용) — chat_store/sql_search 공용 싱글톤.
+    # memory_service보다 먼저 정의해야 chat_store가 참조할 수 있다(정의 순서 중요).
+    database_manager = providers.Singleton(_create_database_manager)
+
+    # 채팅 영속화 스토어 (선택적 백엔드). session.chat_persistence.enabled=true 일 때만
+    # PostgresChatStore 생성, 그 외에는 None(인메모리 기본 — 0-dependency 보존).
+    chat_store = providers.Singleton(
+        _create_chat_store,
+        config=config,
+        db_manager=database_manager,
+    )
+
     memory_service = providers.Singleton(
         _create_memory_service,
         max_exchanges=config.session.max_exchanges,
         config=config,
         mongodb_client=None,  # MemoryService는 MongoDB 사용하지 않음 (세션은 PostgreSQL)
+        chat_store=chat_store,  # 선택적 영속화 백엔드 (비활성화 시 None)
     )
 
     session = providers.Singleton(
@@ -1909,8 +1948,9 @@ class AppContainer(containers.DeclarativeContainer):
     # ----------------------------------------
     # Phase 3: SQL Search (메타데이터 검색)
     # ----------------------------------------
-    # PostgreSQL DatabaseManager (기존 연결 재사용)
-    database_manager = providers.Singleton(_create_database_manager)
+    # NOTE: database_manager 싱글톤은 memory_service보다 먼저 정의되도록 위로 이동했습니다
+    # (chat_store가 database_manager를 참조하므로 정의 순서가 중요). 아래 sql_search_service는
+    # 동일한 공유 database_manager 싱글톤을 그대로 재사용합니다.
 
     # SQL Search Service (LLM 기반 SQL 생성 + PostgreSQL 실행)
     sql_search_service = providers.Singleton(

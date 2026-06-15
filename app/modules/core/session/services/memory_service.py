@@ -39,6 +39,7 @@ class MemoryService:
         max_exchanges: int | None = None,
         config: dict[str, Any] | None = None,
         mongodb_client: MongoDBClient | None = None,
+        chat_store: Any | None = None,
     ):
         """
         Args:
@@ -46,10 +47,17 @@ class MemoryService:
                            None일 경우 기본값 10 사용
             config: 전체 설정 딕셔너리 (요약 기능 설정 포함)
             mongodb_client: MongoDB 클라이언트 (DI)
+            chat_store: 채팅 메시지 영속화 스토어 (선택적 백엔드, DI).
+                        `ChatStore` Protocol(save_exchange/get_session_messages)을
+                        만족하는 구현체이며, None이면 기본(인메모리)만 사용합니다.
+                        주입되어도 백엔드 미연결 시 graceful 하게 영속화를 건너뜁니다.
+                        0-dependency 기본 보존을 위해 미설정이 기본입니다.
         """
         self.max_exchanges = max_exchanges if max_exchanges is not None else 10
         self.config = config or {}
         self.mongodb_client = mongodb_client
+        # 채팅 히스토리 영속화 스토어 (선택적 PostgreSQL 백엔드). None이면 인메모리만 사용.
+        self.chat_store = chat_store
 
         # LangChain 메모리 저장소 (enhanced_session.py L35)
         self.memories: dict[str, InMemoryChatMessageHistory] = {}
@@ -211,6 +219,66 @@ class MemoryService:
                     messages_metadata.pop()
                 raise  # 에러를 상위로 전파하여 클라이언트에게 실패 알림
 
+        # 💾 채팅 영속화 스토어(PostgreSQL 등) 저장 (Lock 밖, graceful)
+        # DB 저장/연결 실패는 채팅 응답을 절대 실패시키지 않습니다. 인메모리는 위에서
+        # 이미 보존되었으므로, 여기서는 예외를 흡수(로깅)하여 영속화 실패가 채팅으로
+        # 전파되지 않도록 합니다. user/assistant는 단일 트랜잭션으로 원자 저장됩니다.
+        await self._save_exchange_to_chat_store(
+            session_id=session_id,
+            user_message=user_message,
+            assistant_response=assistant_response,
+            metadata=entry,
+        )
+
+    async def _save_exchange_to_chat_store(
+        self,
+        session_id: str,
+        user_message: str,
+        assistant_response: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """채팅 영속화 스토어(chat_store)에 user/assistant 교환을 저장 (graceful).
+
+        chat_store가 주입되지 않았거나(기본/인메모리) 백엔드 미연결이면 조용히
+        건너뜁니다. 저장 실패는 어떤 경우에도 채팅에 영향을 주지 않습니다(예외 전파 금지).
+
+        Args:
+            session_id: 세션 ID
+            user_message: 사용자 메시지
+            assistant_response: AI 응답
+            metadata: 이번 교환 메타데이터 (sources/tokens_used/company_id 등)
+        """
+        if self.chat_store is None:
+            # chat_store 미주입(0-dependency 기본 경로): 영속화 생략
+            return
+
+        # company_id는 멀티테넌트 확장 대비로 두 메시지 모두에 보존(단일테넌트는 None).
+        company_id = metadata.get("company_id")
+        try:
+            await self.chat_store.save_exchange(
+                session_id=session_id,
+                user_message=user_message,
+                assistant_response=assistant_response,
+                user_metadata={
+                    "message_id": metadata.get("message_id"),
+                    "company_id": company_id,
+                },
+                assistant_metadata={
+                    "message_id": metadata.get("message_id"),
+                    "company_id": company_id,
+                    "tokens_used": metadata.get("tokens_used", 0),
+                    "processing_time": metadata.get("processing_time", 0.0),
+                    "sources": metadata.get("sources", []),
+                    "topic": metadata.get("topic"),
+                    "model_info": metadata.get("model_info"),
+                },
+            )
+        except Exception as e:  # noqa: BLE001 - 채팅을 절대 실패시키지 않음
+            logger.warning(
+                f"채팅 메시지 영속화 실패 (graceful, 인메모리 유지): {e}",
+                exc_info=True,
+            )
+
     async def get_context_string(self, session_id: str, session: dict[str, Any]) -> str:
         """
         세션 컨텍스트 문자열 반환 (요약 기능 포함)
@@ -311,22 +379,45 @@ class MemoryService:
 
         return "\n".join(context_parts)
 
-    async def get_chat_history(self, session_id: str, session: dict[str, Any]) -> dict[str, Any]:
+    async def get_chat_history(
+        self,
+        session_id: str,
+        session: dict[str, Any],
+        company_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         채팅 히스토리 반환 (메타데이터 포함)
         기존 코드: enhanced_session.py의 get_chat_history() (L289-350)
 
+        영속화 스토어(chat_store)가 주입된 경우, PG의 전체 기록을 권위 소스로 사용해
+        세션 소멸(서버 재시작/TTL 만료) 후에도 대화 내역을 복원합니다. PG가 비었거나
+        미연결이면 인메모리 경로로 폴백하여 기존 동작을 그대로 유지합니다.
+
         Args:
             session_id: 세션 ID
             session: 세션 데이터
+            company_id: 회사 범위 필터 (멀티테넌트 확장용, 기본 None = 필터 없음)
 
         Returns:
             {'messages': list, 'message_count': int}
         """
+        # [완전·정합 보장] chat_store(PG)가 있으면 PG의 전체 기록을 우선한다.
+        # 인메모리 버퍼는 LLM 컨텍스트용 window로 trim되므로, 긴 대화방의 "전체 복원"과
+        # 행별 메타데이터 정합은 PG가 더 정확하다. PG 미연결/빈 경우에만 인메모리로 폴백.
+        if self.chat_store is not None:
+            restored = await self._restore_chat_history_from_postgres(
+                session_id, company_id=company_id
+            )
+            if restored.get("messages"):
+                return restored
+
         chat_history = self.memories.get(session_id)
 
+        # 인메모리 미스 + PG 미사용/빈 경우: 세션 소멸 시 PG 복원 시도(없으면 빈 결과)
         if not chat_history:
-            return {"messages": [], "message_count": 0}
+            return await self._restore_chat_history_from_postgres(
+                session_id, company_id=company_id
+            )
 
         messages = []
         chat_messages = chat_history.messages
@@ -390,6 +481,66 @@ class MemoryService:
                     messages.append(msg_data)
                     message_index += 1
 
+        return {"messages": messages, "message_count": len(messages)}
+
+    async def _restore_chat_history_from_postgres(
+        self, session_id: str, company_id: str | None = None
+    ) -> dict[str, Any]:
+        """인메모리 미스 시 영속화 스토어(PostgreSQL)에서 채팅 히스토리를 복원합니다 (graceful).
+
+        chat_store가 없거나 백엔드 미연결/조회 실패면 빈 결과를 반환합니다.
+        반환 스키마는 인메모리 경로(get_chat_history)와 동일하게 맞춥니다.
+        message_count는 user/assistant 각각을 1건으로 세므로 Q/A 1쌍 = 2 입니다.
+
+        Args:
+            session_id: 세션 ID
+            company_id: 회사 범위 필터 (멀티테넌트 확장용, 기본 None = 필터 없음)
+
+        Returns:
+            {'messages': list, 'message_count': int}
+        """
+        if self.chat_store is None:
+            return {"messages": [], "message_count": 0}
+
+        # chat_store는 graceful 하므로 실패 시 빈 리스트를 반환합니다.
+        stored = await self.chat_store.get_session_messages(
+            session_id, company_id=company_id
+        )
+        if not stored:
+            return {"messages": [], "message_count": 0}
+
+        messages: list[dict[str, Any]] = []
+        for record in stored:
+            role = record.get("role")
+            metadata = record.get("metadata") or {}
+            timestamp = record.get("created_at")
+
+            if role == "user":
+                messages.append(
+                    {
+                        "type": "user",
+                        "content": record.get("content", ""),
+                        "timestamp": timestamp,
+                    }
+                )
+            elif role == "assistant":
+                messages.append(
+                    {
+                        "type": "assistant",
+                        "content": record.get("content", ""),
+                        "timestamp": timestamp,
+                        "tokens_used": metadata.get("tokens_used", 0),
+                        "processing_time": metadata.get("processing_time", 0.0),
+                        "model_info": metadata.get("model_info"),
+                        # 복원 시 sources 보존 (인용 근거 유지, 인메모리 경로와 스키마 일치)
+                        "sources": metadata.get("sources", []),
+                    }
+                )
+
+        logger.info(
+            f"영속화 스토어에서 채팅 히스토리 복원: session_id={session_id}, "
+            f"messages={len(messages)}"
+        )
         return {"messages": messages, "message_count": len(messages)}
 
     async def _extract_user_info(self, session: dict[str, Any], message: str):

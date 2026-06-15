@@ -290,10 +290,17 @@ class EnhancedSessionModule:
         return await self.memory_service.get_context_string(session_id, session)
 
     async def get_chat_history(self, session_id: str) -> dict[str, Any]:
-        """채팅 히스토리 반환 (MemoryService로 위임)"""
+        """채팅 히스토리 반환 (MemoryService로 위임).
+
+        세션이 무효(인메모리 미스: 서버 재시작/TTL 만료/소멸)여도, 영속화 스토어
+        (chat_store)가 주입된 경우 MemoryService.get_chat_history가 PostgreSQL에서
+        복원합니다. chat_store가 없으면 기존대로 빈 결과를 반환합니다(0-dependency 기본).
+        """
         session_result = await self.session_service.get_session(session_id)
         if not session_result["is_valid"]:
-            return {"messages": [], "message_count": 0}
+            # 세션 무효여도 PG 복원 경로로 진입(빈 세션 dict 전달). chat_store 미주입 시
+            # MemoryService가 즉시 빈 결과를 반환하므로 기존 동작과 동일하다.
+            return await self.memory_service.get_chat_history(session_id, {})
 
         session = session_result["session"]
         return await self.memory_service.get_chat_history(session_id, session)
