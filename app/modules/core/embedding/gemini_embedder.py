@@ -15,6 +15,7 @@ else:
     from langchain.embeddings.base import Embeddings
 
 from ....lib.logger import get_logger
+from ._retry import resolve_retry_settings, retry_embed
 from .interfaces import BaseEmbedder
 from .vector_ops import l2_norm as _l2_norm
 
@@ -71,6 +72,13 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
         self.batch_size = batch_size
         self.default_task_type = task_type or "RETRIEVAL_DOCUMENT"
 
+        # 임베딩 API 재시도 설정(환경변수 폴백). 429/5xx + Retry-After 지수 backoff.
+        (
+            self._retry_max_retries,
+            self._retry_base_seconds,
+            self._retry_max_seconds,
+        ) = resolve_retry_settings()
+
         logger.info(f"Initialized GeminiEmbedder: model={model_name}, dim={output_dimensionality}")
 
     def _normalize_vector(self, vector: list[float]) -> list[float]:
@@ -123,13 +131,22 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
 
-            try:
-                # Gemini API 호출
-                result = _get_genai().embed_content(
+            # batch를 인자로 받는 지역 함수로 루프 변수 캡처 문제(B023)를 차단한다.
+            def _embed_batch(batch: list[str] = batch) -> Any:
+                return _get_genai().embed_content(
                     model=self.model_name,
                     content=batch,
                     task_type=task_type,
                     output_dimensionality=self.output_dimensionality,
+                )
+
+            try:
+                # Gemini API 호출 (429/5xx 일시적 오류는 지수 backoff로 재시도)
+                result = retry_embed(
+                    _embed_batch,
+                    max_retries=self._retry_max_retries,
+                    base_seconds=self._retry_base_seconds,
+                    max_seconds=self._retry_max_seconds,
                 )
 
                 # 결과가 단일 임베딩인 경우와 리스트인 경우 처리
@@ -197,12 +214,17 @@ class GeminiEmbedder(BaseEmbedder, Embeddings):
         logger.debug("Embedding query with task_type=RETRIEVAL_QUERY")
 
         try:
-            # 단일 쿼리 임베딩
-            result = _get_genai().embed_content(
-                model=self.model_name,
-                content=text,
-                task_type="RETRIEVAL_QUERY",
-                output_dimensionality=self.output_dimensionality,
+            # 단일 쿼리 임베딩 (429/5xx 일시적 오류는 지수 backoff로 재시도)
+            result = retry_embed(
+                lambda: _get_genai().embed_content(
+                    model=self.model_name,
+                    content=text,
+                    task_type="RETRIEVAL_QUERY",
+                    output_dimensionality=self.output_dimensionality,
+                ),
+                max_retries=self._retry_max_retries,
+                base_seconds=self._retry_base_seconds,
+                max_seconds=self._retry_max_seconds,
             )
 
             # L2 정규화 수행

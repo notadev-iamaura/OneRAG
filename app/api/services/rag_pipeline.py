@@ -2682,11 +2682,20 @@ class RAGPipeline:
 
             # ✅ 최적화: verify_existing_answer 메서드 사용 (중복 제거)
             # RAGPipeline이 이미 생성한 답변과 문서를 전달
+            # 재생성 시 사용자 옵션(응답 언어/모델/스타일 등)이 소실되지 않도록
+            # options를 그대로 전달한다. 단, 파이프라인 내부 전용 키
+            # (_debug_trace_data)는 생성 옵션이 아니므로 제외한다.
+            verify_options = {
+                key: value
+                for key, value in options.items()
+                if key != "_debug_trace_data"
+            }
             self_rag_result = await self_rag_module.verify_existing_answer(
                 query=message,
                 existing_answer=generation_result.answer,  # ✅ 기존 답변 전달
                 existing_docs=documents,  # ✅ 기존 문서 전달
                 session_id=session_id,
+                options=verify_options,
             )
 
             # Self-RAG가 적용되었는지 확인
@@ -2878,15 +2887,11 @@ class RAGPipeline:
             raw_score = getattr(doc, "score", 0.0)
             normalized_score = self.score_normalizer.normalize(raw_score)
 
-            if metadata:
-                file_path = metadata.get("file_path")
-                if file_path and self.privacy_masker:
-                    dir_path = os.path.dirname(file_path)
-                    file_name = os.path.basename(file_path)
-                    masked_name = self.privacy_masker.mask_filename(file_name)
-                    file_path = os.path.join(dir_path, masked_name) if dir_path else masked_name
-                if file_path:
-                    source_metadata["file_path"] = file_path
+            # file_path(서버 내부 절대경로)는 출처 응답에 노출하지 않는다.
+            # source_contract.normalize_source_payload가 file_path 키를 metadata와
+            # 최상위 필드 모두에서 제거하므로, 디렉토리 구조가 새어나가지 않도록
+            # 여기서 source_metadata에 file_path를 주입하지 않는다(정보 노출 차단).
+            source_metadata.pop("file_path", None)
 
             return normalize_source_payload(
                 sequence_id=idx,

@@ -14,7 +14,7 @@ OpenRouter 지원 임베딩 모델:
 
 import asyncio
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     class Embeddings:  # pragma: no cover - type-checking shim
@@ -23,6 +23,7 @@ else:
     from langchain.embeddings.base import Embeddings
 
 from ....lib.logger import get_logger
+from ._retry import resolve_retry_settings, retry_embed
 from .interfaces import BaseEmbedder
 from .vector_ops import l2_norm as _l2_norm
 
@@ -94,6 +95,12 @@ class OpenAIEmbedder(BaseEmbedder, Embeddings):
             )
 
         self.batch_size = batch_size
+        # 임베딩 API 재시도 설정(환경변수 폴백). 429/5xx + Retry-After 지수 backoff.
+        (
+            self._retry_max_retries,
+            self._retry_base_seconds,
+            self._retry_max_seconds,
+        ) = resolve_retry_settings()
 
     def _normalize_vector(self, vector: list[float]) -> list[float]:
         """
@@ -135,12 +142,21 @@ class OpenAIEmbedder(BaseEmbedder, Embeddings):
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
 
-            try:
-                # OpenAI API 호출
-                response = self.client.embeddings.create(  # type: ignore[union-attr,arg-type]
+            # batch를 인자로 받는 지역 함수로 루프 변수 캡처 문제(B023)를 차단한다.
+            def _embed_batch(batch: list[str] = batch) -> Any:
+                return self.client.embeddings.create(  # type: ignore[union-attr,arg-type]
                     model=self.model_name,
                     input=batch,
                     dimensions=self.output_dimensionality,
+                )
+
+            try:
+                # OpenAI API 호출 (429/5xx 일시적 오류는 지수 backoff로 재시도)
+                response = retry_embed(
+                    _embed_batch,
+                    max_retries=self._retry_max_retries,
+                    base_seconds=self._retry_base_seconds,
+                    max_seconds=self._retry_max_seconds,
                 )
 
                 # 결과 파싱
@@ -151,10 +167,12 @@ class OpenAIEmbedder(BaseEmbedder, Embeddings):
                     embeddings.append(normalized)
 
             except Exception as e:
+                # ⚠️ zero-vector로 오류를 숨기지 않는다(인덱스 오염 차단, CLAUDE.md 원칙).
+                # 재시도 소진 후에도 실패하면 명시적으로 예외를 전파한다.
                 logger.error(f"Error generating embeddings for batch {i//self.batch_size}: {e}")
-                # 오류 발생 시 빈 벡터 추가
-                for _ in batch:
-                    embeddings.append([0.0] * self.output_dimensionality)
+                raise RuntimeError(
+                    f"OpenAI embedding generation failed for batch {i // self.batch_size}"
+                ) from e
 
         return embeddings
 
@@ -192,11 +210,16 @@ class OpenAIEmbedder(BaseEmbedder, Embeddings):
         logger.debug("Embedding query")
 
         try:
-            # 단일 쿼리 임베딩
-            response = self.client.embeddings.create(  # type: ignore[union-attr]
-                model=self.model_name,
-                input=text,
-                dimensions=self.output_dimensionality,
+            # 단일 쿼리 임베딩 (429/5xx 일시적 오류는 지수 backoff로 재시도)
+            response = retry_embed(
+                lambda: self.client.embeddings.create(  # type: ignore[union-attr]
+                    model=self.model_name,
+                    input=text,
+                    dimensions=self.output_dimensionality,
+                ),
+                max_retries=self._retry_max_retries,
+                base_seconds=self._retry_base_seconds,
+                max_seconds=self._retry_max_seconds,
             )
 
             # 결과 파싱
@@ -212,9 +235,9 @@ class OpenAIEmbedder(BaseEmbedder, Embeddings):
             return normalized
 
         except Exception as e:
+            # ⚠️ zero-vector로 오류를 숨기지 않는다(검색 오염 차단, CLAUDE.md 원칙).
             logger.error(f"Error generating query embedding: {e}")
-            # 오류 발생 시 영벡터 반환
-            return [0.0] * self.output_dimensionality
+            raise RuntimeError("OpenAI query embedding generation failed") from e
 
     async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
         """
@@ -347,6 +370,12 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
             )
 
         self.batch_size = batch_size
+        # 임베딩 API 재시도 설정(환경변수 폴백). 429/5xx + Retry-After 지수 backoff.
+        (
+            self._retry_max_retries,
+            self._retry_base_seconds,
+            self._retry_max_seconds,
+        ) = resolve_retry_settings()
 
     def _normalize_vector(self, vector: list[float]) -> list[float]:
         """
@@ -385,9 +414,9 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
 
-            try:
-                # OpenRouter Embeddings API 호출
-                response = self.client.embeddings.create(  # type: ignore[union-attr,arg-type]
+            # batch를 인자로 받는 지역 함수로 루프 변수 캡처 문제(B023)를 차단한다.
+            def _embed_batch(batch: list[str] = batch) -> Any:
+                return self.client.embeddings.create(  # type: ignore[union-attr,arg-type]
                     model=self.model_name,
                     input=batch,
                     # dimensions 파라미터는 일부 모델만 지원
@@ -399,6 +428,15 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
                     ),
                 )
 
+            try:
+                # OpenRouter Embeddings API 호출 (429/5xx 일시적 오류는 지수 backoff로 재시도)
+                response = retry_embed(
+                    _embed_batch,
+                    max_retries=self._retry_max_retries,
+                    base_seconds=self._retry_base_seconds,
+                    max_seconds=self._retry_max_seconds,
+                )
+
                 # 결과 파싱
                 for item in response.data:
                     embedding = item.embedding
@@ -406,10 +444,11 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
                     embeddings.append(normalized)
 
             except Exception as e:
+                # ⚠️ zero-vector로 오류를 숨기지 않는다(인덱스 오염 차단, CLAUDE.md 원칙).
                 logger.error(f"Error generating embeddings for batch {i//self.batch_size}: {e}")
-                # 오류 발생 시 빈 벡터 추가
-                for _ in batch:
-                    embeddings.append([0.0] * self.output_dimensionality)
+                raise RuntimeError(
+                    f"OpenRouter embedding generation failed for batch {i // self.batch_size}"
+                ) from e
 
         return embeddings
 
@@ -450,15 +489,20 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
         logger.debug("🌐 OpenRouter embedding query")
 
         try:
-            # OpenRouter Embeddings API 호출
-            response = self.client.embeddings.create(  # type: ignore[union-attr,arg-type]
-                model=self.model_name,
-                input=text,
-                **(
-                    {"dimensions": self.output_dimensionality}  # type: ignore[arg-type]
-                    if "openai/" in self.model_name
-                    else {}
+            # OpenRouter Embeddings API 호출 (429/5xx 일시적 오류는 지수 backoff로 재시도)
+            response = retry_embed(
+                lambda: self.client.embeddings.create(  # type: ignore[union-attr,arg-type]
+                    model=self.model_name,
+                    input=text,
+                    **(
+                        {"dimensions": self.output_dimensionality}  # type: ignore[arg-type]
+                        if "openai/" in self.model_name
+                        else {}
+                    ),
                 ),
+                max_retries=self._retry_max_retries,
+                base_seconds=self._retry_base_seconds,
+                max_seconds=self._retry_max_seconds,
             )
 
             embedding = response.data[0].embedding
@@ -473,8 +517,9 @@ class OpenRouterEmbedder(BaseEmbedder, Embeddings):
             return normalized
 
         except Exception as e:
+            # ⚠️ zero-vector로 오류를 숨기지 않는다(검색 오염 차단, CLAUDE.md 원칙).
             logger.error(f"Error generating query embedding via OpenRouter: {e}")
-            return [0.0] * self.output_dimensionality
+            raise RuntimeError("OpenRouter query embedding generation failed") from e
 
     async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
         """

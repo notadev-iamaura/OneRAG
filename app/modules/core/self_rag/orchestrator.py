@@ -93,13 +93,15 @@ class SelfRAGOrchestrator:
 
         logger.info("starting_self_rag_flow", score=complexity.score)
 
-        search_options = kwargs.get("options", {})
-        search_options["limit"] = self.initial_top_k
+        # 호출자 dict를 복사해 부수효과(limit 주입)를 차단하고, 사용자 옵션
+        # (응답 언어/모델/스타일 등)을 검색·생성에 모두 보존한다.
+        base_options = dict(kwargs.get("options") or {})
+        search_options = {**base_options, "limit": self.initial_top_k}
         initial_docs = await self.retrieval_module.search(query, search_options)
 
         # generate_answer 메서드 사용 (generate 아님)
         generation_result = await self.generation_module.generate_answer(
-            query=query, context_documents=initial_docs, options={}
+            query=query, context_documents=initial_docs, options=base_options
         )
         initial_answer = generation_result.answer  # GenerationResult에서 answer 추출
 
@@ -131,13 +133,12 @@ class SelfRAGOrchestrator:
             threshold=self.evaluator.quality_threshold,
         )
 
-        retry_search_options = kwargs.get("options", {})
-        retry_search_options["limit"] = self.retry_top_k
+        retry_search_options = {**base_options, "limit": self.retry_top_k}
         retry_docs = await self.retrieval_module.search(query, retry_search_options)
 
         # generate_answer 메서드 사용 (generate 아님)
         final_generation_result = await self.generation_module.generate_answer(
-            query=query, context_documents=retry_docs, options={}
+            query=query, context_documents=retry_docs, options=base_options
         )
         final_answer = final_generation_result.answer  # GenerationResult에서 answer 추출
         final_tokens = final_generation_result.tokens_used  # 재생성 시 토큰 수 추적
@@ -174,7 +175,12 @@ class SelfRAGOrchestrator:
         )
 
     async def verify_existing_answer(
-        self, query: str, existing_answer: str, existing_docs: list[Any], session_id: str
+        self,
+        query: str,
+        existing_answer: str,
+        existing_docs: list[Any],
+        session_id: str,
+        options: dict[str, Any] | None = None,
     ) -> SelfRAGResult:
         """
         이미 생성된 답변의 품질을 검증하고 필요시 재생성
@@ -187,11 +193,16 @@ class SelfRAGOrchestrator:
             existing_answer: RAGPipeline에서 이미 생성한 답변
             existing_docs: RAGPipeline에서 이미 검색한 문서
             session_id: 세션 ID
+            options: 검색/생성 옵션(응답 언어/모델/스타일 등). 재검색·재생성
+                경로에 그대로 전달되어 사용자 옵션 소실을 방지한다. None이면
+                빈 옵션으로 처리한다.
 
         Returns:
             SelfRAGResult: 검증 결과 (원본 또는 재생성 답변)
         """
         start_time = time.time()
+        # 호출자 dict를 복사해 부수효과를 차단한다(limit 주입 등).
+        base_options = dict(options or {})
 
         # 1. Self-RAG 비활성화 확인
         if not self.enabled:
@@ -289,15 +300,15 @@ class SelfRAGOrchestrator:
         )
 
         try:
-            # 재검색 (더 많은 문서로)
-            retry_search_options = {"limit": self.retry_top_k}
+            # 재검색 (더 많은 문서로) — 사용자 옵션 보존 + retry limit 적용
+            retry_search_options = {**base_options, "limit": self.retry_top_k}
             retry_docs = await self.retrieval_module.search(query, retry_search_options)
 
             logger.info("retry_search_completed", docs_count=len(retry_docs))
 
-            # 재생성
+            # 재생성 — 사용자 옵션(응답 언어/모델 등) 보존
             final_generation_result = await self.generation_module.generate_answer(
-                query=query, context_documents=retry_docs, options={}
+                query=query, context_documents=retry_docs, options=base_options
             )
             final_answer = final_generation_result.answer
             final_tokens = final_generation_result.tokens_used  # 재생성 시 토큰 수 추적
@@ -387,13 +398,14 @@ class SelfRAGOrchestrator:
         **kwargs: Any,
     ) -> SelfRAGResult:
         """일반 RAG 플로우 (Self-RAG 미사용)"""
-        search_options = kwargs.get("options", {})
-        search_options["limit"] = self.initial_top_k
+        # 호출자 dict를 복사해 부수효과(limit 주입)를 차단하고 사용자 옵션을 보존한다.
+        base_options = dict(kwargs.get("options") or {})
+        search_options = {**base_options, "limit": self.initial_top_k}
         docs = await self.retrieval_module.search(query, search_options)
 
         # generate_answer 메서드 사용 (generate 아님)
         generation_result = await self.generation_module.generate_answer(
-            query=query, context_documents=docs, options={}
+            query=query, context_documents=docs, options=base_options
         )
         answer = generation_result.answer  # GenerationResult에서 answer 추출
 

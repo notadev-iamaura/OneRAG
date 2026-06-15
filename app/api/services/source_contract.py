@@ -33,6 +33,12 @@ _METADATA_EXCLUDE_KEYS = {
     "embeddings",
     "vector",
     "vectors",
+    # 서버 내부 경로/스토리지 식별자 차단(정보 노출 방지).
+    # GCS 전용 키 대신 storage_backend 일반 키로 일반화해 모든 스토리지 백엔드에 적용한다.
+    "file_path",
+    "original_file_path",
+    "storage_backend",
+    "original_storage_backend",
 }
 
 
@@ -57,6 +63,88 @@ def _coerce_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _public_source_uri(value: Any) -> str | None:
+    """공개 가능한 URI만 반환한다(사설 참조는 None).
+
+    차단 대상:
+    - file://, gs:// 등 스토리지 스킴 (서버 내부 식별자)
+    - 절대/로컬 경로("/"로 시작)
+    - 스킴 없이 슬래시를 포함한 상대 경로(예: data/x.pdf)
+
+    보존 대상: http(s):// 등 공개 URL.
+    """
+    if value is None or value == "":
+        return None
+    uri = str(value)
+    if uri.startswith(("file://", "gs://", "/")):
+        return None
+    if "://" not in uri and "/" in uri:
+        return None
+    return uri
+
+
+def _is_private_source_reference(value: Any) -> bool:
+    """문자열이 서버 내부 경로/스토리지 식별자(사설 참조)인지 판정한다."""
+    if value is None:
+        return False
+    text = str(value)
+    return ("://" in text or "/" in text) and _public_source_uri(text) is None
+
+
+def _public_text_value(value: Any | None) -> str | None:
+    """텍스트 필드 값이 사설 참조이면 차단하고, 아니면 문자열로 반환한다."""
+    if value is None or value == "" or _is_private_source_reference(value):
+        return None
+    return str(value)
+
+
+def _normalization_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """metadata에서 사설 참조 문자열 값을 사전에 제거한다."""
+    return {
+        key: value
+        for key, value in metadata.items()
+        if not (isinstance(value, str) and _is_private_source_reference(value))
+    }
+
+
+def _compact_additional_metadata(value: Any) -> Any | None:
+    """additional_metadata를 재귀적으로 정제해 사설 참조 노출을 차단한다.
+
+    - 문자열: 경로/URI 형태면 공개 URL만 보존(file://·gs://·로컬경로 → None)
+    - dict/list: 내부 항목을 재귀 정제하고, 비면 None 반환
+    - 그 외 스칼라: 그대로 보존
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        if "://" in value or "/" in value:
+            return _public_source_uri(value)
+        return value
+    if isinstance(value, dict):
+        compacted: dict[str, Any] = {}
+        for key, item in value.items():
+            if key in _METADATA_EXCLUDE_KEYS:
+                continue
+            if (
+                key in _SOURCE_URI_KEYS
+                and isinstance(item, str)
+                and _public_source_uri(item) is None
+            ):
+                continue
+            public_item = _compact_additional_metadata(item)
+            if public_item is not None:
+                compacted[key] = public_item
+        return compacted or None
+    if isinstance(value, list):
+        compacted_list = [
+            public_item
+            for item in value
+            if (public_item := _compact_additional_metadata(item)) is not None
+        ]
+        return compacted_list or None
+    return value
 
 
 def _normalize_page(metadata: dict[str, Any], explicit_page: Any | None) -> int | None:
@@ -85,6 +173,12 @@ def _compact_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     compacted: dict[str, Any] = {}
     for key, value in metadata.items():
         if key in _METADATA_EXCLUDE_KEYS or value is None:
+            continue
+        # 서버 내부 경로/스토리지 식별자(사설 참조)는 키 종류와 무관하게 제외한다.
+        if isinstance(value, str) and _is_private_source_reference(value):
+            continue
+        # source_uri 계열 키는 공개 URL이 아니면(file://·gs://·로컬경로) 제외한다.
+        if key in _SOURCE_URI_KEYS and _public_source_uri(value) is None:
             continue
         compacted[key] = value
     return compacted
@@ -121,14 +215,22 @@ def normalize_source_payload(
 ) -> dict[str, Any]:
     """Build a backward-compatible OneRAG Source payload with normalized fields."""
 
-    source_metadata = dict(metadata or {})
+    # 사설 참조(서버 내부 경로/스토리지 식별자) 문자열을 사전에 정제한다.
+    source_metadata = _normalization_metadata(dict(metadata or {}))
+    # 명시 인자도 사설 참조이면 차단한다.
+    explicit_document_name = _public_text_value(document_name)
+    explicit_document_id = _public_text_value(document_id)
+    explicit_section = _public_text_value(section)
+    public_content_preview = (
+        "" if _is_private_source_reference(content_preview) else content_preview
+    )
     normalized_document_name = str(
-        document_name
+        explicit_document_name
         or _first_present(source_metadata, _DISPLAY_NAME_KEYS)
         or f"Document {sequence_id + 1}"
     )
     normalized_document_id_value = _prefer_explicit(
-        document_id, _first_present(source_metadata, _DOCUMENT_ID_KEYS)
+        explicit_document_id, _first_present(source_metadata, _DOCUMENT_ID_KEYS)
     )
     normalized_document_id = (
         str(normalized_document_id_value)
@@ -138,7 +240,7 @@ def normalize_source_payload(
     normalized_page = _normalize_page(source_metadata, page)
     normalized_chunk = _normalize_chunk(source_metadata, chunk)
     normalized_section_value = _prefer_explicit(
-        section, _first_present(source_metadata, _SECTION_KEYS)
+        explicit_section, _first_present(source_metadata, _SECTION_KEYS)
     )
     normalized_section = (
         str(normalized_section_value)
@@ -148,11 +250,8 @@ def normalize_source_payload(
     normalized_source_uri_value = _prefer_explicit(
         source_uri, _first_present(source_metadata, _SOURCE_URI_KEYS)
     )
-    normalized_source_uri = (
-        str(normalized_source_uri_value)
-        if normalized_source_uri_value is not None
-        else None
-    )
+    # 공개 URL만 보존하고 file://·gs://·로컬경로는 차단한다.
+    normalized_source_uri = _public_source_uri(normalized_source_uri_value)
     source_id_value = _first_present(source_metadata, _SOURCE_ID_KEYS)
     source_id = (
         str(source_id_value)
@@ -178,22 +277,26 @@ def normalize_source_payload(
         "section": normalized_section,
         "relevance": relevance,
         "score": relevance,
-        "content_preview": content_preview,
+        "content_preview": public_content_preview,
         "source_type": source_type,
         "source_uri": normalized_source_uri,
         "metadata": _compact_metadata(source_metadata),
-        "additional_metadata": additional_metadata or {},
-        "file_type": source_metadata.get("file_type"),
-        "file_path": source_metadata.get("file_path"),
+        "additional_metadata": _compact_additional_metadata(additional_metadata) or {},
+        "file_type": _public_text_value(source_metadata.get("file_type")),
+        # file_path는 서버 내부 절대경로이므로 응답에 노출하지 않는다(항상 None).
+        # 프론트엔드 타입(index.ts)에서 file_path는 optional이라 계약 파기 위험 없음.
+        "file_path": None,
         "file_size": source_metadata.get("file_size"),
         "total_chunks": source_metadata.get("total_chunks"),
-        "file_hash": source_metadata.get("file_hash"),
+        "file_hash": _public_text_value(source_metadata.get("file_hash")),
         "load_timestamp": source_metadata.get("load_timestamp"),
-        "sheet_name": source_metadata.get("sheet_name") or source_metadata.get("sheet"),
-        "format": source_metadata.get("format"),
-        "json_type": source_metadata.get("json_type"),
+        "sheet_name": _public_text_value(
+            source_metadata.get("sheet_name") or source_metadata.get("sheet")
+        ),
+        "format": _public_text_value(source_metadata.get("format")),
+        "json_type": _public_text_value(source_metadata.get("json_type")),
         "item_index": source_metadata.get("item_index"),
-        "rerank_method": source_metadata.get("rerank_method"),
+        "rerank_method": _public_text_value(source_metadata.get("rerank_method")),
         "original_score": source_metadata.get("original_score"),
     }
     return payload
@@ -213,26 +316,32 @@ def normalize_citation_source_payload(
             metadata,
             ("quote", "snippet", "text", "content", "url", "source_uri", "file_id"),
         )
+        if _is_private_source_reference(preview_value):
+            preview_value = None
         document_name_value = _first_present(metadata, _DISPLAY_NAME_KEYS + ("file_id",))
+        if _is_private_source_reference(document_name_value):
+            document_name_value = None
         return normalize_source_payload(
             sequence_id=sequence_id,
             source_type=source_type,
             relevance=1.0,
-            content_preview=str(preview_value or citation)[:300],
+            content_preview=str(preview_value)[:300] if preview_value else "",
             metadata=metadata,
             document_name=str(document_name_value) if document_name_value else None,
             additional_metadata={"citation": citation},
         )
 
     citation_text = str(citation)
-    source_uri = citation_text if "://" in citation_text else None
+    # 공개 스킴(http(s)://)만 source_uri로 보존하고 사설 참조는 차단한다.
+    source_uri = _public_source_uri(citation_text) if "://" in citation_text else None
+    private_reference = _is_private_source_reference(citation_text)
     return normalize_source_payload(
         sequence_id=sequence_id,
         source_type=source_type,
         relevance=1.0,
-        content_preview=citation_text[:300],
+        content_preview="" if private_reference else citation_text[:300],
         metadata={"citation": citation_text},
-        document_name=citation_text,
+        document_name=None if private_reference else citation_text,
         source_uri=source_uri,
         additional_metadata={"citation": citation},
     )

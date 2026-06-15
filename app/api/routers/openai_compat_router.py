@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -70,6 +72,123 @@ def _build_rag_prompt(query: str, documents: list[dict[str, Any]]) -> str:
     )
 
 
+def _doc_content(doc: Any) -> str:
+    """파이프라인 Document/검색 결과에서 본문 텍스트를 견고하게 추출한다.
+
+    표준 파이프라인 출력은 content/page_content를 쓰지만, 일부 경로는 text 또는
+    metadata.content/content_preview를 쓰므로 여러 후보를 순서대로 폴백한다.
+    """
+    for attr in ("content", "page_content", "text"):
+        value = getattr(doc, attr, None)
+        if value:
+            return str(value)
+    metadata = getattr(doc, "metadata", None)
+    if isinstance(metadata, dict):
+        value = metadata.get("content") or metadata.get("content_preview")
+        if value:
+            return str(value)
+    return ""
+
+
+async def _pipeline_rag_search(
+    chat_service: Any, user_message: str
+) -> list[dict[str, Any]]:
+    """메인 채팅 경로와 동일한 RAG 검색 체인을 재사용한다.
+
+    /v1 경로가 단순 retriever.search만 호출해 rerank·멀티쿼리가 빠지던 비대칭을
+    해소한다. 재사용 체인:
+    route_query(라우팅/namespace 판단) → prepare_context(standalone rewrite +
+    멀티쿼리 확장) → retrieve_documents(멀티쿼리 RRF) → rerank_documents.
+
+    OneRAG 시그니처에 맞춰 적응한다:
+    - route_query(message, session_id, start_time) / prepare_context(message, session_id)는
+      options·chat_history 인자를 받지 않으므로 전달하지 않는다(멀티턴 맥락은
+      session_module의 server-side 세션 기반이라 stateless /v1에서는 비어 있다).
+    - anchor_sources는 OneRAG에 없으므로 미사용.
+
+    생성 모델은 호출측이 /v1 선택 모델로 유지한다(OpenAI 계약 보존).
+
+    Returns:
+        [{"content": str}, ...] 형태의 문서 리스트. 결과가 없으면 빈 리스트.
+
+    Raises:
+        Exception: prepare_context/retrieve 실패는 호출측이 잡아 단순 검색으로 폴백한다.
+    """
+    pipeline = chat_service.rag_pipeline
+    session_id = f"v1-{uuid.uuid4()}"  # ephemeral 세션(영속하지 않음)
+    start_time = time.time()
+    options: dict[str, Any] = {"limit": _MAX_SEARCH_RESULTS}
+
+    # 라우팅으로 data_source(namespace) 재판단(통짜 경로와 일관화). 실패는 비치명적.
+    try:
+        route_decision = await pipeline.route_query(user_message, session_id, start_time)
+        data_source = route_decision.metadata.get("data_source")
+        if data_source is not None:
+            options["data_source"] = data_source
+    except Exception as e:  # noqa: BLE001 - 라우팅 실패는 비치명적
+        logger.warning(f"/v1 라우팅 실패(무시): {e}")
+
+    # standalone rewrite + 멀티쿼리 확장
+    prepared = await pipeline.prepare_context(user_message, session_id)
+
+    # 멀티쿼리 RRF 검색
+    retrieval_results = await pipeline.retrieve_documents(
+        prepared.expanded_queries or [user_message],
+        prepared.query_weights or [1.0],
+        prepared.session_context,
+        options,
+    )
+    documents = retrieval_results.documents
+
+    # 리랭킹(설정에 따라 no-op일 수 있음). 실패 시 검색 결과 그대로 사용.
+    try:
+        rerank_results = await pipeline.rerank_documents(
+            prepared.expanded_query, documents, options
+        )
+        documents = rerank_results.documents
+    except Exception as e:  # noqa: BLE001 - 리랭킹 실패는 비치명적
+        logger.warning(f"/v1 리랭킹 실패, 검색 결과 사용: {e}")
+
+    return [{"content": _doc_content(d)} for d in documents]
+
+
+async def _rag_search(user_message: str) -> list[dict[str, Any]]:
+    """/v1 경로 공용 검색 진입점.
+
+    chat_service(파이프라인)가 주입돼 있으면 메인 채팅과 동일한 멀티쿼리·rerank
+    체인을 재사용하고(#14 비대칭 해소), 미주입/실패 시 retriever.search 단순 검색으로
+    폴백한다(graceful degradation, 동작 보존).
+    """
+    chat_service = _modules.get("chat_service")
+    if chat_service is not None:
+        try:
+            return await _pipeline_rag_search(chat_service, user_message)
+        except Exception as e:  # noqa: BLE001 - 파이프라인 실패는 단순 검색으로 폴백
+            logger.warning(f"RAG 파이프라인 검색 실패, 단순 검색으로 폴백: {e}")
+
+    # 폴백: retriever.search 단순 검색
+    retriever = _modules.get("retrieval")
+    # 방어선: dependency-injector async Singleton 구성에서 retrieval 모듈이
+    # 코루틴/Future로 지연 제공될 수 있어 사용 직전에 해소한다
+    # ('_asyncio.Future' object has no attribute 'search' 방지,
+    # chat_service의 Future-unwrap 가드와 동일 패턴).
+    if asyncio.iscoroutine(retriever) or isinstance(retriever, asyncio.Future):
+        retriever = await retriever
+        # 코루틴은 1회만 await 가능하므로(재-await 시 'cannot reuse already
+        # awaited coroutine' RuntimeError), 해소된 인스턴스를 _modules에
+        # 되저장해 두 번째 요청부터는 인스턴스를 직접 사용하게 한다.
+        _modules["retrieval"] = retriever
+    if not retriever:
+        return []
+    try:
+        # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict
+        search_results = await retriever.search(user_message, {"limit": _MAX_SEARCH_RESULTS})
+        return [{"content": getattr(r, "content", "")} for r in search_results]
+    except Exception as e:
+        logger.warning(f"검색 실패, LLM 단독 답변으로 전환: {e}")
+        return []
+
+
 @router.post("/chat/completions")
 async def chat_completions(request: Request, req: OpenAICompletionRequest) -> Any:
     """
@@ -111,29 +230,9 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     if req.stream:
         return await _stream_completion(req, user_message, system_prompt, model_config)
 
-    # 4. 문서 검색 (RAG)
-    documents: list[dict[str, Any]] = []
-    retriever = _modules.get("retrieval")
-    # 방어선: dependency-injector async Singleton 구성에서 retrieval 모듈이
-    # 코루틴/Future로 지연 제공될 수 있어 사용 직전에 해소한다
-    # ('_asyncio.Future' object has no attribute 'search' 방지,
-    # chat_service의 Future-unwrap 가드와 동일 패턴).
-    if asyncio.iscoroutine(retriever) or isinstance(retriever, asyncio.Future):
-        retriever = await retriever
-        # 코루틴은 1회만 await 가능하므로(재-await 시 'cannot reuse already
-        # awaited coroutine' RuntimeError), 해소된 인스턴스를 _modules에
-        # 되저장해 두 번째 요청부터는 인스턴스를 직접 사용하게 한다.
-        _modules["retrieval"] = retriever
-    if retriever:
-        try:
-            # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict
-            search_results = await retriever.search(user_message, {"limit": _MAX_SEARCH_RESULTS})
-            documents = [
-                {"content": getattr(r, "content", ""), "score": getattr(r, "score", 0.0)}
-                for r in search_results
-            ]
-        except Exception as e:
-            logger.warning(f"검색 실패, LLM 단독 답변으로 전환: {e}")
+    # 4. 문서 검색 (RAG) — 메인 채팅과 동일한 멀티쿼리·rerank 체인 재사용(#14 비대칭 해소).
+    #    chat_service 미주입/실패 시 retriever.search 단순 검색으로 폴백.
+    documents = await _rag_search(user_message)
 
     # 5. RAG 프롬프트 구성
     rag_prompt = _build_rag_prompt(user_message, documents)
@@ -180,31 +279,8 @@ async def _stream_completion(
     """스트리밍 응답 생성"""
 
     async def event_generator():  # type: ignore[return]
-        # 1. 문서 검색
-        documents: list[dict[str, Any]] = []
-        retriever = _modules.get("retrieval")
-        # 방어선: dependency-injector async Singleton 구성에서 retrieval 모듈이
-        # 코루틴/Future로 지연 제공될 수 있어 사용 직전에 해소한다
-        # ('_asyncio.Future' object has no attribute 'search' 방지,
-        # chat_service의 Future-unwrap 가드와 동일 패턴).
-        if asyncio.iscoroutine(retriever) or isinstance(retriever, asyncio.Future):
-            retriever = await retriever
-            # 코루틴은 1회만 await 가능하므로(재-await 시 'cannot reuse already
-            # awaited coroutine' RuntimeError), 해소된 인스턴스를 _modules에
-            # 되저장해 두 번째 요청부터는 인스턴스를 직접 사용하게 한다.
-            _modules["retrieval"] = retriever
-        if retriever:
-            try:
-                # RetrievalOrchestrator.search(query, options)와 정합: top_k 키워드 대신 options dict
-                search_results = await retriever.search(
-                    user_message, {"limit": _MAX_SEARCH_RESULTS}
-                )
-                documents = [
-                    {"content": getattr(r, "content", "")}
-                    for r in search_results
-                ]
-            except Exception as e:
-                logger.warning(f"검색 실패: {e}")
+        # 1. 문서 검색 — 비스트리밍 경로와 동일한 멀티쿼리·rerank 체인 재사용(#14).
+        documents = await _rag_search(user_message)
 
         # 2. RAG 프롬프트
         rag_prompt = _build_rag_prompt(user_message, documents)
