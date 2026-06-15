@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import json
 import mimetypes
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,113 @@ from ..embedding import EmbedderFactory, GeminiEmbeddings
 from .loaders import LoaderFactory
 
 logger = get_logger(__name__)
+
+# ==========================================================================
+# 검색 기간 변별용 메타 추출 (#27) — 도메인 비종속
+# ==========================================================================
+# 범용 연도 패턴(19xx/20xx). 일본/한국 특화 하드코딩 금지 — 순수 4자리 연도만 매칭.
+_PERIOD_YEAR_PATTERN = re.compile(r"(?:19|20)\d{2}")
+# 범용 분기 패턴: 영어 Q1-4 + 한국어 'N분기'. 추가 패턴은 config로 주입(extra_quarter_patterns).
+_PERIOD_QUARTER_PATTERNS: tuple[str, ...] = (
+    r"[qQ]\s*([1-4])",  # Q1, q2, Q 3 ...
+    r"([1-4])\s*분기",  # 1분기, 2 분기 ...
+)
+
+
+def extract_period_metadata(
+    filename: str,
+    *,
+    extra_quarter_patterns: list[str] | None = None,
+) -> dict[str, Any]:
+    """파일명에서 검색 기간 변별용 메타(doc_years, quarter)를 추출한다(#27).
+
+    유사한 분기/연도 보고서(financial-report_q1~q4 등)를 검색 단계에서 구분하기 위한
+    메타데이터. 추출되지 않은 항목은 결과에 포함하지 않는다(빈 값 미저장 → 기존 색인 무충돌).
+
+    도메인 비종속: 기본 패턴은 범용 연도(19xx/20xx)와 영어 Q1-4/한국어 N분기뿐이며,
+    일본어 第N四半期 등 도메인 특화 패턴은 extra_quarter_patterns(또는 config)로 주입한다.
+    각 추가 패턴은 첫 캡처 그룹에서 1~4 분기 숫자를 추출할 수 있어야 한다.
+
+    Args:
+        filename: 원본 파일명
+        extra_quarter_patterns: config로 주입하는 추가 분기 정규식 목록(선택)
+
+    Returns:
+        {"doc_years": [int, ...], "quarter": "Q2"} 형태(추출된 키만 포함).
+    """
+    meta: dict[str, Any] = {}
+    years = sorted({int(match) for match in _PERIOD_YEAR_PATTERN.findall(filename)})
+    if years:
+        meta["doc_years"] = years
+
+    patterns = list(_PERIOD_QUARTER_PATTERNS) + list(extra_quarter_patterns or [])
+    for pattern in patterns:
+        try:
+            match = re.search(pattern, filename)
+        except re.error:
+            logger.warning("분기 패턴 컴파일 실패(무시): %s", pattern)
+            continue
+        if match and match.group(1):
+            meta["quarter"] = f"Q{match.group(1)}"
+            break
+    return meta
+
+
+# 표(xlsx/csv) 파일 타입. PDF는 table_count 기본값(0) 오분류 위험이 있어 제외한다.
+_TABLE_FILE_TYPES = {"xlsx", "xls", "csv"}
+
+
+def is_table_document(document: Document) -> bool:
+    """xlsx/csv 표 문서인지 판별한다(PDF 제외) (#21).
+
+    file_type은 load_document가 직접 주입하므로 신뢰 가능하다. PDF의
+    table_count(기본 0) 같은 메타에 의존하지 않아 일반 PDF 오분류를 방지한다.
+    """
+    file_type = str(document.metadata.get("file_type", "")).lower()
+    return file_type in _TABLE_FILE_TYPES
+
+
+def chunk_table_rows(
+    document: Document,
+    *,
+    rows_per_chunk: int,
+    row_overlap: int,
+    include_header_each_chunk: bool,
+) -> list[Document]:
+    """표 텍스트를 행(row) 단위로 묶어 청킹한다(헤더 컨텍스트 보존) (#21).
+
+    멀티값 질문에서 행/헤더가 분리되어 누락되는 문제를 줄인다. 본문이 비었거나
+    행이 1줄 이하면 원본 Document를 그대로 반환한다(graceful).
+
+    Args:
+        document: 표 Document
+        rows_per_chunk: 청크당 행 수
+        row_overlap: 청크 간 겹치는 행 수
+        include_header_each_chunk: 각 청크에 헤더(첫 행) 반복 포함 여부
+
+    Returns:
+        행 청킹된 Document 리스트(빈/단일행이면 [원본]).
+    """
+    text = document.page_content or ""
+    if not text.strip():
+        return [document]
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) <= 1:
+        return [document]
+    header = lines[0] if include_header_each_chunk else ""
+    body = lines[1:] if include_header_each_chunk else lines
+    step = max(1, rows_per_chunk - max(0, row_overlap))
+    chunks: list[Document] = []
+    for start in range(0, len(body), step):
+        rows = body[start : start + rows_per_chunk]
+        if not rows:
+            break
+        content = (f"{header}\n" if header else "") + "\n".join(rows)
+        new_meta = dict(document.metadata)
+        new_meta["table_chunked"] = True
+        new_meta["table_row_start"] = start
+        chunks.append(Document(page_content=content, metadata=new_meta))
+    return chunks or [document]
 try:
     from langchain_experimental.text_splitter import SemanticChunker
 
@@ -49,7 +157,8 @@ class DocumentProcessor:
         self.document_config = config.get("document_processing", {})
         self.embeddings_config = config.get("embeddings", {})
         self.supported_types = self.document_config.get(
-            "file_types", ["pdf", "txt", "docx", "pptx", "xlsx", "csv", "html", "md", "json"]
+            "file_types",
+            ["pdf", "txt", "docx", "doc", "pptx", "xlsx", "csv", "html", "md", "json"],
         )
         self.splitter_type = self.document_config.get("splitter_type", "recursive")
         self.chunk_size = self.document_config.get("chunk_size", 1250)
@@ -58,6 +167,18 @@ class DocumentProcessor:
         self.target_chunk_size = self.document_config.get("target_chunk_size", 1250)
         self.min_chunk_size = self.document_config.get("min_chunk_size", 1000)
         self.max_chunk_size = self.document_config.get("max_chunk_size", 1500)
+        # 표(xlsx/csv) 행 단위 청킹 설정(#21, 기본 OFF). enabled=false면 기존 recursive 경로 유지.
+        table_cfg = self.document_config.get("table_chunking", {}) or {}
+        self.table_chunking_enabled: bool = bool(table_cfg.get("enabled", False))
+        self.table_rows_per_chunk: int = int(table_cfg.get("rows_per_chunk", 12))
+        self.table_row_overlap: int = int(table_cfg.get("row_overlap", 2))
+        self.table_include_header: bool = bool(table_cfg.get("include_header_each_chunk", True))
+        # 파일명 연도/분기 메타 추출 설정(#27, 기본 ON). 추가 분기 패턴은 config로 주입(도메인 확장).
+        period_cfg = self.document_config.get("period_extraction", {}) or {}
+        self.period_extraction_enabled: bool = bool(period_cfg.get("enabled", True))
+        self.period_extra_quarter_patterns: list[str] = list(
+            period_cfg.get("extra_quarter_patterns", []) or []
+        )
         if not 100 <= self.chunk_size <= 5000:
             logger.warning(
                 f"Chunk size {self.chunk_size}가 권장 범위(100-5000)를 벗어남, 기본값 1250 사용"
@@ -134,6 +255,17 @@ class DocumentProcessor:
         try:
             documents = await self._load_by_type(file_path, file_type)
             file_size = file_path.stat().st_size
+            # 파일명 연도/분기 메타(#27). 추출 실패 시 빈 dict이므로 기존 동작에 무영향.
+            period_metadata = (
+                extract_period_metadata(
+                    file_path.name,
+                    extra_quarter_patterns=getattr(
+                        self, "period_extra_quarter_patterns", None
+                    ),
+                )
+                if getattr(self, "period_extraction_enabled", True)
+                else {}
+            )
             for i, doc in enumerate(documents):
                 doc.metadata.update(
                     {
@@ -145,6 +277,9 @@ class DocumentProcessor:
                         "total_chunks": len(documents),
                         "file_hash": self._get_file_hash(file_path),
                         "load_timestamp": asyncio.get_event_loop().time(),
+                        # 기간 메타는 표준 필드 다음, 사용자 metadata 이전에 주입해
+                        # 사용자가 명시한 doc_years/quarter가 있으면 우선되도록 한다.
+                        **period_metadata,
                         **(metadata or {}),
                     }
                 )
@@ -171,6 +306,7 @@ class DocumentProcessor:
             "application/pdf": "pdf",
             "text/plain": "txt",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+            "application/msword": "doc",  # #26: 레거시 .doc
             "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
             "text/csv": "csv",
@@ -397,6 +533,48 @@ class DocumentProcessor:
             f"Splitting {len(documents)} documents into chunks (splitter_type={self.splitter_type}, chunk_size={self.chunk_size})"
         )
         try:
+            # 표 인지 청킹(#21, 기본 OFF, early skip): xlsx/csv 표는 행 단위로 묶고,
+            # 비표 문서는 기존 splitter로 분할한다. enabled=false면 이 분기를 완전히 건너뛴다.
+            # getattr 방어: __init__을 우회해 생성된 인스턴스(일부 테스트)에서도
+            # 속성 부재 시 기존 경로를 타도록 한다(기본 OFF와 동일).
+            table_docs = (
+                [d for d in documents if is_table_document(d) and (d.page_content or "").strip()]
+                if getattr(self, "table_chunking_enabled", False)
+                else []
+            )
+            if table_docs:
+                row_chunks: list[Document] = []
+                for table_doc in table_docs:
+                    row_chunks.extend(
+                        chunk_table_rows(
+                            table_doc,
+                            rows_per_chunk=self.table_rows_per_chunk,
+                            row_overlap=self.table_row_overlap,
+                            include_header_each_chunk=self.table_include_header,
+                        )
+                    )
+                table_ids = {id(d) for d in table_docs}
+                non_table_docs = [d for d in documents if id(d) not in table_ids]
+                other_chunks: list[Document] = []
+                if non_table_docs:
+                    if self.splitter_type == "semantic":
+                        other_chunks = await self._split_with_semantic(non_table_docs)
+                    else:
+                        other_chunks = await self._split_with_recursive(non_table_docs)
+                split_docs = [*row_chunks, *other_chunks]
+                for i, doc in enumerate(split_docs):
+                    doc.metadata["chunk_index"] = i
+                    doc.metadata["total_chunks"] = len(split_docs)
+                    doc.metadata.setdefault(
+                        "splitter_type",
+                        "table_row" if doc.metadata.get("table_chunked") else self.splitter_type,
+                    )
+                logger.info(
+                    f"표 인지 청킹 적용: 표 {len(table_docs)}문서→{len(row_chunks)}청크, "
+                    f"비표 {len(non_table_docs)}문서→{len(other_chunks)}청크"
+                )
+                return split_docs
+
             if self.splitter_type == "semantic":
                 split_docs = await self._split_with_semantic(documents)
             elif self.splitter_type == "recursive":
@@ -438,6 +616,18 @@ class DocumentProcessor:
             f"RecursiveCharacterTextSplitter 초기화: chunk_size={self.chunk_size}, overlap={self.chunk_overlap}"
         )
         split_docs = await asyncio.to_thread(splitter.split_documents, documents)
+        # #13: 스캔/빈 페이지(page_content="" + scanned_page=True)는 splitter가 자연 폐기하므로
+        # 진단 메타(metadata_only_page)를 가진 placeholder 청크로 보존해 침묵 손실을 막는다.
+        metadata_only_docs = [
+            Document(
+                page_content="[no_extractable_text]",
+                metadata={**doc.metadata, "metadata_only_page": True},
+            )
+            for doc in documents
+            if not (doc.page_content or "").strip()
+            and doc.metadata.get("scanned_page") is True
+        ]
+        split_docs = [*split_docs, *metadata_only_docs]
         logger.info(
             f"RecursiveCharacterTextSplitter: {len(documents)}개 문서 → {len(split_docs)}개 청크"
         )

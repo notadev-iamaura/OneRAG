@@ -171,6 +171,10 @@ all-vectordb = [
 # BM25 엔진 (Phase 1: Dense 전용 DB의 하이브리드 검색 지원)
 bm25 = ["kiwipiepy>=0.18.0", "rank-bm25>=0.2.2"]
 
+# PDF 추출 품질 게이트(#12) 전용. PyMuPDF(fitz)는 mojibake 재추출 폴백에만 쓰이며
+# 미설치 시 graceful degradation 하므로 코어 의존성에 추가하지 않는다(opt-in).
+extraction-quality = ["pymupdf>=1.24.0,<2"]
+
 [project.scripts]
 rag-chatbot = "main:main"
 

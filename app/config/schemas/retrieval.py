@@ -115,7 +115,7 @@ class DocumentProcessingConfig(BaseConfig):
     )
 
     file_types: list[str] = Field(
-        default=["pdf", "txt", "docx", "pptx", "xlsx", "csv", "html", "md", "json"],
+        default=["pdf", "txt", "docx", "doc", "pptx", "xlsx", "csv", "html", "md", "json"],
         description="지원하는 파일 확장자 목록",
     )
 

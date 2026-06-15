@@ -4,6 +4,7 @@
 - #6: presentation.xml sldIdLst 순서를 따른 슬라이드 정렬(+ rels 부재 시 파일명 폴백)
 - #11: 한 슬라이드가 손상돼도 전체 로드가 중단되지 않고 해당 슬라이드만 건너뜀
 - #33: 한 문단 내 런(run)은 이어붙이고 문단 경계는 줄바꿈으로 분리
+- #1: 발표자 노트(notesSlide) 텍스트 추출 및 슬라이드 매핑(_rels 우선, 파일명 폴백)
 """
 
 import zipfile
@@ -135,3 +136,61 @@ async def test_bad_zip_raises_valueerror(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         await PPTXLoader().load(bad)
+
+
+# ============================================================
+# #1: 발표자 노트(notesSlide) 추출
+# ============================================================
+@pytest.mark.asyncio
+async def test_notes_merged_into_slide_via_rels(tmp_path: Path) -> None:
+    """notesSlide의 _rels가 부모 슬라이드를 가리키면 해당 슬라이드 본문에 노트를 합친다."""
+    entries = {
+        "ppt/slides/slide1.xml": _slide_xml([["본문내용"]]),
+        "ppt/notesSlides/notesSlide1.xml": _slide_xml([["발표자 노트입니다"]]),
+        # notesSlide1 → slide1 매핑(_rels의 Type이 .../slide)
+        "ppt/notesSlides/_rels/notesSlide1.xml.rels": _rels_xml(
+            [
+                (
+                    "rId1",
+                    "../slides/slide1.xml",
+                )
+            ]
+        ),
+    }
+    docs = await PPTXLoader().load(_write_pptx(tmp_path, entries))
+
+    assert len(docs) == 1
+    content = docs[0].page_content
+    assert "본문내용" in content
+    assert "발표자 노트입니다" in content
+    assert docs[0].metadata.get("has_notes") is True
+
+
+@pytest.mark.asyncio
+async def test_notes_fallback_to_filename_index_when_rels_missing(tmp_path: Path) -> None:
+    """_rels가 없으면 파일명 인덱스(notesSlideN ↔ slideN)로 폴백 매핑한다."""
+    entries = {
+        "ppt/slides/slide1.xml": _slide_xml([["첫슬라이드"]]),
+        "ppt/slides/slide2.xml": _slide_xml([["둘째슬라이드"]]),
+        "ppt/notesSlides/notesSlide2.xml": _slide_xml([["둘째 노트"]]),
+    }
+    docs = await PPTXLoader().load(_write_pptx(tmp_path, entries))
+
+    assert len(docs) == 2
+    # slide2에만 노트가 붙어야 한다
+    assert "둘째 노트" not in docs[0].page_content
+    assert "둘째 노트" in docs[1].page_content
+    assert docs[1].metadata.get("has_notes") is True
+
+
+@pytest.mark.asyncio
+async def test_slide_without_notes_keeps_original_output(tmp_path: Path) -> None:
+    """노트 없는 슬라이드는 기존 출력과 메타를 그대로 유지한다(회귀 방지)."""
+    entries = {
+        "ppt/slides/slide1.xml": _slide_xml([["노트없음"]]),
+    }
+    docs = await PPTXLoader().load(_write_pptx(tmp_path, entries))
+
+    assert len(docs) == 1
+    assert docs[0].page_content == "슬라이드 1\n노트없음"
+    assert "has_notes" not in docs[0].metadata or docs[0].metadata["has_notes"] is False
