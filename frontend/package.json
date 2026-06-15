@@ -82,7 +82,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/react-router-dom": "^5.3.3",
     "@types/react-window": "^1.8.8",
-    "@vitejs/plugin-react": "^4.7.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "@vitest/ui": "^3.2.4",
     "autoprefixer": "^10.4.23",
     "axe-core": "^4.11.0",
