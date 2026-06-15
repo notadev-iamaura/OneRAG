@@ -44,7 +44,31 @@ query_routing:
     
     # 기본값 (LLM 응답 없거나 오류 시)
     default_data_source: "general"
-    
+
+    # ========================================
+    # data_source → 검색 메타데이터 필터 매핑 (GAP G)
+    # ========================================
+    # 라우터가 판단한 data_source(structured/general/both)를 실제 검색 단계의
+    # 메타데이터 필터로 변환한다. 같은 대화방에서 질문 주제가 바뀌면 data_source가
+    # 매 요청 재판단되어 검색 대상이 자동 전환된다.
+    #
+    # ⚠️ 기본값은 비어있음({}) — 운영자가 명시 설정하기 전까지는 추가 필터 없이
+    #    기존 검색 동작과 100% 동일하게 동작한다(no-op, 회귀 0). 핵심 안전장치이므로
+    #    비즈니스 규칙이 확정되기 전에는 비워 두어야 한다.
+    #
+    # 설정 방법: 각 data_source 키 아래에 "메타필드: 값" 형태로 작성하면, 검색 시
+    #   해당 필터가 기존 filters에 병합된다(기존 키는 보존). 키는 색인된 문서
+    #   metadata의 필드명과 일치해야 한다(예: doc_category, source_type 등).
+    #
+    # 예시 (운영자가 채울 때):
+    # filter_mappings:
+    #   structured:
+    #     doc_category: "regulation"   # 가격/비용/규정 문서 그룹
+    #   general:
+    #     doc_category: "guide"        # 추천/방법/안내 문서 그룹
+    #   # both는 매핑을 생략하면 추가 필터 없음(전체 검색)
+    filter_mappings: {}
+
     # 디버깅 및 모니터링
     log_score_changes: true  # 스코어 조정 전후 로그 출력
     log_collection_stats: true  # 컬렉션별 통계 로그

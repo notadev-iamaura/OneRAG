@@ -44,6 +44,24 @@ NO_DOCUMENTS_MESSAGE = (
     "관련 문서를 찾지 못했습니다. 질문을 다르게 표현하시거나 잠시 후 다시 시도해주세요."
 )
 
+# ============================================================================
+# 빈 생성응답 시 extractive fallback (GAP D)
+# ============================================================================
+# LLM이 빈 답변을 반환했을 때 무응답 대신 상위 문서 발췌로 최소 답변을 합성한다.
+# JP의 RESPONSE_LANGUAGE_PROFILES(ko/ja/en 전체 i18n)는 차용하지 않고 영어 기본
+# 문자열만 최소 이식한다(번역은 운영자 책임).
+EXTRACTIVE_FALLBACK_MAX_DOCUMENTS = 3  # 발췌 대상 상위 문서 수
+EXTRACTIVE_FALLBACK_MAX_CHARS = 700  # 각 발췌 최대 길이(자)
+EXTRACTIVE_FALLBACK_PREFIX = (
+    "The following evidence was found in the retrieved documents."
+)
+EXTRACTIVE_FALLBACK_BULLET = "Evidence "
+EXTRACTIVE_FALLBACK_NO_CONTENT = (
+    "I could not read the body text of the retrieved documents. "
+    "Please try a different question."
+)
+EXTRACTIVE_FALLBACK_DEFAULT_LABEL = "search result"
+
 # 컨텍스트 문서 한도.
 # 기본값은 OneRAG의 비용 최적화 정책(상위 5개)을 유지한다. 인접 청크 확장이 켜져
 # 문서가 늘어나면 호출부가 max_context_documents를 올려, 실제 검색 히트가 이웃 청크에
@@ -560,6 +578,17 @@ class GenerationModule:
             # 결과 추출
             answer = response.choices[0].message.content or ""
 
+            # 빈 응답 extractive fallback(GAP D): LLM이 빈 답변을 반환하면 무응답 대신
+            # 상위 문서 발췌로 최소 답변을 합성한다(graceful degradation).
+            if not answer.strip():
+                answer = self._build_extractive_answer_from_documents(context_documents)
+                logger.warning(
+                    "LLM 응답이 비어 있어 검색 근거 발췌 답변으로 대체",
+                    model=model,
+                    provider=self.provider,
+                    document_count=len(context_documents),
+                )
+
             # 토큰 사용량
             tokens_used = 0
             if hasattr(response, "usage") and response.usage:
@@ -667,6 +696,75 @@ class GenerationModule:
                 context_parts.append(f"[문서 {i+1}]\n{content}\n")
 
         return "\n".join(context_parts)
+
+    def _build_extractive_answer_from_documents(
+        self, context_documents: list[Any]
+    ) -> str:
+        """LLM이 빈 응답을 반환했을 때 최소한의 검색 근거를 사용자에게 제공한다(GAP D).
+
+        상위 EXTRACTIVE_FALLBACK_MAX_DOCUMENTS개 문서를 각 EXTRACTIVE_FALLBACK_MAX_CHARS
+        자로 잘라 발췌 목록을 만든다. 본문을 가진 문서가 하나도 없으면 안내 메시지를
+        반환한다(무응답 금지). 에러 숨김이 아니라 graceful degradation이며, 호출부는
+        이미 LLM 빈 응답을 별도로 로깅한다.
+
+        Args:
+            context_documents: 검색/리랭킹된 컨텍스트 문서
+
+        Returns:
+            발췌 답변 문자열(사용 가능한 본문이 없으면 안내 메시지).
+        """
+        excerpts: list[str] = []
+        for index, doc in enumerate(
+            context_documents[:EXTRACTIVE_FALLBACK_MAX_DOCUMENTS], start=1
+        ):
+            content = self._extractive_document_content(doc)
+            if not content:
+                continue
+            label = self._extractive_document_label(doc)
+            excerpt = " ".join(content.split())[:EXTRACTIVE_FALLBACK_MAX_CHARS]
+            excerpts.append(
+                f"- {EXTRACTIVE_FALLBACK_BULLET}{index} ({label}): {excerpt}"
+            )
+
+        if not excerpts:
+            return EXTRACTIVE_FALLBACK_NO_CONTENT
+
+        return EXTRACTIVE_FALLBACK_PREFIX + "\n" + "\n".join(excerpts)
+
+    @staticmethod
+    def _extractive_document_content(doc: Any) -> str:
+        """문서에서 본문 텍스트를 추출한다(GAP D). dict/객체 모두 지원."""
+        if isinstance(doc, dict):
+            for key in ("content", "page_content", "text"):
+                value = doc.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return ""
+        for attr in ("content", "page_content", "text"):
+            value = getattr(doc, attr, None)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    @staticmethod
+    def _extractive_document_label(doc: Any) -> str:
+        """문서의 출처 라벨(파일명 basename)을 추출한다(GAP D)."""
+        if isinstance(doc, dict):
+            raw_metadata = doc.get("metadata", {})
+        else:
+            raw_metadata = getattr(doc, "metadata", {})
+        metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+
+        label = (
+            metadata.get("source_file")
+            or metadata.get("document")
+            or metadata.get("filename")
+            or metadata.get("document_name")
+            or metadata.get("document_id")
+        )
+        if isinstance(label, str) and label:
+            return os.path.basename(label)
+        return EXTRACTIVE_FALLBACK_DEFAULT_LABEL
 
     async def _build_prompt(
         self, query: str, context_text: str, options: dict[str, Any]
