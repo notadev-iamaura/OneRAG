@@ -763,3 +763,91 @@ class TestConfigValidation:
         assert config.enabled is True
         assert config.continue_on_error is True
         assert config.log_intermediate_results is False
+
+
+# ========================================
+# initialize/close 위임 테스트 (#5)
+# ========================================
+
+
+class TestLifecycleDelegation:
+    """체인의 initialize/close 위임 동작 검증.
+
+    orchestrator는 reranker에 initialize/close가 있으면 위임 호출하지만,
+    체인이 reranker로 주입될 때 두 메서드가 없으면 내부 리랭커 워밍업/정리가
+    통째로 스킵된다. 체인이 내부 리랭커로 위임하는지 검증한다.
+    """
+
+    @pytest.mark.asyncio
+    async def test_initialize_delegates_to_inner_rerankers(self) -> None:
+        """initialize가 initialize를 가진 내부 리랭커에 위임된다."""
+        with_init = create_mock_reranker("colbert")
+        with_init.initialize = AsyncMock()
+        no_init = create_mock_reranker("rrf")
+        # no_init에는 initialize 속성이 없도록 보장 (위임 스킵 검증)
+        if hasattr(no_init, "initialize"):
+            del no_init.initialize
+
+        chain = RerankerChain(
+            rerankers=[with_init, no_init],
+            config=RerankerChainConfig(),
+        )
+
+        await chain.initialize()
+
+        with_init.initialize.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_initialize_continues_on_individual_failure(self) -> None:
+        """한 리랭커의 initialize 실패가 다른 리랭커 호출을 막지 않는다."""
+        failing = create_mock_reranker("failing")
+        failing.initialize = AsyncMock(side_effect=RuntimeError("warmup boom"))
+        healthy = create_mock_reranker("healthy")
+        healthy.initialize = AsyncMock()
+
+        chain = RerankerChain(
+            rerankers=[failing, healthy],
+            config=RerankerChainConfig(),
+        )
+
+        # 예외가 전파되지 않고 정상 완료되어야 한다
+        await chain.initialize()
+
+        failing.initialize.assert_awaited_once()
+        healthy.initialize.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_delegates_to_inner_rerankers(self) -> None:
+        """close가 close를 가진 내부 리랭커에 위임된다."""
+        with_close = create_mock_reranker("colbert")
+        with_close.close = AsyncMock()
+        no_close = create_mock_reranker("rrf")
+        if hasattr(no_close, "close"):
+            del no_close.close
+
+        chain = RerankerChain(
+            rerankers=[with_close, no_close],
+            config=RerankerChainConfig(),
+        )
+
+        await chain.close()
+
+        with_close.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_continues_on_individual_failure(self) -> None:
+        """한 리랭커의 close 실패가 다른 리랭커 정리를 막지 않는다."""
+        failing = create_mock_reranker("failing")
+        failing.close = AsyncMock(side_effect=RuntimeError("cleanup boom"))
+        healthy = create_mock_reranker("healthy")
+        healthy.close = AsyncMock()
+
+        chain = RerankerChain(
+            rerankers=[failing, healthy],
+            config=RerankerChainConfig(),
+        )
+
+        await chain.close()
+
+        failing.close.assert_awaited_once()
+        healthy.close.assert_awaited_once()

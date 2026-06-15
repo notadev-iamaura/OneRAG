@@ -211,6 +211,64 @@ class TestWeaviateDocumentManagement:
         assert result["total_count"] == 0
         assert result["documents"] == []
 
+    @pytest.mark.asyncio
+    async def test_list_documents_limits_return_properties(self, retriever, mock_collection):
+        """list_documents가 청크 본문(content) 제외 메타데이터 허용목록만 조회한다(#7).
+
+        대형 코퍼스에서 content 전문을 적재하면 gRPC 메시지 한도를 초과해
+        문서 목록 API가 실패한다. return_properties 허용목록으로 페이로드를 제한한다.
+        """
+        mock_response = MagicMock()
+        mock_response.objects = []
+        mock_collection.query.fetch_objects.return_value = mock_response
+
+        await retriever.list_documents()
+
+        # fetch_objects가 return_properties 허용목록과 함께 호출되어야 한다
+        _, kwargs = mock_collection.query.fetch_objects.call_args
+        assert "return_properties" in kwargs
+        props = kwargs["return_properties"]
+        # 본문(content)은 허용목록에 없어야 한다
+        assert "content" not in props
+        # 목록 표시에 필요한 메타데이터는 포함되어야 한다
+        assert "document_id" in props
+        assert "source_file" in props
+        assert "file_type" in props
+
+    @pytest.mark.asyncio
+    async def test_list_documents_single_pass_chunk_count(self, retriever, mock_collection):
+        """동일 document_id 다중 청크가 1개 문서 + 정확한 chunk_count로 집계된다(#7)."""
+        # content 없이 메타데이터만 (return_properties 제한 시뮬레이션)
+        mock_objects = [
+            _make_weaviate_object("uuid-1", {
+                "document_id": "doc-1", "source_file": "a.pdf",
+                "file_type": "PDF", "created_at": "2024-01-01T00:00:00",
+            }),
+            _make_weaviate_object("uuid-2", {
+                "document_id": "doc-1", "source_file": "a.pdf",
+                "file_type": "PDF", "created_at": "2024-01-01T00:00:00",
+            }),
+            _make_weaviate_object("uuid-3", {
+                "document_id": "doc-1", "source_file": "a.pdf",
+                "file_type": "PDF", "created_at": "2024-01-01T00:00:00",
+            }),
+            _make_weaviate_object("uuid-4", {
+                "document_id": "doc-2", "source_file": "b.txt",
+                "file_type": "TXT", "created_at": "2024-06-01T00:00:00",
+            }),
+        ]
+        mock_response = MagicMock()
+        mock_response.objects = mock_objects
+        mock_collection.query.fetch_objects.return_value = mock_response
+
+        result = await retriever.list_documents(page=1, page_size=20)
+
+        assert result["total_count"] == 2
+        doc1 = next(d for d in result["documents"] if d["id"] == "doc-1")
+        assert doc1["chunk_count"] == 3
+        doc2 = next(d for d in result["documents"] if d["id"] == "doc-2")
+        assert doc2["chunk_count"] == 1
+
     # ========== get_document_details ==========
 
     @pytest.mark.asyncio

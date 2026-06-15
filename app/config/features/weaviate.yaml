@@ -34,6 +34,11 @@ weaviate:
     default_alpha: 0.6
     # 기본 검색 결과 수
     default_limit: 10
+    # 하이브리드 점수 융합 방식 (#28)
+    #   ranked         = RRF 스타일 순위 기반 융합 (기본값)
+    #   relative_score = 점수 정규화 융합 (점수 임계값/리랭커 fusion 시나리오)
+    # 미지원 값은 시작 시 ValueError로 즉시 실패한다(데드 키 방지).
+    fusion_type: "ranked"
 
   # Collection Schema 설정 (초기화 시 사용)
   schema:

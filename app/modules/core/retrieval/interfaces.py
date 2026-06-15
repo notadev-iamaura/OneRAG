@@ -39,6 +39,7 @@ class IRetriever(Protocol):
         query: str,
         top_k: int = 10,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,
     ) -> list[SearchResult]:
         """
         쿼리에 대한 벡터 검색 수행
@@ -47,6 +48,9 @@ class IRetriever(Protocol):
             query: 검색 쿼리 문자열
             top_k: 반환할 최대 결과 수
             filters: 메타데이터 필터링 조건
+            alpha: 하이브리드 가중치 동적 오버라이드(선택). None이면 구현체의
+                기본 alpha를 사용한다. dense-only 구현체(pgvector/mongodb 등)는
+                이 파라미터를 받되 무시한다(시그니처 호환성 유지용).
 
         Returns:
             검색 결과 리스트 (SearchResult)
@@ -218,6 +222,7 @@ class BaseRetriever(ABC):
         query: str,
         top_k: int = 10,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,
     ) -> list[SearchResult]:
         pass
 

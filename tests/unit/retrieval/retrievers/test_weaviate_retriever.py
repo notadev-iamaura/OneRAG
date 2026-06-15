@@ -1197,3 +1197,191 @@ class TestWeaviateRetrieverAdditionalCollections:
         # 검증: 메인 컬렉션만 초기화됨
         assert retriever.collection is not None
         assert "FailCollection" not in retriever._additional_collection_objects
+
+
+class TestWeaviateHybridFusionType:
+    """Weaviate hybrid fusion_type 설정화 + fail-fast 리졸버 테스트 (#28)"""
+
+    @pytest.fixture
+    def mock_embedder(self) -> MagicMock:
+        """Mock Embedder"""
+        embedder = MagicMock()
+        embedder.embed_query = MagicMock(return_value=[0.1] * 3072)
+        return embedder
+
+    @pytest.fixture
+    def mock_weaviate_client(self) -> MagicMock:
+        """Mock Weaviate Client"""
+        client = MagicMock()
+        client.is_ready = MagicMock(return_value=True)
+        client.get_collection = MagicMock(return_value=MagicMock())
+        return client
+
+    def test_resolve_fusion_type_none_defaults_to_ranked(
+        self, mock_embedder: MagicMock, mock_weaviate_client: MagicMock
+    ) -> None:
+        """None이면 RANKED(기본)로 리졸브된다."""
+        from weaviate.classes.query import HybridFusion
+
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        assert (
+            WeaviateRetriever._resolve_hybrid_fusion_type(None)
+            == HybridFusion.RANKED
+        )
+
+    def test_resolve_fusion_type_aliases(self) -> None:
+        """문자열 별칭이 올바른 HybridFusion enum으로 매핑된다."""
+        from weaviate.classes.query import HybridFusion
+
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        resolve = WeaviateRetriever._resolve_hybrid_fusion_type
+        assert resolve("ranked") == HybridFusion.RANKED
+        assert resolve("rrf") == HybridFusion.RANKED
+        assert resolve("relative_score") == HybridFusion.RELATIVE_SCORE
+        assert resolve("relative-score") == HybridFusion.RELATIVE_SCORE
+        assert resolve("RELATIVE") == HybridFusion.RELATIVE_SCORE
+
+    def test_resolve_fusion_type_passthrough_enum(self) -> None:
+        """HybridFusion 인스턴스는 그대로 통과된다."""
+        from weaviate.classes.query import HybridFusion
+
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        assert (
+            WeaviateRetriever._resolve_hybrid_fusion_type(HybridFusion.RELATIVE_SCORE)
+            == HybridFusion.RELATIVE_SCORE
+        )
+
+    def test_resolve_fusion_type_invalid_raises(self) -> None:
+        """미지원 값은 fail-fast로 ValueError를 던진다."""
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        with pytest.raises(ValueError, match="fusion_type"):
+            WeaviateRetriever._resolve_hybrid_fusion_type("bogus_fusion")
+
+    def test_constructor_accepts_and_resolves_fusion_type(
+        self, mock_embedder: MagicMock, mock_weaviate_client: MagicMock
+    ) -> None:
+        """생성자가 fusion_type 문자열을 받아 enum으로 저장한다."""
+        from weaviate.classes.query import HybridFusion
+
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        retriever = WeaviateRetriever(
+            embedder=mock_embedder,
+            weaviate_client=mock_weaviate_client,
+            collection_name="Documents",
+            fusion_type="relative_score",
+        )
+        assert retriever.fusion_type == HybridFusion.RELATIVE_SCORE
+
+    @pytest.mark.asyncio
+    async def test_search_passes_fusion_type_to_hybrid(
+        self, mock_embedder: MagicMock, mock_weaviate_client: MagicMock
+    ) -> None:
+        """search가 hybrid 호출에 fusion_type을 전달한다."""
+        from weaviate.classes.query import HybridFusion
+
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        mock_collection = MagicMock()
+        mock_response = MagicMock()
+        mock_response.objects = []
+        mock_collection.query = MagicMock()
+        mock_collection.query.hybrid = MagicMock(return_value=mock_response)
+
+        retriever = WeaviateRetriever(
+            embedder=mock_embedder,
+            weaviate_client=mock_weaviate_client,
+            collection_name="Documents",
+            fusion_type="relative_score",
+        )
+        retriever.collection = mock_collection
+
+        await retriever.search(query="q", top_k=5)
+
+        call_kwargs = mock_collection.query.hybrid.call_args.kwargs
+        assert call_kwargs["fusion_type"] == HybridFusion.RELATIVE_SCORE
+
+
+class TestWeaviateDynamicAlpha:
+    """질의별 동적 하이브리드 alpha 적용 테스트 (#35)"""
+
+    @pytest.fixture
+    def mock_embedder(self) -> MagicMock:
+        """Mock Embedder"""
+        embedder = MagicMock()
+        embedder.embed_query = MagicMock(return_value=[0.1] * 3072)
+        return embedder
+
+    @pytest.fixture
+    def mock_weaviate_client(self) -> MagicMock:
+        """Mock Weaviate Client"""
+        client = MagicMock()
+        client.is_ready = MagicMock(return_value=True)
+        client.get_collection = MagicMock(return_value=MagicMock())
+        return client
+
+    def _retriever_with_collection(
+        self, mock_embedder: MagicMock, mock_weaviate_client: MagicMock
+    ):
+        from app.modules.core.retrieval.retrievers.weaviate_retriever import (
+            WeaviateRetriever,
+        )
+
+        mock_collection = MagicMock()
+        mock_response = MagicMock()
+        mock_response.objects = []
+        mock_collection.query = MagicMock()
+        mock_collection.query.hybrid = MagicMock(return_value=mock_response)
+
+        retriever = WeaviateRetriever(
+            embedder=mock_embedder,
+            weaviate_client=mock_weaviate_client,
+            collection_name="Documents",
+            alpha=0.6,
+        )
+        retriever.collection = mock_collection
+        return retriever, mock_collection
+
+    @pytest.mark.asyncio
+    async def test_search_uses_default_alpha_when_none(
+        self, mock_embedder: MagicMock, mock_weaviate_client: MagicMock
+    ) -> None:
+        """alpha 미지정 시 인스턴스 기본 alpha(0.6)를 사용한다(하위 호환)."""
+        retriever, mock_collection = self._retriever_with_collection(
+            mock_embedder, mock_weaviate_client
+        )
+
+        await retriever.search(query="q", top_k=5)
+
+        call_kwargs = mock_collection.query.hybrid.call_args.kwargs
+        assert call_kwargs["alpha"] == 0.6
+
+    @pytest.mark.asyncio
+    async def test_search_applies_override_alpha(
+        self, mock_embedder: MagicMock, mock_weaviate_client: MagicMock
+    ) -> None:
+        """alpha 오버라이드가 hybrid 호출에 적용된다(BM25 가중 강화)."""
+        retriever, mock_collection = self._retriever_with_collection(
+            mock_embedder, mock_weaviate_client
+        )
+
+        await retriever.search(query="q", top_k=5, alpha=0.2)
+
+        call_kwargs = mock_collection.query.hybrid.call_args.kwargs
+        assert call_kwargs["alpha"] == 0.2

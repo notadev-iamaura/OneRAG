@@ -117,6 +117,7 @@ class GrokRetriever:
         query: str,
         top_k: int = 10,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,  # #35: IRetriever 계약 호환용(Grok 관리형 검색은 미사용)
     ) -> list[SearchResult]:
         """
         Grok Collections API로 검색 수행
@@ -127,6 +128,7 @@ class GrokRetriever:
             query: 검색 쿼리
             top_k: 반환할 최대 결과 수
             filters: 메타데이터 필터 (현재 미지원)
+            alpha: 하이브리드 가중치(#35). Grok 관리형 검색이라 무시한다.
 
         Returns:
             SearchResult 리스트

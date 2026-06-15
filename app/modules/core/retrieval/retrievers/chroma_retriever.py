@@ -124,6 +124,7 @@ class ChromaRetriever:
         query: str,
         top_k: int = 10,
         filters: dict[str, Any] | None = None,
+        alpha: float | None = None,  # #35: IRetriever 계약 호환용(Chroma는 미사용)
     ) -> list[SearchResult]:
         """
         Dense 벡터 검색 수행
@@ -137,6 +138,8 @@ class ChromaRetriever:
             query: 검색 쿼리 문자열
             top_k: 반환할 최대 결과 수
             filters: 메타데이터 필터링 조건 (예: {"file_type": "PDF"})
+            alpha: 하이브리드 가중치(#35). IRetriever 시그니처 호환을 위해 받지만
+                현재 Chroma 검색 경로에서는 사용하지 않는다.
 
         Returns:
             검색 결과 리스트 (SearchResult)

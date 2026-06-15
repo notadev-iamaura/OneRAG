@@ -22,6 +22,22 @@ reranking:
   min_score: 0.0  # 기본값 (환경별 설정: environments/*.yaml에서 오버라이드)
 
   # ========================================
+  # 리랭크 fusion guardrail (#33)
+  # ========================================
+  # 리랭커(특히 semantic)가 BM25/exact-match 등 원본 lexical/hybrid 신호를 덮어
+  # 식별자·모델코드·연도 문서를 하위로 미는 도메인 무관 문제를 막는다.
+  # 리랭커 top1을 보존(recall@1 유지)하면서 original_score 높은 하위 후보를 상위로
+  # 재삽입(recall@5/MRR 개선)한다. provider 무관 opt-in이며 기본 비활성화.
+  fusion:
+    enabled: "${RERANKING_FUSION_ENABLED:-false}"
+    # 전략명: 리랭커 top-k 보존 + 원본 신호 top-k 재삽입
+    strategy: "${RERANKING_FUSION_STRATEGY:-rerank_top1_original_top3}"
+    # 보존할 리랭커 상위 개수(top1 기본)
+    preserve_rerank_top_k: "${RERANKING_FUSION_PRESERVE_RERANK_TOP_K:-1}"
+    # 재삽입할 원본 신호 상위 개수
+    original_top_k: "${RERANKING_FUSION_ORIGINAL_TOP_K:-3}"
+
+  # ========================================
   # 기본 설정
   # ========================================
   # 출하 기본값: GOOGLE_API_KEY만으로 동작하는 조합 (quickstart 호환)

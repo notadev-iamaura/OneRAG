@@ -1295,6 +1295,9 @@ def create_retriever_via_factory(
             "weaviate_client": resolved_weaviate_client,
             "collection_name": weaviate_config.get("collection_name", "Documents"),
             "alpha": weaviate_config.get("hybrid_search", {}).get("default_alpha", 0.6),
+            "fusion_type": weaviate_config.get("hybrid_search", {}).get(
+                "fusion_type", "ranked"
+            ),
             "additional_collections": weaviate_config.get("additional_collections", []),
             "collection_properties": config.get("domain", {}).get("retrieval", {}).get(
                 "collections", {}

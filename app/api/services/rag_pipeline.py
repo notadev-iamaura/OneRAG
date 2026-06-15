@@ -212,6 +212,18 @@ def _coerce_bool(value: Any, *, default: bool = False) -> bool:
     return bool(value)
 
 
+def _coerce_bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    """value를 int로 변환하고 [minimum, maximum] 범위로 clamp한다(#33).
+
+    변환 불가 시 default를 사용한다.
+    """
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
+
+
 def _coerce_optional_int(value: Any) -> int | None:
     if value is None or isinstance(value, bool):
         return None
@@ -1654,6 +1666,21 @@ class RAGPipeline:
         )
         tracker.end_stage("rerank_documents")
 
+        # 리랭크 fusion guardrail(#33): 리랭커가 실제로 수행됐을 때만 적용한다.
+        # 리랭커가 lexical/hybrid 상위 신호를 죽이는 것을 막아 recall@5/MRR을 보존한다.
+        # 기본 비활성화(opt-in)이므로 reranking.fusion.enabled가 꺼져 있으면 no-op이다.
+        if rerank_results.reranked:
+            fused_documents = self._fuse_reranked_results_with_original_signals(
+                rerank_results.documents,
+                self.config.get("reranking", {}),
+                options,
+            )
+            rerank_results = RerankResults(
+                documents=fused_documents,
+                count=len(fused_documents),
+                reranked=True,
+            )
+
         if enable_debug_trace and rerank_results.reranked:
             for i, doc in enumerate(rerank_results.documents):
                 if i < len(debug_trace_data["retrieved_documents"]):
@@ -2115,7 +2142,7 @@ class RAGPipeline:
 
             # Fallback: 단일 쿼리 검색 (기존 방식)
             # orchestrator.search(query, options) 시그니처를 그대로 사용한다.
-            # search_options에 filters가 포함되며, 어댑터가 지원하면 활용한다.
+            # search_options의 filters는 어댑터가 추출해 search_and_rerank에 전달한다(#39).
             return cast(
                 list[SearchResult], await retrieval_module.search(search_queries[0], search_options)
             )
@@ -2148,6 +2175,162 @@ class RAGPipeline:
                 queries=[q[:50] for q in search_queries],
                 error=str(e),
             ) from e
+
+    def _rerank_fusion_enabled(
+        self,
+        reranking_config: dict[str, Any],
+        options: dict[str, Any],
+    ) -> bool:
+        """리랭크 fusion 활성화 여부 판단(#33).
+
+        provider 무관 opt-in(기본 비활성화)으로 일반화한다. JapanRAG의 vertex
+        게이팅(provider=="vertex" or has_vertex_signal)을 제거해 어떤 리랭커
+        provider에서도 config/options로 켤 수 있게 한다.
+
+        Args:
+            reranking_config: reranking 설정 dict
+            options: 요청 옵션(런타임 오버라이드)
+
+        Returns:
+            fusion 적용 여부
+        """
+        fusion_config = reranking_config.get("fusion", {})
+        fusion_config = fusion_config if isinstance(fusion_config, dict) else {}
+        return _coerce_bool(
+            options.get("rerank_fusion_enabled", fusion_config.get("enabled")),
+            default=False,
+        )
+
+    def _original_signal_score(self, document: Any) -> float | None:
+        """문서의 원본 lexical/hybrid 신호 점수를 추출한다(#33).
+
+        original_score → rrf_score → bm25_score → hybrid_score 순으로 탐색한다.
+        모두 OneRAG 메타데이터에 존재하는 범용 신호 키다.
+        """
+        metadata = _document_metadata(document)
+        for key in ("original_score", "rrf_score", "bm25_score", "hybrid_score"):
+            value = metadata.get(key)
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _fuse_reranked_results_with_original_signals(
+        self,
+        ranked_results: list[Any],
+        reranking_config: dict[str, Any],
+        options: dict[str, Any],
+    ) -> list[Any]:
+        """리랭커 top-k를 보존하면서 원본 신호 상위 후보를 재삽입한다(#33).
+
+        리랭커(특히 semantic)가 BM25/exact-match 신호를 덮어 식별자·모델코드·연도
+        문서를 하위로 미는 도메인 무관 문제를 막는다. 리랭커 top1을 그대로 유지해
+        recall@1을 보존하면서, original_score 높은 하위 후보를 상위로 승격해
+        recall@5/MRR을 개선한다. 기본 비활성화(opt-in)이며 도메인/언어 하드코딩이 없다.
+
+        Args:
+            ranked_results: 리랭킹된 문서 리스트
+            reranking_config: reranking 설정 dict
+            options: 요청 옵션(런타임 오버라이드)
+
+        Returns:
+            fusion이 적용된 문서 리스트(미적용 시 원본 그대로)
+        """
+        if len(ranked_results) < 3:
+            return ranked_results
+        if not self._rerank_fusion_enabled(reranking_config, options):
+            return ranked_results
+
+        fusion_config = reranking_config.get("fusion", {})
+        fusion_config = fusion_config if isinstance(fusion_config, dict) else {}
+        strategy = str(
+            options.get(
+                "rerank_fusion_strategy",
+                fusion_config.get("strategy", "rerank_top1_original_top3"),
+            )
+        ).strip()
+        if strategy != "rerank_top1_original_top3":
+            return ranked_results
+
+        preserve_top_k = _coerce_bounded_int(
+            options.get(
+                "rerank_fusion_preserve_rerank_top_k",
+                fusion_config.get("preserve_rerank_top_k", 1),
+            ),
+            1,
+            1,
+            min(5, len(ranked_results)),
+        )
+        original_top_k = _coerce_bounded_int(
+            options.get(
+                "rerank_fusion_original_top_k",
+                fusion_config.get("original_top_k", 3),
+            ),
+            3,
+            1,
+            min(8, len(ranked_results) - preserve_top_k),
+        )
+
+        identities = [_document_identity(document) for document in ranked_results]
+        preserved_ids = set(identities[:preserve_top_k])
+        candidates: list[tuple[float, int, Any]] = []
+        for index, document in enumerate(ranked_results[preserve_top_k:], preserve_top_k):
+            signal_score = self._original_signal_score(document)
+            if signal_score is None:
+                continue
+            candidates.append((signal_score, index, document))
+
+        if not candidates:
+            return ranked_results
+
+        # 원본 신호 점수 내림차순, 동점 시 기존 순위 유지
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        promoted: list[Any] = []
+        promoted_ids: set[Any] = set()
+        for _, _, document in candidates:
+            identity = _document_identity(document)
+            if identity in preserved_ids or identity in promoted_ids:
+                continue
+            promoted.append(document)
+            promoted_ids.add(identity)
+            if len(promoted) >= original_top_k:
+                break
+
+        if not promoted:
+            return ranked_results
+
+        # 보존(top-k) → 승격(original 상위) → 나머지 순으로 재배치, identity 중복 제거
+        fused: list[Any] = []
+        seen: set[Any] = set()
+        for document in [
+            *ranked_results[:preserve_top_k],
+            *promoted,
+            *ranked_results[preserve_top_k:],
+        ]:
+            identity = _document_identity(document)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            fused.append(document)
+
+        # 순서 변화가 없으면 원본을 그대로 반환(불필요 로그/객체 생성 방지)
+        if [_document_identity(document) for document in fused] == identities:
+            return ranked_results
+
+        logger.info(
+            "리랭크 fusion 적용",
+            extra={
+                "strategy": strategy,
+                "preserve_rerank_top_k": preserve_top_k,
+                "original_top_k": original_top_k,
+                "before_count": len(ranked_results),
+                "after_count": len(fused),
+            },
+        )
+        return fused
 
     async def rerank_documents(
         self, search_query: str, search_results: list[Any], options: dict[str, Any]
