@@ -117,6 +117,28 @@ export interface SourceAdditionalMetadata {
   };
 }
 
+/**
+ * PDF 인용 하이라이트용 좌표 영역(#55).
+ *
+ * bbox는 페이지 좌표계(픽셀 또는 포인트)의 [x0, y0, x1, y1]이며,
+ * page_dimensions(페이지 폭/높이)와 함께 사용해 %/px로 변환한다.
+ * 백엔드가 bbox를 제공하지 않으면 이 필드는 비어 있고, 뷰어는 graceful하게 하이라이트를 생략한다.
+ */
+export interface CitationRegion {
+  bbox: [number, number, number, number];
+  page?: number | null;
+  region_id?: string | null;
+  region_type?: string | null;
+  table_index?: number | null;
+  confidence?: number | null;
+}
+
+/** PDF 페이지의 원본 크기(좌표 변환 기준). */
+export interface PageDimensions {
+  width: number;
+  height: number;
+}
+
 export interface Source {
   id: number;
   source_id?: string | null;
@@ -144,6 +166,10 @@ export interface Source {
   original_score?: number | null;
   metadata?: Record<string, unknown> | null;
   additional_metadata?: SourceAdditionalMetadata | null;
+  // PDF 인용 하이라이트(#55) 선택 필드.
+  // 백엔드가 bbox citation 데이터를 제공할 때만 채워지며, 없으면 뷰어가 graceful하게 하이라이트를 생략한다.
+  citation_regions?: CitationRegion[] | null;
+  page_dimensions?: PageDimensions | null;
 }
 
 /**
@@ -151,7 +177,8 @@ export interface Source {
  *
  * Source.content_preview는 백엔드에서 [:300]으로 절단되므로,
  * 청크 클릭 시 lazy 조회로 전체 원문(full_content/content)을 받아오기 위한 타입.
- * PDF citation_regions/page_dimensions는 후속 작업(#66)에서 확장 예정이라 여기서는 제외한다.
+ * PDF citation_regions/page_dimensions는 Source(#55)에 선택 필드로 추가되어 있으며,
+ * 백엔드가 bbox를 제공하지 않으면 비어 있어 뷰어가 graceful하게 하이라이트를 생략한다.
  */
 export interface SourceDetail {
   source_id?: string | null;

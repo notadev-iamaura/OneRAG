@@ -9,6 +9,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 interface ChatInputProps {
     input: string;
@@ -29,20 +30,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     handleKeyPress,
     isOnline = true,
 }) => {
+    // i18n: 입력창 관련 메시지
+    const { messages } = useMenuMessages();
+
     return (
         <div className="px-4 py-4 bg-background/50 backdrop-blur-md border-t border-border/50 relative">
             {!isOnline && (
                 <div className="absolute -top-10 left-0 right-0 flex justify-center mt-2 pointer-events-none z-10">
                     <div className="bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-2 shadow-sm backdrop-blur-md">
                         <WifiOff className="w-3.5 h-3.5" />
-                        백엔드 서버와 연결이 끊어졌습니다. 채팅이 불가능합니다.
+                        {messages.chat.input.offlineNotice}
                     </div>
                 </div>
             )}
             <div className={cn("flex gap-2 items-end max-w-4xl mx-auto transition-opacity", !isOnline && "opacity-50 pointer-events-none")}>
                 <div className="relative flex-1 group">
                     <Textarea
-                        placeholder={isOnline ? "메시지를 입력하세요..." : "서버 연결 대기 중..."}
+                        placeholder={isOnline ? messages.chat.input.placeholder : messages.chat.input.offlinePlaceholder}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyPress}
@@ -61,7 +65,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                             <Button
                                 onClick={loading ? handleStop : handleSend}
                                 disabled={(!loading && !input.trim()) || !isOnline}
-                                aria-label={loading ? "응답 중단하기" : "메시지 보내기"}
+                                aria-label={loading ? messages.chat.input.stopResponse : messages.chat.input.sendMessage}
                                 size="icon"
                                 className={cn(
                                     "h-[48px] w-[48px] rounded-full transition-all duration-300 shadow-md",
@@ -79,7 +83,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                            {!isOnline ? "연결 끊김" : loading ? "중단하기" : "보내기"}
+                            {!isOnline ? messages.chat.input.disconnected : loading ? messages.chat.input.stop : messages.chat.input.send}
                         </TooltipContent>
                     </Tooltip>
                 </TooltipProvider>

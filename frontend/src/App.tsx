@@ -14,6 +14,7 @@ import { createChatAPIService } from './services/chatAPIService';
 import { defaultChatAPIConfig } from './types/chatAPI';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Toaster } from '@/components/ui/toaster';
 
 // Code Splitting: 라우트별 지연 로딩
 const ChatPage = lazy(() => import('./pages/ChatPage'));
@@ -174,20 +175,44 @@ function AppRoutes() {
 
       {/* 챗봇 라우트 (조건부) */}
       {isChatbotEnabled && (
-        <Route
-          path="/bot"
-          element={
-            <AppLayout>
-              <ErrorBoundary key={location.pathname}>
-                <ProtectedRoute module="chatbot">
-                  <Suspense fallback={<LoadingFallback />}>
-                    <ChatPage />
-                  </Suspense>
-                </ProtectedRoute>
-              </ErrorBoundary>
-            </AppLayout>
-          }
-        />
+        <>
+          {/*
+            임베드(embed) 전용 라우트.
+            외부 사이트의 sandbox iframe(onerag-embed.js)이 로드하는 경로로,
+            AppLayout(사이드바/헤더)을 벗기고 임베드 브리지를 활성화한다.
+            토스트가 동작하도록 Toaster를 직접 포함한다.
+          */}
+          <Route
+            path="/embed/chat"
+            element={
+              <div className="min-h-screen bg-background text-foreground">
+                <ErrorBoundary key={`${location.pathname}-embed`}>
+                  <ProtectedRoute module="chatbot">
+                    <Suspense fallback={<LoadingFallback />}>
+                      <ChatPage embedMode />
+                    </Suspense>
+                  </ProtectedRoute>
+                </ErrorBoundary>
+                <Toaster />
+              </div>
+            }
+          />
+
+          <Route
+            path="/bot"
+            element={
+              <AppLayout>
+                <ErrorBoundary key={location.pathname}>
+                  <ProtectedRoute module="chatbot">
+                    <Suspense fallback={<LoadingFallback />}>
+                      <ChatPage />
+                    </Suspense>
+                  </ProtectedRoute>
+                </ErrorBoundary>
+              </AppLayout>
+            }
+          />
+        </>
       )}
 
       {/* 문서 관리 라우트 (조건부) */}

@@ -3,7 +3,12 @@ import { ChatTab } from '../components/ChatTab';
 import { useToast } from '@/hooks/use-toast';
 import { ToastMessage } from '../types';
 
-export default function ChatPage() {
+interface ChatPageProps {
+  /** 임베드(embed) 모드 여부. /embed/chat 라우트에서 true로 전달된다. */
+  embedMode?: boolean;
+}
+
+export default function ChatPage({ embedMode = false }: ChatPageProps) {
   const { toast } = useToast();
 
   // 토스트 메시지 표시 (ChatTab에서 prop으로 전달받음)
@@ -17,7 +22,7 @@ export default function ChatPage() {
 
   return (
     <div className="h-full flex flex-col bg-background">
-      <ChatTab showToast={showToast} />
+      <ChatTab showToast={showToast} embedMode={embedMode} />
     </div>
   );
 }

@@ -3,6 +3,8 @@ import {
     Source as BaseSource,
     SessionInfo as BaseSessionInfo,
     ToastMessage,
+    CitationRegion as BaseCitationRegion,
+    PageDimensions as BasePageDimensions,
 } from './index';
 
 export interface DocumentInfoItem {
@@ -27,3 +29,5 @@ export interface ChatTabProps {
 
 // Re-export or extend base types if needed for chat-specific context
 export type { BaseChatMessage as ChatMessage, BaseSource as Source, BaseSessionInfo as SessionInfo };
+// PDF 인용 하이라이트(#55)용 타입 re-export (PdfCitationPreview/pdfCitationGeometry에서 사용)
+export type { BaseCitationRegion as CitationRegion, BasePageDimensions as PageDimensions };

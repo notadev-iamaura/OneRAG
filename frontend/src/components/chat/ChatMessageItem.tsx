@@ -26,6 +26,7 @@ import {
     formatSourcePreview,
     formatTimestamp,
 } from '../../utils/chat/formatters';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 interface ChatMessageItemProps {
     message: ChatMessage;
@@ -40,6 +41,8 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
     copyToClipboard,
     onChunkClick,
 }) => {
+    // i18n: 복사 버튼 등 메시지 액션 라벨
+    const { messages } = useMenuMessages();
     const isUser = message.role === 'user';
 
     return (
@@ -84,13 +87,13 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                                             variant="ghost"
                                             size="icon"
                                             className="h-7 w-7 rounded-md hover:bg-muted"
-                                            aria-label="답변 복사"
-                                            onClick={() => copyToClipboard(message.content, '답변이 복사되었습니다')}
+                                            aria-label={messages.chat.message.copyAnswer}
+                                            onClick={() => copyToClipboard(message.content, messages.chat.message.copiedNotice)}
                                         >
                                             <Copy className="h-3.5 w-3.5" />
                                         </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent>복사하기</TooltipContent>
+                                    <TooltipContent>{messages.chat.message.copyAnswer}</TooltipContent>
                                 </Tooltip>
                             </TooltipProvider>
                         </div>
