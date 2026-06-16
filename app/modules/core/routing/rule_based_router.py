@@ -64,17 +64,30 @@ class RuleBasedRouter:
             return result.direct_answer
     """
 
-    def __init__(self, enabled: bool = True, config: dict | None = None):
+    def __init__(
+        self,
+        enabled: bool = True,
+        config: dict | None = None,
+        language: str | None = None,
+    ):
         """
         RuleBasedRouter 초기화 (DynamicRuleManager 통합)
 
         Args:
             enabled: 라우터 활성화 여부 (기본값: True)
             config: 설정 딕셔너리 (선택적, None이면 config.yaml 로드)
+            language: 규칙 매칭 언어(선택적). None이면 routing.yaml의
+                routing.language → 기본 "ko" 순으로 해석한다(회귀 0).
         """
         self.enabled = enabled
         self.config = config or self._load_config()
         self.rules = self._load_rules()
+
+        # 규칙 매칭 언어 결정 (명시 인자 > routing.yaml > 기본 "ko")
+        # routing_rules_v2.yaml의 keywords[language]/response[language] 세트를 고른다.
+        # 기본값 "ko"로 기존 동작과 완전히 동치(회귀 0). 운영자는 routing.yaml의
+        # routing.language를 바꿔 영어 등 다른 언어 키워드 세트를 활성화할 수 있다.
+        self._rule_language = language or self._resolve_rule_language()
 
         # DynamicRuleManager 초기화 (배포 없이 규칙 수정 가능)
         # 경로: app/modules/core/routing/rule_based_router.py → app/config/
@@ -129,6 +142,31 @@ class RuleBasedRouter:
                     "simple_qa_threshold": 0.7,
                 },
             }
+
+    def _resolve_rule_language(self) -> str:
+        """
+        규칙 매칭 언어 해석 (routing.yaml의 routing.language)
+
+        병합된 앱 설정(load_config)에서 routing.language를 읽는다.
+        값이 없거나 로드에 실패하면 "ko"를 반환해 기존 동작을 보존한다(회귀 0).
+
+        Returns:
+            언어 코드 문자열 (예: "ko", "en"). 기본값 "ko".
+        """
+        try:
+            # 순환 임포트 방지를 위해 지연 임포트한다.
+            from ....lib.config_loader import load_config
+
+            app_config = load_config(validate=False)
+            routing_cfg = app_config.get("routing", {}) or {}
+            language = routing_cfg.get("language")
+            if isinstance(language, str) and language.strip():
+                return language.strip()
+        except Exception as e:
+            # 설정 로드 실패는 라우터 동작을 막아선 안 된다 → 기본 "ko"로 폴백.
+            logger.warning(f"⚠️ routing.language 로드 실패, 기본 'ko' 사용: {e}")
+
+        return "ko"
 
     def _load_rules(self) -> dict[str, dict]:
         """
@@ -323,7 +361,7 @@ class RuleBasedRouter:
 
         # 1단계: DynamicRuleManager로 먼저 매칭 시도
         try:
-            dynamic_match = self.rule_manager.match_rule(query, language="ko")
+            dynamic_match = self.rule_manager.match_rule(query, language=self._rule_language)
 
             if dynamic_match and dynamic_match.get("action") != "rag":  # rag는 기본 액션이므로 스킵
                 action: str = str(dynamic_match.get("action", ""))
@@ -365,8 +403,8 @@ class RuleBasedRouter:
                     # 도메인 서비스 관련 키워드 체크 (routing_rules_v2.yaml의 settings.service_keywords에서 로드)
                     # 이를 통해 "안녕하세요, 비용 알려주세요" 같은 복합 쿼리를 LLM 라우터로 위임 가능
                     service_settings = self.rule_manager.settings.get("service_keywords", {})
-                    # 언어별 키워드 추출 (기본: ko)
-                    service_keywords = service_settings.get("ko", [])
+                    # 언어별 키워드 추출 (routing.language 기준, 기본 "ko")
+                    service_keywords = service_settings.get(self._rule_language, [])
 
                     has_product_keyword = any(kw in normalized for kw in service_keywords)
 

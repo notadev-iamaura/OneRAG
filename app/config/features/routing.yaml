@@ -78,6 +78,15 @@ routing:
   default_route: "rag"
   timeout_seconds: 10
 
+  # 규칙 기반 라우터(RuleBasedRouter)의 매칭 언어.
+  # routing_rules_v2.yaml의 keywords[language]/response[language] 세트를 선택한다.
+  # 기본 "ko"이면 기존 동작과 완전히 동일하다(회귀 0).
+  # 비한국어 운영자는 "en"으로 바꿔 routing_rules_v2.yaml에 이미 정의된
+  # 영어 키워드/응답(인사·차단·거부 등) 세트와 service_keywords.en을 활성화한다.
+  # (ja 등 추가 언어는 routing_rules_v2.yaml에 해당 keywords[ja]/response[ja]를
+  #  추가한 뒤 이 값을 "ja"로 설정하면 된다.)
+  language: "ko"
+
   # 세션 메타용 토픽 분류 키워드(cosmetic 라벨 — 검색/라우팅 미영향).
   # di_container.extract_topic / ChatService.extract_topic 단일 소스가 참조한다.
   # 비어 있거나 미설정(기본)이면 코드 내장 한국어 기본 맵을 사용한다(회귀 0).

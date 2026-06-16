@@ -47,7 +47,7 @@ class Document:
             self.source = Path(self.source)
 
         # doc_type 검증
-        valid_types = ["FAQ", "Guidebook", "ChatLog", "WebLink", "Custom", "POINT_RULE"]
+        valid_types = ["FAQ", "Guidebook", "ChatLog", "WebLink", "Custom"]
         if self.doc_type not in valid_types:
             raise ValueError(f"Invalid doc_type: {self.doc_type}. " f"Must be one of {valid_types}")
 

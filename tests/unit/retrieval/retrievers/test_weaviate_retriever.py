@@ -1385,3 +1385,58 @@ class TestWeaviateDynamicAlpha:
 
         call_kwargs = mock_collection.query.hybrid.call_args.kwargs
         assert call_kwargs["alpha"] == 0.2
+
+
+class TestWeaviateRetrieverPropertyTypeMapDerivation:
+    """필터 타입맵이 스키마 단일 진실원천에서 파생되는지 검증(도메인 범용화)."""
+
+    def test_type_maps_derived_from_schema_single_source(self) -> None:
+        """(c) _TEXT_PROPERTIES 등이 weaviate_setup 스키마 정의에서 파생된다.
+
+        중복 하드코딩을 제거했으므로, 리트리버의 타입 집합 합집합은
+        스키마 단일 진실원천(document_property_types)의 키 집합과 일치해야 한다.
+        """
+        from app.lib.weaviate_setup import document_property_types
+        from app.modules.core.retrieval.retrievers import weaviate_retriever as wr
+
+        property_types = document_property_types()
+
+        # 리트리버 타입 집합 합집합 == 스키마 전체 프로퍼티 집합(파생 일관성)
+        union = (
+            wr._TEXT_PROPERTIES
+            | wr._INT_PROPERTIES
+            | wr._NUMBER_PROPERTIES
+            | wr._TEXT_ARRAY_PROPERTIES
+        )
+        assert union == set(property_types)
+
+        # 타입별 분류도 스키마 정의와 정확히 일치해야 한다.
+        for name, category in property_types.items():
+            if category == "text":
+                assert name in wr._TEXT_PROPERTIES
+            elif category == "int":
+                assert name in wr._INT_PROPERTIES
+            elif category == "number":
+                assert name in wr._NUMBER_PROPERTIES
+            elif category == "text_array":
+                assert name in wr._TEXT_ARRAY_PROPERTIES
+
+    def test_default_type_maps_have_no_venue_fields(self) -> None:
+        """기본(중립) 타입맵에는 venue 도메인 필드가 없어야 한다."""
+        from app.modules.core.retrieval.retrievers import weaviate_retriever as wr
+
+        venue_fields = {
+            "price",
+            "capacity",
+            "rating",
+            "location",
+            "entity_name",
+            "numeric_value",
+        }
+        union = (
+            wr._TEXT_PROPERTIES
+            | wr._INT_PROPERTIES
+            | wr._NUMBER_PROPERTIES
+            | wr._TEXT_ARRAY_PROPERTIES
+        )
+        assert venue_fields & union == set()

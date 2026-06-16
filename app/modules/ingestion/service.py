@@ -73,6 +73,44 @@ class IngestionService:
             target_fields=target_fields,
         )
 
+    def _get_title_strip_chars(self) -> list[str]:
+        """
+        제목 정제 문자 목록 로드 (domain.batch.title_strip_chars)
+
+        Notion 페이지 제목에서 제거할 접두/마커 문자를 config에서 읽는다.
+        특정 워크스페이스의 명명 규칙(예: '★' 접두)에 종속되지 않도록 외부화한다.
+        미설정/빈 목록이면 정제를 수행하지 않아 notion_extractor.py와 동작이 일치한다(회귀 0).
+
+        Returns:
+            제거할 문자 목록. 미설정 시 빈 목록.
+        """
+        batch_config = self.config.get("domain", {}).get("batch", {})
+        strip_chars = batch_config.get("title_strip_chars")
+
+        if isinstance(strip_chars, list) and strip_chars:
+            return [str(c) for c in strip_chars]
+
+        return []
+
+    @staticmethod
+    def _clean_title(title: str, strip_chars: list[str]) -> str:
+        """
+        페이지 제목 정제 (옵트인 문자 제거 + 양끝 공백 제거)
+
+        strip_chars가 비어 있으면 양끝 공백만 제거한다(★ 등 마커 미제거 → 회귀 0).
+
+        Args:
+            title: 원본 페이지 제목
+            strip_chars: 제거할 문자 목록 (config 주입)
+
+        Returns:
+            정제된 제목
+        """
+        cleaned = title
+        for ch in strip_chars:
+            cleaned = cleaned.replace(ch, "")
+        return cleaned.strip()
+
     async def ingest_from_connector(self, connector: IIngestionConnector, category_name: str) -> IngestionResult:
         """
         범용 커넥터로부터 데이터를 읽어와 적재 수행
@@ -185,9 +223,14 @@ class IngestionService:
             # 컬렉션 이름 설정 로드 (기본값: Documents)
             vector_collection = self.config.get("weaviate", {}).get("collection_name", "Documents")
 
+            # 제목 정제 문자 외부화: domain.batch.title_strip_chars
+            # 기본 빈 목록 = 정제 안 함(notion_extractor.py와 동작 통일, 회귀 0).
+            # 특정 워크스페이스 명명 규칙(예: ★ 접두)을 쓰면 yaml로 옵트인한다.
+            title_strip_chars = self._get_title_strip_chars()
+
             for page in pages:
                 # Metadata Extraction
-                entity_name = page.title.replace("★", "").strip()
+                entity_name = self._clean_title(page.title, title_strip_chars)
                 metadata = {
                     "id": page.id, # Common ID
                     "notion_page_id": page.id,

@@ -83,22 +83,43 @@ async def check_weaviate_status():
             extra={"document_count": count}
         )
 
-        # 샘플 문서 가져오기
+        # 샘플 문서 가져오기 (도메인 중립)
+        # 특정 도메인(venue 등) 필드를 하드코딩하지 않고, 실제 존재하는
+        # 메타데이터를 그대로 노출한다. 대용량 content는 미리보기로 축약하고,
+        # 임의 메타데이터는 metadata_json을 파싱해 펼쳐 보여준다.
         sample_documents = []
         if count > 0:
             sample = collection.query.fetch_objects(limit=3)
 
             for obj in sample.objects:
-                props = obj.properties
+                props = dict(obj.properties)
+                content_value = str(props.get("content", ""))
+
+                # metadata_json(임의 메타데이터 보관 컬럼)을 파싱해 펼친다.
+                parsed_metadata: dict = {}
+                raw_metadata_json = props.get("metadata_json")
+                if isinstance(raw_metadata_json, str) and raw_metadata_json:
+                    try:
+                        import json as _json
+
+                        loaded = _json.loads(raw_metadata_json)
+                        if isinstance(loaded, dict):
+                            parsed_metadata = loaded
+                    except (ValueError, TypeError):
+                        # 파싱 실패는 치명적이지 않다 — 메타데이터 없이 진행
+                        parsed_metadata = {}
+
+                # 본문/원본 JSON 컬럼을 제외한 비어있지 않은 선언 프로퍼티 노출.
+                declared_metadata = {
+                    key: value
+                    for key, value in props.items()
+                    if key not in {"content", "metadata_json"} and value not in (None, "")
+                }
 
                 sample_documents.append(
                     {
-                        "content_preview": props.get("content", "")[:100] + "...",
-                        "entity_name": props.get("entity_name"),
-                        "location": props.get("location"),
-                        "numeric_value": props.get("numeric_value"),
-                        "capacity": props.get("capacity"),
-                        "rating": props.get("rating"),
+                        "content_preview": content_value[:100] + "...",
+                        "metadata": {**declared_metadata, **parsed_metadata},
                     }
                 )
 

@@ -139,50 +139,80 @@ privacy:
 #   leak_patterns:
 #     - "confidential system note"
 
-# ========================================
-# PII Review System (문서 전처리용)
-# ========================================
-# 배치 크롤링 시 문서에서 PII 탐지 및 처리
-# 참고: whitelist는 상위 privacy.whitelist 사용
-review:
-  # PII 검토 시스템 활성화
-  enabled: false
+  # ========================================
+  # PII Review System (문서 전처리용)
+  # ========================================
+  # 배치 크롤링 시 문서에서 PII 탐지 및 처리
+  # 참고: whitelist는 상위 privacy.whitelist 사용
+  # 구조 수정: di_container는 config.privacy.review.*를 읽으므로 이 블록은
+  #   반드시 privacy 하위(2-space 들여쓰기)여야 한다. (이전: 최상위 review → 데드)
+  review:
+    # PII 검토 시스템 활성화
+    enabled: false
 
-  # spaCy 모델 설정
-  # sm: 15MB (빠름), md: 45MB (균형), lg: 550MB (정확)
-  spacy_model: "ko_core_news_sm"
+    # spaCy 모델 설정
+    # sm: 15MB (빠름), md: 45MB (균형), lg: 550MB (정확)
+    spacy_model: "ko_core_news_sm"
 
-  # NER 탐지 활성화 (false면 Regex만 사용)
-  enable_ner: true
+    # NER 탐지 활성화 (false면 Regex만 사용)
+    enable_ner: true
 
-  # 문맥 추출 윈도우 크기 (감사용)
-  context_window: 30
+    # 문맥 추출 윈도우 크기 (감사용)
+    context_window: 30
 
-  # 정책 설정
-  policy:
-    name: "default"
-    quarantine_threshold: 20    # PII 20개 이상 → 격리
-    min_confidence: 0.7         # 신뢰도 임계값
+    # ========================================
+    # PII 탐지 정규식 (review 서브시스템 전용 — HybridPIIDetector)
+    # ========================================
+    # 보안 정책: 아래 값은 "키별 오버라이드"다. 키를 비우거나 섹션 전체를 지우면
+    # 코드의 한국(default) 패턴이 그대로 적용된다(회귀 0, 보안 약화 없음).
+    # 상위 privacy.patterns(마스킹용)와는 별도다 — 탐지기는 더 넓은 형식을 쓴다.
+    # 타 국가 운영자는 필요한 키만 자국 형식으로 교체하면 된다.
+    #   - phone:          개인 전화번호 (탐지 대상)
+    #   - email:          이메일
+    #   - ssn:            국가 식별번호 (한국=주민등록번호)
+    #   - account:        계좌번호
+    #   - card:           신용카드 번호
+    #   - business_phone: 사업자/기관 전화번호 (개인전화 탐지에서 제외용)
+    # 예시(미국): phone "\\d{3}-\\d{3}-\\d{4}", ssn "\\d{3}-\\d{2}-\\d{4}"
+    patterns:
+      # 개인 전화번호 (010/011/016/017/018/019)
+      phone: "(?:010|011|016|017|018|019)[-.\\s]?\\d{3,4}[-.\\s]?\\d{4}"
+      # 이메일
+      email: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+      # 주민등록번호 (YYMMDD-GXXXXXX)
+      ssn: "\\d{6}[-\\s]?[1-4]\\d{6}"
+      # 계좌번호 (다양한 형식)
+      account: "\\d{3,6}[-\\s]?\\d{2,6}[-\\s]?\\d{4,6}(?:[-\\s]?\\d{1,4})?"
+      # 신용카드 번호 (4-4-4-4)
+      card: "\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}"
+      # 사업자/기관 전화번호 (지역번호 시작 — 개인전화 탐지 제외용)
+      business_phone: "(?:02|0[3-6][1-5])[-\\s]?\\d{3,4}[-\\s]?\\d{4}"
 
-    # 엔티티별 처리 방식
-    # review: 로그만 기록
-    # mask: 마스킹 후 진행
-    # block: 처리 중단
-    entity_actions:
-      phone: "mask"
-      email: "mask"
-      ssn: "block"              # 주민번호 → 차단
-      account: "mask"
-      card: "block"             # 카드번호 → 차단
-      person_name: "review"     # 이름 → 로그만
-      address: "mask"
-      organization: "review"
+    # 정책 설정
+    policy:
+      name: "default"
+      quarantine_threshold: 20    # PII 20개 이상 → 격리
+      min_confidence: 0.7         # 신뢰도 임계값
 
-  # 감사 로그 설정
-  audit:
-    enabled: true
-    collection: "pii_audit_logs"
-    retention_days: 365         # 1년 보관
+      # 엔티티별 처리 방식
+      # review: 로그만 기록
+      # mask: 마스킹 후 진행
+      # block: 처리 중단
+      entity_actions:
+        phone: "mask"
+        email: "mask"
+        ssn: "block"              # 주민번호 → 차단
+        account: "mask"
+        card: "block"             # 카드번호 → 차단
+        person_name: "review"     # 이름 → 로그만
+        address: "mask"
+        organization: "review"
+
+    # 감사 로그 설정
+    audit:
+      enabled: true
+      collection: "pii_audit_logs"
+      retention_days: 365         # 1년 보관
 
 # ========================================
 # 설정 설명

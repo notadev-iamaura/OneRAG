@@ -91,6 +91,9 @@ class NotionBatchConfig:
     # 카테고리 → source_file 매핑 (Weaviate 저장용)
     source_file_names: dict[str, str] = field(default_factory=dict)
     dry_run: bool = False  # True면 Weaviate 업로드 건너뜀
+    # 속성→본문 결합 시 건너뛸 속성명(제목으로 이미 포함된 엔티티명 컬럼).
+    # 빈 목록이면 코드 기본값({"업체명","이름","Name"})을 사용한다(회귀 0).
+    skip_property_keys: list[str] = field(default_factory=list)
 
 
 # ============================================================================
@@ -157,9 +160,14 @@ class NotionBatchProcessor:
         )
         try:
             app_config = load_config(validate=False)
-            categories_cfg = (
-                app_config.get("domain", {}).get("batch", {}).get("categories", {}) or {}
-            )
+            batch_cfg = app_config.get("domain", {}).get("batch", {}) or {}
+            categories_cfg = batch_cfg.get("categories", {}) or {}
+
+            # 제목 컬럼 skip 키 외부화: domain.batch.skip_property_keys
+            # 미설정/빈 목록이면 코드 기본값을 쓰도록 빈 채로 둔다(_extract_properties_text에서 폴백).
+            skip_keys_cfg = batch_cfg.get("skip_property_keys")
+            if isinstance(skip_keys_cfg, list) and skip_keys_cfg:
+                cfg.skip_property_keys = [str(k) for k in skip_keys_cfg]
 
             if isinstance(categories_cfg, dict) and categories_cfg:
                 cfg.categories = list(categories_cfg.keys())
@@ -514,7 +522,9 @@ class NotionBatchProcessor:
         lines = []
 
         # 중요 속성 순서대로 처리 (엔티티명은 제목으로 이미 포함되므로 제외)
-        skip_keys = {"업체명", "이름", "Name"}
+        # skip 키는 config(domain.batch.skip_property_keys)에서 주입받으며,
+        # 미설정 시 코드 기본값({"업체명","이름","Name"})으로 폴백한다(회귀 0).
+        skip_keys = set(self.config.skip_property_keys) or {"업체명", "이름", "Name"}
 
         for prop_name, value in properties.items():
             if prop_name in skip_keys:

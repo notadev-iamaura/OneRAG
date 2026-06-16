@@ -39,6 +39,12 @@ from weaviate.exceptions import WeaviateQueryError
 
 from .....lib.logger import get_logger
 from .....lib.weaviate_client import WeaviateClient
+
+# 필터 타입맵은 weaviate_setup의 스키마 정의(단일 진실원천)에서 파생한다(#도메인범용화).
+# 스키마에 도메인 필드(domain.yaml의 schema_fields)가 추가되면 코드 변경 없이
+# 필터 타입맵에도 자동 반영되어 스키마-검색 간 중복 하드코딩을 제거한다.
+# weaviate_setup은 app.lib 계층이므로 app.modules에서의 하향 임포트는 허용된다.
+from .....lib.weaviate_setup import document_property_types
 from ..interfaces import SearchResult
 
 # Phase 2: BM25 고도화 모듈 (Optional Import - Graceful Degradation)
@@ -54,46 +60,21 @@ except ImportError:
 
 logger = get_logger(__name__)
 
-_TEXT_PROPERTIES = {
-    "content",
-    "created_at",
-    "document_id",
-    "entity_name",
-    "capacity",
-    "content_key",
-    "file_hash",
-    "file_name",
-    "file_path",
-    "file_type",
-    "filename",
-    "format",
-    "json_loader",
-    "json_type",
-    "jq_schema",
-    "location",
-    "metadata_json",
-    "numeric_value",
-    "price",
-    "rating",
-    "sheet_name",
-    "source",
-    "source_file",
-    "splitter_type",
-}
-_INT_PROPERTIES = {
-    "char_count",
-    "chunk_index",
-    "file_size",
-    "item_index",
-    "original_file_size",
-    "page",
-    "page_number",
-    "total_chunks",
-    "total_items",
-    "word_count",
-}
-_NUMBER_PROPERTIES = {"load_timestamp"}
-_TEXT_ARRAY_PROPERTIES = {"keys"}
+def _property_names_by_type(
+    property_types: dict[str, str], type_category: str
+) -> set[str]:
+    """단일 진실원천(document_property_types)에서 특정 타입 프로퍼티명 집합을 추출한다."""
+    return {
+        name for name, category in property_types.items() if category == type_category
+    }
+
+
+# 스키마 정의를 1회만 로드해 타입별 필터 프로퍼티 집합을 파생한다.
+_PROPERTY_TYPES = document_property_types()
+_TEXT_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "text")
+_INT_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "int")
+_NUMBER_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "number")
+_TEXT_ARRAY_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "text_array")
 # 저장 시 소문자로 정규화되는 텍스트 프로퍼티(예: 확장자 기반 file_type).
 # 필터 값도 동일 규칙으로 소문자화해야 .equal() 매칭이 성립한다(#12).
 # 주의: document_id/file_hash/source_file 등 정확매칭 키는 절대 포함하면 안 된다.

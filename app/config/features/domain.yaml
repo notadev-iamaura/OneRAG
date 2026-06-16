@@ -76,6 +76,17 @@ domain:
       - "내용"
       - "설명"
 
+    # Notion 속성→본문 결합 시 건너뛸 속성명(제목으로 이미 포함된 엔티티명 컬럼).
+    # 미설정/빈 목록이면 코드 기본값({"업체명","이름","Name"})을 사용한다(회귀 0).
+    # 비한국/타 도메인 Notion DB는 자신의 제목 속성명을 지정하세요.
+    # 예: ["Company", "会社名", "Title"]
+    skip_property_keys: []
+
+    # Notion 페이지 제목에서 제거할 접두/마커 문자 목록(특정 워크스페이스 명명 규칙용).
+    # 기본 빈 목록 = 제목을 정제하지 않음(notion_extractor.py와 동작 통일, 회귀 0).
+    # ★ 등 자신의 워크스페이스 마커를 제거하려면 옵트인하세요. 예: ["★", "●", "◆"]
+    title_strip_chars: []
+
   # 4. 메타데이터 스키마 설정 (Metadata Schema)
   metadata:
     # 규칙 기반 메타데이터 추출기(RuleBasedExtractor)의 카테고리 분류 키워드.
@@ -93,6 +104,37 @@ domain:
     #     instruction: ["please", "must", "note"]
     #     conversation: ["hello", "thanks", "inquiry"]
     content_type_markers: null
+
+    # Weaviate 컬렉션 도메인 스키마 필드(옵트인, Domain Schema Fields).
+    # 기본(미정의/빈 목록)은 도메인 중립 — 코어 무관 필드만 인덱싱 컬럼으로
+    # 생성한다. 임의 메타데이터는 metadata_json(단일 JSON 컬럼)에 무손실로
+    # 보존되므로, 아래를 정의하지 않아도 데이터 손실은 없다.
+    #
+    # 자기 도메인의 특정 필드를 "인덱싱/필터 가능한 컬럼"으로 노출하려면 여기에
+    # 정의하세요. 정의 시 코드 변경 없이 (a) Weaviate 스키마 생성,
+    # (b) 검색 필터 타입맵, (c) 관리자 샘플 응답에 모두 반영됩니다.
+    #
+    # type: text | int | number | text_array (생략 시 text)
+    # 예시(venue=웨딩홀/식당/숙소 도메인):
+    #   schema_fields:
+    #     - name: entity_name
+    #       type: text
+    #       description: 엔티티 이름
+    #     - name: location
+    #       type: text
+    #       description: 위치/장소
+    #     - name: price
+    #       type: text
+    #       description: 가격/비용
+    #     - name: capacity
+    #       type: text
+    #       description: 수용 인원/한도
+    #     - name: rating
+    #       type: text
+    #       description: 평점/등급
+    # 간단 매핑 형식도 허용: schema_fields: {price: text, capacity: text}
+    schema_fields: []
+
     schema:
       required_fields: ["name"]
       numeric_fields:

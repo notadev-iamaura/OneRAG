@@ -53,27 +53,31 @@ class HybridPIIDetector:
     VERSION = "1.0.0"
 
     # ========================================
-    # Regex 패턴 정의
+    # 기본 Regex 패턴 정의 (코드 기본값 = 한국 PII 형식)
     # ========================================
+    # 보안 정책: 아래 상수는 "기본값"이며, __init__의 patterns 인자로
+    # 키별 오버라이드만 가능하다. 미설정 키는 이 기본값으로 폴백하므로
+    # 설정을 비우거나 일부만 채워도 마스킹/탐지가 약화되지 않는다(회귀 0).
+    # 타 국가 운영자는 privacy.yaml review.patterns에 자국 형식만 추가한다.
 
     # 전화번호 패턴 (010, 011, 016, 017, 018, 019)
-    PHONE_PATTERN = re.compile(r"(?:010|011|016|017|018|019)[-.\s]?\d{3,4}[-.\s]?\d{4}")
+    DEFAULT_PHONE_PATTERN = r"(?:010|011|016|017|018|019)[-.\s]?\d{3,4}[-.\s]?\d{4}"
 
     # 이메일 패턴
-    EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
+    DEFAULT_EMAIL_PATTERN = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
     # 주민등록번호 패턴 (YYMMDD-GXXXXXX)
-    SSN_PATTERN = re.compile(r"\d{6}[-\s]?[1-4]\d{6}")
+    DEFAULT_SSN_PATTERN = r"\d{6}[-\s]?[1-4]\d{6}"
 
     # 계좌번호 패턴 (다양한 형식)
     # 국민: 123456-12-123456, 신한: 110-123-456789 등
-    ACCOUNT_PATTERN = re.compile(r"\d{3,6}[-\s]?\d{2,6}[-\s]?\d{4,6}(?:[-\s]?\d{1,4})?")
+    DEFAULT_ACCOUNT_PATTERN = r"\d{3,6}[-\s]?\d{2,6}[-\s]?\d{4,6}(?:[-\s]?\d{1,4})?"
 
     # 신용카드 번호 패턴 (4자리-4자리-4자리-4자리)
-    CARD_PATTERN = re.compile(r"\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}")
+    DEFAULT_CARD_PATTERN = r"\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}"
 
     # 사업자 전화번호 패턴 (마스킹 제외용)
-    BUSINESS_PHONE_PATTERN = re.compile(r"(?:02|0[3-6][1-5])[-\s]?\d{3,4}[-\s]?\d{4}")
+    DEFAULT_BUSINESS_PHONE_PATTERN = r"(?:02|0[3-6][1-5])[-\s]?\d{3,4}[-\s]?\d{4}"
 
     # spaCy NER 레이블 → PIIType 매핑
     NER_LABEL_MAPPING: dict[str, PIIType] = {
@@ -94,6 +98,7 @@ class HybridPIIDetector:
         whitelist: list[str] | None = None,
         enable_ner: bool = True,
         context_window: int = 30,
+        patterns: dict[str, str] | None = None,
     ):
         """
         Args:
@@ -101,11 +106,33 @@ class HybridPIIDetector:
             whitelist: 도메인 화이트리스트 (오탐 방지)
             enable_ner: NER 탐지 활성화 여부 (비활성화 시 Regex만 사용)
             context_window: 문맥 추출 윈도우 크기 (감사용)
+            patterns: PII 정규식 오버라이드(선택). 키별로 자국 형식을 주입한다.
+                지원 키: phone, email, ssn, account, card, business_phone.
+                미설정 키는 클래스 DEFAULT_* 한국 패턴으로 폴백한다(회귀 0).
         """
         self._nlp: Language | None = None
         self._spacy_model = spacy_model
         self._enable_ner = enable_ner
         self._context_window = context_window
+
+        # PII 정규식 컴파일 (설정 오버라이드 + 한국 기본 패턴 폴백)
+        # 인스턴스 속성으로 보관해 키별 오버라이드를 지원하며, 미설정 키는
+        # 코드 기본값으로 폴백하므로 보안 약화가 발생하지 않는다(회귀 0).
+        pattern_overrides = patterns or {}
+        self.PHONE_PATTERN = re.compile(
+            pattern_overrides.get("phone", self.DEFAULT_PHONE_PATTERN)
+        )
+        self.EMAIL_PATTERN = re.compile(
+            pattern_overrides.get("email", self.DEFAULT_EMAIL_PATTERN)
+        )
+        self.SSN_PATTERN = re.compile(pattern_overrides.get("ssn", self.DEFAULT_SSN_PATTERN))
+        self.ACCOUNT_PATTERN = re.compile(
+            pattern_overrides.get("account", self.DEFAULT_ACCOUNT_PATTERN)
+        )
+        self.CARD_PATTERN = re.compile(pattern_overrides.get("card", self.DEFAULT_CARD_PATTERN))
+        self.BUSINESS_PHONE_PATTERN = re.compile(
+            pattern_overrides.get("business_phone", self.DEFAULT_BUSINESS_PHONE_PATTERN)
+        )
 
         # 도메인 화이트리스트 (오탐 방지)
         self.whitelist: set[str] = set(

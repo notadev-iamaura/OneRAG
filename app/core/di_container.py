@@ -1599,6 +1599,7 @@ class AppContainer(containers.DeclarativeContainer):
         enable_ner=config.privacy.review.enable_ner,
         context_window=config.privacy.review.context_window,
         whitelist=config.domain.privacy.whitelist,  # 도메인 특화 화이트리스트 (domain.yaml)
+        patterns=config.privacy.review.patterns,  # PII 정규식 오버라이드 (privacy.yaml)
     )
 
     # 정책 기반 PII 처리 결정 엔진
