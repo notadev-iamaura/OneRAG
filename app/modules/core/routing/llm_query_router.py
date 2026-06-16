@@ -590,19 +590,29 @@ Return response in JSON format.
         messages = router_config.get("messages", {})
 
         # 1. 차단 케이스 (최우선)
+        # 사용자 노출 차단 메시지도 domain.router.messages로 외부화한다.
+        # 설정이 없으면 기존 한국어 기본 메시지를 그대로 사용한다(회귀 0).
         if decision.get("is_attack", False):
+            blocked_msg = messages.get(
+                "prompt_injection",
+                "🚫 보안상의 이유로 요청을 처리할 수 없습니다.",
+            )
             return await self._create_blocked_route(
                 query,
                 reason="prompt_injection",
-                message="🚫 보안상의 이유로 요청을 처리할 수 없습니다.",
+                message=blocked_msg,
                 reasoning=decision.get("reasoning", ""),
             )
 
         if decision.get("is_harmful", False):
+            harmful_msg = messages.get(
+                "harmful_content",
+                "⚠️ 부적절한 내용이 포함되어 있습니다.",
+            )
             return await self._create_blocked_route(
                 query,
                 reason="harmful_content",
-                message="⚠️ 부적절한 내용이 포함되어 있습니다.",
+                message=harmful_msg,
                 reasoning=decision.get("reasoning", ""),
             )
 

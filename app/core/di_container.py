@@ -1577,6 +1577,8 @@ class AppContainer(containers.DeclarativeContainer):
     whitelist_manager = providers.Singleton(WhitelistManager)
 
     # 개인정보 마스킹 (전화번호, 이름) - 화이트리스트 연동
+    # PII 정규식 패턴/이름 글자클래스/파일명 라벨은 privacy.yaml에서 외부화한다.
+    # 미설정 시 PrivacyMasker 내부의 한국 기본 패턴으로 폴백한다(보안 회귀 0).
     privacy_masker = providers.Singleton(
         PrivacyMasker,
         mask_phone=config.privacy.masking.phone,
@@ -1586,6 +1588,9 @@ class AppContainer(containers.DeclarativeContainer):
         name_mask_char=config.privacy.characters.name,
         whitelist=config.domain.privacy.whitelist,  # 도메인 특화 화이트리스트 (domain.yaml)
         name_suffixes=config.domain.privacy.name_suffixes,  # 도메인 특화 이름 호칭 (domain.yaml)
+        patterns=config.privacy.patterns,  # PII 정규식 패턴 오버라이드 (privacy.yaml)
+        name_char_class=config.privacy.name_char_class,  # 이름 글자클래스 (privacy.yaml)
+        filename_mask_label=config.privacy.filename_mask_label,  # 파일명 라벨 (privacy.yaml)
     )
 
     # ----------------------------------------

@@ -12,6 +12,16 @@ sql_search:
     max_tokens: 1024
     temperature: 0.1  # SQL 생성은 일관성 중요
 
+    # 프롬프트 외부화 (선택)
+    # 미설정/빈 값이면 코드의 한국어 기본 프롬프트(sql_generation.py)를 그대로 쓴다(회귀 0).
+    # 운영자는 자국어/도메인에 맞게 system/user_template을 오버라이드할 수 있다.
+    # - system: 시스템 프롬프트 전체 문자열
+    #   (선택적으로 {SQL_TEMPLATES}, {DB_SCHEMA_SUMMARY} 자리표시자 포함 가능)
+    # - user_template: 유저 프롬프트 템플릿 ({user_query} 자리표시자 필수)
+    prompts:
+      system: ""        # 빈 값 → 기본 시스템 프롬프트 사용
+      user_template: "" # 빈 값 → 기본 유저 템플릿 사용
+
   # Query Executor 설정 (PostgreSQL 실행)
   executor:
     timeout: 10  # 초 단위 쿼리 타임아웃
