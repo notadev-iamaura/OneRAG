@@ -51,6 +51,18 @@ class ResultFormatter:
         numeric_fields = self.config.get("numeric_fields", [])
         self.numeric_fields = self.DEFAULT_NUMERIC_FIELDS.union(numeric_fields)
 
+        # LLM 컨텍스트에 주입되는 라벨/안내 문구. 출력 언어 일관성을 위해 외부화한다.
+        # 미설정/null 시 한국어 기본값(회귀 0). sql_search.yaml formatter 섹션에서 주입.
+        # (yaml null은 .get(k, default)에서 default를 안 쓰므로 `or`로 폴백한다.)
+        self.unknown_entity_label = self.config.get("unknown_entity_label") or "알 수 없음"
+        self.no_results_message = self.config.get("no_results_message") or "검색 결과가 없습니다."
+        self.error_message_template = (
+            self.config.get("error_message_template") or "[SQL 검색 결과 없음: {error}]"
+        )
+        self.no_match_message = (
+            self.config.get("no_match_message") or "[SQL 검색 결과: 조건에 맞는 항목이 없습니다]"
+        )
+
     def format_for_context(self, query_result: QueryResult, user_query: str) -> str:
         """
         SQL 결과를 RAG 컨텍스트 형식으로 포맷합니다.
@@ -63,10 +75,10 @@ class ResultFormatter:
             str: 포맷된 컨텍스트 문자열
         """
         if not query_result.success:
-            return f"[SQL 검색 결과 없음: {query_result.error}]"
+            return self.error_message_template.format(error=query_result.error)
 
         if query_result.is_empty:
-            return "[SQL 검색 결과: 조건에 맞는 항목이 없습니다]"
+            return self.no_match_message
 
         # 결과 포맷팅
         lines = ["[SQL 검색 결과]"]
@@ -93,11 +105,11 @@ class ResultFormatter:
             str: 마크다운 테이블 문자열
         """
         if not query_result.success or query_result.is_empty:
-            return "검색 결과가 없습니다."
+            return self.no_results_message
 
         # 컬럼 헤더 추출
         if not query_result.data:
-            return "검색 결과가 없습니다."
+            return self.no_results_message
 
         columns = list(query_result.data[0].keys())
 
@@ -130,7 +142,7 @@ class ResultFormatter:
             str: 번호 목록 문자열
         """
         if not query_result.success or query_result.is_empty:
-            return "검색 결과가 없습니다."
+            return self.no_results_message
 
         lines = []
         for i, row in enumerate(query_result.data[: self.max_items], 1):
@@ -154,7 +166,7 @@ class ResultFormatter:
         name_fields = self.config.get("entity_name_fields", ["name", "title", "entity_name"])
 
         # 첫 번째로 매칭되는 필드를 엔티티 이름으로 사용
-        entity_name = "알 수 없음"
+        entity_name = self.unknown_entity_label
         for field in name_fields:
             if row.get(field):
                 entity_name = str(row[field])

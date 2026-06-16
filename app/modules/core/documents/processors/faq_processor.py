@@ -54,6 +54,7 @@ class FAQProcessor(BaseDocumentProcessor):
         numeric_pattern: str | None = None,
         date_pattern: str | None = None,
         phone_pattern: str | None = None,
+        use_konlpy: bool = True,
     ):
         """
         FAQProcessor 초기화
@@ -82,6 +83,9 @@ class FAQProcessor(BaseDocumentProcessor):
                 domain.yaml의 `domain.metadata.date_pattern`에서 전달.
             phone_pattern: 전화번호 탐지 정규식. 미지정 시 한국 전화형식 사용(회귀 0).
                 domain.yaml의 `domain.metadata.phone_pattern`에서 전달.
+            use_konlpy: 기본 추출기의 KoNLPy(한국어 형태소 분석기 Okt) 사용 여부.
+                기본 True(회귀 0). 비한국어 운영자는 False로 주입해 한국어 전용
+                의존성 로드 시도를 끌 수 있다(미설치 시 공백 분리 폴백은 항상 안전).
         """
         # 기본 전략 설정
         if chunker is None:
@@ -92,7 +96,7 @@ class FAQProcessor(BaseDocumentProcessor):
 
         if metadata_extractor is None:
             metadata_extractor = RuleBasedExtractor(
-                use_konlpy=True,
+                use_konlpy=use_konlpy,
                 category_keywords=category_keywords,
                 content_type_markers=content_type_markers,
                 numeric_pattern=numeric_pattern,
