@@ -70,9 +70,11 @@ class FAQProcessor(BaseDocumentProcessor):
             content_type_markers: 콘텐츠 타입 추론 마커. 기본 추출기 생성 시 주입한다.
                 미지정 시 코드 내장 한국어 기본 마커 사용(회귀 0). domain.yaml의
                 `domain.metadata.content_type_markers`에서 전달.
-            column_aliases: 질문/답변 컬럼 별칭 맵({"question": [...], "answer": [...]}).
-                기본 청커(SimpleChunker)에 주입한다. 미지정 시 코드 내장 ko+en
-                기본 별칭 사용(회귀 0). uploads.yaml의 `uploads.faq.column_aliases`에서 전달.
+            column_aliases: 질문/답변/섹션/카테고리 컬럼 별칭 맵
+                ({"question": [...], "answer": [...], "section": [...], "category": [...]}).
+                기본 청커(SimpleChunker)에 주입한다(section/category도 청커가 메타
+                인식에 사용). 미지정 시 코드 내장 ko+en 기본 별칭 사용(회귀 0).
+                uploads.yaml의 `uploads.faq.column_aliases`에서 전달.
             numeric_pattern: 수치/금액 탐지 정규식. 기본 추출기(RuleBasedExtractor)
                 생성 시 주입한다. 미지정 시 코드 내장 한국어 통화 패턴 사용(회귀 0).
                 domain.yaml의 `domain.metadata.numeric_pattern`에서 전달.

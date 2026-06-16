@@ -21,22 +21,22 @@ class EvaluationSampleSchema(BaseModel):
     query: str = Field(
         ...,
         description="사용자 질문",
-        examples=["서울 맛집 추천해줘"],
+        examples=["What is RAG?"],
     )
     answer: str = Field(
         ...,
         description="생성된 답변",
-        examples=["서울에 위치한 맛집 3곳을 추천드립니다..."],
+        examples=["RAG combines retrieval and generation to ground LLM answers in documents."],
     )
     context: str = Field(
         ...,
         description="검색된 컨텍스트",
-        examples=["A식당: 강남역 3번 출구..."],
+        examples=["Retrieval-augmented generation retrieves relevant documents before generating."],
     )
     reference: str | None = Field(
         default=None,
         description="참조 정답 (선택, Golden Dataset용)",
-        examples=["서울에는 A, B, C 식당이 있습니다..."],
+        examples=["RAG augments a language model with an external retrieval step."],
     )
 
 
@@ -97,9 +97,15 @@ class BatchEvaluateRequest(BaseModel):
                 {
                     "samples": [
                         {
-                            "query": "서울 맛집 추천해줘",
-                            "answer": "서울에 위치한 맛집 3곳을 추천드립니다...",
-                            "context": "A식당: 강남역 3번 출구...",
+                            "query": "What is RAG?",
+                            "answer": (
+                                "RAG combines retrieval and generation to ground "
+                                "LLM answers in documents."
+                            ),
+                            "context": (
+                                "Retrieval-augmented generation retrieves relevant "
+                                "documents before generating."
+                            ),
                         }
                     ],
                     "provider": "internal",
@@ -149,7 +155,7 @@ class BatchEvaluateResponse(BaseModel):
                             "faithfulness": 0.85,
                             "relevance": 0.90,
                             "overall": 0.875,
-                            "reasoning": "답변이 컨텍스트에 충실함",
+                            "reasoning": "The answer is faithful to the context.",
                         }
                     ],
                     "summary": {
@@ -159,7 +165,7 @@ class BatchEvaluateResponse(BaseModel):
                     },
                     "provider": "internal",
                     "sample_count": 1,
-                    "message": "평가 완료",
+                    "message": "Evaluation complete",
                 }
             ]
         }

@@ -112,6 +112,8 @@ class EnrichmentService:
             system_prompt=prompt_section.get("system_prompt"),
             few_shot_examples=prompt_section.get("few_shot_examples"),
             user_prompt_template=prompt_section.get("user_prompt_template"),
+            # 배치 전용 사용자 프롬프트 오버라이드 (단건과 출력 형식이 달라 별도 키)
+            batch_user_prompt_template=prompt_section.get("batch_user_prompt_template"),
             include_examples=prompt_section.get("include_examples", True),
         )
 

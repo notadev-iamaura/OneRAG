@@ -59,6 +59,42 @@ DEFAULT_AGE_FACT_LABEL: str = "나이"
 DEFAULT_NAME_FACT_LABEL: str = "이름"
 
 
+# ============================================================================
+# 대화 요약 LLM 프롬프트 — 코드 내장 기본값(한국어)
+# ============================================================================
+# _summarize_conversations가 오래된 대화를 LLM으로 요약할 때 사용하는 프롬프트다.
+# 이 요약 결과는 컨텍스트(LLM 프롬프트)의 [이전 대화 요약] 블록으로 삽입되므로
+# 동작 영향 경로다. session.yaml conversation_summary.summary_prompt_template로
+# 외부화하되, 미설정 시 아래 한국어 기본값을 사용해 회귀 0을 보장한다.
+# {full_text} 플레이스홀더는 대화 본문이 들어가는 자리이므로 반드시 보존해야 한다.
+DEFAULT_SUMMARY_PROMPT_TEMPLATE: str = """아래 대화 내용을 2-3문장으로 간결하게 요약해주세요.
+핵심 주제와 사용자가 궁금해했던 내용을 중심으로 요약합니다.
+
+대화 내용:
+{full_text}
+
+요약:"""
+
+
+# ============================================================================
+# 세션 컨텍스트 라벨 — 코드 내장 기본값(한국어)
+# ============================================================================
+# get_context_string이 조립하는 세션 컨텍스트 문자열은 RAG 파이프라인의
+# {session_context} 플레이스홀더로 LLM에 삽입되므로 cosmetic이 아닌 동작 영향
+# 경로다. 라벨이 한국어 전용으로 하드코딩되어 있던 것을 외부화한다. session.yaml의
+# session.context_labels 하위 키로 주입하며, 미설정 시 아래 한국어 기본값을 사용해
+# 기존 출력과 byte 단위로 동치(회귀 0)를 보장한다.
+DEFAULT_USER_NAME_LABEL: str = "사용자 이름"
+DEFAULT_USER_INFO_LABEL_PREFIX: str = "사용자"
+DEFAULT_TOPICS_LABEL: str = "대화 주제"
+DEFAULT_SUMMARY_HEADER: str = "[이전 대화 요약]"
+DEFAULT_RECENT_HEADER: str = "[최근 대화 내역]"
+DEFAULT_RECENT_HEADER_FULL: str = "최근 대화 내역:"
+DEFAULT_USER_TURN_LABEL: str = "사용자"
+DEFAULT_AI_TURN_LABEL: str = "AI"
+DEFAULT_FACTS_HEADER: str = "기억된 정보:"
+
+
 class MemoryService:
     """
     LangChain 메모리 및 대화 컨텍스트 관리 서비스
@@ -113,6 +149,14 @@ class MemoryService:
         self.summary_llm_provider = summary_config.get("llm_provider", "google")
         self.summary_llm_model = summary_config.get("llm_model", "gemini-2.0-flash-lite")
 
+        # 대화 요약 LLM 프롬프트 외부화 (session.yaml conversation_summary.summary_prompt_template).
+        # 미설정/공백/비문자열이면 코드 내장 한국어 기본값을 사용한다(회귀 0).
+        # {full_text} 플레이스홀더를 반드시 포함해야 대화 본문이 주입되므로,
+        # 플레이스홀더가 없는 비정상 값은 무효로 보아 기본값으로 폴백한다.
+        self.summary_prompt_template: str = self._resolve_summary_prompt_template(
+            summary_config.get("summary_prompt_template")
+        )
+
         # 요약 캐시 (TTLCache: 최대 100개 세션, TTL 1시간)
         cache_ttl = summary_config.get("cache_ttl", 3600)
         self.summary_cache: TTLCache = TTLCache(maxsize=100, ttl=cache_ttl)
@@ -123,6 +167,12 @@ class MemoryService:
         # 회귀 0을 보장하고, 운영자가 영어/타 언어 패턴을 코드 포크 없이 주입할 수 있게 한다.
         # 미설정/비정상 값이면 아래 코드 내장 한국어 기본값을 사용한다.
         self._load_user_info_extraction_config(session_config)
+
+        # 세션 컨텍스트 라벨 외부화 (session.yaml session.context_labels).
+        # get_context_string이 조립하는 라벨은 {session_context}로 LLM에 삽입되므로
+        # 동작 영향 경로다. user_info_extraction과 동일한 패턴으로 외부화하며,
+        # 미설정 시 코드 내장 한국어 기본값을 사용한다(회귀 0).
+        self._load_context_labels_config(session_config)
 
         logger.info(
             f"MemoryService 초기화: max_exchanges={max_exchanges}, "
@@ -344,17 +394,17 @@ class MemoryService:
 
         context_parts = []
 
-        # 사용자 정보 추가 (L258-264)
+        # 사용자 정보 추가 (L258-264). 라벨은 context_labels로 외부화(미설정 시 한국어 기본).
         if session.get("user_name"):
-            context_parts.append(f"사용자 이름: {session['user_name']}")
+            context_parts.append(f"{self.user_name_label}: {session['user_name']}")
 
         if session.get("user_info"):
             for key, value in session["user_info"].items():
-                context_parts.append(f"사용자 {key}: {value}")
+                context_parts.append(f"{self.user_info_label_prefix} {key}: {value}")
 
         # 대화 주제들 (L266-268)
         if session.get("topics"):
-            context_parts.append(f"대화 주제: {', '.join(session['topics'])}")
+            context_parts.append(f"{self.topics_label}: {', '.join(session['topics'])}")
 
         # 메시지 가져오기 (L270-279)
         messages = chat_history.messages
@@ -393,32 +443,32 @@ class MemoryService:
 
             # 요약 추가
             if summary:
-                context_parts.append(f"\n[이전 대화 요약]\n{summary}")
+                context_parts.append(f"\n{self.summary_header}\n{summary}")
 
             # 최근 대화만 추가
             recent_messages = (
                 messages[-max_recent * 2 :] if len(messages) > max_recent * 2 else messages
             )
             if recent_messages:
-                context_parts.append("\n[최근 대화 내역]")
+                context_parts.append(f"\n{self.recent_header}")
                 for message in recent_messages:
                     if isinstance(message, HumanMessage):
-                        context_parts.append(f"사용자: {message.content}")
+                        context_parts.append(f"{self.user_turn_label}: {message.content}")
                     elif isinstance(message, AIMessage):
-                        context_parts.append(f"AI: {message.content}")
+                        context_parts.append(f"{self.ai_turn_label}: {message.content}")
         else:
             # 기존 방식: 모든 대화 표시
             if messages:
-                context_parts.append("\n최근 대화 내역:")
+                context_parts.append(f"\n{self.recent_header_full}")
                 for message in messages:
                     if isinstance(message, HumanMessage):
-                        context_parts.append(f"사용자: {message.content}")
+                        context_parts.append(f"{self.user_turn_label}: {message.content}")
                     elif isinstance(message, AIMessage):
-                        context_parts.append(f"AI: {message.content}")
+                        context_parts.append(f"{self.ai_turn_label}: {message.content}")
 
         # 중요 사실들 (L281-285)
         if session.get("facts"):
-            context_parts.append("\n기억된 정보:")
+            context_parts.append(f"\n{self.facts_header}")
             for key, value in session["facts"].items():
                 context_parts.append(f"- {key}: {value}")
 
@@ -648,6 +698,80 @@ class MemoryService:
             return configured
         return default
 
+    @staticmethod
+    def _resolve_summary_prompt_template(configured: Any) -> str:
+        """요약 프롬프트 템플릿을 해소한다(미설정/플레이스홀더 누락 시 기본값 → 회귀 0).
+
+        요약 프롬프트는 반드시 {full_text} 플레이스홀더를 포함해야 대화 본문이
+        주입된다. 비문자열/공백이거나 플레이스홀더가 없는 값은 무효로 보아 코드 내장
+        한국어 기본값을 사용한다.
+
+        Args:
+            configured: config에서 읽은 원시 값.
+
+        Returns:
+            유효한 프롬프트 템플릿({full_text} 포함 보장).
+        """
+        if (
+            isinstance(configured, str)
+            and configured.strip()
+            and "{full_text}" in configured
+        ):
+            return configured
+        return DEFAULT_SUMMARY_PROMPT_TEMPLATE
+
+    def _load_context_labels_config(self, session_config: dict[str, Any]) -> None:
+        """세션 컨텍스트 라벨을 config 우선으로 로드한다(미설정 시 코드 기본 → 회귀 0).
+
+        session.yaml의 session.context_labels 하위 키를 읽어 인스턴스 속성으로 저장한다.
+        각 항목은 미설정/타입 불일치/공백이면 코드 내장 한국어 기본값을 쓴다.
+        이 라벨들은 get_context_string이 조립하는 컨텍스트 문자열에 사용되며, 해당
+        문자열은 {session_context}로 LLM에 삽입되므로 동작 영향 경로다.
+
+        Args:
+            session_config: self.config["session"] 딕셔너리.
+        """
+        labels_config = session_config.get("context_labels", {})
+        if not isinstance(labels_config, dict):
+            labels_config = {}
+
+        # 사용자 이름 라벨. 예: "사용자 이름: 철수"의 "사용자 이름".
+        self.user_name_label: str = self._resolve_str_config(
+            labels_config.get("user_name_label"), DEFAULT_USER_NAME_LABEL
+        )
+        # user_info 항목 라벨 접두. 예: "사용자 나이: 30"의 "사용자".
+        self.user_info_label_prefix: str = self._resolve_str_config(
+            labels_config.get("user_info_label_prefix"), DEFAULT_USER_INFO_LABEL_PREFIX
+        )
+        # 대화 주제 라벨. 예: "대화 주제: a, b"의 "대화 주제".
+        self.topics_label: str = self._resolve_str_config(
+            labels_config.get("topics_label"), DEFAULT_TOPICS_LABEL
+        )
+        # 요약 모드의 [이전 대화 요약] 헤더.
+        self.summary_header: str = self._resolve_str_config(
+            labels_config.get("summary_header"), DEFAULT_SUMMARY_HEADER
+        )
+        # 요약 모드의 [최근 대화 내역] 헤더(대괄호 형태).
+        self.recent_header: str = self._resolve_str_config(
+            labels_config.get("recent_header"), DEFAULT_RECENT_HEADER
+        )
+        # 비요약(기본) 모드의 "최근 대화 내역:" 헤더(콜론 형태).
+        self.recent_header_full: str = self._resolve_str_config(
+            labels_config.get("recent_header_full"), DEFAULT_RECENT_HEADER_FULL
+        )
+        # 사용자 발화 라벨. 예: "사용자: 안녕"의 "사용자".
+        self.user_turn_label: str = self._resolve_str_config(
+            labels_config.get("user_turn_label"), DEFAULT_USER_TURN_LABEL
+        )
+        # AI 발화 라벨. 예: "AI: 안녕하세요"의 "AI".
+        self.ai_turn_label: str = self._resolve_str_config(
+            labels_config.get("ai_turn_label"), DEFAULT_AI_TURN_LABEL
+        )
+        # 중요 사실 블록의 "기억된 정보:" 헤더.
+        self.facts_header: str = self._resolve_str_config(
+            labels_config.get("facts_header"), DEFAULT_FACTS_HEADER
+        )
+
     async def _extract_user_info(self, session: dict[str, Any], message: str):
         """
         메시지에서 사용자 정보 추출
@@ -811,6 +935,10 @@ class MemoryService:
         """
         대화 목록을 LLM으로 요약
 
+        프롬프트는 session.yaml conversation_summary.summary_prompt_template로 외부화되며,
+        미설정 시 코드 내장 한국어 기본값을 사용한다(회귀 0). 요약 결과는 컨텍스트의
+        [이전 대화 요약] 블록으로 LLM에 삽입되므로 동작 영향 경로다.
+
         Args:
             messages: LangChain 메시지 리스트 (HumanMessage, AIMessage)
 
@@ -819,32 +947,26 @@ class MemoryService:
 
         예시:
             Input: [
-                HumanMessage("포인트는 어떻게 받아요?"),
-                AIMessage("걷기, 광고 시청..."),
-                HumanMessage("광고는 하루에 몇 번?"),
-                AIMessage("최대 20개까지...")
+                HumanMessage("환불은 어떻게 받나요?"),
+                AIMessage("주문 내역에서 환불 신청..."),
+                HumanMessage("처리 기간은 얼마나 걸리나요?"),
+                AIMessage("영업일 기준 3~5일...")
             ]
-            Output: "사용자가 포인트 적립 방법과 광고 시청 횟수를 문의했습니다."
+            Output: "사용자가 환불 신청 방법과 처리 기간을 문의했습니다."
         """
         try:
-            # 메시지를 텍스트로 변환
+            # 메시지를 텍스트로 변환. 발화 라벨은 context_labels로 외부화(미설정 시 한국어 기본).
             conversation_text = []
             for msg in messages:
                 if isinstance(msg, HumanMessage):
-                    conversation_text.append(f"사용자: {msg.content}")
+                    conversation_text.append(f"{self.user_turn_label}: {msg.content}")
                 elif isinstance(msg, AIMessage):
-                    conversation_text.append(f"AI: {msg.content}")
+                    conversation_text.append(f"{self.ai_turn_label}: {msg.content}")
 
             full_text = "\n".join(conversation_text)
 
-            # 요약 프롬프트
-            prompt = f"""아래 대화 내용을 2-3문장으로 간결하게 요약해주세요.
-핵심 주제와 사용자가 궁금해했던 내용을 중심으로 요약합니다.
-
-대화 내용:
-{full_text}
-
-요약:"""
+            # 요약 프롬프트(외부화). {full_text} 자리에 대화 본문을 주입한다.
+            prompt = self.summary_prompt_template.format(full_text=full_text)
 
             # LLM 호출 (Gemini)
             import google.generativeai as genai

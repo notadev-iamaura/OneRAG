@@ -188,6 +188,23 @@ privacy:
       # 사업자/기관 전화번호 (지역번호 시작 — 개인전화 탐지 제외용)
       business_phone: "(?:02|0[3-6][1-5])[-\\s]?\\d{3,4}[-\\s]?\\d{4}"
 
+    # ========================================
+    # spaCy NER 라벨 → PIIType 매핑 (review 전용 — HybridPIIDetector)
+    # ========================================
+    # 범용화 정책: 비우면(`{}`) 코드 기본 매핑(DEFAULT_NER_LABEL_MAPPING, 한국
+    # spaCy/KLUE 라벨 체계)이 그대로 적용된다(회귀 0). spacy_model을 다른 언어
+    # 모델로 교체하면 그 모델의 라벨 체계도 함께 주입해야 NER 탐지가 동작한다.
+    # 값은 PIIType 문자열을 쓴다:
+    #   person_name | address | organization | phone | email | ssn | account | card
+    # 예시(영어 en_core_web_sm 라벨 체계):
+    #   ner_label_mapping:
+    #     PERSON: person_name
+    #     GPE: address
+    #     LOC: address
+    #     FAC: address
+    #     ORG: organization
+    ner_label_mapping: {}
+
     # 정책 설정
     policy:
       name: "default"

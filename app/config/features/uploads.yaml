@@ -32,12 +32,18 @@ uploads:
   audit_event_store:
     type: "${ONERAG_AUDIT_EVENT_STORE:-sqlite}"
 
-  # FAQ 파싱 시 인식하는 질문/답변 컬럼 별칭.
+  # FAQ 파싱 시 인식하는 질문/답변/섹션/카테고리 컬럼 별칭.
   # 미설정 키는 코드 내장 ko+en 기본 별칭으로 보강된다(회귀 0).
+  #   - question 기본: ["질문", "question", "Question", "Q", "query"]
+  #   - answer   기본: ["답변", "answer", "Answer", "A", "response"]
+  #   - section  기본: ["section", "섹션명"]      (청크 메타데이터)
+  #   - category 기본: ["category", "카테고리"]   (청크 메타데이터)
   # 그 외 언어 컬럼명(예: 일본어 質問/回答)을 추가하려면 아래에 작성한다. 예:
   #   faq:
   #     column_aliases:
   #       question: ["질문", "question", "質問", "Pregunta"]
   #       answer: ["답변", "answer", "回答", "Respuesta"]
+  #       section: ["section", "섹션명", "セクション"]
+  #       category: ["category", "카테고리", "カテゴリ"]
   faq:
     column_aliases: {}

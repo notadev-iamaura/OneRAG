@@ -128,6 +128,9 @@ class EnrichmentConfig(BaseModel):
             None이면 코드 내장 FEW_SHOT_EXAMPLES를 사용한다.
         user_prompt_template: 단건 사용자 프롬프트 템플릿 오버라이드.
             None이면 코드 내장 USER_PROMPT_TEMPLATE를 사용한다. {content} 보존 필수.
+        batch_user_prompt_template: 배치 사용자 프롬프트 템플릿 오버라이드.
+            None이면 코드 내장 BATCH_USER_PROMPT_TEMPLATE를 사용한다 → 회귀 0.
+            {doc_count}, {batch_content} 보존 필수. (단건과 출력 형식이 달라 별도 키.)
         include_examples: Few-shot 예시 포함 여부 (기본: True, 기존 동작 보존).
 
     사용 예시:
@@ -178,6 +181,14 @@ class EnrichmentConfig(BaseModel):
     user_prompt_template: str | None = Field(
         default=None,
         description="단건 사용자 프롬프트 템플릿 오버라이드 ({content} 보존, None=코드 내장 기본값)",
+    )
+
+    batch_user_prompt_template: str | None = Field(
+        default=None,
+        description=(
+            "배치 사용자 프롬프트 템플릿 오버라이드 "
+            "({doc_count}, {batch_content} 보존, None=코드 내장 기본값)"
+        ),
     )
 
     include_examples: bool = Field(

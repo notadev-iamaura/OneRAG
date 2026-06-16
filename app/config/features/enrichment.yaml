@@ -104,6 +104,9 @@ enrichment:
     # 카테고리 라벨(기술/비즈니스 등)을 해당 언어/도메인으로 전환한다.
     #
     # ⚠️ user_prompt_template 오버라이드 시 {content} 플레이스홀더 보존 필수.
+    # ⚠️ batch_user_prompt_template 오버라이드 시 {doc_count}, {batch_content} 보존 필수.
+    #    (단건과 출력 형식이 다르므로 — 단건=JSON 객체, 배치=JSON 배열 — 별도 키로 관리.
+    #     단건만 오버라이드하면 배치 경로는 코드 내장 한국어 기본값을 그대로 쓴다.)
     #
     # 사용 예시(영어 프롬프트로 교체):
     #   system_prompt: |
@@ -113,7 +116,11 @@ enrichment:
     #   user_prompt_template: |
     #     Analyze the following text and extract metadata as JSON:
     #     {content}
-    system_prompt: null          # 시스템 프롬프트 (null=코드 내장 한국어 기본값)
-    few_shot_examples: null      # Few-shot 예시 블록 (null=코드 내장 기본값)
-    user_prompt_template: null   # 단건 사용자 프롬프트 ({content} 보존, null=코드 내장 기본값)
-    include_examples: true       # Few-shot 예시 포함 여부 (기존 동작 보존)
+    #   batch_user_prompt_template: |
+    #     Analyze the following {doc_count} texts and respond as a JSON array:
+    #     {batch_content}
+    system_prompt: null               # 시스템 프롬프트 (null=코드 내장 한국어 기본값)
+    few_shot_examples: null           # Few-shot 예시 블록 (null=코드 내장 기본값)
+    user_prompt_template: null        # 단건 사용자 프롬프트 ({content} 보존, null=코드 내장 기본값)
+    batch_user_prompt_template: null  # 배치 사용자 프롬프트 ({doc_count}, {batch_content} 보존, null=코드 내장 기본값)
+    include_examples: true            # Few-shot 예시 포함 여부 (기존 동작 보존)

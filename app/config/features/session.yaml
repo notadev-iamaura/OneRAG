@@ -27,6 +27,20 @@ session:
     llm_provider: "google"        # 요약 LLM (google=Gemini)
     llm_model: "gemini-2.0-flash-lite"  # 경량 모델 사용
     cache_ttl: 3600               # 요약 캐시 TTL (초, 기본: 1시간)
+    # 요약 LLM 프롬프트 외부화 — 동작영향 문자열(요약 결과는 [이전 대화 요약]로 LLM에 삽입).
+    # null/공백/비문자열이거나 {full_text} 플레이스홀더가 없으면 코드 내장 한국어 기본값 사용
+    # → 미설정 시 회귀 0. {full_text}는 대화 본문이 들어가는 자리이므로 반드시 보존해야 한다.
+    # 비한국어 운영자는 코드 포크 없이 해당 언어 프롬프트로 교체할 수 있다.
+    # 예시(영어):
+    #   summary_prompt_template: |
+    #     Summarize the conversation below in 2-3 concise sentences.
+    #     Focus on the key topics and what the user asked about.
+    #
+    #     Conversation:
+    #     {full_text}
+    #
+    #     Summary:
+    summary_prompt_template: null
 
   # 채팅 히스토리 PostgreSQL 영속화 설정 (선택적 백엔드)
   # 0-dependency 기본 보존: 기본 비활성화(인메모리 세션만 사용, 추가 인프라 불필요).
@@ -65,6 +79,44 @@ session:
     age_regex: null
     name_fact_label: null
     age_fact_label: null
+
+  # ==========================================================================
+  # 세션 컨텍스트 라벨 — 사용자노출/동작영향 문자열 외부화
+  # ==========================================================================
+  # get_context_string이 조립하는 세션 컨텍스트 문자열은 RAG 파이프라인의
+  # {session_context} 플레이스홀더로 LLM에 삽입되므로 cosmetic이 아닌 동작 영향 경로다.
+  # 라벨이 한국어 전용으로 하드코딩되어 있던 것을 외부화한다. 아래 모든 키가
+  # null/공백/타입 불일치이면 코드 내장 한국어 기본값을 사용한다 → 미설정 시 회귀 0.
+  # 비한국어 운영자는 코드 포크 없이 해당 언어 라벨로 교체할 수 있다.
+  #   - user_name_label: 사용자 이름 라벨. 예: "사용자 이름: 철수"의 "사용자 이름".
+  #   - user_info_label_prefix: user_info 항목 라벨 접두. 예: "사용자 나이: 30"의 "사용자".
+  #   - topics_label: 대화 주제 라벨. 예: "대화 주제: a, b"의 "대화 주제".
+  #   - summary_header: 요약 모드의 [이전 대화 요약] 헤더.
+  #   - recent_header: 요약 모드의 [최근 대화 내역] 헤더(대괄호 형태).
+  #   - recent_header_full: 비요약(기본) 모드의 "최근 대화 내역:" 헤더(콜론 형태).
+  #   - user_turn_label: 사용자 발화 라벨. 예: "사용자: 안녕"의 "사용자".
+  #   - ai_turn_label: AI 발화 라벨. 예: "AI: 안녕하세요"의 "AI".
+  #   - facts_header: 중요 사실 블록의 "기억된 정보:" 헤더.
+  # 예시(영어):
+  #   user_name_label: "User name"
+  #   user_info_label_prefix: "User"
+  #   topics_label: "Topics"
+  #   summary_header: "[Previous conversation summary]"
+  #   recent_header: "[Recent conversation]"
+  #   recent_header_full: "Recent conversation:"
+  #   user_turn_label: "User"
+  #   ai_turn_label: "AI"
+  #   facts_header: "Remembered info:"
+  context_labels:
+    user_name_label: null
+    user_info_label_prefix: null
+    topics_label: null
+    summary_header: null
+    recent_header: null
+    recent_header_full: null
+    user_turn_label: null
+    ai_turn_label: null
+    facts_header: null
 
 # 빈 화면(Empty State) 설정 — 챗봇 시작 화면 문구/추천 질문 (서버 영속화)
 # 관리자가 PUT /api/admin/chat-empty-state/{locale}로 저장하면 전 사용자에게 반영됩니다.

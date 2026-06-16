@@ -46,3 +46,13 @@ def test_default_korean_detection_unchanged() -> None:
     types = {e.entity_type.name for e in ents}
     assert "PHONE" in types
     assert "SSN" in types
+
+
+def test_review_ner_label_mapping_wired_from_yaml() -> None:
+    """privacy.review.ner_label_mapping이 탐지기로 전달됨(데드 키 아님)
+
+    privacy.yaml의 기본값은 빈 dict({})이므로, 탐지기는 코드 기본
+    DEFAULT_NER_LABEL_MAPPING(한국/KLUE 라벨 매핑)으로 폴백해야 한다(회귀 0).
+    """
+    detector = _build_detector()
+    assert detector.NER_LABEL_MAPPING == HybridPIIDetector.DEFAULT_NER_LABEL_MAPPING

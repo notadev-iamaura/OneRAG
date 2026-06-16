@@ -213,12 +213,15 @@ class LLMEnricher(EnricherInterface):
             batch = documents[i : i + batch_size]
 
             try:
-                # 배치 프롬프트 생성 (config 외부화된 프롬프트 오버라이드 전달)
+                # 배치 프롬프트 생성 (config 외부화된 프롬프트 오버라이드 전달.
+                # 배치 전용 user_prompt_template까지 전달해 단건/배치 비대칭 해소.
+                # 미설정 시 코드 내장 한국어 배치 기본 프롬프트 → 회귀 0)
                 system_prompt, user_prompt = build_batch_enrichment_prompt(
                     batch,
                     include_examples=self.config.include_examples,
                     system_prompt=self.config.system_prompt,
                     few_shot_examples=self.config.few_shot_examples,
+                    user_prompt_template=self.config.batch_user_prompt_template,
                 )
 
                 # LLM 호출 (재시도 포함)

@@ -79,8 +79,13 @@ class HybridPIIDetector:
     # 사업자 전화번호 패턴 (마스킹 제외용)
     DEFAULT_BUSINESS_PHONE_PATTERN = r"(?:02|0[3-6][1-5])[-\s]?\d{3,4}[-\s]?\d{4}"
 
-    # spaCy NER 레이블 → PIIType 매핑
-    NER_LABEL_MAPPING: dict[str, PIIType] = {
+    # spaCy NER 레이블 → PIIType 매핑(코드 기본값 = 한국 spaCy/KLUE 라벨 체계)
+    # 보안/범용화 정책: 아래는 "기본값"이며 __init__의 ner_label_mapping 인자로
+    # 통째 오버라이드할 수 있다. 미설정(None) 시 이 기본값으로 폴백하므로
+    # 설정을 비워도 NER 탐지가 약화되지 않는다(회귀 0). 새 spaCy 모델의 라벨
+    # 체계(예: 영어 PERSON/GPE/ORG, 다국어 모델 전용 라벨)는 코드 포크 없이
+    # privacy.yaml review.ner_label_mapping으로 주입한다.
+    DEFAULT_NER_LABEL_MAPPING: dict[str, PIIType] = {
         "PERSON": PIIType.PERSON_NAME,
         "PER": PIIType.PERSON_NAME,
         "PS": PIIType.PERSON_NAME,  # KLUE 형식
@@ -99,6 +104,7 @@ class HybridPIIDetector:
         enable_ner: bool = True,
         context_window: int = 30,
         patterns: dict[str, str] | None = None,
+        ner_label_mapping: dict[str, PIIType | str] | None = None,
     ):
         """
         Args:
@@ -109,11 +115,27 @@ class HybridPIIDetector:
             patterns: PII 정규식 오버라이드(선택). 키별로 자국 형식을 주입한다.
                 지원 키: phone, email, ssn, account, card, business_phone.
                 미설정 키는 클래스 DEFAULT_* 한국 패턴으로 폴백한다(회귀 0).
+            ner_label_mapping: spaCy NER 라벨 → PIIType 매핑 오버라이드(선택).
+                spacy_model 교체 시 새 모델의 라벨 체계를 코드 포크 없이 인식시킨다.
+                값은 PIIType 또는 그 문자열값("person_name"/"address"/"organization"
+                /"phone"/"email"/"ssn"/"account"/"card")을 허용한다(yaml은 문자열).
+                미설정(None)/빈 dict면 클래스 DEFAULT_NER_LABEL_MAPPING으로 폴백한다(회귀 0).
         """
         self._nlp: Language | None = None
         self._spacy_model = spacy_model
         self._enable_ner = enable_ner
         self._context_window = context_window
+
+        # NER 라벨 매핑: config 주입 우선, 미설정/빈 dict면 한국 기본 매핑 폴백(회귀 0).
+        # yaml은 PIIType 값을 문자열로 전달하므로 PIIType 인스턴스로 정규화한다.
+        self.NER_LABEL_MAPPING: dict[str, PIIType]
+        if ner_label_mapping:
+            self.NER_LABEL_MAPPING = {
+                label: (value if isinstance(value, PIIType) else PIIType(value))
+                for label, value in ner_label_mapping.items()
+            }
+        else:
+            self.NER_LABEL_MAPPING = dict(self.DEFAULT_NER_LABEL_MAPPING)
 
         # PII 정규식 컴파일 (설정 오버라이드 + 한국 기본 패턴 폴백)
         # 인스턴스 속성으로 보관해 키별 오버라이드를 지원하며, 미설정 키는

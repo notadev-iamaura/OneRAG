@@ -31,12 +31,30 @@ class OpenRouterReranker(IReranker):
     - Graceful Fallback (오류 시 원본 반환)
     """
 
+    # 코드 내장 기본 랭킹 프롬프트 (config 미설정 시 사용)
+    # 플레이스홀더: {query}, {docs_text}
+    # str.format()으로 채워지므로 JSON 예시의 중괄호는 {{ }}로 이스케이프되어 있다.
+    # config(reranking.openrouter.prompt_template) 주입 시에만 오버라이드된다(회귀 0).
+    # 한국어 기본값은 OSS 기본 언어 정책상 그대로 유지하며, 오버라이드 경로만 신설한다.
+    DEFAULT_PROMPT_TEMPLATE = """다음 문서들을 쿼리와의 관련성에 따라 순위를 매겨주세요.
+
+쿼리: {query}
+
+문서들:
+{docs_text}
+
+JSON 형식으로 응답해주세요:
+{{"rankings": [{{"index": 문서번호, "score": 0.0-1.0 점수}}]}}
+
+점수가 높은 순서대로 정렬하여 응답해주세요."""
+
     def __init__(
         self,
         api_key: str,
         model: str = "google/gemini-2.5-flash-lite",
         max_documents: int = 20,
         timeout: int = 15,
+        prompt_template: str | None = None,
     ):
         """
         Args:
@@ -44,6 +62,9 @@ class OpenRouterReranker(IReranker):
             model: 사용할 모델 (provider/model 형식)
             max_documents: 처리할 최대 문서 개수
             timeout: 타임아웃 (초)
+            prompt_template: 랭킹 프롬프트 템플릿 오버라이드.
+                None이면 코드 내장 DEFAULT_PROMPT_TEMPLATE 사용(회귀 0).
+                {query}/{docs_text} 플레이스홀더를 지원한다.
         """
         if not api_key:
             raise ValueError("OpenRouter API key is required")
@@ -52,6 +73,8 @@ class OpenRouterReranker(IReranker):
         self.model = model
         self.max_documents = max_documents
         self.timeout = timeout
+        # 미설정(None)이면 코드 기본값으로 폴백 — 기존 동작과 byte-identical
+        self.prompt_template = prompt_template or self.DEFAULT_PROMPT_TEMPLATE
 
         # httpx AsyncClient 생성
         self.http_client = httpx.AsyncClient(
@@ -160,22 +183,12 @@ class OpenRouterReranker(IReranker):
             return results
 
     def _build_prompt(self, query: str, documents: list[SearchResult]) -> str:
-        """리랭킹 프롬프트 생성"""
+        """리랭킹 프롬프트 생성 (config 오버라이드 가능, 기본값은 코드 내장)"""
         docs_text = "\n".join(
             f"[{i}] {doc.content[:500]}" for i, doc in enumerate(documents)
         )
 
-        return f"""다음 문서들을 쿼리와의 관련성에 따라 순위를 매겨주세요.
-
-쿼리: {query}
-
-문서들:
-{docs_text}
-
-JSON 형식으로 응답해주세요:
-{{"rankings": [{{"index": 문서번호, "score": 0.0-1.0 점수}}]}}
-
-점수가 높은 순서대로 정렬하여 응답해주세요."""
+        return self.prompt_template.format(query=query, docs_text=docs_text)
 
     def _parse_rankings(
         self, content: str, num_docs: int

@@ -1605,6 +1605,9 @@ class AppContainer(containers.DeclarativeContainer):
         context_window=config.privacy.review.context_window,
         whitelist=config.domain.privacy.whitelist,  # 도메인 특화 화이트리스트 (domain.yaml)
         patterns=config.privacy.review.patterns,  # PII 정규식 오버라이드 (privacy.yaml)
+        # spaCy NER 라벨→PIIType 매핑 오버라이드 (privacy.yaml). 비우면 코드 기본
+        # 한국/KLUE 라벨 매핑으로 폴백한다(회귀 0). 타 언어 모델 교체 시 주입.
+        ner_label_mapping=config.privacy.review.ner_label_mapping,
     )
 
     # 정책 기반 PII 처리 결정 엔진
