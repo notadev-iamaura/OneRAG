@@ -234,10 +234,11 @@ EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 _DEFAULT_CONTACT_LABELS = (
     "TEL", "Tel", "tel", "전화", "FAX", "Fax", "fax", "Phone", "phone",
 )
-# 규격 기관 기본값. 국제 규격(ISO/IEC)을 항상 포함한다. JIS는 기존 동작 보존을 위해
-# 기본셋에 유지하되(회귀 0), 운영자는 signal_patterns.standard_orgs로 자국 규격기관
-# (KS/GB/ANSI 등)을 자유롭게 추가/교체할 수 있다(코드 포크 불필요).
-_DEFAULT_STANDARD_ORGS = ("ISO/IEC", "ISO", "JIS", "IEC")
+# 규격 기관 기본값. 국제 규격(ISO/IEC)만 기본 포함한다(도메인/국가 중립).
+# JP 잔재 청소: 과거 기본셋에 박혀 있던 JIS(일본공업규격)는 제거했다. 운영자는
+# signal_patterns.standard_orgs로 자국 규격기관(JIS/KS/GB/ANSI 등)을 자유롭게
+# 추가/교체할 수 있다(코드 포크 불필요).
+_DEFAULT_STANDARD_ORGS = ("ISO/IEC", "ISO", "IEC")
 # 모델/품번/인증번호 라벨 기본값(ko 최소셋 + 영어).
 _DEFAULT_MODEL_LABELS = (
     "모델", "품번", "제품번호", "Model", "MODEL", "model", "인증번호",
@@ -282,9 +283,11 @@ QUOTED_PHRASE_PATTERN = re.compile(
 # 신호 라벨·URL·이메일·연락처 등 언어 의존이 없는 부분만 코드 기본으로 둔다.
 # 언어 의존 단위/명사(원/년/회사명 등)는 generation.answer_completeness.high_value_terms
 # 설정으로 외부화한다(아래 _DEFAULT_HIGH_VALUE_TERMS = ko 최소 기본값).
+# JP 잔재 청소: 과거 기본 패턴에 박혀 있던 JIS는 제거하고 국제 규격(ISO)만 둔다.
+# 자국 규격기관 토큰이 고가치 신호로 필요하면 high_value_terms.keywords로 추가한다.
 _HIGH_VALUE_FACT_BASE_PATTERN = (
     r"url:|email:|contact:|standard:|model_or_code:|"
-    r"https?://|www\.|TEL|FAX|E-?mail|ISO|JIS"
+    r"https?://|www\.|TEL|FAX|E-?mail|ISO"
 )
 # 언어 의존 고가치 용어/단위 기본값(ko 최소셋). config로 임의 언어/도메인 용어 추가 가능.
 # 숫자+단위는 "<숫자>(원|년|...)" 형태로 매칭하기 위해 '단위'와 '키워드'를 분리한다.

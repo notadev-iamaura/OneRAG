@@ -25,6 +25,14 @@ from ....lib.prompt_sanitizer import escape_xml, sanitize_for_prompt
 logger = get_logger(__name__)
 
 
+# PROCEDURAL(절차/방법) 인텐트 추론용 키워드의 코드 기본값(ko 최소셋).
+# 범용화: 과거에는 "방법"/"어떻게"/"규칙"이 _convert_llm_decision에 하드코딩돼
+# 있었다. 이제 코드 기본은 ko 최소셋만 두고, 비한국어/도메인 운영자는 domain.yaml
+# 의 domain.router.procedural_intent_keywords로 자국어 키워드를 추가/교체한다
+# (코드 포크 불필요). 미설정 시 이 기본값으로 기존 동작과 동치다(회귀 0).
+_DEFAULT_PROCEDURAL_INTENT_KEYWORDS = ("방법", "어떻게", "규칙")
+
+
 # ===== 데이터 구조 정의 (기존 구조 재사용) =====
 
 
@@ -157,6 +165,21 @@ class LLMQueryRouter:
         # 즉시 응답 설정
         direct_config = router_config.get("direct_answer", {})
         self.direct_answer_enabled = direct_config.get("enabled", True)
+
+        # PROCEDURAL 인텐트 추론 키워드 외부화(domain.router.procedural_intent_keywords).
+        # 미설정/비리스트면 코드 기본(ko 최소셋)을 사용한다(회귀 0). 데드 키 아님:
+        # _convert_llm_decision에서 self.procedural_intent_keywords로 실제 사용된다.
+        domain_router_config = config.get("domain", {}).get("router", {})
+        raw_procedural = (
+            domain_router_config.get("procedural_intent_keywords")
+            if isinstance(domain_router_config, dict)
+            else None
+        )
+        self.procedural_intent_keywords: tuple[str, ...] = (
+            tuple(str(kw) for kw in raw_procedural)
+            if isinstance(raw_procedural, list) and raw_procedural
+            else _DEFAULT_PROCEDURAL_INTENT_KEYWORDS
+        )
 
         # 캐싱 설정 (TTL 1시간, 최대 500개)
         self.routing_cache: TTLCache = TTLCache(maxsize=500, ttl=3600)  # 1시간
@@ -761,8 +784,9 @@ Return response in JSON format.
 
         # 인텐트 추론
         intent = SearchIntent.FACTUAL
-        # 대부분 사용 방법 질문이므로 PROCEDURAL 많이 사용
-        if "방법" in query or "어떻게" in query or "규칙" in query:
+        # 대부분 사용 방법 질문이므로 PROCEDURAL 많이 사용.
+        # 키워드는 domain.router.procedural_intent_keywords로 외부화(미설정 시 ko 최소셋).
+        if any(keyword in query for keyword in self.procedural_intent_keywords):
             intent = SearchIntent.PROCEDURAL
 
         # 복잡도 추론

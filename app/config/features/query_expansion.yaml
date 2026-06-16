@@ -28,6 +28,23 @@ query_expansion:
   # 예시 — 한국어 + 일본어 동시 사용:
   #   question_markers: ["어떻게", "왜", "무엇", "언제", "なぜ", "どう", "ですか"]
 
+  # 쿼리 확장 프롬프트 본문 템플릿(언어 자체 오버라이드용).
+  # null(기본)이면 코드 내장 한국어 본문(_DEFAULT_EXPANSION_PROMPT_TEMPLATE)을
+  # 사용한다(회귀 0). 비한국어/도메인 운영자는 코드 포크 없이 자국어 지시문 본문을
+  # 여기에 직접 작성할 수 있다.
+  #
+  # ⚠️ 플레이스홀더 규약(반드시 보존):
+  #   - {language} : 생성 시 expansion_language 값으로 선치환됨
+  #   - {query}    : 런타임에 사용자 쿼리로 치환됨(보존 필수)
+  #   - JSON 리터럴 중괄호는 {{ }}로 이스케이프(보존 필수, .format 충돌 방지)
+  # 예시(영어 본문):
+  #   prompt_template: |
+  #     You are a {language} document-search query expansion expert.
+  #     Expand the user query to maximize retrieval. Return pure JSON only.
+  #     {{ "original_query": "...", "expanded_queries": [...] }}
+  #     User query: {query}
+  prompt_template: null
+
   # ========================================
   # OpenRouter 통합 LLM 설정
   # ========================================

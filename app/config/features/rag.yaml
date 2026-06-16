@@ -166,8 +166,19 @@ rag:
   # 생성 모듈(generation_module)이 주입되지 않은 경우 사용자에게 반환되는 답변.
   # null/공백이면 코드 내장 한국어 기본값("죄송합니다. 답변을 생성할 수 없습니다.")을
   # 사용한다(회귀 0). 비한국어 운영자는 코드 포크 없이 이 값으로 교체할 수 있다.
+  #
+  # 아래 3개는 LLM 생성 서킷브레이커가 열렸을 때(LLM 일시 장애) 반환되는 폴백 답변이다.
+  # 모두 null/공백이면 코드 내장 한국어 기본값을 사용한다(회귀 0).
+  #   - with_docs_message: 문서는 찾았으나 LLM 장애로 상세 답변이 어려운 경우.
+  #       반드시 {content} 자리표시자를 포함해야 하며, 런타임에 안전 추출된 문서
+  #       미리보기로 치환된다(.replace 사용). {content}를 빼면 미리보기가 노출되지 않는다.
+  #   - no_docs_message: 문서도 못 찾고 LLM도 장애인 경우.
+  #   - document_preview_unavailable: 문서에서 미리보기 텍스트를 추출하지 못했을 때 대체 문구.
   generation_fallback:
     module_missing_message: null
+    with_docs_message: null
+    no_docs_message: null
+    document_preview_unavailable: null
 
   # ==========================================================================
   # 멀티턴 anchor soft boost (GAP B) - opt-in, 기본 OFF, 보수적

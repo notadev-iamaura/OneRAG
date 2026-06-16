@@ -222,21 +222,23 @@ class ChatService:
 
         except KeyError as e:
             # 세션 모듈 초기화 안 됨 또는 필수 키 누락
+            # RAGException 시그니처는 (error_code, **context)이므로 message=/
+            # original_error= 키워드는 데드 인자(context dict에 흡수, 렌더 안 됨)였다.
+            # 사용자 노출 메시지는 양언어 카탈로그(SESSION-002)가 렌더하고,
+            # 디버깅 정보는 context로 전달한다(데드 한국어 문자열 제거).
             logger.error(f"Session handling error - missing key: {e}", exc_info=True)
             raise SessionError(
-                message="세션 모듈이 초기화되지 않았습니다. 서버 관리자에게 문의하세요.",
-                error_code=ErrorCode.SESSION_MODULE_NOT_AVAILABLE,
-                context={"missing_key": str(e)},
-                original_error=e,
+                ErrorCode.SESSION_MODULE_NOT_AVAILABLE,
+                missing_key=str(e),
             ) from e
         except Exception as e:
             # 예상치 못한 세션 처리 에러
+            # 위와 동일: 데드 message=/original_error= 제거, context는 키워드로 전달.
             logger.error(f"Session handling error: {e}", exc_info=True)
             raise SessionError(
-                message="세션 처리 중 오류가 발생했습니다.",
-                error_code=ErrorCode.SESSION_CREATE_FAILED,
-                context={"session_id": session_id, "context": context},
-                original_error=e,
+                ErrorCode.SESSION_CREATE_FAILED,
+                session_id=session_id,
+                context=context,
             ) from e
 
     def extract_topic(self, message: str) -> str:

@@ -539,6 +539,64 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "ko": "스트리밍 처리 중 오류가 발생했습니다.",
         "en": "An error occurred while processing the stream.",
     },
+    # EVAL (평가 시스템 API) - 14개
+    # ko 값은 기존 evaluations.py 하드코딩 detail 문자열과 동일(회귀 0).
+    "EVAL-001": {
+        "ko": "평가 모듈이 초기화되지 않았습니다",
+        "en": "The evaluation module is not initialized",
+    },
+    "EVAL-002": {
+        "ko": "동일한 message_id에 대한 평가가 이미 존재합니다",
+        "en": "An evaluation for the same message_id already exists",
+    },
+    "EVAL-003": {
+        "ko": "평가 생성 중 오류가 발생했습니다",
+        "en": "An error occurred while creating the evaluation",
+    },
+    "EVAL-004": {
+        "ko": "해당 메시지에 대한 평가를 찾을 수 없습니다",
+        "en": "No evaluation found for the given message",
+    },
+    "EVAL-005": {
+        "ko": "평가 조회 중 오류가 발생했습니다",
+        "en": "An error occurred while retrieving evaluations",
+    },
+    "EVAL-006": {
+        "ko": "통계 조회 중 오류가 발생했습니다",
+        "en": "An error occurred while retrieving statistics",
+    },
+    "EVAL-007": {
+        "ko": "지원하지 않는 형식입니다. json 또는 csv를 사용하세요.",
+        "en": "Unsupported format. Please use json or csv.",
+    },
+    "EVAL-008": {
+        "ko": "데이터 내보내기 중 오류가 발생했습니다",
+        "en": "An error occurred while exporting data",
+    },
+    "EVAL-009": {
+        "ko": "한 번에 최대 100개까지만 생성할 수 있습니다",
+        "en": "Only up to 100 items can be created at once",
+    },
+    "EVAL-010": {
+        "ko": "배치 평가 생성 중 오류가 발생했습니다",
+        "en": "An error occurred while creating batch evaluations",
+    },
+    "EVAL-011": {
+        "ko": "평가 목록 조회 중 오류가 발생했습니다",
+        "en": "An error occurred while retrieving the evaluation list",
+    },
+    "EVAL-012": {
+        "ko": "최근 평가 조회 중 오류가 발생했습니다",
+        "en": "An error occurred while retrieving recent evaluations",
+    },
+    "EVAL-013": {
+        "ko": "평가를 찾을 수 없습니다",
+        "en": "Evaluation not found",
+    },
+    "EVAL-014": {
+        "ko": "평가 업데이트 중 오류가 발생했습니다",
+        "en": "An error occurred while updating the evaluation",
+    },
 }
 
 # 에러 해결 방법 저장소: {error_code: {"ko": [...], "en": [...]}}
@@ -1849,6 +1907,95 @@ ERROR_SOLUTIONS: dict[str, dict[str, list[str]]] = {
         ],
         "en": [
             "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    # EVAL (평가 시스템 API) - 14개
+    # 카탈로그 일관성을 위해 모든 EVAL 코드에 해결 방법을 등록한다
+    # (라우터는 HTTP detail에 solutions를 포함하지 않으나 KeyError를 원천 차단).
+    "EVAL-001": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-002": {
+        "ko": ["기존 평가를 조회하거나 수정하세요.", "다른 message_id로 평가를 생성하세요."],
+        "en": [
+            "Retrieve or update the existing evaluation.",
+            "Create the evaluation with a different message_id.",
+        ],
+    },
+    "EVAL-003": {
+        "ko": ["입력 값을 확인 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Check the input and try again.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-004": {
+        "ko": ["message_id가 올바른지 확인하세요.", "평가가 존재하는지 확인하세요."],
+        "en": ["Verify that the message_id is correct.", "Confirm the evaluation exists."],
+    },
+    "EVAL-005": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-006": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-007": {
+        "ko": ["json 또는 csv 형식을 사용하세요."],
+        "en": ["Use the json or csv format."],
+    },
+    "EVAL-008": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-009": {
+        "ko": ["한 번에 최대 100개까지 나눠서 요청하세요."],
+        "en": ["Split the request into batches of up to 100 items."],
+    },
+    "EVAL-010": {
+        "ko": ["입력 값을 확인 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Check the input and try again.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-011": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-012": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-013": {
+        "ko": ["evaluation_id가 올바른지 확인하세요.", "평가가 존재하는지 확인하세요."],
+        "en": ["Verify that the evaluation_id is correct.", "Confirm the evaluation exists."],
+    },
+    "EVAL-014": {
+        "ko": ["입력 값을 확인 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Check the input and try again.",
             "If the problem persists, please contact the administrator.",
         ],
     },

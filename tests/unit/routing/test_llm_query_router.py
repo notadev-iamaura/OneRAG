@@ -143,3 +143,69 @@ def test_llm_query_router_disables_unknown_provider_without_clients() -> None:
     )
 
     assert router.enabled is False
+
+
+# ============================================================================
+# 항목 5: PROCEDURAL 인텐트 키워드 외부화 (domain.router.procedural_intent_keywords)
+# ============================================================================
+
+
+def _make_router(config: dict) -> LLMQueryRouter:
+    """프로바이더 검증을 우회하기 위해 라우터를 비활성 상태로 생성하는 헬퍼."""
+    return LLMQueryRouter(
+        config=config,
+        generation_module=object(),
+        llm_factory=None,
+        circuit_breaker_factory=_BreakerFactory(),
+    )
+
+
+def test_procedural_keywords_default_is_korean_minimal() -> None:
+    """(a) 미설정 시 코드 기본(ko 최소셋)을 사용한다(회귀 0)."""
+    from app.modules.core.routing.llm_query_router import (
+        _DEFAULT_PROCEDURAL_INTENT_KEYWORDS,
+    )
+
+    router = _make_router({})
+    assert router.procedural_intent_keywords == _DEFAULT_PROCEDURAL_INTENT_KEYWORDS
+    # 기존 하드코딩 키워드가 그대로 포함된다.
+    assert "방법" in router.procedural_intent_keywords
+    assert "어떻게" in router.procedural_intent_keywords
+    assert "규칙" in router.procedural_intent_keywords
+
+
+def test_procedural_keywords_override_from_domain_config() -> None:
+    """(b)(c) config 오버라이드 시 키워드가 교체되고 인스턴스에 반영된다(데드 키 아님)."""
+    router = _make_router(
+        {
+            "domain": {
+                "router": {
+                    "procedural_intent_keywords": ["how to", "procedure"],
+                }
+            }
+        }
+    )
+    assert router.procedural_intent_keywords == ("how to", "procedure")
+    # 오버라이드는 '대체'이므로 한국어 기본 키워드는 더 이상 포함되지 않는다.
+    assert "방법" not in router.procedural_intent_keywords
+
+
+def test_procedural_keywords_empty_falls_back_to_default() -> None:
+    """빈 리스트/비리스트는 무효로 보아 코드 기본값을 사용한다(회귀 0)."""
+    from app.modules.core.routing.llm_query_router import (
+        _DEFAULT_PROCEDURAL_INTENT_KEYWORDS,
+    )
+
+    router_empty = _make_router(
+        {"domain": {"router": {"procedural_intent_keywords": []}}}
+    )
+    assert (
+        router_empty.procedural_intent_keywords
+        == _DEFAULT_PROCEDURAL_INTENT_KEYWORDS
+    )
+    router_bad = _make_router(
+        {"domain": {"router": {"procedural_intent_keywords": "방법"}}}
+    )
+    assert (
+        router_bad.procedural_intent_keywords == _DEFAULT_PROCEDURAL_INTENT_KEYWORDS
+    )

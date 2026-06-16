@@ -43,7 +43,11 @@ class FAQProcessor(BaseDocumentProcessor):
         self,
         chunker: SimpleChunker | None = None,
         metadata_extractor: RuleBasedExtractor | None = None,
-        content_template: str = "질문: {question}\n답변: {answer}",
+        # 범용화: 기본 content_template을 언어중립("{question}\n{answer}")으로 통일한다.
+        # 과거 기본값("질문: ...\n답변: ...")은 한국어 라벨이 섞여 SimpleChunker의
+        # 기본값과도 불일치했다. 한국어 라벨이 필요한 운영자는 인자/팩토리로
+        # content_template을 명시 주입하면 된다(예: "질문: {question}\n답변: {answer}").
+        content_template: str = "{question}\n{answer}",
         category_keywords: dict[str, list[str]] | None = None,
         content_type_markers: dict[str, list[str]] | None = None,
         column_aliases: dict[str, list[str]] | None = None,
@@ -54,7 +58,9 @@ class FAQProcessor(BaseDocumentProcessor):
         Args:
             chunker: 청킹 전략 (기본: SimpleChunker)
             metadata_extractor: 메타데이터 추출 전략 (기본: RuleBasedExtractor)
-            content_template: 청크 내용 생성 템플릿
+            content_template: 청크 내용 생성 템플릿. 기본값은 언어중립
+                "{question}\n{answer}"(SimpleChunker와 통일). 한국어 라벨이
+                필요하면 "질문: {question}\n답변: {answer}"처럼 명시 주입한다.
             category_keywords: 도메인 카테고리 분류 키워드. 기본 추출기를 생성할 때
                 주입한다(미지정 시 도메인 중립 — 카테고리 미추출). domain.yaml의
                 `domain.metadata.category_keywords`에서 전달.

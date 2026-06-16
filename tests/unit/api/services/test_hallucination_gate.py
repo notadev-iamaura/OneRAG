@@ -206,3 +206,114 @@ class TestGenerationFallbackMessageExternalization:
             pipeline.generation_module_missing_message
             == "Answer generation is unavailable."
         )
+
+
+class TestCircuitBreakerFallbackMessageExternalization:
+    """LLM 서킷브레이커 폴백 답변 3종 외부화 회귀/오버라이드 (#3).
+
+    형제 메시지(module_missing_message)와 동일하게 rag.yaml generation_fallback로
+    외부화한다. (a) 미설정 시 코드 기본 한국어 동치 (회귀 0), (b) config 오버라이드,
+    (c) 데드 키 아님(인스턴스 속성에 실제 반영).
+    """
+
+    def test_defaults_are_builtin_korean(self, mock_modules) -> None:
+        """(a) 미설정 시 코드 내장 한국어 기본값 사용 (회귀 0)"""
+        from app.api.services.rag_pipeline import (
+            DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
+            GENERATION_FALLBACK_NO_DOCS_MESSAGE,
+            GENERATION_FALLBACK_WITH_DOCS_MESSAGE,
+        )
+
+        pipeline = _pipeline(mock_modules)
+        assert (
+            pipeline.generation_fallback_with_docs_message
+            == GENERATION_FALLBACK_WITH_DOCS_MESSAGE
+        )
+        assert (
+            pipeline.generation_fallback_no_docs_message
+            == GENERATION_FALLBACK_NO_DOCS_MESSAGE
+        )
+        assert (
+            pipeline.document_preview_unavailable_message
+            == DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE
+        )
+        # 기본 with_docs 메시지는 {content} 자리표시자를 포함해야 한다.
+        assert "{content}" in pipeline.generation_fallback_with_docs_message
+
+    def test_override_all_three(self, mock_modules) -> None:
+        """(b)(c) config 오버라이드 시 3종 모두 교체되고 인스턴스에 반영된다."""
+        config: dict[str, Any] = {
+            "rag": {
+                "generation_fallback": {
+                    "with_docs_message": "Found docs:\n{content}\n(LLM is down.)",
+                    "no_docs_message": "No info and LLM unavailable.",
+                    "document_preview_unavailable": "preview unavailable",
+                },
+            },
+            "retrieval": {},
+            "reranking": {},
+        }
+        pipeline = RAGPipeline(config=config, **mock_modules)
+        assert (
+            pipeline.generation_fallback_with_docs_message
+            == "Found docs:\n{content}\n(LLM is down.)"
+        )
+        assert (
+            pipeline.generation_fallback_no_docs_message
+            == "No info and LLM unavailable."
+        )
+        assert pipeline.document_preview_unavailable_message == "preview unavailable"
+
+    def test_blank_falls_back_to_default(self, mock_modules) -> None:
+        """공백 문자열은 무효로 보아 코드 기본값을 사용한다(회귀 0)."""
+        from app.api.services.rag_pipeline import GENERATION_FALLBACK_NO_DOCS_MESSAGE
+
+        config: dict[str, Any] = {
+            "rag": {
+                "generation_fallback": {
+                    "no_docs_message": "   ",
+                },
+            },
+            "retrieval": {},
+            "reranking": {},
+        }
+        pipeline = RAGPipeline(config=config, **mock_modules)
+        assert (
+            pipeline.generation_fallback_no_docs_message
+            == GENERATION_FALLBACK_NO_DOCS_MESSAGE
+        )
+
+
+class TestExtractFallbackDocumentPreview:
+    """문서 미리보기 추출 헬퍼의 대체 문구 외부화 (#3)."""
+
+    def test_default_unavailable_message(self) -> None:
+        """추출 실패 시 코드 기본 한국어 대체 문구를 반환한다(회귀 0)."""
+        from app.api.services.rag_pipeline import (
+            DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
+            _extract_fallback_document_preview,
+        )
+
+        # 추출 가능한 텍스트가 전혀 없는 객체
+        assert (
+            _extract_fallback_document_preview({})
+            == DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE
+        )
+
+    def test_custom_unavailable_message(self) -> None:
+        """대체 문구를 인자로 주입하면 그 값을 반환한다(데드 키 아님)."""
+        from app.api.services.rag_pipeline import _extract_fallback_document_preview
+
+        assert (
+            _extract_fallback_document_preview({}, unavailable_message="N/A")
+            == "N/A"
+        )
+
+    def test_extracts_real_content_ignoring_unavailable(self) -> None:
+        """문서에 본문이 있으면 대체 문구 인자와 무관하게 본문을 추출한다."""
+        from app.api.services.rag_pipeline import _extract_fallback_document_preview
+
+        result = _extract_fallback_document_preview(
+            {"content": "실제 본문입니다"}, unavailable_message="N/A"
+        )
+        assert result == "실제 본문입니다"

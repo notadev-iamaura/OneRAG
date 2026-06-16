@@ -82,3 +82,30 @@ def test_faq_processor_validate_rejects_missing_columns() -> None:
     df = pd.DataFrame([{"질문": "q", "답변": "a"}])  # ko 컬럼은 주입 별칭에 없음
     with pytest.raises(ValueError):
         processor._validate_columns(df)
+
+
+# ============================================================================
+# 항목 6: content_template 언어중립화 (SimpleChunker와 통일)
+# ============================================================================
+
+
+def test_faq_processor_default_content_template_is_language_neutral() -> None:
+    """기본 content_template이 언어중립("{question}\\n{answer}")으로 통일됐다."""
+    processor = FAQProcessor()
+    assert processor.content_template == "{question}\n{answer}"
+    # 기본 청크 본문에는 한국어 라벨('질문:'/'답변:')이 섞이지 않는다.
+    chunks = processor.chunker.chunk(_faq_doc({"질문": "q1", "답변": "a1"}))
+    assert len(chunks) == 1
+    content = chunks[0].content
+    assert "q1" in content and "a1" in content
+    assert "질문:" not in content
+    assert "답변:" not in content
+
+
+def test_faq_processor_korean_labels_via_explicit_template() -> None:
+    """한국어 라벨이 필요하면 content_template을 명시 주입해 동일 동작을 얻는다."""
+    processor = FAQProcessor(content_template="질문: {question}\n답변: {answer}")
+    assert processor.content_template == "질문: {question}\n답변: {answer}"
+    chunks = processor.chunker.chunk(_faq_doc({"질문": "q1", "답변": "a1"}))
+    assert "질문: q1" in chunks[0].content
+    assert "답변: a1" in chunks[0].content

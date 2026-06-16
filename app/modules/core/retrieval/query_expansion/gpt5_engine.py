@@ -68,6 +68,60 @@ _ENGLISH_QUESTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 쿼리 확장 프롬프트 본문의 코드 기본값(범용화: 본문 전체 외부화).
+# 범용화 배경: 과거에는 이 한국어 본문이 _create_expansion_prompt 내부에
+# 하드코딩되어 있어 {language}만 치환 가능했다. 이제 본문 전체를 모듈 상수로
+# 분리하고 생성자 expansion_prompt_template 파라미터로 교체할 수 있게 했다
+# (코드 포크 불필요). 비한국어/도메인 운영자는 query_expansion.yaml의
+# prompt_template로 본문 자체를 자국어 지시문으로 갈아끼울 수 있다.
+#
+# 플레이스홀더 규약(_create_expansion_prompt 참고):
+#   - {language}  : 언어 선치환(생성자에서 self.expansion_language로 replace)
+#   - {query}     : 런타임 .format(query=...) 단계에서 치환(보존 필수)
+#   - {{ }}       : JSON 리터럴 중괄호 이스케이프(보존 필수)
+# 외부 템플릿을 주입할 때도 위 규약을 따라야 한다(미준수 시 .format에서 KeyError).
+_DEFAULT_EXPANSION_PROMPT_TEMPLATE = """당신은 {language} 문서 검색을 위한 쿼리 확장 전문가입니다.
+
+주어진 사용자 쿼리를 분석하고 검색 효율성을 극대화하기 위해 확장해주세요.
+
+**분석 요구사항:**
+1. 동의어 및 유사어 발굴 ({language} 특성 고려)
+2. 핵심 키워드 추출 및 중요도 가중치 부여 (0.1-1.0)
+3. 검색 의도 분류 (factual/procedural/conceptual/comparative/problem_solving)
+4. 쿼리 복잡도 평가 (simple/medium/complex/contextual)
+5. 다양한 관점의 확장 쿼리 생성 (각 쿼리별 가중치 포함)
+
+**응답 형식:** 순수 JSON만 반환하세요. 마크다운 코드 블록(```)을 사용하지 마세요.
+
+{{
+  "original_query": "원본 쿼리",
+  "synonyms": ["동의어1", "동의어2", "동의어3"],
+  "related_terms": ["관련용어1", "관련용어2", "관련용어3"],
+  "core_keywords": [
+    {{"keyword": "핵심키워드1", "weight": 0.9}},
+    {{"keyword": "핵심키워드2", "weight": 0.7}},
+    {{"keyword": "핵심키워드3", "weight": 0.5}}
+  ],
+  "intent": "factual",
+  "complexity": "medium",
+  "expanded_queries": [
+    {{"query": "확장쿼리1", "weight": 1.0, "focus": "주요_관점"}},
+    {{"query": "확장쿼리2", "weight": 0.8, "focus": "보조_관점"}},
+    {{"query": "확장쿼리3", "weight": 0.6, "focus": "세부_관점"}}
+  ],
+  "search_strategy": "hybrid"
+}}
+
+**사용자 쿼리:** {query}
+
+**중요:**
+- 순수 JSON만 반환 (코드 블록 ``` 금지)
+- intent 값: factual, procedural, conceptual, comparative, problem_solving 중 하나
+- complexity 값: simple, medium, complex, contextual 중 하나
+- search_strategy 값: broad, focused, hybrid, contextual 중 하나
+- weight는 0.1-1.0 범위의 실수
+- 검색 효율성에 집중"""
+
 
 class Stats(TypedDict):
     """GPT5QueryExpansionEngine 성능 통계 타입"""
@@ -117,6 +171,7 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         expansion_language: str = "한국어",  # 한국어 프롬프트용 언어 이름
         expansion_language_en: str = "Korean",  # 영어 시스템 메시지용 언어 이름
         question_markers: tuple[str, ...] | None = None,  # 질문 마커 오버라이드
+        expansion_prompt_template: str | None = None,  # 확장 프롬프트 본문 오버라이드
     ):
         """
         Args:
@@ -143,6 +198,11 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
                 None이면 코드 기본값(_DEFAULT_QUESTION_MARKERS = ko 최소셋)을
                 사용한다. 일본어/기타 언어 마커는 query_expansion.yaml
                 question_markers 설정으로 추가한다(코드 포크 불필요).
+            expansion_prompt_template: 확장 프롬프트 본문 템플릿 오버라이드.
+                None이면 코드 내장 기본 본문(_DEFAULT_EXPANSION_PROMPT_TEMPLATE,
+                한국어)을 사용한다 → 미설정 시 회귀 0. 외부 템플릿을 주입할 때는
+                플레이스홀더 규약({language} 선치환 / {query} 보존 / JSON {{ }}
+                보존)을 지켜야 한다. query_expansion.yaml prompt_template로 주입한다.
 
         Raises:
             ValueError: llm_factory가 None인 경우
@@ -170,6 +230,12 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
             tuple(question_markers)
             if question_markers is not None
             else _DEFAULT_QUESTION_MARKERS
+        )
+        # 확장 프롬프트 본문 템플릿: config 주입 우선, 미설정 시 코드 기본 본문(회귀 0).
+        self.expansion_prompt_template: str = (
+            expansion_prompt_template
+            if expansion_prompt_template is not None
+            else _DEFAULT_EXPANSION_PROMPT_TEMPLATE
         )
 
         # TTL 캐시 초기화
@@ -201,59 +267,21 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
     def _create_expansion_prompt(self) -> str:
         """GPT-5-nano용 최적화된 쿼리 확장 프롬프트
 
-        프롬프트의 언어 특성 부분은 self.expansion_language로 파라미터화돼
-        있어, 비한국어 외주가 설정만으로 확장 대상 언어를 바꿀 수 있다.
-        기본값은 "한국어"로 기존 동작과 동일하다.
+        본문 템플릿은 self.expansion_prompt_template(config 주입 또는 코드 기본
+        _DEFAULT_EXPANSION_PROMPT_TEMPLATE)에서 가져온다. 언어 특성 부분은
+        self.expansion_language로 선치환돼, 비한국어 외주가 설정만으로 확장 대상
+        언어를 바꿀 수 있다. 둘 다 미설정이면 기존 한국어 동작과 동일하다(회귀 0).
 
         Note:
             반환 문자열은 이후 `.format(query=query)`로 치환되므로, 이 단계에서는
             언어 플레이스홀더({language})만 먼저 치환하고 `{query}` 및 JSON
             이스케이프({{ }})는 그대로 남겨 둔다.
         """
-        # 언어 플레이스홀더만 선치환 (`.format()` 대상 토큰은 보존)
-        template = """당신은 {language} 문서 검색을 위한 쿼리 확장 전문가입니다.
-
-주어진 사용자 쿼리를 분석하고 검색 효율성을 극대화하기 위해 확장해주세요.
-
-**분석 요구사항:**
-1. 동의어 및 유사어 발굴 ({language} 특성 고려)
-2. 핵심 키워드 추출 및 중요도 가중치 부여 (0.1-1.0)
-3. 검색 의도 분류 (factual/procedural/conceptual/comparative/problem_solving)
-4. 쿼리 복잡도 평가 (simple/medium/complex/contextual)
-5. 다양한 관점의 확장 쿼리 생성 (각 쿼리별 가중치 포함)
-
-**응답 형식:** 순수 JSON만 반환하세요. 마크다운 코드 블록(```)을 사용하지 마세요.
-
-{{
-  "original_query": "원본 쿼리",
-  "synonyms": ["동의어1", "동의어2", "동의어3"],
-  "related_terms": ["관련용어1", "관련용어2", "관련용어3"],
-  "core_keywords": [
-    {{"keyword": "핵심키워드1", "weight": 0.9}},
-    {{"keyword": "핵심키워드2", "weight": 0.7}},
-    {{"keyword": "핵심키워드3", "weight": 0.5}}
-  ],
-  "intent": "factual",
-  "complexity": "medium",
-  "expanded_queries": [
-    {{"query": "확장쿼리1", "weight": 1.0, "focus": "주요_관점"}},
-    {{"query": "확장쿼리2", "weight": 0.8, "focus": "보조_관점"}},
-    {{"query": "확장쿼리3", "weight": 0.6, "focus": "세부_관점"}}
-  ],
-  "search_strategy": "hybrid"
-}}
-
-**사용자 쿼리:** {query}
-
-**중요:**
-- 순수 JSON만 반환 (코드 블록 ``` 금지)
-- intent 값: factual, procedural, conceptual, comparative, problem_solving 중 하나
-- complexity 값: simple, medium, complex, contextual 중 하나
-- search_strategy 값: broad, focused, hybrid, contextual 중 하나
-- weight는 0.1-1.0 범위의 실수
-- 검색 효율성에 집중"""
-        # 언어 토큰만 치환하고 `{query}`/JSON 이스케이프는 보존한다
-        return template.replace("{language}", self.expansion_language)
+        # 본문은 config/코드 기본 템플릿에서 가져오고, 언어 플레이스홀더만 선치환한다
+        # (`.format()` 대상 토큰 {query}와 JSON 이스케이프 {{ }}는 보존).
+        return self.expansion_prompt_template.replace(
+            "{language}", self.expansion_language
+        )
 
     async def expand_query(
         self, query: str, context: list[dict] | None = None
@@ -786,6 +814,16 @@ User: {self.expansion_prompt.format(query=query)}"""
         markers_cfg = query_expansion_config.get("question_markers")
         question_markers = tuple(markers_cfg) if markers_cfg else None
 
+        # 확장 프롬프트 본문 템플릿 읽기(없거나 공백이면 None → 코드 기본 본문 사용).
+        # 데드 키 아님: 생성자 expansion_prompt_template 파라미터로 전달되어
+        # _create_expansion_prompt가 실제로 이 본문을 사용한다.
+        raw_prompt_template = query_expansion_config.get("prompt_template")
+        expansion_prompt_template = (
+            raw_prompt_template
+            if isinstance(raw_prompt_template, str) and raw_prompt_template.strip()
+            else None
+        )
+
         # 생성자 호출
         # max_tokens/temperature는 llm 블록을 우선 참조하고, 없으면 multi_query로 폴백한다.
         # cache_size/cache_ttl도 설정에서 읽어 하드코딩 데드 키를 제거한다(#8).
@@ -809,4 +847,5 @@ User: {self.expansion_prompt.format(query=query)}"""
             expansion_language=expansion_language,
             expansion_language_en=expansion_language_en,
             question_markers=question_markers,
+            expansion_prompt_template=expansion_prompt_template,
         )

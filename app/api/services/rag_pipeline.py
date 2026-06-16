@@ -55,8 +55,36 @@ _StageT = TypeVar("_StageT")
 RuleBasedRouter: Any | None = None
 
 
-def _extract_fallback_document_preview(document: Any, max_chars: int = 300) -> str:
-    """Return user-safe document text for LLM outage fallback responses."""
+# 문서 미리보기 추출 실패 시 대체 문구의 코드 기본값(한국어). 함수 기본 인자에서
+# 참조하므로 함수 정의보다 먼저 선언한다. rag.yaml generation_fallback로 외부화된다.
+DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE = "문서 내용 요약을 표시할 수 없습니다"
+
+
+def _resolve_generation_fallback_message(configured: Any, default: str) -> str:
+    """generation_fallback 메시지를 config 우선으로 해소한다(미설정/공백이면 기본값).
+
+    Args:
+        configured: rag.yaml에서 읽은 원시 값(문자열/None/기타).
+        default: 코드 내장 기본 문자열(회귀 0 보장용).
+
+    Returns:
+        유효한 문자열(앞뒤 공백만 있는 값은 무효로 보아 default 사용).
+    """
+    if isinstance(configured, str) and configured.strip():
+        return configured
+    return default
+
+
+def _extract_fallback_document_preview(
+    document: Any,
+    max_chars: int = 300,
+    unavailable_message: str = DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
+) -> str:
+    """Return user-safe document text for LLM outage fallback responses.
+
+    추출 실패 시 반환하는 대체 문구는 unavailable_message로 주입할 수 있다.
+    기본값은 코드 내장 한국어 상수로 기존 동작과 동치다(회귀 0).
+    """
     for attr in ("page_content", "content", "text"):
         value = getattr(document, attr, None)
         if isinstance(value, str) and value.strip():
@@ -68,7 +96,7 @@ def _extract_fallback_document_preview(document: Any, max_chars: int = 300) -> s
             if isinstance(value, str) and value.strip():
                 return value.strip()[:max_chars]
 
-    return "문서 내용 요약을 표시할 수 없습니다"
+    return unavailable_message
 
 
 _RERANK_METADATA_KEYS = {"rerank_score", "rerank_method", "original_score"}
@@ -86,6 +114,22 @@ HALLUCINATION_GATE_NO_ANSWER_MESSAGE = (
 # 생성 모듈 부재 시 사용자에게 반환되는 답변 폴백 (코드 내장 기본값=한국어).
 # 운영자는 rag.yaml generation_fallback.module_missing_message로 오버라이드한다 → 회귀 0.
 GENERATION_MODULE_MISSING_MESSAGE = "죄송합니다. 답변을 생성할 수 없습니다."
+
+# LLM 생성 서킷브레이커 폴백 답변 (코드 내장 기본값=한국어).
+# 형제 메시지(hallucination_gate/generation_fallback.module_missing_message)와 동일하게
+# rag.yaml generation_fallback.* 로 외부화한다 → 미설정 시 회귀 0(아래 기본 문자열 사용).
+# (document_preview_unavailable 메시지는 함수 기본 인자 참조를 위해 상단에 선언됨)
+# - with_docs: 문서는 찾았으나 LLM 장애로 상세 답변이 어려운 경우. {content} 자리에
+#   안전 추출된 문서 미리보기가 치환된다(.replace 사용, 플레이스홀더 보존 필수).
+# - no_docs: 문서도 못 찾고 LLM도 장애인 경우.
+GENERATION_FALLBACK_WITH_DOCS_MESSAGE = (
+    "관련 정보를 찾았습니다:\n\n{content}...\n\n"
+    "(현재 AI 서비스 일시 장애로 상세 답변이 어렵습니다. 잠시 후 다시 시도해주세요.)"
+)
+GENERATION_FALLBACK_NO_DOCS_MESSAGE = (
+    "죄송합니다. 관련 정보를 찾을 수 없으며, 현재 AI 서비스도 일시적으로 "
+    "이용할 수 없습니다. 다른 방식으로 질문해 주시겠어요?"
+)
 
 # ============================================================================
 # 정확 식별자(exact-identifier) 검색 보강 패턴 (GAP A) - 언어무관/도메인무관
@@ -964,16 +1008,37 @@ class RAGPipeline:
 
         # 생성 모듈 부재 시 답변 폴백 메시지 외부화 (config 우선, 미설정 시 코드 기본).
         generation_fallback_config = rag_config.get("generation_fallback", {})
-        configured_missing_message = (
-            generation_fallback_config.get("module_missing_message")
-            if isinstance(generation_fallback_config, dict)
-            else None
+        if not isinstance(generation_fallback_config, dict):
+            generation_fallback_config = {}
+        configured_missing_message = generation_fallback_config.get(
+            "module_missing_message"
         )
         self.generation_module_missing_message: str = (
             configured_missing_message
             if isinstance(configured_missing_message, str)
             and configured_missing_message.strip()
             else GENERATION_MODULE_MISSING_MESSAGE
+        )
+
+        # LLM 서킷브레이커 폴백 답변 3종 외부화 (config 우선, 미설정 시 코드 기본 → 회귀 0).
+        # _resolve_generation_fallback_message로 null/공백 처리를 일원화한다.
+        self.generation_fallback_with_docs_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("with_docs_message"),
+                GENERATION_FALLBACK_WITH_DOCS_MESSAGE,
+            )
+        )
+        self.generation_fallback_no_docs_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("no_docs_message"),
+                GENERATION_FALLBACK_NO_DOCS_MESSAGE,
+            )
+        )
+        self.document_preview_unavailable_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("document_preview_unavailable"),
+                DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
+            )
         )
 
         # 멀티턴 anchor soft boost 설정 (GAP B, 기본 OFF, 보수적)
@@ -3790,18 +3855,27 @@ class RAGPipeline:
             )
 
         def _fallback() -> dict[str, Any]:
-            """LLM 실패 시 Fallback 답변"""
+            """LLM 실패 시 Fallback 답변 (메시지는 rag.yaml generation_fallback 외부화)"""
             if context_documents:
                 top_doc = context_documents[0]
-                content = _extract_fallback_document_preview(top_doc)
+                # 문서 미리보기 추출 실패 시 대체 문구도 config 값을 따른다.
+                content = _extract_fallback_document_preview(
+                    top_doc,
+                    unavailable_message=self.document_preview_unavailable_message,
+                )
+                # {content} 자리에 미리보기를 치환한다. 미리보기 텍스트에 중괄호가
+                # 섞여도 안전하도록 .format이 아닌 .replace를 사용한다.
+                answer = self.generation_fallback_with_docs_message.replace(
+                    "{content}", content
+                )
                 return {
-                    "answer": f"관련 정보를 찾았습니다:\n\n{content}...\n\n(현재 AI 서비스 일시 장애로 상세 답변이 어렵습니다. 잠시 후 다시 시도해주세요.)",
+                    "answer": answer,
                     "tokens_used": 0,
                     "model_info": {"provider": "fallback", "model": "document_summary"},
                 }
             else:
                 return {
-                    "answer": "죄송합니다. 관련 정보를 찾을 수 없으며, 현재 AI 서비스도 일시적으로 이용할 수 없습니다. 다른 방식으로 질문해 주시겠어요?",
+                    "answer": self.generation_fallback_no_docs_message,
                     "tokens_used": 0,
                     "model_info": {"provider": "fallback", "model": "none"},
                 }
