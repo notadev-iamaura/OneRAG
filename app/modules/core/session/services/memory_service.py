@@ -21,6 +21,44 @@ from .....lib.mongodb_client import MongoDBClient
 logger = get_logger(__name__)
 
 
+# ============================================================================
+# 사용자 정보(이름/나이) 추출 패턴 — 코드 내장 기본값(한국어)
+# ============================================================================
+# 이 패턴들은 세션 메시지에서 사용자 이름/나이를 추출해 컨텍스트(LLM 프롬프트)에
+# 반영하므로 동작 영향 경로다. session.yaml user_info_extraction로 외부화하되,
+# 미설정 시 아래 기본값을 사용해 기존 동작과 동치(회귀 0)를 보장한다.
+
+# 부분 문자열(substring) 기반 이름 추출 패턴. 메시지에 패턴이 포함되면 그 뒤 첫 단어를
+# 이름 후보로 본다.
+DEFAULT_NAME_PATTERNS: list[str] = [
+    "내 이름은 ",
+    "저는 ",
+    "제 이름은 ",
+    "나는 ",
+    "이름이 ",
+    " 입니다",
+    "이라고 합니다",
+    "라고 불러주세요",
+]
+
+# 정규식 기반 이름 추출 패턴(부분 문자열 매칭보다 우선). 첫 캡처 그룹이 이름이어야 한다.
+DEFAULT_NAME_REGEX: str = r"저는\s+([가-힣]+)\s*입니다"
+
+# 이름 후보 끝에서 제거할 조사/어미 문자 집합(str.rstrip 인자). 예: "철수입니다" → "철수".
+DEFAULT_NAME_SUFFIX_STRIP_CHARS: str = "이야입니다요."
+
+# 나이 추출 트리거 단위. 메시지에 이 문자열과 숫자가 함께 있을 때만 나이 정규식을 적용한다.
+DEFAULT_AGE_UNIT: str = "살"
+
+# 나이 추출 정규식. 첫 캡처 그룹이 숫자(나이)여야 한다.
+DEFAULT_AGE_REGEX: str = r"(\d+)\s*살"
+
+# facts 딕셔너리에 저장할 때 사용하는 라벨(언어 종속). 컨텍스트 출력에는 user_info를
+# 통해 노출되며, facts는 내부 사실 저장소다. 라벨도 외부화해 비한국어 운영을 지원한다.
+DEFAULT_AGE_FACT_LABEL: str = "나이"
+DEFAULT_NAME_FACT_LABEL: str = "이름"
+
+
 class MemoryService:
     """
     LangChain 메모리 및 대화 컨텍스트 관리 서비스
@@ -78,6 +116,13 @@ class MemoryService:
         # 요약 캐시 (TTLCache: 최대 100개 세션, TTL 1시간)
         cache_ttl = summary_config.get("cache_ttl", 3600)
         self.summary_cache: TTLCache = TTLCache(maxsize=100, ttl=cache_ttl)
+
+        # 사용자 정보(이름/나이) 추출 패턴 외부화 (session.yaml user_info_extraction).
+        # 이 추출 결과(user_name/user_info)는 컨텍스트 문자열에 포함되어 LLM 프롬프트로
+        # 전달되므로 cosmetic이 아닌 동작 영향 경로다. 따라서 기본값=현 한국어 패턴으로
+        # 회귀 0을 보장하고, 운영자가 영어/타 언어 패턴을 코드 포크 없이 주입할 수 있게 한다.
+        # 미설정/비정상 값이면 아래 코드 내장 한국어 기본값을 사용한다.
+        self._load_user_info_extraction_config(session_config)
 
         logger.info(
             f"MemoryService 초기화: max_exchanges={max_exchanges}, "
@@ -543,57 +588,110 @@ class MemoryService:
         )
         return {"messages": messages, "message_count": len(messages)}
 
+    def _load_user_info_extraction_config(
+        self, session_config: dict[str, Any]
+    ) -> None:
+        """사용자 정보 추출 패턴을 config 우선으로 로드한다(미설정 시 코드 기본 → 회귀 0).
+
+        session.yaml의 session.user_info_extraction 하위 키를 읽어 인스턴스 속성으로
+        저장한다. 각 항목은 미설정/타입 불일치/공백이면 코드 내장 한국어 기본값을 쓴다.
+
+        Args:
+            session_config: self.config["session"] 딕셔너리.
+        """
+        extraction_config = session_config.get("user_info_extraction", {})
+        if not isinstance(extraction_config, dict):
+            extraction_config = {}
+
+        # 부분 문자열 이름 패턴 리스트: 문자열 리스트일 때만 채택(아니면 기본값).
+        configured_name_patterns = extraction_config.get("name_patterns")
+        if isinstance(configured_name_patterns, list) and all(
+            isinstance(p, str) for p in configured_name_patterns
+        ):
+            self.name_patterns: list[str] = configured_name_patterns
+        else:
+            self.name_patterns = list(DEFAULT_NAME_PATTERNS)
+
+        # 정규식/단위/라벨류: 비어 있지 않은 문자열일 때만 채택.
+        self.name_regex: str = self._resolve_str_config(
+            extraction_config.get("name_regex"), DEFAULT_NAME_REGEX
+        )
+        self.name_suffix_strip_chars: str = self._resolve_str_config(
+            extraction_config.get("name_suffix_strip_chars"),
+            DEFAULT_NAME_SUFFIX_STRIP_CHARS,
+        )
+        self.name_fact_label: str = self._resolve_str_config(
+            extraction_config.get("name_fact_label"), DEFAULT_NAME_FACT_LABEL
+        )
+        self.age_unit: str = self._resolve_str_config(
+            extraction_config.get("age_unit"), DEFAULT_AGE_UNIT
+        )
+        self.age_regex: str = self._resolve_str_config(
+            extraction_config.get("age_regex"), DEFAULT_AGE_REGEX
+        )
+        self.age_fact_label: str = self._resolve_str_config(
+            extraction_config.get("age_fact_label"), DEFAULT_AGE_FACT_LABEL
+        )
+
+    @staticmethod
+    def _resolve_str_config(configured: Any, default: str) -> str:
+        """문자열 config 값을 해소한다(비문자열/공백이면 default → 회귀 0).
+
+        Args:
+            configured: config에서 읽은 원시 값.
+            default: 코드 내장 기본 문자열.
+
+        Returns:
+            유효한 문자열(앞뒤 공백만 있는 값은 무효로 보아 default 사용).
+        """
+        if isinstance(configured, str) and configured.strip():
+            return configured
+        return default
+
     async def _extract_user_info(self, session: dict[str, Any], message: str):
         """
         메시지에서 사용자 정보 추출
         기존 코드: enhanced_session.py의 _extract_user_info() (L411-459)
 
+        패턴은 session.yaml user_info_extraction로 외부화되며, 미설정 시 코드 내장
+        한국어 기본값을 사용한다(회귀 0). 추출 결과는 컨텍스트(LLM 프롬프트)에 반영된다.
+
         Args:
             session: 세션 데이터
             message: 사용자 메시지
         """
-        # 이름 추출 패턴 (L414-423)
-        name_patterns = [
-            "내 이름은 ",
-            "저는 ",
-            "제 이름은 ",
-            "나는 ",
-            "이름이 ",
-            " 입니다",
-            "이라고 합니다",
-            "라고 불러주세요",
-        ]
-
-        # 정규식 방식 (L429-436)
-        name_match = re.search(r"저는\s+([가-힣]+)\s*입니다", message)
+        # 정규식 방식 (부분 문자열보다 우선)
+        name_match = re.search(self.name_regex, message)
         if name_match:
             name_candidate = name_match.group(1).strip()
             if name_candidate and 1 < len(name_candidate) < 10:
                 session["user_name"] = name_candidate
-                session["facts"]["이름"] = name_candidate
+                session["facts"][self.name_fact_label] = name_candidate
                 logger.info(f"이름 추출 (정규식): {name_candidate}")
                 return
 
-        # 기존 패턴 방식 (L438-448)
-        for pattern in name_patterns:
+        # 부분 문자열 패턴 방식
+        for pattern in self.name_patterns:
             if pattern in message:
                 parts = message.split(pattern)
                 if len(parts) > 1:
-                    name_candidate = parts[1].split()[0].rstrip("이야입니다요.").strip()
+                    name_candidate = (
+                        parts[1].split()[0].rstrip(self.name_suffix_strip_chars).strip()
+                    )
                     if name_candidate and 1 < len(name_candidate) < 10:
                         session["user_name"] = name_candidate
-                        session["facts"]["이름"] = name_candidate
+                        session["facts"][self.name_fact_label] = name_candidate
                         logger.info(f"이름 추출 (패턴 매칭): {name_candidate}")
                         break
 
-        # 나이 추출 (L450-459)
-        if "살" in message and any(char.isdigit() for char in message):
-            age_match = re.search(r"(\d+)\s*살", message)
+        # 나이 추출 (단위 문자열 + 숫자 동시 존재 시에만 정규식 적용)
+        if self.age_unit in message and any(char.isdigit() for char in message):
+            age_match = re.search(self.age_regex, message)
             if age_match:
                 age = int(age_match.group(1))
                 if 1 < age < 120:  # 합리적인 나이 범위
-                    session["user_info"]["나이"] = age
-                    session["facts"]["나이"] = f"{age}살"
+                    session["user_info"][self.age_fact_label] = age
+                    session["facts"][self.age_fact_label] = f"{age}{self.age_unit}"
 
     async def _save_message_to_mongodb(
         self, session_id: str, user_message: str, assistant_response: str, metadata: dict

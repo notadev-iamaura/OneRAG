@@ -22,6 +22,47 @@ from .models import EvaluationResult
 logger = get_logger(__name__)
 
 
+# Self-RAG 실시간 평가 프롬프트 템플릿 (코드 내장 기본값=한국어)
+# 운영자는 evaluation.yaml의 evaluation.internal.prompt_template로 코드 포크 없이
+# 언어/도메인별 루브릭을 오버라이드한다. {query}/{context_text}/{answer}
+# 플레이스홀더 보존 필수. JSON 응답 형식의 중괄호는 {{ }}로 이스케이프되어 있다
+# (str.format() 호환). 미설정 시 이 기본값을 사용하므로 평가 동작 변화 없음(회귀 0).
+DEFAULT_EVALUATION_PROMPT_TEMPLATE = """당신은 AI 답변의 품질을 객관적으로 평가하는 전문가입니다.
+
+다음 기준으로 답변을 JSON 형식으로 평가하세요:
+
+평가 기준:
+1. faithfulness (충실도): 답변이 제공된 컨텍스트에 근거하는가? (0.0-1.0)
+   - 1.0: 모든 내용이 컨텍스트에서 직접 확인됨
+   - 0.5: 일부 내용만 컨텍스트에서 확인됨
+   - 0.0: 컨텍스트와 무관한 내용 (환각)
+
+2. relevance (관련성): 답변이 질문 의도에 부합하는가? (0.0-1.0)
+   - 1.0: 질문에 완벽히 답변함
+   - 0.5: 부분적으로 답변함
+   - 0.0: 질문과 무관한 답변
+
+---
+
+질문:
+{query}
+
+제공된 컨텍스트:
+{context_text}
+
+생성된 답변:
+{answer}
+
+---
+
+다음 JSON 형식으로 응답하세요:
+{{
+    "faithfulness": 0.0-1.0,
+    "relevance": 0.0-1.0,
+    "reasoning": "각 점수에 대한 간단한 근거"
+}}"""
+
+
 class InternalEvaluator:
     """
     LLM 기반 실시간 내부 평가기
@@ -56,6 +97,7 @@ class InternalEvaluator:
         llm_client: Any | None = None,
         model: str = "google/gemini-2.5-flash-lite",
         timeout: float = 10.0,
+        prompt_template: str | None = None,
     ):
         """
         InternalEvaluator 초기화
@@ -64,10 +106,18 @@ class InternalEvaluator:
             llm_client: LLM 클라이언트 (generate 메서드 필요, None이면 평가 불가)
             model: 사용할 LLM 모델명
             timeout: 평가 타임아웃 (초)
+            prompt_template: config 외부화된 평가 프롬프트 템플릿.
+                None 또는 빈 문자열이면 코드 내장 한국어 기본값
+                (DEFAULT_EVALUATION_PROMPT_TEMPLATE)을 사용한다 → 회귀 0.
+                오버라이드 시 {query}/{context_text}/{answer} 플레이스홀더 보존 필수.
         """
         self._llm_client = llm_client
         self._model = model
         self._timeout = timeout
+        # 평가 프롬프트 템플릿: config 오버라이드 없으면 코드 내장 한국어 기본값.
+        self._prompt_template: str = (
+            prompt_template or DEFAULT_EVALUATION_PROMPT_TEMPLATE
+        )
 
     @property
     def name(self) -> str:
@@ -168,7 +218,7 @@ class InternalEvaluator:
 
     def _build_prompt(self, query: str, answer: str, context: list[str]) -> str:
         """
-        평가용 프롬프트 생성
+        평가용 프롬프트 생성 (config 외부화 템플릿 또는 코드 내장 기본값 사용)
 
         Args:
             query: 사용자 질문
@@ -183,40 +233,11 @@ class InternalEvaluator:
             [f"문서 {i + 1}:\n{doc}" for i, doc in enumerate(context)]
         )
 
-        return f"""당신은 AI 답변의 품질을 객관적으로 평가하는 전문가입니다.
-
-다음 기준으로 답변을 JSON 형식으로 평가하세요:
-
-평가 기준:
-1. faithfulness (충실도): 답변이 제공된 컨텍스트에 근거하는가? (0.0-1.0)
-   - 1.0: 모든 내용이 컨텍스트에서 직접 확인됨
-   - 0.5: 일부 내용만 컨텍스트에서 확인됨
-   - 0.0: 컨텍스트와 무관한 내용 (환각)
-
-2. relevance (관련성): 답변이 질문 의도에 부합하는가? (0.0-1.0)
-   - 1.0: 질문에 완벽히 답변함
-   - 0.5: 부분적으로 답변함
-   - 0.0: 질문과 무관한 답변
-
----
-
-질문:
-{query}
-
-제공된 컨텍스트:
-{context_text}
-
-생성된 답변:
-{answer}
-
----
-
-다음 JSON 형식으로 응답하세요:
-{{
-    "faithfulness": 0.0-1.0,
-    "relevance": 0.0-1.0,
-    "reasoning": "각 점수에 대한 간단한 근거"
-}}"""
+        return self._prompt_template.format(
+            query=query,
+            context_text=context_text,
+            answer=answer,
+        )
 
     def _parse_response(self, response: str) -> EvaluationResult:
         """

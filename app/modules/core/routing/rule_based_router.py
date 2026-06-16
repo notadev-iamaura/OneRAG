@@ -205,62 +205,6 @@ class RuleBasedRouter:
             logger.error(f"❌ Failed to load routing_rules.yaml: {e}")
             return {}  # 에러 시에도 빈 딕셔너리 반환
 
-    def _get_default_rules(self) -> dict[str, dict]:
-        """
-        최소한의 기본 규칙 정의 (폴백용)
-
-        v3.3.0 리팩토링:
-        - DynamicRuleManager (routing_rules_v2.yaml)가 우선 사용됨
-        - 이 메서드는 v2 규칙 로드 실패 시 폴백으로만 사용
-        - 필수 안전 규칙만 유지하여 코드 단순화
-        """
-        return {
-            # 프롬프트 인젝션 탐지 (필수 안전 규칙)
-            "prompt_injection": {
-                "keywords": [
-                    "이전 지시",
-                    "시스템 프롬프트",
-                    "역할 변경",
-                    "ignore",
-                    "previous instructions",
-                    "system prompt",
-                    "jailbreak",
-                ],
-                "patterns": [
-                    r"이전\s*(지시|명령|프롬프트).*무시",
-                    r"ignore\s+(previous|all)\s+instructions",
-                ],
-                "route": "blocked",
-                "domain": "security",
-                "intent": "injection",
-                "direct_answer": "🚫 보안상의 이유로 요청을 처리할 수 없습니다.",
-                "priority": 10,
-            },
-            # 기본 인사말 (폴백)
-            "greeting": {
-                "keywords": ["안녕", "hi", "hello"],
-                "route": "direct_answer",
-                "domain": "chitchat",
-                "intent": "greeting",
-                "direct_answer": "안녕하세요! 무엇을 도와드릴까요?",
-                "priority": 9,
-            },
-            # 감사 인사 (폴백)
-            "thanks": {
-                "keywords": ["고마워", "감사", "thanks"],
-                "route": "direct_answer",
-                "domain": "chitchat",
-                "intent": "thanks",
-                "direct_answer": "도움이 되셨다니 기쁩니다!",
-                "priority": 9,
-            },
-        }
-        # 참고: 상세 규칙은 routing_rules_v2.yaml에서 관리
-        # - harmful_content (유해 표현)
-        # - out_of_scope (범위 이탈)
-        # - cost_inquiry (비용 문의)
-        # 등은 DynamicRuleManager가 처리
-
     @staticmethod
     @lru_cache(maxsize=1000)
     def _normalize_query(query: str) -> str:

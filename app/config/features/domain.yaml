@@ -105,6 +105,17 @@ domain:
     #     conversation: ["hello", "thanks", "inquiry"]
     content_type_markers: null
 
+    # 규칙 기반 메타데이터 추출기(RuleBasedExtractor)의 정규식 패턴.
+    # contains_numeric/has_date/has_phone 메타 생성에 사용한다.
+    # null(기본)이면 코드 내장 한국 통화/날짜/전화 형식을 사용한다(회귀 0).
+    # 다른 통화권/지역 운영자는 자신의 형식 정규식을 지정하세요.
+    #   numeric_pattern  — 수치/금액 (한국 기본: 원/만원/₩). 예(USD): "\\$\\d{1,3}(,\\d{3})*"
+    #   date_pattern     — 날짜 (한국 기본: 년월일). 예(ISO): "\\d{4}-\\d{2}-\\d{2}"
+    #   phone_pattern    — 전화번호 (한국 기본: 02-1234-5678). 예(국제): "\\+\\d{1,3}\\s?\\d{3,4}\\s?\\d{4}"
+    numeric_pattern: null
+    date_pattern: null
+    phone_pattern: null
+
     # Weaviate 컬렉션 도메인 스키마 필드(옵트인, Domain Schema Fields).
     # 기본(미정의/빈 목록)은 도메인 중립 — 코어 무관 필드만 인덱싱 컬럼으로
     # 생성한다. 임의 메타데이터는 metadata_json(단일 JSON 컬럼)에 무손실로
@@ -147,6 +158,27 @@ domain:
         "Phone": "전화번호"
         "Category": "분류"
         "Location": "위치"
+
+      # 메타데이터 값 파싱 규칙(통화/날짜/불리언/null 토큰).
+      # GenericMetadataSchema.parse_currency/parse_date/parse_boolean이 사용한다
+      # (notion 인제스천 라이브 경로). 아래 항목을 정의하지 않으면(기본) 코드 내장
+      # 한국어 + 언어 중립 기본값을 사용한다(회귀 0). 각 키는 '대체'한다(병합 아님).
+      #
+      # ⚠️ 언어 중립 fallback은 항상 유지된다(설정으로 끌 수 없음):
+      #   - 순수 숫자 추출(예: "12345" → 12345)
+      #   - ISO(YYYY-MM-DD)/점표기(2025.01.01) 날짜
+      #
+      # 비한국/타 통화권 운영자 예시(USD + 일본어 날짜 + 일본어 불리언):
+      #   parsing:
+      #     null_tokens: ["null", "none", "n/a", "-", "なし"]
+      #     currency:
+      #       strip_symbols: ["$", ",", " "]
+      #       unit_multipliers: {"k": 1000, "m": 1000000}
+      #     date_patterns:
+      #       - "(\\d{4})年\\s*(\\d{1,2})月\\s*(\\d{1,2})日"  # (year, month, day) 3그룹
+      #     boolean_true_tokens: ["true", "はい", "o", "yes"]
+      #     boolean_false_tokens: ["false", "いいえ", "x", "no"]
+      parsing: {}
 
   # 5. SQL 검색 설정 (SQL Search)
   sql_search:

@@ -189,6 +189,14 @@ NO_DOCUMENTS_MESSAGE = _DEFAULT_RESPONSE_LANGUAGE_PROFILES["ko"]["no_documents"]
 EXTRACTIVE_FALLBACK_MAX_DOCUMENTS = 3  # 발췌 대상 상위 문서 수
 EXTRACTIVE_FALLBACK_MAX_CHARS = 700  # 각 발췌 최대 길이(자)
 
+# 컨텍스트 블록 라벨(단일 진실원천).
+# 컨텍스트 조합 시 각 문서 앞에 붙이는 마커이자, source_signals 추출 시 이 마커로
+# 시작하는 라인을 건너뛰는 기준이다. 생산부(_combine_context_documents)와 소비부
+# (_build_source_signal_block)가 동일 상수를 참조해, 라벨을 바꿔도 한 곳만 수정하면
+# 라인 스킵이 깨지지 않는다. 기본값은 한국어 라벨로 기존 동작을 보존한다(회귀 0).
+# 다른 언어/라벨로 바꾸려면 이 상수만 교체한다(예: "[doc").
+_CONTEXT_BLOCK_LABEL = "[문서"
+
 # 컨텍스트 문서 한도.
 # 기본값은 OneRAG의 비용 최적화 정책(상위 5개)을 유지한다. 인접 청크 확장이 켜져
 # 문서가 늘어나면 호출부가 max_context_documents를 올려, 실제 검색 히트가 이웃 청크에
@@ -1101,7 +1109,9 @@ class GenerationModule:
                 content = doc
 
             if content:
-                context_parts.append(f"[문서 {i+1}]\n{content}\n")
+                # 컨텍스트 블록 라벨은 단일 상수(_CONTEXT_BLOCK_LABEL)를 참조한다.
+                # 소비부(_build_source_signal_block)가 같은 마커로 라인 스킵을 판정한다.
+                context_parts.append(f"{_CONTEXT_BLOCK_LABEL} {i+1}]\n{content}\n")
 
         return "\n".join(context_parts)
 
@@ -1412,7 +1422,7 @@ class GenerationModule:
         seen: set[str] = set()
         for order, raw_line in enumerate(context_text.splitlines()):
             line = " ".join(raw_line.split())
-            if not line or line.startswith(("<", "</", "[문서")):
+            if not line or line.startswith(("<", "</", _CONTEXT_BLOCK_LABEL)):
                 continue
             if len(line) > 260:
                 line = f"{line[:257]}..."

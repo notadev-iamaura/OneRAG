@@ -36,10 +36,15 @@ class RuleBasedExtractor(BaseMetadataExtractor):
         ['서비스', '이용', '방법']
     """
 
-    # 정규식 패턴 (클래스 변수로 한 번만 컴파일)
-    NUMERIC_PATTERN = re.compile(r"\d{1,3}(,\d{3})*원|\d+만원|₩\d+")
-    DATE_PATTERN = re.compile(r"\d{4}년\s*\d{1,2}월\s*\d{1,2}일|\d{1,2}월\s*\d{1,2}일")
-    PHONE_PATTERN = re.compile(r"\d{2,3}-\d{3,4}-\d{4}")
+    # 코드 내장 한국어 기본 정규식 패턴(회귀 안전판).
+    # numeric/date/phone은 언어·통화·지역 의존이라 config로 외부화하되, 미설정 시
+    # 아래 기본값으로 기존 한국어 동작과 동치를 유지한다(회귀 0). email은 언어 중립
+    # 형식이라 코드 상수로 유지한다.
+    DEFAULT_NUMERIC_PATTERN = r"\d{1,3}(,\d{3})*원|\d+만원|₩\d+"
+    DEFAULT_DATE_PATTERN = r"\d{4}년\s*\d{1,2}월\s*\d{1,2}일|\d{1,2}월\s*\d{1,2}일"
+    DEFAULT_PHONE_PATTERN = r"\d{2,3}-\d{3,4}-\d{4}"
+
+    # 이메일 패턴(언어 중립, 클래스 변수로 한 번만 컴파일)
     EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
     # 코드 내장 한국어 기본 콘텐츠 타입 마커(회귀 안전판).
@@ -56,6 +61,9 @@ class RuleBasedExtractor(BaseMetadataExtractor):
         use_konlpy: bool = True,
         category_keywords: dict[str, list[str]] | None = None,
         content_type_markers: dict[str, list[str]] | None = None,
+        numeric_pattern: str | None = None,
+        date_pattern: str | None = None,
+        phone_pattern: str | None = None,
     ):
         """
         RuleBasedExtractor 초기화
@@ -72,6 +80,18 @@ class RuleBasedExtractor(BaseMetadataExtractor):
                 사용한다(회귀 0). 비한국어 운영자는 domain.yaml의
                 `domain.metadata.content_type_markers`로 자국어 마커를 주입한다.
                 '?'(질문) 같은 언어 중립 판정은 마커와 무관하게 항상 적용된다.
+            numeric_pattern: 수치/금액 탐지 정규식. 미지정 시 코드 내장 한국어
+                통화 패턴(원/만원/₩)을 사용한다(회귀 0). 다른 통화권 운영자는
+                domain.yaml의 `domain.metadata.numeric_pattern`으로 주입한다.
+                예(USD): r"\\$\\d{1,3}(,\\d{3})*"
+            date_pattern: 날짜 탐지 정규식. 미지정 시 코드 내장 한국어 날짜
+                패턴(년월일)을 사용한다(회귀 0). domain.yaml의
+                `domain.metadata.date_pattern`으로 주입한다.
+                예(ISO): r"\\d{4}-\\d{2}-\\d{2}"
+            phone_pattern: 전화번호 탐지 정규식. 미지정 시 코드 내장 한국 전화
+                형식(02-1234-5678 등)을 사용한다(회귀 0). domain.yaml의
+                `domain.metadata.phone_pattern`으로 주입한다.
+                예(국제): r"\\+\\d{1,3}\\s?\\d{3,4}\\s?\\d{4}"
         """
         self.use_konlpy = use_konlpy
         # 기본값은 빈 dict: 도메인 미설정 시 카테고리 분류를 비활성화한다.
@@ -81,6 +101,17 @@ class RuleBasedExtractor(BaseMetadataExtractor):
             content_type_markers
             if content_type_markers is not None
             else {k: list(v) for k, v in self.DEFAULT_CONTENT_TYPE_MARKERS.items()}
+        )
+        # numeric/date/phone 정규식: config 주입 우선, 미설정 시 한국어 기본(회귀 0).
+        # 인스턴스별 컴파일해 클래스 공유 상태 오염을 방지한다.
+        self.numeric_pattern = re.compile(
+            numeric_pattern if numeric_pattern is not None else self.DEFAULT_NUMERIC_PATTERN
+        )
+        self.date_pattern = re.compile(
+            date_pattern if date_pattern is not None else self.DEFAULT_DATE_PATTERN
+        )
+        self.phone_pattern = re.compile(
+            phone_pattern if phone_pattern is not None else self.DEFAULT_PHONE_PATTERN
         )
         self.okt = None
 
@@ -113,16 +144,16 @@ class RuleBasedExtractor(BaseMetadataExtractor):
         metadata = {}
 
         # 1. 수치/금액 정보 추출
-        metadata["contains_numeric"] = bool(self.NUMERIC_PATTERN.search(content))
+        metadata["contains_numeric"] = bool(self.numeric_pattern.search(content))
         if metadata["contains_numeric"]:
-            numeric_matches = self.NUMERIC_PATTERN.findall(content)
+            numeric_matches = self.numeric_pattern.findall(content)
             metadata["numeric_mentions"] = len(numeric_matches)  # type: ignore[assignment]
 
         # 2. 날짜 정보 추출
-        metadata["has_date"] = bool(self.DATE_PATTERN.search(content))  # type: ignore[assignment]
+        metadata["has_date"] = bool(self.date_pattern.search(content))  # type: ignore[assignment]
 
         # 3. 전화번호 추출
-        metadata["has_phone"] = bool(self.PHONE_PATTERN.search(content))  # type: ignore[assignment]
+        metadata["has_phone"] = bool(self.phone_pattern.search(content))  # type: ignore[assignment]
 
         # 4. 이메일 추출
         metadata["has_email"] = bool(self.EMAIL_PATTERN.search(content))  # type: ignore[assignment]

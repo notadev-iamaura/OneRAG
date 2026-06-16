@@ -51,6 +51,9 @@ class FAQProcessor(BaseDocumentProcessor):
         category_keywords: dict[str, list[str]] | None = None,
         content_type_markers: dict[str, list[str]] | None = None,
         column_aliases: dict[str, list[str]] | None = None,
+        numeric_pattern: str | None = None,
+        date_pattern: str | None = None,
+        phone_pattern: str | None = None,
     ):
         """
         FAQProcessor 초기화
@@ -70,6 +73,13 @@ class FAQProcessor(BaseDocumentProcessor):
             column_aliases: 질문/답변 컬럼 별칭 맵({"question": [...], "answer": [...]}).
                 기본 청커(SimpleChunker)에 주입한다. 미지정 시 코드 내장 ko+en
                 기본 별칭 사용(회귀 0). uploads.yaml의 `uploads.faq.column_aliases`에서 전달.
+            numeric_pattern: 수치/금액 탐지 정규식. 기본 추출기(RuleBasedExtractor)
+                생성 시 주입한다. 미지정 시 코드 내장 한국어 통화 패턴 사용(회귀 0).
+                domain.yaml의 `domain.metadata.numeric_pattern`에서 전달.
+            date_pattern: 날짜 탐지 정규식. 미지정 시 한국어 날짜 패턴 사용(회귀 0).
+                domain.yaml의 `domain.metadata.date_pattern`에서 전달.
+            phone_pattern: 전화번호 탐지 정규식. 미지정 시 한국 전화형식 사용(회귀 0).
+                domain.yaml의 `domain.metadata.phone_pattern`에서 전달.
         """
         # 기본 전략 설정
         if chunker is None:
@@ -83,6 +93,9 @@ class FAQProcessor(BaseDocumentProcessor):
                 use_konlpy=True,
                 category_keywords=category_keywords,
                 content_type_markers=content_type_markers,
+                numeric_pattern=numeric_pattern,
+                date_pattern=date_pattern,
+                phone_pattern=phone_pattern,
             )
 
         # 컬럼 검증/메타에서 재사용하기 위해 별칭을 청커와 단일 소스로 공유한다.

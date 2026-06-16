@@ -21,6 +21,15 @@ self_rag:
   # ⭐ 품질 게이트 설정 (저품질 답변 거부)
   min_quality_to_answer: 0.6  # 최소 품질 임계값 (0.6 미만 시 답변 거부)
 
+  # 저품질 답변 거부 시 사용자에게 노출되는 메시지 (사용자노출 문자열 외부화).
+  # 최종 품질 점수가 min_quality_to_answer 미만이면 아래 메시지로 답변을 교체한다.
+  #   - low_quality_reject_message: answer 필드(상세 안내문)
+  #   - low_quality_reject_text: text 필드(축약 안내문)
+  # 둘 다 null/공백이면 코드 내장 한국어 기본값을 사용한다(회귀 0). 비한국어 운영자는
+  # 코드 포크 없이 이 값으로 해당 언어의 거부 메시지로 교체할 수 있다.
+  low_quality_reject_message: null
+  low_quality_reject_text: null
+
   # 4. 재생성 제어 설정
   max_iterations: 1  # 최대 재생성 횟수 (1회로 제한하여 비용 통제)
   enable_rollback: true  # 재생성 품질 저하 시 원본 답변 반환

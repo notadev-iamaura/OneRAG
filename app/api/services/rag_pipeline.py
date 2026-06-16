@@ -131,6 +131,31 @@ GENERATION_FALLBACK_NO_DOCS_MESSAGE = (
     "이용할 수 없습니다. 다른 방식으로 질문해 주시겠어요?"
 )
 
+# 프롬프트 누출(output leakage) 감지 시 답변을 교체하는 보안 메시지 (코드 내장 기본=한국어).
+# 통짜 경로와 Self-RAG 경로 두 곳에서 동일하게 사용되던 중복 문자열을 단일 진실원천으로
+# 통합한다. 형제 메시지와 동일하게 rag.yaml generation_fallback.prompt_leakage_blocked_message
+# 로 외부화한다 → 미설정 시 회귀 0(아래 기본 문자열 사용). 비한국어 운영자는 코드 포크
+# 없이 이 값으로 해당 언어의 보안 메시지로 교체할 수 있다.
+PROMPT_LEAKAGE_BLOCKED_MESSAGE = (
+    "보안 정책에 따라 내부 지시사항은 공개되지 않습니다. "
+    "문서 기반 답변이 필요한 내용을 다시 질문해주세요."
+)
+
+# 생성 결과 타입 가드 실패(예상치 못한 타입) 시 사용자에게 노출되는 안전 메시지
+# (코드 내장 기본=한국어). rag.yaml generation_fallback.type_error_message로 외부화한다
+# → 미설정 시 회귀 0. 운영자는 코드 포크 없이 해당 언어로 교체 가능.
+GENERATION_TYPE_ERROR_MESSAGE = "답변 생성 중 오류가 발생했습니다."
+
+# Self-RAG 품질 게이트에서 최종 품질 점수가 임계값 미만일 때 답변을 거부하며
+# 반환하는 메시지 (코드 내장 기본=한국어). answer(상세)와 text(축약) 2종으로 구성된다.
+# self_rag.yaml self_rag.low_quality_reject_message / low_quality_reject_text로 외부화한다
+# → 미설정 시 회귀 0(아래 기본 문자열 사용). 비한국어 운영자는 코드 포크 없이 교체 가능.
+SELF_RAG_LOW_QUALITY_REJECT_MESSAGE = (
+    "죄송합니다. 확실한 정보를 찾지 못했습니다. "
+    "질문을 구체적으로 다시 작성해주시겠어요?"
+)
+SELF_RAG_LOW_QUALITY_REJECT_TEXT = "죄송합니다. 확실한 정보를 찾지 못했습니다."
+
 # ============================================================================
 # 정확 식별자(exact-identifier) 검색 보강 패턴 (GAP A) - 언어무관/도메인무관
 # ============================================================================
@@ -1038,6 +1063,39 @@ class RAGPipeline:
             _resolve_generation_fallback_message(
                 generation_fallback_config.get("document_preview_unavailable"),
                 DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
+            )
+        )
+        # 프롬프트 누출 차단 메시지(통짜·Self-RAG 공용, 중복 단일화)와 타입 가드 실패
+        # 메시지도 동일하게 generation_fallback로 외부화한다(미설정 시 코드 기본 → 회귀 0).
+        self.prompt_leakage_blocked_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("prompt_leakage_blocked_message"),
+                PROMPT_LEAKAGE_BLOCKED_MESSAGE,
+            )
+        )
+        self.generation_type_error_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("type_error_message"),
+                GENERATION_TYPE_ERROR_MESSAGE,
+            )
+        )
+
+        # Self-RAG 저품질 거부 메시지 외부화 (self_rag.yaml self_rag 섹션).
+        # min_quality_to_answer와 동일 섹션(self_rag_config)에서 읽어 응집도를 맞춘다.
+        # answer(상세)/text(축약) 2종 모두 미설정/공백이면 코드 내장 한국어 기본값 → 회귀 0.
+        self_rag_section = self.config.get("self_rag", {})
+        if not isinstance(self_rag_section, dict):
+            self_rag_section = {}
+        self.self_rag_low_quality_reject_message: str = (
+            _resolve_generation_fallback_message(
+                self_rag_section.get("low_quality_reject_message"),
+                SELF_RAG_LOW_QUALITY_REJECT_MESSAGE,
+            )
+        )
+        self.self_rag_low_quality_reject_text: str = (
+            _resolve_generation_fallback_message(
+                self_rag_section.get("low_quality_reject_text"),
+                SELF_RAG_LOW_QUALITY_REJECT_TEXT,
             )
         )
 
@@ -3906,7 +3964,7 @@ class RAGPipeline:
                 logger.error(f"⚠️ 예상치 못한 generation_result 타입: {type(generation_result)}")
                 tokens = 0
                 provider = "unknown"
-                answer = "답변 생성 중 오류가 발생했습니다."
+                answer = self.generation_type_error_message
                 model_info = {"provider": "error", "model": "unknown"}
 
             if tokens > 0 and provider in ["google", "openai", "anthropic"]:
@@ -3917,7 +3975,7 @@ class RAGPipeline:
                     "프롬프트 누출 감지 - 답변 차단",
                     extra={"preview": answer[:100]}
                 )
-                answer = "보안 정책에 따라 내부 지시사항은 공개되지 않습니다. 문서 기반 답변이 필요한 내용을 다시 질문해주세요."
+                answer = self.prompt_leakage_blocked_message
                 self.performance_metrics.record_error("prompt_leakage_blocked")
 
             logger.info(
@@ -4099,8 +4157,8 @@ class RAGPipeline:
 
                     # 거부 메시지 반환
                     return GenerationResult(
-                        answer="죄송합니다. 확실한 정보를 찾지 못했습니다. 질문을 구체적으로 다시 작성해주시겠어요?",
-                        text="죄송합니다. 확실한 정보를 찾지 못했습니다.",
+                        answer=self.self_rag_low_quality_reject_message,
+                        text=self.self_rag_low_quality_reject_text,
                         tokens_used=generation_result.tokens_used,
                         model_used=generation_result.model_used,
                         provider=generation_result.provider,
@@ -4158,7 +4216,7 @@ class RAGPipeline:
                         "프롬프트 누출 감지 (Self-RAG) - 답변 차단",
                         extra={"preview": answer[:100]}
                     )
-                    answer = "보안 정책에 따라 내부 지시사항은 공개되지 않습니다. 문서 기반 답변이 필요한 내용을 다시 질문해주세요."
+                    answer = self.prompt_leakage_blocked_message
                     self.performance_metrics.record_error("prompt_leakage_blocked")
 
                 # Self-RAG 답변으로 교체 (재생성됐든 안 됐든)

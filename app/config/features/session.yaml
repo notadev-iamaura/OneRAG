@@ -35,6 +35,37 @@ session:
   chat_persistence:
     enabled: false                # 채팅 영속화 온/오프 (기본 OFF = 인메모리)
 
+  # ==========================================================================
+  # 사용자 정보(이름/나이) 추출 패턴 — 사용자노출/동작영향 문자열 외부화
+  # ==========================================================================
+  # 세션 메시지에서 사용자 이름·나이를 추출해 컨텍스트(LLM 프롬프트)에 반영한다.
+  # 패턴이 한국어 전용으로 하드코딩되어 있던 것을 외부화한다. 아래 모든 키가
+  # null/공백/타입 불일치이면 코드 내장 한국어 기본값을 사용한다 → 미설정 시 회귀 0.
+  # 비한국어 운영자는 코드 포크 없이 해당 언어의 패턴으로 교체할 수 있다.
+  #   - name_patterns: 부분 문자열 이름 추출 패턴 리스트. 메시지에 패턴이 포함되면
+  #       그 뒤 첫 단어를 이름 후보로 본다. (문자열 리스트일 때만 적용)
+  #   - name_regex: 정규식 이름 추출 패턴(부분 문자열보다 우선). 첫 캡처 그룹=이름.
+  #   - name_suffix_strip_chars: 이름 후보 끝에서 제거할 조사/어미 문자 집합(rstrip 인자).
+  #   - age_unit: 나이 추출 트리거 단위. 이 문자열 + 숫자가 함께 있을 때만 나이 정규식 적용.
+  #   - age_regex: 정규식 나이 추출 패턴. 첫 캡처 그룹=숫자(나이).
+  #   - name_fact_label / age_fact_label: facts 저장소에 사용할 라벨(언어 종속).
+  # 예시(영어):
+  #   name_patterns: ["my name is ", "I am ", "call me "]
+  #   name_regex: "my name is\\s+([A-Za-z]+)"
+  #   name_suffix_strip_chars: ".,"
+  #   age_unit: "years old"
+  #   age_regex: "(\\d+)\\s*years old"
+  #   name_fact_label: "name"
+  #   age_fact_label: "age"
+  user_info_extraction:
+    name_patterns: null
+    name_regex: null
+    name_suffix_strip_chars: null
+    age_unit: null
+    age_regex: null
+    name_fact_label: null
+    age_fact_label: null
+
 # 빈 화면(Empty State) 설정 — 챗봇 시작 화면 문구/추천 질문 (서버 영속화)
 # 관리자가 PUT /api/admin/chat-empty-state/{locale}로 저장하면 전 사용자에게 반영됩니다.
 # supported_locales / defaults 미설정 시 라우터의 도메인 중립 코드 기본값(ko/en)으로 폴백.

@@ -317,3 +317,132 @@ class TestExtractFallbackDocumentPreview:
             {"content": "실제 본문입니다"}, unavailable_message="N/A"
         )
         assert result == "실제 본문입니다"
+
+
+class TestPromptLeakageBlockedMessageExternalization:
+    """프롬프트 누출 차단 메시지 외부화 + 중복 단일화 (통짜·Self-RAG 공용)."""
+
+    def test_default_is_builtin_korean(self, mock_modules) -> None:
+        """(a) 미설정 시 코드 내장 한국어 기본값 사용 (회귀 0)."""
+        from app.api.services.rag_pipeline import PROMPT_LEAKAGE_BLOCKED_MESSAGE
+
+        pipeline = _pipeline(mock_modules)
+        assert (
+            pipeline.prompt_leakage_blocked_message
+            == PROMPT_LEAKAGE_BLOCKED_MESSAGE
+        )
+        # 중복 제거: 통짜·Self-RAG 두 경로가 단일 속성을 참조해야 한다.
+        assert "보안 정책" in pipeline.prompt_leakage_blocked_message
+
+    def test_override_message(self, mock_modules) -> None:
+        """(b)(c) config 오버라이드 시 교체되고 인스턴스에 반영된다(데드 키 아님)."""
+        config: dict[str, Any] = {
+            "rag": {
+                "generation_fallback": {
+                    "prompt_leakage_blocked_message": "Internal instructions are not disclosed.",
+                },
+            },
+            "retrieval": {},
+            "reranking": {},
+        }
+        pipeline = RAGPipeline(config=config, **mock_modules)
+        assert (
+            pipeline.prompt_leakage_blocked_message
+            == "Internal instructions are not disclosed."
+        )
+
+    def test_blank_falls_back_to_default(self, mock_modules) -> None:
+        """공백 문자열은 무효로 보아 코드 기본값을 사용한다(회귀 0)."""
+        from app.api.services.rag_pipeline import PROMPT_LEAKAGE_BLOCKED_MESSAGE
+
+        config: dict[str, Any] = {
+            "rag": {"generation_fallback": {"prompt_leakage_blocked_message": "  "}},
+            "retrieval": {},
+            "reranking": {},
+        }
+        pipeline = RAGPipeline(config=config, **mock_modules)
+        assert (
+            pipeline.prompt_leakage_blocked_message
+            == PROMPT_LEAKAGE_BLOCKED_MESSAGE
+        )
+
+
+class TestGenerationTypeErrorMessageExternalization:
+    """생성 결과 타입 가드 실패 메시지 외부화 회귀/오버라이드."""
+
+    def test_default_is_builtin_korean(self, mock_modules) -> None:
+        """(a) 미설정 시 코드 내장 한국어 기본값 (회귀 0)."""
+        from app.api.services.rag_pipeline import GENERATION_TYPE_ERROR_MESSAGE
+
+        pipeline = _pipeline(mock_modules)
+        assert (
+            pipeline.generation_type_error_message
+            == GENERATION_TYPE_ERROR_MESSAGE
+        )
+        assert (
+            pipeline.generation_type_error_message
+            == "답변 생성 중 오류가 발생했습니다."
+        )
+
+    def test_override_message(self, mock_modules) -> None:
+        """(b) config 오버라이드 시 교체된다(데드 키 아님)."""
+        config: dict[str, Any] = {
+            "rag": {
+                "generation_fallback": {
+                    "type_error_message": "An error occurred while generating the answer.",
+                },
+            },
+            "retrieval": {},
+            "reranking": {},
+        }
+        pipeline = RAGPipeline(config=config, **mock_modules)
+        assert (
+            pipeline.generation_type_error_message
+            == "An error occurred while generating the answer."
+        )
+
+
+class TestSelfRagLowQualityRejectMessageExternalization:
+    """Self-RAG 저품질 거부 메시지 외부화 (self_rag.yaml self_rag 섹션)."""
+
+    def test_defaults_are_builtin_korean(self, mock_modules) -> None:
+        """(a) 미설정 시 코드 내장 한국어 기본값 사용 (회귀 0)."""
+        from app.api.services.rag_pipeline import (
+            SELF_RAG_LOW_QUALITY_REJECT_MESSAGE,
+            SELF_RAG_LOW_QUALITY_REJECT_TEXT,
+        )
+
+        pipeline = _pipeline(mock_modules)
+        assert (
+            pipeline.self_rag_low_quality_reject_message
+            == SELF_RAG_LOW_QUALITY_REJECT_MESSAGE
+        )
+        assert (
+            pipeline.self_rag_low_quality_reject_text
+            == SELF_RAG_LOW_QUALITY_REJECT_TEXT
+        )
+        # 기존 테스트가 검증하는 부분 문자열을 기본값이 보존해야 한다(회귀 0).
+        assert (
+            "확실한 정보를 찾지 못했습니다"
+            in pipeline.self_rag_low_quality_reject_message
+        )
+
+    def test_override_both(self, mock_modules) -> None:
+        """(b)(c) config 오버라이드 시 answer/text 모두 교체되고 인스턴스에 반영된다."""
+        config: dict[str, Any] = {
+            "rag": {},
+            "self_rag": {
+                "low_quality_reject_message": "Sorry, I couldn't find reliable info.",
+                "low_quality_reject_text": "Sorry, no reliable info.",
+            },
+            "retrieval": {},
+            "reranking": {},
+        }
+        pipeline = RAGPipeline(config=config, **mock_modules)
+        assert (
+            pipeline.self_rag_low_quality_reject_message
+            == "Sorry, I couldn't find reliable info."
+        )
+        assert (
+            pipeline.self_rag_low_quality_reject_text == "Sorry, no reliable info."
+        )

@@ -63,10 +63,42 @@ _DEFAULT_QUESTION_MARKERS = (
     "습니까",
     "입니까",
 )
-_ENGLISH_QUESTION_RE = re.compile(
-    r"\b(?:how|why|what|when|where|which|who|whom|whose)\b",
-    re.IGNORECASE,
+# 영어 의문사 마커의 코드 기본값(범용화: question_markers와 대칭화).
+# 범용화 배경: 과거 _ENGLISH_QUESTION_RE는 모듈 상수 정규식으로 하드코딩되어
+# question_markers(config 주입)와 비대칭이었다 — 운영자가 한국어 마커를 자국어로
+# 갈아끼워도 영어 분기는 제거할 수 없었다. 이제 영어 마커도 코드 기본값으로만 두고,
+# english_question_markers 생성자 파라미터 + query_expansion.yaml로 교체/비활성화
+# (빈 목록)할 수 있다. 단어 경계(\b) 매칭은 보존해 'show'가 'how'로 오판되지 않는다.
+_DEFAULT_ENGLISH_QUESTION_MARKERS: tuple[str, ...] = (
+    "how",
+    "why",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "whom",
+    "whose",
 )
+
+
+def _compile_english_question_re(markers: tuple[str, ...]) -> re.Pattern[str] | None:
+    """영어 의문사 마커 목록을 단어 경계 매칭 정규식으로 컴파일한다.
+
+    마커가 비어 있으면 None을 반환해 영어 의문사 판정을 비활성화한다(운영자
+    옵트아웃). 각 마커는 re.escape로 안전 처리하고 \\b로 단어 경계를 보존한다
+    (기존 동작과 동치: 'showdocs'의 'how'를 의문사로 오판하지 않음).
+
+    Args:
+        markers: 영어 의문사 마커 튜플
+
+    Returns:
+        컴파일된 정규식 또는 None(마커 없음)
+    """
+    if not markers:
+        return None
+    alternation = "|".join(re.escape(marker) for marker in markers)
+    return re.compile(rf"\b(?:{alternation})\b", re.IGNORECASE)
 
 # 쿼리 확장 프롬프트 본문의 코드 기본값(범용화: 본문 전체 외부화).
 # 범용화 배경: 과거에는 이 한국어 본문이 _create_expansion_prompt 내부에
@@ -172,6 +204,9 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         expansion_language_en: str = "Korean",  # 영어 시스템 메시지용 언어 이름
         question_markers: tuple[str, ...] | None = None,  # 질문 마커 오버라이드
         expansion_prompt_template: str | None = None,  # 확장 프롬프트 본문 오버라이드
+        english_question_markers: list[str]
+        | tuple[str, ...]
+        | None = None,  # 영어 의문사 마커 오버라이드
     ):
         """
         Args:
@@ -203,6 +238,13 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
                 한국어)을 사용한다 → 미설정 시 회귀 0. 외부 템플릿을 주입할 때는
                 플레이스홀더 규약({language} 선치환 / {query} 보존 / JSON {{ }}
                 보존)을 지켜야 한다. query_expansion.yaml prompt_template로 주입한다.
+            english_question_markers: 단순 쿼리 판정용 영어 의문사 마커 오버라이드.
+                None이면 코드 기본값(_DEFAULT_ENGLISH_QUESTION_MARKERS)을 사용한다
+                → 미설정 시 회귀 0(단어 경계 매칭 보존). 빈 목록([])을 주면 영어
+                의문사 판정을 비활성화한다(운영자 옵트아웃). 다른 언어 운영자는
+                question_markers/english_question_markers를 자국어로 교체해 마커
+                전체를 코드 포크 없이 갈아끼울 수 있다. query_expansion.yaml의
+                english_question_markers로 주입한다.
 
         Raises:
             ValueError: llm_factory가 None인 경우
@@ -230,6 +272,16 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
             tuple(question_markers)
             if question_markers is not None
             else _DEFAULT_QUESTION_MARKERS
+        )
+        # 영어 의문사 마커: config 주입 우선, 미설정 시 코드 기본값(회귀 0).
+        # 빈 목록 주입 시 영어 분기 비활성화(컴파일 결과 None). 단어 경계 매칭 보존.
+        self.english_question_markers: tuple[str, ...] = (
+            tuple(english_question_markers)
+            if english_question_markers is not None
+            else _DEFAULT_ENGLISH_QUESTION_MARKERS
+        )
+        self._english_question_re: re.Pattern[str] | None = (
+            _compile_english_question_re(self.english_question_markers)
         )
         # 확장 프롬프트 본문 템플릿: config 주입 우선, 미설정 시 코드 기본 본문(회귀 0).
         self.expansion_prompt_template: str = (
@@ -369,10 +421,16 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         if not normalized:
             return True
 
+        # 영어 의문사 분기: config로 마커 교체/비활성화 가능(self._english_question_re).
+        # None이면(빈 마커) 영어 의문사 판정을 건너뛴다(운영자 옵트아웃).
+        english_signal = (
+            self._english_question_re is not None
+            and self._english_question_re.search(normalized) is not None
+        )
         has_question_signal = (
             any(punctuation in normalized for punctuation in _QUERY_PUNCTUATION)
             or any(marker in normalized for marker in self.question_markers)
-            or _ENGLISH_QUESTION_RE.search(normalized) is not None
+            or english_signal
         )
         if has_question_signal:
             return False
@@ -814,6 +872,15 @@ User: {self.expansion_prompt.format(query=query)}"""
         markers_cfg = query_expansion_config.get("question_markers")
         question_markers = tuple(markers_cfg) if markers_cfg else None
 
+        # english_question_markers: list면 그대로 전달(빈 목록 = 비활성화 의도 존중),
+        # 미설정(None)이면 코드 기본값 사용(회귀 0). 빈 목록과 미설정을 구분한다.
+        english_markers_cfg = query_expansion_config.get("english_question_markers")
+        english_question_markers = (
+            list(english_markers_cfg)
+            if isinstance(english_markers_cfg, list)
+            else None
+        )
+
         # 확장 프롬프트 본문 템플릿 읽기(없거나 공백이면 None → 코드 기본 본문 사용).
         # 데드 키 아님: 생성자 expansion_prompt_template 파라미터로 전달되어
         # _create_expansion_prompt가 실제로 이 본문을 사용한다.
@@ -848,4 +915,5 @@ User: {self.expansion_prompt.format(query=query)}"""
             expansion_language_en=expansion_language_en,
             question_markers=question_markers,
             expansion_prompt_template=expansion_prompt_template,
+            english_question_markers=english_question_markers,
         )

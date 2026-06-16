@@ -889,6 +889,11 @@ async def create_relation_extractor_instance(
             config={
                 "max_relations": llm_config.get("max_relations_per_chunk", 30),
                 "model": model,
+                # 프롬프트 외부화: graph_rag.extraction.llm.relation_prompt_template.
+                # 엔티티 추출기의 prompt_template와 키를 분리해 관계 프롬프트만 교체 가능.
+                # 미설정 시 None → LLMRelationExtractor가 코드 내장 한국어 기본
+                # 프롬프트를 사용한다 (회귀 0).
+                "prompt_template": llm_config.get("relation_prompt_template"),
             },
         )
         logger.info(

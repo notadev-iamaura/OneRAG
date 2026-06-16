@@ -174,11 +174,20 @@ rag:
   #       미리보기로 치환된다(.replace 사용). {content}를 빼면 미리보기가 노출되지 않는다.
   #   - no_docs_message: 문서도 못 찾고 LLM도 장애인 경우.
   #   - document_preview_unavailable: 문서에서 미리보기 텍스트를 추출하지 못했을 때 대체 문구.
+  #
+  # 아래 2개는 LLM 장애와 무관한 안전 메시지로, 동일하게 외부화한다(미설정 시 회귀 0).
+  #   - prompt_leakage_blocked_message: 답변에서 프롬프트 누출이 감지되어 차단할 때
+  #       사용자에게 노출되는 보안 메시지. 통짜(REST /chat)와 Self-RAG 경로 양쪽에서
+  #       동일하게 사용된다(단일 진실원천). null/공백이면 코드 내장 한국어 기본값.
+  #   - type_error_message: 생성 결과 타입 가드가 예상치 못한 타입을 만났을 때 반환하는
+  #       안전 메시지. null/공백이면 코드 내장 한국어 기본값.
   generation_fallback:
     module_missing_message: null
     with_docs_message: null
     no_docs_message: null
     document_preview_unavailable: null
+    prompt_leakage_blocked_message: null
+    type_error_message: null
 
   # ==========================================================================
   # 멀티턴 anchor soft boost (GAP B) - opt-in, 기본 OFF, 보수적

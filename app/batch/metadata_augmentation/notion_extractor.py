@@ -148,7 +148,12 @@ class NotionMetadataExtractor:
         )
 
     def _setup_schema_validation(self, metadata_config: dict[str, Any]):
-        """범용 스키마에 검증 규칙 설정"""
+        """범용 스키마에 검증 규칙 및 파싱 규칙 설정.
+
+        검증 규칙(required/numeric/boolean 필드)에 더해, 파싱 규칙
+        (domain.metadata.schema.parsing — 통화/날짜/불리언/null 토큰)도 주입한다.
+        parsing 키가 없으면 코드 기본값(한국어 + 언어 중립)을 유지한다(회귀 0).
+        """
         required = metadata_config.get("required_fields", ["name"])
         numeric = metadata_config.get("numeric_fields", [])
         boolean = metadata_config.get("boolean_fields", [])
@@ -158,7 +163,12 @@ class NotionMetadataExtractor:
             numeric=numeric,
             boolean=boolean
         )
-        logger.info("🔧 범용 스키마 검증 규칙 설정 완료")
+
+        # 파싱 규칙 외부화: config 미설정 시 코드 기본값 유지(회귀 0).
+        parsing_config = metadata_config.get("parsing")
+        GenericMetadataSchema.set_parsing_config(parsing_config)
+
+        logger.info("🔧 범용 스키마 검증/파싱 규칙 설정 완료")
 
     def _load_prompts(self) -> dict[str, str]:
         """프롬프트 파일 로드"""
