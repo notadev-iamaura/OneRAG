@@ -35,7 +35,7 @@ from app.api.services.openai_model_resolver import (
     parse_model,
     resolve_model_config,
 )
-from app.lib.errors.codes import ErrorCode
+from app.lib.errors import ErrorCode, get_error_message
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
@@ -83,6 +83,20 @@ def set_modules(modules: dict[str, Any]) -> None:
     """모듈 의존성 주입 (main.py에서 호출)"""
     global _modules
     _modules = modules
+
+
+def _resolve_request_language(request: Request) -> str:
+    """요청 Accept-Language 헤더에서 에러 메시지 언어를 결정한다(ko|en, 기본 ko).
+
+    양언어 에러 카탈로그(app.lib.errors)는 "ko"/"en"만 지원한다. 헤더가 영어를
+    우선하면 "en"을, 그 외(미지정 포함)는 "ko"를 반환한다 → 한국어 기본(회귀 0).
+    """
+    accept_language = (request.headers.get("accept-language") or "").lower()
+    en_idx = accept_language.find("en")
+    ko_idx = accept_language.find("ko")
+    if en_idx != -1 and (ko_idx == -1 or en_idx < ko_idx):
+        return "en"
+    return "ko"
 
 
 def _resolve_rag_template(config_key: str, env_name: str, default: str) -> str:
@@ -400,6 +414,9 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     RAG 파이프라인: 문서 검색 -> 컨텍스트 조합 -> LLM 답변 생성
     model 필드로 LLM provider 선택 (예: "gemini", "ollama/qwen2.5:3b")
     """
+    # 0. 에러 메시지 언어 해석(Accept-Language). 미지정/한국어 우선 시 ko(회귀 0).
+    error_lang = _resolve_request_language(request)
+
     # 1. 모델 파싱
     try:
         provider, sub_model = parse_model(req.model)
@@ -407,7 +424,15 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     except ValueError as e:
         raise HTTPException(
             status_code=400,
-            detail={"error": {"message": str(e), "type": "invalid_request_error", "code": ErrorCode.OPENAI_001.value}},
+            detail={
+                "error": {
+                    "message": get_error_message(
+                        ErrorCode.OPENAI_001.value, error_lang, detail=str(e)
+                    ),
+                    "type": "invalid_request_error",
+                    "code": ErrorCode.OPENAI_001.value,
+                }
+            },
         )
 
     # 2. 메시지 추출
@@ -426,12 +451,20 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     if not user_message:
         raise HTTPException(
             status_code=400,
-            detail={"error": {"message": "user 메시지가 필요합니다", "type": "invalid_request_error"}},
+            detail={
+                "error": {
+                    "message": get_error_message(ErrorCode.OPENAI_004.value, error_lang),
+                    "type": "invalid_request_error",
+                    "code": ErrorCode.OPENAI_004.value,
+                }
+            },
         )
 
-    # 3. 스트리밍 분기
+    # 3. 스트리밍 분기 — 스트리밍 SSE 본문 에러도 동일 언어로 노출하도록 lang 전달.
     if req.stream:
-        return await _stream_completion(req, user_message, system_prompt, model_config)
+        return await _stream_completion(
+            req, user_message, system_prompt, model_config, error_lang
+        )
 
     # 4. 문서 검색 (RAG) — 메인 채팅과 동일한 멀티쿼리·rerank 체인 재사용(#14 비대칭 해소).
     #    messages를 함께 넘겨 멀티턴 직전 맥락을 검색에 반영한다(GAP #1).
@@ -445,7 +478,17 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     try:
         llm_factory = _modules.get("llm_factory")
         if not llm_factory:
-            raise HTTPException(status_code=503, detail={"error": {"message": "LLM 서비스 사용 불가", "code": ErrorCode.OPENAI_002.value}})
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": {
+                        "message": get_error_message(
+                            ErrorCode.OPENAI_002.value, error_lang
+                        ),
+                        "code": ErrorCode.OPENAI_002.value,
+                    }
+                },
+            )
 
         llm_client = llm_factory.get_client(model_config["provider"])
 
@@ -462,7 +505,15 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
         logger.error(f"LLM 생성 실패: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"error": {"message": f"답변 생성 실패: {e}", "type": "server_error", "code": ErrorCode.OPENAI_003.value}},
+            detail={
+                "error": {
+                    "message": get_error_message(
+                        ErrorCode.OPENAI_003.value, error_lang, error=str(e)
+                    ),
+                    "type": "server_error",
+                    "code": ErrorCode.OPENAI_003.value,
+                }
+            },
         )
 
     # 7. OpenAI 형식 응답
@@ -479,8 +530,13 @@ async def _stream_completion(
     user_message: str,
     system_prompt: str | None,
     model_config: dict[str, str],
+    error_lang: str = "ko",
 ) -> StreamingResponse:
-    """스트리밍 응답 생성"""
+    """스트리밍 응답 생성.
+
+    error_lang: SSE 본문 에러 메시지 언어(ko|en). 호출측이 Accept-Language로 해석해
+    전달하며, 미전달 시 한국어 기본(회귀 0).
+    """
 
     async def event_generator():  # type: ignore[return]
         # 1. 문서 검색 — 비스트리밍 경로와 동일한 멀티쿼리·rerank 체인 재사용(#14).
@@ -494,7 +550,13 @@ async def _stream_completion(
         try:
             llm_factory = _modules.get("llm_factory")
             if not llm_factory:
-                error = {"error": {"message": "LLM 서비스 사용 불가"}}
+                error = {
+                    "error": {
+                        "message": get_error_message(
+                            ErrorCode.OPENAI_002.value, error_lang
+                        )
+                    }
+                }
                 yield f"data: {json.dumps(error, ensure_ascii=False)}\n\n"
                 return
 

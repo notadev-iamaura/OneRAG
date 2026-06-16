@@ -62,6 +62,7 @@ from app.lib.errors.exceptions import (
 # 포맷팅 함수
 from app.lib.errors.formatter import (
     format_error_response,
+    format_user_facing_error,
     get_all_error_codes,
     get_default_language,
     get_error_codes_by_domain,
@@ -101,6 +102,7 @@ __all__ = [
     "get_error_message",
     "get_error_solutions",
     "format_error_response",
+    "format_user_facing_error",
     "get_default_language",
     "get_all_error_codes",
     "get_error_codes_by_domain",

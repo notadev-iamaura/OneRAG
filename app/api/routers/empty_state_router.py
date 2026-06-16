@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.api.routers._empty_state_defaults import (
@@ -34,11 +34,25 @@ from app.infrastructure.storage.chat.empty_state_settings_store import (
     ChatEmptyStateSettingsStore,
 )
 from app.lib.auth import get_api_key
+from app.lib.errors import ErrorCode, get_error_message
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["EmptyState"])
+
+
+def _resolve_request_language(request: Request) -> str:
+    """Accept-Language 헤더로 사용자 노출 언어 결정 (ko 기본).
+
+    en이 ko보다 먼저 명시되면 영어, 그 외에는 한국어를 반환합니다.
+    """
+    accept_language = (request.headers.get("accept-language") or "").lower()
+    en_idx = accept_language.find("en")
+    ko_idx = accept_language.find("ko")
+    if en_idx != -1 and (ko_idx == -1 or en_idx < ko_idx):
+        return "en"
+    return "ko"
 
 # 검증 한도 (프론트엔드 chatSettingsService.validateSettings와 동일)
 _MAIN_MAX = 100
@@ -127,12 +141,17 @@ def _public_view(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _validate_locale(locale: str) -> str:
+def _validate_locale(locale: str, lang: str = "ko") -> str:
     supported = get_supported_locales()
     if locale not in supported:
         raise HTTPException(
             status_code=400,
-            detail=f"지원하지 않는 로케일입니다: {locale} (지원: {', '.join(supported)})",
+            detail=get_error_message(
+                ErrorCode.EMPTY_001.value,
+                lang,
+                locale=locale,
+                supported=", ".join(supported),
+            ),
         )
     return locale
 
@@ -156,11 +175,13 @@ async def get_empty_state_settings() -> dict[str, dict[str, Any]]:
     dependencies=[Depends(get_api_key)],
 )
 async def put_empty_state_settings(
+    request: Request,
     body: EmptyStateSettingsBody,
     locale: str = Path(..., description="로케일 코드 (예: ko|en)"),
 ) -> dict[str, Any]:
     """로케일 빈 화면 설정 저장 (관리자, X-API-Key)."""
-    _validate_locale(locale)
+    lang = _resolve_request_language(request)
+    _validate_locale(locale, lang)
     saved = await _get_store().upsert(
         locale=locale,
         main_message=body.mainMessage,
@@ -170,7 +191,7 @@ async def put_empty_state_settings(
     if saved is None:
         raise HTTPException(
             status_code=503,
-            detail="데이터베이스에 연결할 수 없어 설정을 저장하지 못했습니다",
+            detail=get_error_message(ErrorCode.EMPTY_002.value, lang),
         )
     logger.info(f"빈 화면 설정 저장(API): locale={locale}")
     return _public_view(saved)
@@ -181,15 +202,17 @@ async def put_empty_state_settings(
     dependencies=[Depends(get_api_key)],
 )
 async def reset_empty_state_settings(
+    request: Request,
     locale: str = Path(..., description="로케일 코드 (예: ko|en)"),
 ) -> dict[str, Any]:
     """로케일 빈 화면 설정을 기본값으로 리셋 (관리자, X-API-Key)."""
-    _validate_locale(locale)
+    lang = _resolve_request_language(request)
+    _validate_locale(locale, lang)
     ok = await _get_store().delete(locale)
     if not ok:
         raise HTTPException(
             status_code=503,
-            detail="데이터베이스에 연결할 수 없어 설정을 리셋하지 못했습니다",
+            detail=get_error_message(ErrorCode.EMPTY_003.value, lang),
         )
     logger.info(f"빈 화면 설정 리셋(API): locale={locale}")
     return _public_view(get_default_empty_state(locale))

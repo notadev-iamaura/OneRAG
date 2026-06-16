@@ -10,9 +10,10 @@ Phase 3: 배치 평가 API
 - 에러 핸들링
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...lib.auth import get_api_key
+from ...lib.errors import ErrorCode, get_error_message
 from ...lib.logger import get_logger
 from ...modules.core.evaluation import EvaluatorFactory
 from ..schemas.debug import DebugTrace
@@ -24,6 +25,23 @@ from ..schemas.evaluation import (
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(get_api_key)])
+
+
+def _resolve_request_language(request: Request | None) -> str:
+    """요청 Accept-Language 헤더에서 에러 메시지 언어를 결정한다(ko|en, 기본 ko).
+
+    양언어 에러 카탈로그(app.lib.errors)는 "ko"/"en"만 지원한다. 헤더가 영어를
+    우선하면 "en"을, 그 외(미지정 포함)는 "ko"를 반환한다 → 한국어 기본(회귀 0).
+    request가 None(엔드포인트 함수 직접 호출 등)이면 "ko"로 폴백한다(회귀 0).
+    """
+    if request is None:
+        return "ko"
+    accept_language = (request.headers.get("accept-language") or "").lower()
+    en_idx = accept_language.find("en")
+    ko_idx = accept_language.find("ko")
+    if en_idx != -1 and (ko_idx == -1 or en_idx < ko_idx):
+        return "en"
+    return "ko"
 
 # 설정 및 모듈 (DI Container에서 주입받을 수 있도록 변수화)
 _config: dict | None = None
@@ -45,7 +63,9 @@ def set_session_module(session_module) -> None:
 
 
 @router.post("/evaluate", response_model=BatchEvaluateResponse)
-async def batch_evaluate(request: BatchEvaluateRequest) -> BatchEvaluateResponse:
+async def batch_evaluate(
+    request: BatchEvaluateRequest, http_request: Request = None  # type: ignore[assignment]
+) -> BatchEvaluateResponse:
     """
     배치 평가 API
 
@@ -151,9 +171,10 @@ async def batch_evaluate(request: BatchEvaluateRequest) -> BatchEvaluateResponse
 
     except Exception as e:
         logger.error(f"배치 평가 실패: {e}", exc_info=True)
+        lang = _resolve_request_language(http_request)
         raise HTTPException(
             status_code=500,
-            detail=f"평가 실행 중 오류가 발생했습니다: {str(e)}",
+            detail=get_error_message(ErrorCode.ADMIN_001.value, lang, error=str(e)),
         ) from e
 
 
@@ -179,7 +200,9 @@ async def get_available_providers() -> dict:
 
 
 @router.get("/debug/session/{session_id}/messages/{message_id}", response_model=DebugTrace)
-async def get_debug_trace(session_id: str, message_id: str) -> DebugTrace:
+async def get_debug_trace(
+    session_id: str, message_id: str, request: Request
+) -> DebugTrace:
     """
     디버깅 추적 조회 API (Task 5)
 
@@ -202,8 +225,10 @@ async def get_debug_trace(session_id: str, message_id: str) -> DebugTrace:
     """
     if _session_module is None:
         logger.error("세션 모듈이 주입되지 않았습니다")
+        lang = _resolve_request_language(request)
         raise HTTPException(
-            status_code=500, detail="세션 모듈이 초기화되지 않았습니다"
+            status_code=500,
+            detail=get_error_message(ErrorCode.ADMIN_002.value, lang),
         )
 
     try:

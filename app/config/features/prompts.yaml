@@ -25,3 +25,10 @@ prompts:
 
   # 초기화 설정
   initialize_on_startup: true  # 서버 시작 시 Repository 초기화
+
+  # 빈 저장소(fresh 배포) 첫 부팅 시 시드할 기본 프롬프트 목록 오버라이드.
+  # null(기본)이면 코드 내장 DEFAULT_SEED_PROMPTS(한국어 기본 시드)를 사용한다 → 회귀 0.
+  # 비한국어/타 도메인 운영자는 자국어 시드 프롬프트 목록을 여기에 정의해
+  # 코드 포크 없이 시드를 교체할 수 있다. 각 항목은
+  # {name, content, description, category, is_active} 구조.
+  seed_prompts: null

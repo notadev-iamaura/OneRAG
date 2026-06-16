@@ -10,6 +10,7 @@ from app.lib.errors.messages import (
     ERROR_MESSAGES,
     get_message_template,
     get_solutions_list,
+    get_user_facing_error,
 )
 
 
@@ -124,6 +125,37 @@ def format_error_response(
         response["solutions"] = get_error_solutions(error_code, lang)
 
     return response
+
+
+def format_user_facing_error(
+    error_code: str, lang: str | None = None, **preserve: Any
+) -> dict[str, Any]:
+    """사용자 노출 3-필드 에러 detail 딕셔너리를 양언어로 생성한다.
+
+    chat_router 등 raw 한국어 {error, message, suggestion, ...} detail을 양언어
+    카탈로그(USER_FACING_ERRORS) 기반으로 전환하기 위한 헬퍼. 정의된 텍스트
+    필드(error/message/suggestion)를 lang에 맞게 채우고, retry_after/session_id
+    등 보존 필드를 그대로 병합한다.
+
+    Args:
+        error_code: 에러 코드 (예: "SESSION-005")
+        lang: 언어 코드 ("ko"|"en"). None이면 기본 언어(ko).
+        **preserve: 응답에 그대로 보존할 비텍스트 필드(retry_after, session_id 등)
+
+    Returns:
+        {error, message, suggestion, **preserve} 형태의 detail 딕셔너리
+
+    Example:
+        >>> format_user_facing_error("SERVICE-001", "en", retry_after=30)
+        {'error': 'Service is initializing', 'message': '...', 'suggestion': '...',
+         'retry_after': 30}
+    """
+    if lang is None:
+        lang = get_default_language()
+
+    detail: dict[str, Any] = dict(get_user_facing_error(error_code, lang))
+    detail.update(preserve)
+    return detail
 
 
 def get_all_error_codes() -> list[str]:

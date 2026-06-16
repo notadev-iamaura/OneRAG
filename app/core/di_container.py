@@ -1555,6 +1555,10 @@ class AppContainer(containers.DeclarativeContainer):
         repository=prompt_repository,
         use_database=config.prompts.use_database,
         cache_ttl=config.prompts.cache_ttl,
+        # 시드 프롬프트 오버라이드 외부화: prompts.seed_prompts(미설정 시 None →
+        # 코드 내장 DEFAULT_SEED_PROMPTS 한국어 기본, 회귀 0). 생성자에 노출만 돼
+        # 있고 라이브 배선이 없던 데드 주입 경로를 해소한다.
+        default_prompts=config.prompts.seed_prompts,
     )
 
     cost_tracker = providers.Singleton(CostTracker)
