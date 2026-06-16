@@ -65,6 +65,7 @@ class PointRuleProcessor(BaseDocumentProcessor):
         metadata_extractor: RuleBasedExtractor | None = None,
         sheet_name: str | int = 0,  # 첫 번째 시트
         parse_html: bool = True,
+        category_keywords: dict[str, list[str]] | None = None,
     ):
         """
         PointRuleProcessor 초기화
@@ -74,13 +75,19 @@ class PointRuleProcessor(BaseDocumentProcessor):
             metadata_extractor: 메타데이터 추출 전략 (기본: RuleBasedExtractor)
             sheet_name: 읽을 시트 이름 또는 인덱스 (기본: 0 = 첫 번째 시트)
             parse_html: HTML 콘텐츠 파싱 여부 (기본: True)
+            category_keywords: 도메인 카테고리 분류 키워드. 기본 추출기를 생성할 때
+                주입한다(미지정 시 도메인 중립 — 카테고리 미추출). domain.yaml의
+                `domain.metadata.category_keywords`에서 전달.
         """
         # 기본 전략 설정
         if chunker is None:
             chunker = PointRuleChunker(parse_html=parse_html)
 
         if metadata_extractor is None:
-            metadata_extractor = RuleBasedExtractor(use_konlpy=True)
+            metadata_extractor = RuleBasedExtractor(
+                use_konlpy=True,
+                category_keywords=category_keywords,
+            )
 
         super().__init__(
             chunker=chunker,

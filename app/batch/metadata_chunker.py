@@ -27,15 +27,19 @@ logger = get_logger(__name__)
 # 상수 정의
 # =============================================================================
 
-# 섹션 분류 기준 키워드 (기본값)
-DEFAULT_SECTION_KEYWORDS: dict[str, list[str]] = {
-    "정책": ["취소", "환불", "변경", "패널티"],
-    "비용": ["원본", "수정본", "추가금", "비용", "가격", "원", "만원"],
-    "구성": ["항목", "구성", "세부", "전체"],
-    "혜택": ["프로모션", "혜택", "서비스", "이벤트", "할인", "적용"],
-    "위치": ["위치", "주소", "주차", "역", "역세권"],
-    "기타": [],  # 분류 안 되면 기타
-}
+# 섹션 분류 기준 키워드 (기본값, 도메인 중립)
+#
+# OSS 기본 배포는 도메인 중립을 원칙으로 한다. 따라서 코드 기본값은 어떤 도메인
+# 키워드도 포함하지 않는 "빈" 딕셔너리이며, 모든 청크는 "기타" 섹션으로 분류된다.
+# 운영자가 자신의 도메인 섹션 키워드를 사용하려면 domain.yaml의
+# `domain.batch.section_keywords`에 정의하여 주입한다(IngestionService 경유).
+DEFAULT_SECTION_KEYWORDS: dict[str, list[str]] = {}
+
+# 청킹 대상 필드 기본값 (도메인 중립)
+#
+# 마찬가지로 코드 기본값은 도메인 범용 필드만 포함한다. 특정 도메인 필드명은
+# domain.yaml의 `domain.batch.target_fields`에서 주입한다.
+DEFAULT_TARGET_FIELDS: list[str] = ["content", "내용", "설명"]
 
 # 토큰 추정 (한글 1자 ≈ 2토큰)
 CHARS_PER_TOKEN = 2
@@ -112,12 +116,13 @@ def classify_section(text: str, section_keywords: dict[str, list[str]] | None = 
         섹션명
     """
     text_lower = text.lower()
+    # 키워드가 명시되지 않으면 도메인 중립 기본값(빈 dict) 사용 → 항상 "기타"로 분류.
     keywords_dict = section_keywords or DEFAULT_SECTION_KEYWORDS
 
     # 각 섹션별 점수 계산
     scores: dict[str, int] = {}
     for section, keywords in keywords_dict.items():
-        if not keywords:  # "기타"는 키워드 없음
+        if not keywords:  # 키워드 없는 섹션은 매칭 대상에서 제외
             continue
         score = sum(1 for kw in keywords if kw in text_lower)
         if score > 0:
@@ -290,13 +295,12 @@ class MetadataChunker:
         """
         self.max_chunk_chars = max_chunk_chars
         self.overlap_chars = overlap_chars
-        self.target_fields = target_fields or [
-            "비용",
-            "정책",
-            "구성",
-            "혜택",
-        ]
-        self.section_keywords = section_keywords or DEFAULT_SECTION_KEYWORDS
+        # target_fields/section_keywords가 명시되지 않으면 도메인 중립 기본값 사용.
+        # 운영자는 domain.yaml로 도메인 특화 값을 주입한다(IngestionService 경유).
+        self.target_fields = target_fields if target_fields is not None else list(DEFAULT_TARGET_FIELDS)
+        self.section_keywords = (
+            section_keywords if section_keywords is not None else dict(DEFAULT_SECTION_KEYWORDS)
+        )
 
         logger.info(
             f"MetadataChunker 초기화: max={max_chunk_chars}자, overlap={overlap_chars}자, "

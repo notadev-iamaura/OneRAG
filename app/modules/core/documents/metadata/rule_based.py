@@ -42,25 +42,25 @@ class RuleBasedExtractor(BaseMetadataExtractor):
     PHONE_PATTERN = re.compile(r"\d{2,3}-\d{3,4}-\d{4}")
     EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
-    # 도메인별 키워드 (범용 예시)
-    DOMAIN_KEYWORDS = {
-        "정보": ["정보", "안내", "설명", "내용"],
-        "절차": ["방법", "절차", "이용", "가이드"],
-        "비용": ["가격", "비용", "금액", "요금", "예산"],
-        "문의": ["문의", "답변", "질문", "상담"],
-        "예약": ["예약", "계약", "일정", "날짜"],
-        "위치": ["위치", "주소", "장소", "지도"],
-    }
-
-    def __init__(self, use_konlpy: bool = True):
+    def __init__(
+        self,
+        use_konlpy: bool = True,
+        category_keywords: dict[str, list[str]] | None = None,
+    ):
         """
         RuleBasedExtractor 초기화
 
         Args:
             use_konlpy: KoNLPy 형태소 분석기 사용 여부 (기본: True)
                         False면 단순 공백 분리 사용
+            category_keywords: 도메인 카테고리 분류 키워드 딕셔너리.
+                미지정 시 빈 dict(도메인 중립) — 카테고리를 추출하지 않아
+                잘못된 카테고리 오염을 방지한다. 운영자는 domain.yaml의
+                `domain.metadata.category_keywords`로 자신의 도메인 키워드를 주입한다.
         """
         self.use_konlpy = use_konlpy
+        # 기본값은 빈 dict: 도메인 미설정 시 카테고리 분류를 비활성화한다.
+        self.category_keywords: dict[str, list[str]] = category_keywords or {}
         self.okt = None
 
         if self.use_konlpy:
@@ -175,7 +175,7 @@ class RuleBasedExtractor(BaseMetadataExtractor):
         """
         categories = []
 
-        for category, keywords in self.DOMAIN_KEYWORDS.items():
+        for category, keywords in self.category_keywords.items():
             for keyword in keywords:
                 if keyword in text:
                     categories.append(category)

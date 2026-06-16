@@ -46,7 +46,32 @@ class IngestionService:
         self.metadata_store = metadata_store
         self.config = config or {}
         self.notion_client = notion_client
-        self.chunker = chunker or MetadataChunker()
+        # 청커를 명시적으로 주입받지 않으면 config의 도메인 배치 설정으로 생성한다.
+        # domain.yaml의 `domain.batch.section_keywords`/`target_fields`를 읽어 주입하므로
+        # 더 이상 데드 config 키가 아니다(미설정 시 도메인 중립 기본값 사용).
+        self.chunker = chunker if chunker is not None else self._build_chunker_from_config()
+
+    def _build_chunker_from_config(self) -> MetadataChunker:
+        """
+        config의 도메인 배치 설정으로 MetadataChunker를 생성
+
+        domain.yaml의 `domain.batch.section_keywords`와 `domain.batch.target_fields`를
+        읽어 청커에 주입한다. 설정이 없으면 MetadataChunker 내부의 도메인 중립 기본값을
+        사용한다(OSS 기본 배포 = 도메인 중립).
+
+        Returns:
+            도메인 설정이 반영된 MetadataChunker 인스턴스
+        """
+        batch_config = self.config.get("domain", {}).get("batch", {})
+
+        # 미설정(None)이면 청커 기본값을 쓰도록 None을 그대로 전달한다.
+        section_keywords = batch_config.get("section_keywords")
+        target_fields = batch_config.get("target_fields")
+
+        return MetadataChunker(
+            section_keywords=section_keywords,
+            target_fields=target_fields,
+        )
 
     async def ingest_from_connector(self, connector: IIngestionConnector, category_name: str) -> IngestionResult:
         """

@@ -78,6 +78,11 @@ domain:
 
   # 4. 메타데이터 스키마 설정 (Metadata Schema)
   metadata:
+    # 규칙 기반 메타데이터 추출기(RuleBasedExtractor)의 카테고리 분류 키워드.
+    # 비어 있으면(기본) 카테고리를 추출하지 않는다(도메인 중립 — 잘못된 분류 방지).
+    # 자신의 도메인 카테고리를 사용하려면 아래 형식으로 키워드를 정의하세요.
+    # 예: "비용": ["가격", "요금"], "절차": ["방법", "이용"]
+    category_keywords: {}
     schema:
       required_fields: ["name"]
       numeric_fields:

@@ -1520,13 +1520,15 @@ class AppContainer(containers.DeclarativeContainer):
     connector_factory = providers.Singleton(IngestionConnectorFactory)
 
     # Ingestion Service
+    # chunker를 주입하지 않으면 IngestionService가 config의
+    # domain.batch.section_keywords/target_fields를 읽어 MetadataChunker를 생성한다
+    # (데드 config 키 해소). 미설정 시 도메인 중립 기본값 사용.
     ingestion_service = providers.Factory(
         IngestionService,
         vector_store=vector_store,
         metadata_store=metadata_store,
         config=config,
         notion_client=notion_client,
-        # chunker는 내부 기본값 사용
     )
 
     # ========================================

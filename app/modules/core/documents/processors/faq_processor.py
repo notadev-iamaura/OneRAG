@@ -44,6 +44,7 @@ class FAQProcessor(BaseDocumentProcessor):
         chunker: SimpleChunker | None = None,
         metadata_extractor: RuleBasedExtractor | None = None,
         content_template: str = "질문: {question}\n답변: {answer}",
+        category_keywords: dict[str, list[str]] | None = None,
     ):
         """
         FAQProcessor 초기화
@@ -52,13 +53,19 @@ class FAQProcessor(BaseDocumentProcessor):
             chunker: 청킹 전략 (기본: SimpleChunker)
             metadata_extractor: 메타데이터 추출 전략 (기본: RuleBasedExtractor)
             content_template: 청크 내용 생성 템플릿
+            category_keywords: 도메인 카테고리 분류 키워드. 기본 추출기를 생성할 때
+                주입한다(미지정 시 도메인 중립 — 카테고리 미추출). domain.yaml의
+                `domain.metadata.category_keywords`에서 전달.
         """
         # 기본 전략 설정
         if chunker is None:
             chunker = SimpleChunker(content_template=content_template)
 
         if metadata_extractor is None:
-            metadata_extractor = RuleBasedExtractor(use_konlpy=True)
+            metadata_extractor = RuleBasedExtractor(
+                use_konlpy=True,
+                category_keywords=category_keywords,
+            )
 
         super().__init__(
             chunker=chunker,
