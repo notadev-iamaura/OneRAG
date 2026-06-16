@@ -57,8 +57,8 @@ notion_pipeline:
     # 활성화 여부
     enabled: true
 
-    # Weaviate 서버 URL (환경변수 우선)
-    url: ${WEAVIATE_URL:-https://weaviate-production-70aa.up.railway.app}
+    # Weaviate 서버 URL (환경변수 우선, 미설정 시 중립 로컬 기본값)
+    url: ${WEAVIATE_URL:-http://localhost:8080}
 
     # 컬렉션 이름 (기존 Documents와 분리)
     collection_name: "NotionMetadata"

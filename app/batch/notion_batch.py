@@ -39,6 +39,10 @@ logger = get_logger(__name__)
 DEFAULT_CHUNK_SIZE = 1400
 DEFAULT_CHUNK_OVERLAP = 200
 
+# WEAVIATE_URL 미설정 시 폴백 기본값. 코드베이스 정규 패턴(weaviate_client.py)과
+# 동일한 중립 로컬 기본값을 사용한다. 특정 배포 인스턴스 식별자를 박지 않는다.
+DEFAULT_WEAVIATE_URL = "http://localhost:8080"
+
 
 # ============================================================================
 # 데이터 클래스
@@ -77,11 +81,9 @@ class NotionBatchConfig:
 
     chunk_size: int = DEFAULT_CHUNK_SIZE
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
-    # 기본값: 환경변수에서 로드, 없으면 프로덕션 URL
+    # 기본값: 환경변수에서 로드, 미설정 시 중립 로컬 기본값
     weaviate_url: str = field(
-        default_factory=lambda: os.getenv(
-            "WEAVIATE_URL", "https://weaviate-production-70aa.up.railway.app"
-        )
+        default_factory=lambda: os.getenv("WEAVIATE_URL", DEFAULT_WEAVIATE_URL)
     )
     notion_api_key: str = field(default_factory=lambda: os.getenv("NOTION_API_KEY", ""))
     # 처리할 카테고리 식별자 목록 (예: ["domain_1", "domain_2"])
@@ -151,9 +153,7 @@ class NotionBatchProcessor:
         - 카테고리/DB 매핑은 app/config/features/domain.yaml의 domain.batch.categories에서 로드
         """
         cfg = NotionBatchConfig(
-            weaviate_url=os.getenv(
-                "WEAVIATE_URL", "https://weaviate-production-70aa.up.railway.app"
-            ),
+            weaviate_url=os.getenv("WEAVIATE_URL", DEFAULT_WEAVIATE_URL),
             notion_api_key=os.getenv("NOTION_API_KEY", ""),
             chunk_size=int(os.getenv("CHUNK_SIZE", str(DEFAULT_CHUNK_SIZE))),
             chunk_overlap=int(os.getenv("CHUNK_OVERLAP", str(DEFAULT_CHUNK_OVERLAP))),
@@ -244,9 +244,7 @@ class NotionBatchProcessor:
 
         # 환경변수에서 weaviate_url/notion_api_key 다시 로드 (런타임 환경변수 지원)
         if not self.config.weaviate_url:
-            self.config.weaviate_url = os.getenv(
-                "WEAVIATE_URL", "https://weaviate-production-70aa.up.railway.app"
-            )
+            self.config.weaviate_url = os.getenv("WEAVIATE_URL", DEFAULT_WEAVIATE_URL)
         if not self.config.notion_api_key:
             self.config.notion_api_key = os.getenv("NOTION_API_KEY", "")
 

@@ -427,6 +427,11 @@ class GenerationModule:
         self.gen_config = config.get("generation", {})
         self.prompt_manager = prompt_manager
 
+        # 생성 프롬프트의 도메인 페르소나 치환값(domain.generation). 미설정 키는
+        # 중립 기본값으로 폴백해 "{domain_name}" 같은 placeholder가 LLM에 리터럴로
+        # 누출되지 않게 한다(어느 프롬프트 소스든 적용 — 시드/DB/커스텀).
+        self._domain_persona = self._resolve_domain_persona(config)
+
         # Phase 2: 개인정보 마스킹 모듈
         self.privacy_masker = privacy_masker
         self._privacy_enabled = privacy_masker is not None
@@ -778,6 +783,55 @@ class GenerationModule:
         기존 output_language 제어 경로가 작동한다.
         """
         return text.replace("{output_language}", output_language)
+
+    # 생성 프롬프트의 도메인 페르소나 플레이스홀더 중립 기본값. domain.yaml의
+    # domain.generation에서 오버라이드한다. 미설정 시 아래 값으로 치환되어
+    # placeholder 토큰이 LLM에 리터럴로 누출되는 것을 방지한다(범용화).
+    _DOMAIN_PERSONA_DEFAULTS: dict[str, str] = {
+        "domain_name": "",
+        "system_role": "사용자 질문의 의도를 정확히 파악하여 신뢰할 수 있는 답변을 제공합니다",
+        "domain_description": "제공된 문서에 근거하여 정확하고 유용한 정보를 전달합니다",
+        "domain_context": "",
+        "domain_examples": "",
+        "response_guidelines": "",
+    }
+
+    @classmethod
+    def _resolve_domain_persona(cls, config: dict[str, Any]) -> dict[str, str]:
+        """domain.generation에서 도메인 페르소나 치환값을 로드한다(미설정 키는 중립 기본).
+
+        한국어 기본 OSS이므로 기본값은 한국어 중립 문구이며, 다른 도메인/언어
+        운영자는 domain.yaml의 domain.generation으로 코드 수정 없이 페르소나를
+        주입할 수 있다(회귀 0).
+        """
+        resolved = dict(cls._DOMAIN_PERSONA_DEFAULTS)
+        raw = config.get("domain", {}).get("generation", {})
+        if isinstance(raw, dict):
+            for key in resolved:
+                value = raw.get(key)
+                # 비어있지 않은 문자열만 오버라이드 — 빈 yaml 값은 코드 중립
+                # 기본값을 유지해 "[역할]" 빈 불릿 등 품질 저하를 막는다.
+                if isinstance(value, str) and value.strip():
+                    resolved[key] = value
+        return resolved
+
+    def _apply_domain_persona(self, text: str) -> str:
+        """생성 프롬프트의 도메인 페르소나 플레이스홀더를 config 값으로 치환한다.
+
+        {domain_name}/{system_role}/{domain_description}/{domain_context}/
+        {domain_examples}/{response_guidelines}을 targeted replace로 치환한다.
+        이전에는 이 토큰들을 채우는 배선이 없어 "{domain_name}" 리터럴이 LLM
+        시스템 프롬프트에 그대로 누출됐다(생성의 유일한 치환은 {output_language}뿐).
+        {output_language} 등 다른 토큰은 건드리지 않는다.
+        """
+        # __init__을 우회해 생성된 인스턴스(테스트 등)에서도 안전하도록, 미설정 시
+        # config에서 지연 해석한다(config도 없으면 중립 기본값 → 누출 0).
+        persona = getattr(self, "_domain_persona", None)
+        if persona is None:
+            persona = self._resolve_domain_persona(getattr(self, "config", {}))
+        for key, value in persona.items():
+            text = text.replace("{" + key + "}", value)
+        return text
 
     def _build_fallback_model_chain(self, requested_model: str) -> list[str]:
         """요청 모델과 fallback 모델을 결합해 시도할 모델 체인을 구성한다.
@@ -1577,8 +1631,10 @@ class GenerationModule:
             return self._apply_output_language(text, output_language)
 
         # System 프롬프트 구성 (언어별 중요 규칙)
+        # 도메인 페르소나 플레이스홀더({domain_name} 등)를 config 값으로 치환해
+        # placeholder 토큰이 LLM에 리터럴로 누출되는 것을 방지한다.
         system_parts = [
-            system_prompt.strip(),
+            self._apply_domain_persona(system_prompt.strip()),
             _localize(profile["important_rules_heading"]),
             *[_localize(rule) for rule in profile["system_rules"]],
         ]

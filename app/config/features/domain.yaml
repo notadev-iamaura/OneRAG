@@ -194,6 +194,21 @@ domain:
       - "numeric_value"
       - "amount"
 
+  # 5.5 생성 페르소나 (Generation Persona)
+  # 생성 시스템/스타일 프롬프트의 도메인 플레이스홀더({domain_name} 등)를
+  # 채우는 값. generator가 프롬프트 로드 직후 이 값으로 치환하므로, 어느 프롬프트
+  # 소스(시드/DB/커스텀)든 placeholder 토큰이 LLM에 리터럴로 누출되지 않는다.
+  # 미설정/누락 키는 코드 내장 중립 기본값으로 폴백한다(회귀 0). 자기 도메인
+  # 페르소나를 코드 수정 없이 주입하려면 아래를 정의하세요.
+  #   예(보험 도메인): generation: {domain_name: "보험", system_role: "보험 상품 상담 전문가"}
+  generation:
+    domain_name: ""          # 도메인 명사(예: "보험"). 빈 값이면 중립.
+    system_role: ""          # 어시스턴트 역할 한 줄. 빈 값이면 코드 중립 기본.
+    domain_description: ""    # 도메인/답변 설명 한 줄. 빈 값이면 코드 중립 기본.
+    domain_context: ""        # 상세 스타일 프롬프트의 <context> 본문(선택).
+    domain_examples: ""       # 상세 스타일 프롬프트의 <examples> 본문(선택).
+    response_guidelines: ""   # 상세 스타일 프롬프트의 응답 지침(선택).
+
   # 6. 라우터 설정 (Router)
   router:
     domain_name: "general_service"
