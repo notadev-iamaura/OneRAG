@@ -111,7 +111,10 @@ PLANNER_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 도구 선택 에
 """
 
 
-def build_planner_system_prompt(output_language: str = "한국어") -> str:
+def build_planner_system_prompt(
+    output_language: str = "한국어",
+    template: str | None = None,
+) -> str:
     """도구 선택 시스템 프롬프트 템플릿을 출력 언어로 조립한다.
 
     {output_language}만 선치환하고, {tool_schemas}와 JSON 이스케이프({{ }})는
@@ -119,13 +122,14 @@ def build_planner_system_prompt(output_language: str = "한국어") -> str:
 
     Args:
         output_language: reasoning 출력 언어 이름 (기본값: "한국어")
+        template: config로 외부화된 시스템 프롬프트 템플릿. None이면 코드 내장
+            기본값(PLANNER_SYSTEM_PROMPT_TEMPLATE, 한국어)을 사용한다 → 회귀 0.
 
     Returns:
         언어가 반영된, 아직 {tool_schemas}가 남아 있는 프롬프트 템플릿
     """
-    return PLANNER_SYSTEM_PROMPT_TEMPLATE.replace(
-        "{output_language}", output_language
-    )
+    base_template = template if template is not None else PLANNER_SYSTEM_PROMPT_TEMPLATE
+    return base_template.replace("{output_language}", output_language)
 
 
 PLANNER_USER_PROMPT = """## 사용자 질문:
@@ -179,8 +183,15 @@ class AgentPlanner:
         self._config = config
         # 출력 언어를 반영한 시스템 프롬프트 템플릿을 미리 빌드.
         # {tool_schemas}는 plan()에서 .format()으로 런타임 치환된다.
+        # config.planner_system_prompt가 설정되면 그 외부 템플릿을, 없으면 코드
+        # 내장 기본값(한국어)을 사용한다 → 미설정 시 회귀 0.
         self._system_prompt_template = build_planner_system_prompt(
-            getattr(config, "output_language", "한국어")
+            getattr(config, "output_language", "한국어"),
+            getattr(config, "planner_system_prompt", None),
+        )
+        # 사용자 프롬프트도 동일하게 오버라이드 가능하되, 미설정 시 코드 내장 기본값.
+        self._user_prompt_template = (
+            getattr(config, "planner_user_prompt", None) or PLANNER_USER_PROMPT
         )
 
         logger.info(
@@ -222,7 +233,7 @@ class AgentPlanner:
             system_prompt = self._system_prompt_template.format(
                 tool_schemas=tool_schemas_str
             )
-            user_prompt = PLANNER_USER_PROMPT.format(
+            user_prompt = self._user_prompt_template.format(
                 query=state.original_query,
                 context=context,
             )

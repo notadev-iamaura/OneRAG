@@ -75,13 +75,25 @@ USER_PROMPT_TEMPLATE = """다음 텍스트를 분석하여 JSON 형식으로 메
 주의: JSON만 출력하고 다른 설명은 추가하지 마세요."""
 
 
-def build_enrichment_prompt(content: str, include_examples: bool = True) -> tuple[str, str]:
+def build_enrichment_prompt(
+    content: str,
+    include_examples: bool = True,
+    system_prompt: str | None = None,
+    few_shot_examples: str | None = None,
+    user_prompt_template: str | None = None,
+) -> tuple[str, str]:
     """
     보강 프롬프트 생성
 
     Args:
         content: 분석할 문서 내용
         include_examples: Few-shot 예시 포함 여부 (기본: True)
+        system_prompt: config로 외부화된 시스템 프롬프트. None이면 코드 내장
+            SYSTEM_PROMPT(한국어 기본값)를 사용한다 → 회귀 0.
+        few_shot_examples: config로 외부화된 Few-shot 예시. None이면 코드 내장
+            FEW_SHOT_EXAMPLES를 사용한다.
+        user_prompt_template: config로 외부화된 사용자 프롬프트 템플릿
+            ({content} 보존 필수). None이면 코드 내장 USER_PROMPT_TEMPLATE를 사용한다.
 
     Returns:
         tuple[str, str]: (system_prompt, user_prompt)
@@ -96,19 +108,29 @@ def build_enrichment_prompt(content: str, include_examples: bool = True) -> tupl
         ...     {"role": "user", "content": user_prompt}
         ... ])
     """
-    # 시스템 프롬프트 구성
-    system_prompt = SYSTEM_PROMPT
+    # 시스템 프롬프트 구성 (오버라이드 없으면 코드 내장 기본값)
+    base_system = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+    examples_block = (
+        few_shot_examples if few_shot_examples is not None else FEW_SHOT_EXAMPLES
+    )
+    full_system_prompt = base_system
     if include_examples:
-        system_prompt += "\n\n" + FEW_SHOT_EXAMPLES
+        full_system_prompt += "\n\n" + examples_block
 
-    # 사용자 프롬프트 구성
-    user_prompt = USER_PROMPT_TEMPLATE.format(content=content)
+    # 사용자 프롬프트 구성 (오버라이드 없으면 코드 내장 기본값)
+    user_template = (
+        user_prompt_template if user_prompt_template is not None else USER_PROMPT_TEMPLATE
+    )
+    user_prompt = user_template.format(content=content)
 
-    return system_prompt, user_prompt
+    return full_system_prompt, user_prompt
 
 
 def build_batch_enrichment_prompt(
-    documents: list[dict], include_examples: bool = True
+    documents: list[dict],
+    include_examples: bool = True,
+    system_prompt: str | None = None,
+    few_shot_examples: str | None = None,
 ) -> tuple[str, str]:
     """
     배치 보강 프롬프트 생성 (최대 10개 문서)
@@ -116,6 +138,10 @@ def build_batch_enrichment_prompt(
     Args:
         documents: 분석할 문서 리스트 (각 문서는 content 필드 포함)
         include_examples: Few-shot 예시 포함 여부 (기본: True)
+        system_prompt: config로 외부화된 시스템 프롬프트. None이면 코드 내장
+            SYSTEM_PROMPT(한국어 기본값)를 사용한다 → 회귀 0.
+        few_shot_examples: config로 외부화된 Few-shot 예시. None이면 코드 내장
+            FEW_SHOT_EXAMPLES를 사용한다.
 
     Returns:
         tuple[str, str]: (system_prompt, user_prompt)
@@ -127,10 +153,14 @@ def build_batch_enrichment_prompt(
         ... ]
         >>> system_prompt, user_prompt = build_batch_enrichment_prompt(documents)
     """
-    # 시스템 프롬프트 (동일)
-    system_prompt = SYSTEM_PROMPT
+    # 시스템 프롬프트 (단건과 동일, 오버라이드 없으면 코드 내장 기본값)
+    base_system = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+    examples_block = (
+        few_shot_examples if few_shot_examples is not None else FEW_SHOT_EXAMPLES
+    )
+    full_system_prompt = base_system
     if include_examples:
-        system_prompt += "\n\n" + FEW_SHOT_EXAMPLES
+        full_system_prompt += "\n\n" + examples_block
 
     # 배치 사용자 프롬프트 구성
     batch_content = ""
@@ -158,4 +188,4 @@ def build_batch_enrichment_prompt(
 
 주의: JSON 배열만 출력하고 다른 설명은 추가하지 마세요."""
 
-    return system_prompt, user_prompt
+    return full_system_prompt, user_prompt

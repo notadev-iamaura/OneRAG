@@ -60,6 +60,25 @@ self_rag:
     enable_caching: false  # 평가 결과 캐싱 비활성화 (정확도 우선)
     # 캐싱 비활성화 이유: 동일 쿼리라도 컨텍스트/답변이 다를 수 있어 정확도 저하 우려
 
+    # 평가 프롬프트 오버라이드 (코드 포크 없이 언어/도메인별 루브릭 교체)
+    # 소비자: app/core/di_container.py:answer_evaluator
+    #   → config.self_rag.evaluation.prompt_template → LLMQualityEvaluator(evaluation_prompt_template=...)
+    # null(기본)이면 evaluator.py의 코드 내장 한국어 기본 평가 프롬프트를 그대로
+    # 사용한다 → 미설정 시 평가 동작 변화 없음(회귀 0).
+    # ⚠️ 오버라이드 시 {query}/{context_text}/{answer} 플레이스홀더 보존 필수.
+    #   (JSON 응답 형식의 중괄호는 {{ }}로 이스케이프해야 .format()이 동작한다)
+    # 사용 예시(영어 루브릭):
+    #   prompt_template: |
+    #     You are an expert evaluating AI answer quality...
+    #     Question:
+    #     {query}
+    #     Context:
+    #     {context_text}
+    #     Answer:
+    #     {answer}
+    #     Respond as JSON: {{"relevance": 0.0-1.0, ...}}
+    prompt_template: null
+
   # 6. 재검색 전략 설정 (Re-Retrieval Strategy)
   re_retrieval:
     strategy: "issue_based"  # 평가 결과의 issues 필드 기반 재검색

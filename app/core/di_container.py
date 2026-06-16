@@ -817,6 +817,10 @@ async def create_entity_extractor_instance(
             config={
                 "max_entities": llm_config.get("max_entities_per_chunk", 20),
                 "model": model,
+                # 프롬프트 외부화: graph_rag.extraction.llm.prompt_template.
+                # 미설정 시 None → LLMEntityExtractor가 코드 내장 한국어 기본
+                # 프롬프트를 사용한다 (회귀 0).
+                "prompt_template": llm_config.get("prompt_template"),
             },
         )
         logger.info(
@@ -1932,6 +1936,10 @@ class AppContainer(containers.DeclarativeContainer):
         grounding_weight=0.30,
         completeness_weight=0.25,
         confidence_weight=0.10,
+        # 평가 프롬프트 외부화: self_rag.evaluation.prompt_template.
+        # 미설정 시 None → LLMQualityEvaluator가 코드 내장 한국어 기본 프롬프트를
+        # 사용한다 (회귀 0).
+        evaluation_prompt_template=config.self_rag.evaluation.prompt_template,
     )
 
     self_rag = providers.Singleton(

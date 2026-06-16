@@ -54,10 +54,25 @@ graph_rag:
     relation_extractor: "llm"  # llm, pattern
 
     # LLM 추출기 설정
+    # 소비자: app/core/di_container.py:create_entity_extractor_instance
+    #   → graph_rag.extraction.llm.{model,max_entities_per_chunk,prompt_template}
+    #   → LLMEntityExtractor(config=...) 로 전달.
     llm:
       model: "google/gemini-2.5-flash-lite"
       max_entities_per_chunk: 20
       max_relations_per_chunk: 30
+
+      # 엔티티 추출 프롬프트 오버라이드 (코드 포크 없이 언어/도메인별 교체)
+      # null(기본)이면 llm_entity_extractor.py의 코드 내장 한국어 기본 프롬프트를
+      # 그대로 사용한다 → 미설정 시 추출 동작 변화 없음(회귀 0).
+      # ⚠️ 오버라이드 시 {text}/{max_entities} 플레이스홀더 보존 필수.
+      # 사용 예시(영어):
+      #   prompt_template: |
+      #     Extract entities from the text below.
+      #     Text:
+      #     {text}
+      #     Extract up to {max_entities} entities as a JSON array...
+      prompt_template: null
 
   # ========================================
   # 벡터+그래프 하이브리드 검색 설정

@@ -84,9 +84,36 @@ enrichment:
     track_token_usage: true
 
   # 프롬프트 설정
+  # 소비자: app/modules/core/enrichment/services/enrichment_service.py
+  #   _parse_enrichment_config → enrichment.prompt.{system_prompt,few_shot_examples,
+  #   user_prompt_template,include_examples} → EnrichmentConfig → 프롬프트 빌더로 전달.
+  # 아래 system_prompt/few_shot_examples/user_prompt_template가 null(기본)이면
+  # enrichment_prompts.py의 코드 내장 한국어 기본 프롬프트를 그대로 사용한다
+  # → 미설정 시 LLM 동작 변화 없음(회귀 0).
   prompt:
-    # 프롬프트 버전
+    # 프롬프트 버전 (메타데이터, 추적용)
     version: "v1"
 
-    # Few-shot 예시 개수
+    # Few-shot 예시 개수 (메타데이터, 추적용)
     num_examples: 2
+
+    # ----------------------------------------
+    # 프롬프트 오버라이드 (코드 포크 없이 언어/도메인별 프롬프트 교체)
+    # ----------------------------------------
+    # 비한국어/타도메인 코퍼스는 아래 값을 채워 메타데이터 추출 프롬프트와
+    # 카테고리 라벨(기술/비즈니스 등)을 해당 언어/도메인으로 전환한다.
+    #
+    # ⚠️ user_prompt_template 오버라이드 시 {content} 플레이스홀더 보존 필수.
+    #
+    # 사용 예시(영어 프롬프트로 교체):
+    #   system_prompt: |
+    #     You are an AI assistant that extracts metadata from text...
+    #   few_shot_examples: |
+    #     Example 1: ...
+    #   user_prompt_template: |
+    #     Analyze the following text and extract metadata as JSON:
+    #     {content}
+    system_prompt: null          # 시스템 프롬프트 (null=코드 내장 한국어 기본값)
+    few_shot_examples: null      # Few-shot 예시 블록 (null=코드 내장 기본값)
+    user_prompt_template: null   # 단건 사용자 프롬프트 ({content} 보존, null=코드 내장 기본값)
+    include_examples: true       # Few-shot 예시 포함 여부 (기존 동작 보존)

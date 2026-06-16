@@ -44,18 +44,24 @@ SYNTHESIZER_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 답변 생성
 """
 
 
-def build_synthesizer_system_prompt(output_language: str = "한국어") -> str:
+def build_synthesizer_system_prompt(
+    output_language: str = "한국어",
+    template: str | None = None,
+) -> str:
     """결과 합성 시스템 프롬프트를 출력 언어로 조립한다.
 
     Args:
         output_language: 답변 출력 언어 이름 (기본값: "한국어")
+        template: config로 외부화된 시스템 프롬프트 템플릿. None이면 코드 내장
+            기본값(SYNTHESIZER_SYSTEM_PROMPT_TEMPLATE)을 사용한다 → 회귀 0.
 
     Returns:
         출력 언어가 반영된 시스템 프롬프트 문자열
     """
-    return SYNTHESIZER_SYSTEM_PROMPT_TEMPLATE.replace(
-        "{output_language}", output_language
+    base_template = (
+        template if template is not None else SYNTHESIZER_SYSTEM_PROMPT_TEMPLATE
     )
+    return base_template.replace("{output_language}", output_language)
 
 
 SYNTHESIZER_USER_PROMPT = """## 사용자 질문:
@@ -66,6 +72,13 @@ SYNTHESIZER_USER_PROMPT = """## 사용자 질문:
 
 위 결과를 바탕으로 사용자 질문에 답변하세요.
 결과가 없거나 실패한 경우에도 최선의 답변을 제공하세요."""
+
+
+# 답변 생성 실패 시 사용자에게 노출되는 폴백 메시지 (코드 내장 기본값=한국어)
+# 운영자는 config.synthesizer_error_message로 코드 포크 없이 오버라이드한다.
+SYNTHESIZER_ERROR_MESSAGE = (
+    "죄송합니다. 답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+)
 
 
 # 결과 포맷팅 상수
@@ -106,9 +119,20 @@ class AgentSynthesizer:
 
         self._llm_client = llm_client
         self._config = config
-        # 출력 언어를 반영한 시스템 프롬프트를 미리 빌드 (기본값=한국어)
+        # 출력 언어를 반영한 시스템 프롬프트를 미리 빌드 (기본값=한국어).
+        # config.synthesizer_system_prompt가 있으면 외부 템플릿을, 없으면 코드 내장
+        # 기본값을 사용한다 → 미설정 시 회귀 0.
         self._system_prompt = build_synthesizer_system_prompt(
-            getattr(config, "output_language", "한국어")
+            getattr(config, "output_language", "한국어"),
+            getattr(config, "synthesizer_system_prompt", None),
+        )
+        # 사용자 프롬프트와 에러 폴백 메시지도 동일하게 오버라이드 가능.
+        self._user_prompt_template = (
+            getattr(config, "synthesizer_user_prompt", None) or SYNTHESIZER_USER_PROMPT
+        )
+        self._error_message = (
+            getattr(config, "synthesizer_error_message", None)
+            or SYNTHESIZER_ERROR_MESSAGE
         )
 
         logger.info("AgentSynthesizer 초기화 완료")
@@ -145,7 +169,7 @@ class AgentSynthesizer:
             sources = self._extract_sources(all_results)
 
             # 4. LLM으로 답변 생성
-            user_prompt = SYNTHESIZER_USER_PROMPT.format(
+            user_prompt = self._user_prompt_template.format(
                 query=state.original_query,
                 tool_results=results_text,
             )
@@ -168,8 +192,7 @@ class AgentSynthesizer:
         except Exception as e:
             logger.error(f"AgentSynthesizer 에러: {e}")
             return (
-                "죄송합니다. 답변 생성 중 오류가 발생했습니다. "
-                "잠시 후 다시 시도해주세요.",
+                self._error_message,
                 [],
             )
 
