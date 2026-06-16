@@ -1714,6 +1714,192 @@ class TestExpandContextDocuments:
         assert expanded[1] is docs[1]
 
 
+class _NamedDocRetriever:
+    """list_documents/get_document_chunks를 제공하는 테스트용 retriever."""
+
+    def __init__(
+        self,
+        documents: list[dict[str, Any]],
+        chunks_by_doc: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        self._documents = documents
+        self._chunks_by_doc = chunks_by_doc
+        self.list_calls = 0
+        self.chunk_calls: list[str] = []
+
+    async def list_documents(
+        self, page: int = 1, page_size: int = 20
+    ) -> dict[str, Any]:
+        self.list_calls += 1
+        return {"documents": self._documents, "total_count": len(self._documents)}
+
+    async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
+        self.chunk_calls.append(document_id)
+        return self._chunks_by_doc.get(document_id, [])
+
+    async def search(self, *args: Any, **kwargs: Any) -> list[SearchResult]:
+        return []
+
+
+class TestPrependNamedDocumentChunks:
+    """prepend_named_document_chunks 메서드 테스트 (명시 문서명 기반 보강)"""
+
+    @pytest.fixture
+    def named_doc_modules(self, mock_modules: dict[str, Any]) -> dict[str, Any]:
+        retriever = _NamedDocRetriever(
+            documents=[
+                {
+                    "id": "doc-1",
+                    "filename": "규정집.pdf",
+                    "file_type": "pdf",
+                },
+                {
+                    "id": "doc-2",
+                    "filename": "기타.pdf",
+                    "file_type": "pdf",
+                },
+            ],
+            chunks_by_doc={
+                "doc-1": [
+                    {
+                        "id": "doc-1-c0",
+                        "content": "휴가 규정은 연 15일이다.",
+                        "metadata": {"document_id": "doc-1", "chunk_index": 0},
+                    },
+                    {
+                        "id": "doc-1-c1",
+                        "content": "출장 경비 한도는 1일 10만원이다.",
+                        "metadata": {"document_id": "doc-1", "chunk_index": 1},
+                    },
+                ],
+            },
+        )
+        modules = {**mock_modules, "retrieval_module": retriever}
+        return modules
+
+    def _enabled_config(self, mock_config: dict[str, Any]) -> dict[str, Any]:
+        config = {**mock_config}
+        config["rag"] = {**config["rag"], "named_document_rescue": {"enabled": True}}
+        return config
+
+    @pytest.mark.asyncio
+    async def test_disabled_by_default_no_fetch(
+        self, mock_config: dict[str, Any], named_doc_modules: dict[str, Any]
+    ) -> None:
+        """기본 설정(OFF)에서는 파일명이 있어도 문서 조회를 하지 않는다."""
+        pipeline = RAGPipeline(config=mock_config, **named_doc_modules)
+        docs = [
+            SearchResult(id="hit-1", content="무관한 결과", score=0.5, metadata={})
+        ]
+        retriever = named_doc_modules["retrieval_module"]
+
+        result = await pipeline.prepend_named_document_chunks(
+            "규정집.pdf 의 휴가 규정 알려줘", docs, {}
+        )
+
+        assert result is docs
+        assert retriever.list_calls == 0
+        assert retriever.chunk_calls == []
+
+    @pytest.mark.asyncio
+    async def test_no_filename_in_message_is_noop(
+        self, mock_config: dict[str, Any], named_doc_modules: dict[str, Any]
+    ) -> None:
+        """opt-in이어도 파일명/인용구가 없으면 no-op."""
+        config = self._enabled_config(mock_config)
+        pipeline = RAGPipeline(config=config, **named_doc_modules)
+        docs = [SearchResult(id="hit-1", content="결과", score=0.5, metadata={})]
+        retriever = named_doc_modules["retrieval_module"]
+
+        result = await pipeline.prepend_named_document_chunks(
+            "휴가 규정 알려줘", docs, {}
+        )
+
+        assert result is docs
+        assert retriever.list_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_named_filename_prepends_digest_and_chunks(
+        self, mock_config: dict[str, Any], named_doc_modules: dict[str, Any]
+    ) -> None:
+        """파일명 지목 시 digest + 해당 문서 청크가 검색 결과 앞에 prepend된다."""
+        config = self._enabled_config(mock_config)
+        pipeline = RAGPipeline(config=config, **named_doc_modules)
+        original = SearchResult(
+            id="hit-1",
+            content="다른 문서 결과",
+            score=0.5,
+            metadata={"document_id": "doc-99", "chunk_index": 0},
+        )
+        retriever = named_doc_modules["retrieval_module"]
+
+        result = await pipeline.prepend_named_document_chunks(
+            "'규정집.pdf' 의 출장 경비 한도 알려줘", [original], {}
+        )
+
+        assert retriever.list_calls == 1
+        assert retriever.chunk_calls == ["doc-1"]
+        # 원본 결과는 맨 뒤에 그대로 유지된다.
+        assert result[-1] is original
+        # 앞쪽에 명시 문서 보강 결과가 추가됐다.
+        assert len(result) > 1
+        digest = result[0]
+        assert digest.metadata.get("named_document_digest") is True
+        assert any(
+            r.metadata.get("named_document_rescue") is True
+            for r in result
+            if r is not original
+        )
+        # 지목 문서(doc-1) 청크만 보강된다.
+        rescued_doc_ids = {
+            r.metadata.get("document_id")
+            for r in result
+            if r is not original
+        }
+        assert rescued_doc_ids == {"doc-1"}
+
+    @pytest.mark.asyncio
+    async def test_unmatched_filename_keeps_original(
+        self, mock_config: dict[str, Any], named_doc_modules: dict[str, Any]
+    ) -> None:
+        """목록에 없는 파일명을 지목하면 원본 결과를 그대로 반환한다."""
+        config = self._enabled_config(mock_config)
+        pipeline = RAGPipeline(config=config, **named_doc_modules)
+        docs = [SearchResult(id="hit-1", content="결과", score=0.5, metadata={})]
+
+        result = await pipeline.prepend_named_document_chunks(
+            "'없는문서.pdf' 알려줘", docs, {}
+        )
+
+        assert result is docs
+
+    @pytest.mark.asyncio
+    async def test_retriever_without_list_documents_is_noop(
+        self, mock_config: dict[str, Any], mock_modules: dict[str, Any]
+    ) -> None:
+        """list_documents 미지원 retriever면 graceful no-op."""
+
+        class _NoListRetriever:
+            async def get_document_chunks(
+                self, document_id: str
+            ) -> list[dict[str, Any]]:
+                return []
+
+            async def search(self, *args: Any, **kwargs: Any) -> list[SearchResult]:
+                return []
+
+        config = self._enabled_config(mock_config)
+        modules = {**mock_modules, "retrieval_module": _NoListRetriever()}
+        pipeline = RAGPipeline(config=config, **modules)
+        docs = [SearchResult(id="hit-1", content="결과", score=0.5, metadata={})]
+
+        result = await pipeline.prepend_named_document_chunks(
+            "규정집.pdf 알려줘", docs, {}
+        )
+
+        assert result is docs
+
+
 class TestGenerateAnswer:
     """generate_answer 메서드 테스트"""
 
