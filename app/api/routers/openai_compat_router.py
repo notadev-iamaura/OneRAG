@@ -54,6 +54,108 @@ def set_modules(modules: dict[str, Any]) -> None:
     _modules = modules
 
 
+def _build_chat_history_from_messages(messages: list[Any]) -> dict[str, Any] | None:
+    """OpenAI messages 배열을 파이프라인 chat_history 형태로 변환한다(GAP #1).
+
+    마지막 user 메시지(=현재 질문)는 제외하고, 그 이전의 user/assistant 교환만 직전
+    대화 맥락으로 담는다(system은 제외). stateless /v1 요청에서도 멀티턴 standalone
+    rewrite가 직전 맥락을 참조해 오검색/맥락 오염(대명사·생략·축약)을 막도록 한다.
+
+    OneRAG 파이프라인의 소비 배선(get_chat_history/get_context_string)은 동일한
+    {"messages":[{"type","content"}...]} 포맷을 기대하므로 그 형태로 변환한다.
+
+    Args:
+        messages: OpenAI 요청의 messages(각 .role/.content 보유).
+
+    Returns:
+        {"messages": [{"type": "user"|"assistant", "content": str}, ...]} 또는
+        직전 교환이 없으면 None.
+    """
+    last_user_idx: int | None = None
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].role == "user":
+            last_user_idx = i
+            break
+    history: list[dict[str, str]] = []
+    for i, msg in enumerate(messages):
+        if i == last_user_idx:
+            continue
+        if msg.role in ("user", "assistant"):
+            history.append({"type": msg.role, "content": msg.content})
+    return {"messages": history} if history else None
+
+
+async def _seed_ephemeral_session(
+    chat_service: Any, chat_history: dict[str, Any] | None
+) -> str | None:
+    """직전 대화(chat_history)를 임시 server-side 세션에 적재하고 세션 ID를 반환한다(GAP #1).
+
+    OneRAG 파이프라인은 멀티턴 맥락을 server-side 세션(session 모듈)에서 읽으므로,
+    stateless /v1의 messages 히스토리를 ephemeral 세션에 user/assistant 교환으로
+    주입한다. 이렇게 하면 rag_pipeline.py를 수정하지 않고도 standalone-rewrite와
+    anchor 소비 배선이 직전 맥락을 참조한다.
+
+    graceful degradation: session 모듈 미주입/주입 실패/직전 교환 부재 시 None을
+    반환해 기존 stateless 동작(맥락 미적용)으로 폴백한다(회귀 0).
+
+    Args:
+        chat_service: rag_pipeline과 modules(session)를 보유한 채팅 서비스.
+        chat_history: _build_chat_history_from_messages 결과(없으면 주입 생략).
+
+    Returns:
+        적재 완료된 ephemeral 세션 ID, 또는 주입 불가/생략 시 None.
+    """
+    if not chat_history:
+        return None
+    session_module = getattr(chat_service, "modules", {}).get("session")
+    if session_module is None:
+        return None
+
+    messages = chat_history.get("messages", [])
+    # user/assistant를 순서대로 교환 쌍으로 묶는다(파이프라인 add_conversation 계약).
+    pairs: list[tuple[str, str]] = []
+    pending_user: str | None = None
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("type") == "user":
+            pending_user = str(msg.get("content", ""))
+        elif msg.get("type") == "assistant" and pending_user is not None:
+            pairs.append((pending_user, str(msg.get("content", ""))))
+            pending_user = None
+    if not pairs:
+        return None
+
+    sid = f"v1-{uuid.uuid4()}"
+    try:
+        await session_module.create_session(metadata={"ephemeral": True}, session_id=sid)
+        for user_message, assistant_response in pairs:
+            await session_module.add_conversation(
+                sid,
+                user_message=user_message,
+                assistant_response=assistant_response,
+            )
+        return sid
+    except Exception as e:  # noqa: BLE001 - 세션 적재 실패는 비치명적(맥락 미적용으로 폴백)
+        logger.warning(f"/v1 멀티턴 세션 적재 실패(맥락 미적용으로 폴백): {e}")
+        # 부분 적재된 세션 정리(best-effort)
+        await _cleanup_ephemeral_session(session_module, sid)
+        return None
+
+
+async def _cleanup_ephemeral_session(session_module: Any, sid: str | None) -> None:
+    """ephemeral 세션을 정리한다(best-effort, 실패는 무시)."""
+    if session_module is None or sid is None:
+        return
+    delete_session = getattr(session_module, "delete_session", None)
+    if delete_session is None:
+        return
+    try:
+        await delete_session(sid)
+    except Exception as e:  # noqa: BLE001 - 정리 실패는 비치명적
+        logger.debug(f"/v1 ephemeral 세션 정리 실패(무시): {e}")
+
+
 def _build_rag_prompt(query: str, documents: list[dict[str, Any]]) -> str:
     """검색 결과를 포함한 RAG 프롬프트 구성"""
     if not documents:
@@ -91,7 +193,7 @@ def _doc_content(doc: Any) -> str:
 
 
 async def _pipeline_rag_search(
-    chat_service: Any, user_message: str
+    chat_service: Any, user_message: str, session_id: str | None = None
 ) -> list[dict[str, Any]]:
     """메인 채팅 경로와 동일한 RAG 검색 체인을 재사용한다.
 
@@ -102,9 +204,11 @@ async def _pipeline_rag_search(
 
     OneRAG 시그니처에 맞춰 적응한다:
     - route_query(message, session_id, start_time) / prepare_context(message, session_id)는
-      options·chat_history 인자를 받지 않으므로 전달하지 않는다(멀티턴 맥락은
-      session_module의 server-side 세션 기반이라 stateless /v1에서는 비어 있다).
-    - anchor_sources는 OneRAG에 없으므로 미사용.
+      chat_history 인자를 받지 않고 멀티턴 맥락을 server-side 세션에서 읽는다.
+      따라서 stateless /v1의 messages 히스토리는 _seed_ephemeral_session이 미리
+      적재한 ephemeral 세션 ID(session_id)를 넘겨 직전 맥락을 참조하게 한다(GAP #1).
+    - session_id가 None이면 비-멀티턴 ephemeral 세션을 새로 만든다(기존 동작).
+    - anchor_sources는 prepare_context 결과에 있으면 rerank 후처리에 전달한다.
 
     생성 모델은 호출측이 /v1 선택 모델로 유지한다(OpenAI 계약 보존).
 
@@ -115,7 +219,8 @@ async def _pipeline_rag_search(
         Exception: prepare_context/retrieve 실패는 호출측이 잡아 단순 검색으로 폴백한다.
     """
     pipeline = chat_service.rag_pipeline
-    session_id = f"v1-{uuid.uuid4()}"  # ephemeral 세션(영속하지 않음)
+    # 멀티턴 히스토리가 적재된 세션 ID가 있으면 재사용, 없으면 ephemeral 세션 생성.
+    session_id = session_id or f"v1-{uuid.uuid4()}"
     start_time = time.time()
     options: dict[str, Any] = {"limit": _MAX_SEARCH_RESULTS}
 
@@ -128,8 +233,13 @@ async def _pipeline_rag_search(
     except Exception as e:  # noqa: BLE001 - 라우팅 실패는 비치명적
         logger.warning(f"/v1 라우팅 실패(무시): {e}")
 
-    # standalone rewrite + 멀티쿼리 확장
+    # standalone rewrite + 멀티쿼리 확장(적재된 ephemeral 세션 맥락 참조)
     prepared = await pipeline.prepare_context(user_message, session_id)
+
+    # 멀티턴 anchor soft-boost: 직전 채택 문서를 rerank 후처리에서 약하게 우대한다.
+    # 주제 전환이거나 기능 비활성이면 빈 리스트 → no-op(통짜 채팅 경로와 일관).
+    if getattr(prepared, "anchor_sources", None):
+        options["anchor_sources"] = prepared.anchor_sources
 
     # 멀티쿼리 RRF 검색
     retrieval_results = await pipeline.retrieve_documents(
@@ -152,19 +262,37 @@ async def _pipeline_rag_search(
     return [{"content": _doc_content(d)} for d in documents]
 
 
-async def _rag_search(user_message: str) -> list[dict[str, Any]]:
+async def _rag_search(
+    user_message: str, messages: list[Any] | None = None
+) -> list[dict[str, Any]]:
     """/v1 경로 공용 검색 진입점.
 
     chat_service(파이프라인)가 주입돼 있으면 메인 채팅과 동일한 멀티쿼리·rerank
     체인을 재사용하고(#14 비대칭 해소), 미주입/실패 시 retriever.search 단순 검색으로
     폴백한다(graceful degradation, 동작 보존).
+
+    멀티턴(GAP #1): messages에 직전 user/assistant 교환이 있으면 ephemeral 세션에
+    적재해 standalone-rewrite/anchor 소비 배선이 직전 맥락을 참조하게 한다. 검색 후
+    세션은 best-effort로 정리한다.
+
+    Args:
+        user_message: 현재 사용자 질문(마지막 user 메시지).
+        messages: 원본 OpenAI messages 배열(멀티턴 히스토리 추출용). None이면 비활성.
     """
     chat_service = _modules.get("chat_service")
     if chat_service is not None:
+        ephemeral_sid: str | None = None
+        session_module = getattr(chat_service, "modules", {}).get("session")
         try:
-            return await _pipeline_rag_search(chat_service, user_message)
+            chat_history = (
+                _build_chat_history_from_messages(messages) if messages else None
+            )
+            ephemeral_sid = await _seed_ephemeral_session(chat_service, chat_history)
+            return await _pipeline_rag_search(chat_service, user_message, ephemeral_sid)
         except Exception as e:  # noqa: BLE001 - 파이프라인 실패는 단순 검색으로 폴백
             logger.warning(f"RAG 파이프라인 검색 실패, 단순 검색으로 폴백: {e}")
+        finally:
+            await _cleanup_ephemeral_session(session_module, ephemeral_sid)
 
     # 폴백: retriever.search 단순 검색
     retriever = _modules.get("retrieval")
@@ -231,8 +359,9 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
         return await _stream_completion(req, user_message, system_prompt, model_config)
 
     # 4. 문서 검색 (RAG) — 메인 채팅과 동일한 멀티쿼리·rerank 체인 재사용(#14 비대칭 해소).
+    #    messages를 함께 넘겨 멀티턴 직전 맥락을 검색에 반영한다(GAP #1).
     #    chat_service 미주입/실패 시 retriever.search 단순 검색으로 폴백.
-    documents = await _rag_search(user_message)
+    documents = await _rag_search(user_message, req.messages)
 
     # 5. RAG 프롬프트 구성
     rag_prompt = _build_rag_prompt(user_message, documents)
@@ -280,7 +409,8 @@ async def _stream_completion(
 
     async def event_generator():  # type: ignore[return]
         # 1. 문서 검색 — 비스트리밍 경로와 동일한 멀티쿼리·rerank 체인 재사용(#14).
-        documents = await _rag_search(user_message)
+        #    messages를 함께 넘겨 멀티턴 직전 맥락을 검색에 반영한다(GAP #1).
+        documents = await _rag_search(user_message, req.messages)
 
         # 2. RAG 프롬프트
         rag_prompt = _build_rag_prompt(user_message, documents)

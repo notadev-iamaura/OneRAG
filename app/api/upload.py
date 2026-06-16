@@ -28,6 +28,7 @@ from ..lib.logger import get_logger
 from ..modules.core.privacy.masker import DEFAULT_WHITELIST, PrivacyMasker
 from .audit_event_store import AuditEventStore, SQLiteAuditEventStore
 from .original_file_storage import (
+    GCS_ORIGINAL_STORAGE_BACKEND,
     OriginalFileNotFoundError,
     OriginalFileStorageError,
     delete_original_reference,
@@ -498,7 +499,12 @@ class UploadResponse(BaseModel):
 
 
 class JobStatusResponse(BaseModel):
-    """작업 상태 응답 모델"""
+    """작업 상태 응답 모델
+
+    처리 프로비넌스(GAP #9): loader_type/splitter_type/storage_locations/
+    extraction_summary는 백엔드가 '실제 처리된' 값을 권위 노출한다. 프론트엔드가
+    파일 확장자·사용자 설정으로 추론하던 표기를 백엔드 실제값으로 대체한다.
+    """
 
     job_id: str
     status: str
@@ -508,6 +514,11 @@ class JobStatusResponse(BaseModel):
     chunk_count: int | None = None
     processing_time: float | None = None
     error_message: str | None = None
+    # 처리 프로비넌스(완료 후에만 채워짐; 미완료/미산출 시 None)
+    loader_type: str | None = None
+    splitter_type: str | None = None
+    storage_locations: list[str] | None = None
+    extraction_summary: dict[str, Any] | None = None
     timestamp: str
 
 
@@ -959,6 +970,227 @@ def _finalize_if_upload_cancel_requested(
     )
 
 
+# ============================================================
+# 처리 프로비넌스 헬퍼 (GAP #9)
+# ============================================================
+# 백엔드가 '실제 처리된' loader/splitter/storage/extraction 값을 산출한다.
+# 일본어/도메인/멀티테넌시/Document AI OCR 하드코딩은 제외해 범용성을 유지한다.
+
+# 파일타입 → 사람이 읽기 좋은 로더 라벨
+LOADER_TYPE_LABELS = {
+    "pdf": "PDF",
+    "txt": "Text",
+    "docx": "DOCX",
+    "doc": "DOCX",
+    "pptx": "PPTX",
+    "xlsx": "XLSX",
+    "xls": "XLSX",
+    "csv": "CSV",
+    "html": "HTML",
+    "htm": "HTML",
+    "md": "Markdown",
+    "markdown": "Markdown",
+    "json": "JSON",
+}
+
+# splitter_type 식별자 → 사람이 읽기 좋은 라벨
+SPLITTER_TYPE_LABELS = {
+    "recursive": "Recursive",
+    "semantic": "Semantic",
+    "table_row": "Table Row",
+}
+
+# extraction_summary로 집계하는 추출 메타 필드(loader가 문서 metadata에 기록).
+EXTRACTION_SUMMARY_FIELDS = {
+    "page_count",
+    "scanned_page_count",
+    "table_count",
+    "extraction_warnings",
+}
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    """값을 정수로 변환하되 None/빈문자열/bool은 None으로 처리한다."""
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _doc_metadata(document: Any) -> dict[str, Any] | None:
+    """문서 객체에서 dict metadata를 안전하게 추출한다(없으면 None)."""
+    metadata = getattr(document, "metadata", None)
+    return metadata if isinstance(metadata, dict) else None
+
+
+def _first_metadata_value(documents: list[Any], keys: tuple[str, ...]) -> str | None:
+    """문서 metadata에서 keys 중 처음 발견되는 비어있지 않은 문자열을 반환한다."""
+    for document in documents:
+        metadata = _doc_metadata(document)
+        if metadata is None:
+            continue
+        for key in keys:
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _upload_loader_type(file_type: str, documents: list[Any]) -> str:
+    """실제 사용된 로더 라벨을 산출한다(GAP #9).
+
+    PDF는 loader가 기록한 extraction_method(pypdf 등)를 라벨에 반영해 '어떻게'
+    추출됐는지 노출한다. 그 외 파일타입은 LOADER_TYPE_LABELS로 매핑한다.
+
+    Args:
+        file_type: 업로드 파일타입(확장자, 예: "pdf"/"xlsx").
+        documents: load_document 결과 문서 리스트(metadata.extraction_method 등 보유).
+
+    Returns:
+        사람이 읽기 좋은 로더 라벨(예: "PDF (pypdf)", "XLSX").
+    """
+    normalized = str(file_type or "").strip().lower()
+    if normalized == "pdf":
+        extraction_method = _first_metadata_value(
+            documents, ("extraction_method", "ocr_backend", "layout_backend")
+        )
+        if extraction_method:
+            return f"PDF ({extraction_method})"
+    return LOADER_TYPE_LABELS.get(normalized, normalized.upper() or "Document")
+
+
+def _upload_splitter_type(chunks: list[Any], document_processor: Any) -> str | None:
+    """실제 사용된 스플리터 라벨을 산출한다(GAP #9).
+
+    청크 metadata의 splitter_type을 우선 사용한다(표 자동청킹 시 "table_row"가
+    섞이므로 ' + '로 병기). 청크에 정보가 없으면 processor의 설정값으로 폴백한다.
+
+    Args:
+        chunks: split_documents 결과 청크 리스트(metadata.splitter_type 보유).
+        document_processor: splitter_type 속성을 가진 처리기(폴백용).
+
+    Returns:
+        스플리터 라벨(예: "Recursive", "Recursive + Table Row") 또는 산출 불가 시 None.
+    """
+    splitter_types: list[str] = []
+    for chunk in chunks:
+        metadata = _doc_metadata(chunk)
+        if metadata is None:
+            continue
+        splitter_type = metadata.get("splitter_type")
+        if isinstance(splitter_type, str) and splitter_type.strip():
+            normalized = splitter_type.strip()
+            if normalized not in splitter_types:
+                splitter_types.append(normalized)
+    if not splitter_types:
+        configured = getattr(document_processor, "splitter_type", None)
+        if isinstance(configured, str) and configured.strip():
+            splitter_types.append(configured.strip())
+    if not splitter_types:
+        return None
+    return " + ".join(
+        SPLITTER_TYPE_LABELS.get(splitter_type, splitter_type)
+        for splitter_type in splitter_types
+    )
+
+
+def _upload_storage_locations(job: dict[str, Any]) -> list[str]:
+    """실제 저장된 위치 목록을 산출한다(GAP #9).
+
+    항상 Vector Database를 포함하고, 원본 보관(local/GCS)이 있으면 Original File
+    Storage를 추가한다(이미 차용된 원본보관·source_uri 인프라에 직접 얹는다).
+
+    Args:
+        job: 업로드 작업 dict(original_storage_backend/original_file_path/source_uri).
+
+    Returns:
+        저장 위치 라벨 리스트.
+    """
+    locations = ["Vector Database"]
+    original_backend = str(job.get("original_storage_backend") or "").strip().lower()
+    if original_backend == GCS_ORIGINAL_STORAGE_BACKEND:
+        locations.append("Original File Storage (GCS)")
+    elif job.get("original_file_path") or job.get("source_uri"):
+        locations.append("Original File Storage")
+    return locations
+
+
+def _extract_extraction_summary(documents: list[Any]) -> dict[str, Any] | None:
+    """추출 진단 요약을 집계한다(GAP #9, PDF 스캔/표/경고).
+
+    loader가 문서 metadata에 기록한 page_number/scanned_page/table_count/
+    extraction_warnings를 집계한다. 추출 메타가 전혀 없으면 None을 반환한다
+    (예: xlsx/txt는 요약 없음).
+
+    Args:
+        documents: load_document 결과 문서 리스트.
+
+    Returns:
+        {"page_count","scanned_page_count","table_count","extraction_warnings"}
+        부분 집합 또는 추출 메타 부재 시 None.
+    """
+    summary: dict[str, Any] = {}
+    warnings: list[Any] = []
+    saw_extraction_meta = False
+    page_numbers: set[int] = set()
+    scanned_page_count = 0
+    saw_scanned_page = False
+    derived_table_count = 0
+    saw_table_count = False
+
+    for document in documents:
+        metadata = _doc_metadata(document)
+        if metadata is None:
+            continue
+        # 추출 메타 마커: loader가 기록하는 extraction_method가 있으면 추출 문서로 본다.
+        if "extraction_method" not in metadata:
+            continue
+        saw_extraction_meta = True
+
+        page_number = _coerce_optional_int(metadata.get("page_number"))
+        if page_number is not None:
+            page_numbers.add(page_number)
+        else:
+            page_index = _coerce_optional_int(metadata.get("page_index"))
+            if page_index is not None:
+                page_numbers.add(page_index + 1)
+
+        if isinstance(metadata.get("scanned_page"), bool):
+            saw_scanned_page = True
+            if metadata["scanned_page"]:
+                scanned_page_count += 1
+
+        page_table_count = _coerce_optional_int(metadata.get("table_count"))
+        if page_table_count is not None:
+            saw_table_count = True
+            derived_table_count += page_table_count
+
+        metadata_warnings = metadata.get("extraction_warnings")
+        if isinstance(metadata_warnings, list):
+            warnings.extend(metadata_warnings)
+        elif metadata_warnings:
+            warnings.append(metadata_warnings)
+
+    if not saw_extraction_meta:
+        return None
+    if page_numbers:
+        summary["page_count"] = len(page_numbers)
+    if saw_scanned_page:
+        summary["scanned_page_count"] = scanned_page_count
+    if saw_table_count:
+        summary["table_count"] = derived_table_count
+    if warnings:
+        seen: set[str] = set()
+        summary["extraction_warnings"] = [
+            warning
+            for warning in warnings
+            if not (str(warning) in seen or seen.add(str(warning)))
+        ]
+    return summary or None
+
+
 async def process_document_background(
     job_id: str,
     file_path: Path,
@@ -1093,6 +1325,16 @@ async def process_document_background(
         except Exception as e:
             logger.warning(f"Failed to delete temp file: {e}")
         processing_time = datetime.now().timestamp() - upload_jobs[job_id]["start_time"]
+        # 처리 프로비넌스 산출(GAP #9): 실제 처리된 loader/splitter/storage/extraction
+        # 값을 백엔드 권위로 기록한다. 산출 실패는 비치명적(필드만 누락).
+        provenance_update: dict[str, Any] = {
+            "loader_type": _upload_loader_type(file_type, docs),
+            "splitter_type": _upload_splitter_type(chunks, document_processor),
+            "storage_locations": _upload_storage_locations(upload_jobs[job_id]),
+        }
+        extraction_summary = _extract_extraction_summary(docs)
+        if extraction_summary:
+            provenance_update["extraction_summary"] = extraction_summary
         upload_jobs[job_id].update(
             {
                 "status": "completed",
@@ -1100,6 +1342,7 @@ async def process_document_background(
                 "message": "문서 처리 완료",
                 "chunk_count": len(chunks),
                 "processing_time": processing_time,
+                **provenance_update,
             }
         )
         save_upload_job(job_id)
@@ -1469,6 +1712,11 @@ async def get_upload_status(job_id: str):
         chunk_count=job["chunk_count"],
         processing_time=job["processing_time"] or current_processing_time,
         error_message=job["error_message"],
+        # 처리 프로비넌스(GAP #9): 완료된 작업에만 기록됨. 미완료/미산출 시 None.
+        loader_type=job.get("loader_type"),
+        splitter_type=job.get("splitter_type"),
+        storage_locations=job.get("storage_locations"),
+        extraction_summary=job.get("extraction_summary"),
         timestamp=datetime.now().isoformat(),
     )
 

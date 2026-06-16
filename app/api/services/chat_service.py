@@ -100,7 +100,67 @@ class ChatService:
             agent_orchestrator=modules.get("agent_orchestrator"),
         )
 
+        # GAP #5: 서버사이드 SSE 청크 페이싱 설정.
+        # 연속 LLM chunk burst가 SSE에 한꺼번에 flush되면 프론트 타이프라이터
+        # 애니메이션의 평활도가 깨진다. 최소 간격(초)을 두어 소스 레벨에서 토큰
+        # 방출을 평탄화한다. 기본 0.0=무동작(opt-in, 회귀 0).
+        streaming_config = config.get("rag", {}).get("streaming", {})
+        self.stream_chunk_min_interval_seconds = self._coerce_non_negative_float(
+            streaming_config.get("chunk_min_interval_seconds"),
+            default=0.0,
+        )
+
         logger.info("ChatService 초기화 완료 (RAGPipeline + Self-RAG + SQL Search 포함)")
+
+    @staticmethod
+    def _coerce_non_negative_float(value: Any, *, default: float) -> float:
+        """설정값을 0 이상 float로 정규화한다(음수/비정상 값은 default).
+
+        Args:
+            value: YAML에서 읽은 원본 설정값(숫자/문자열/None 가능)
+            default: 변환 실패 또는 None일 때 사용할 기본값
+
+        Returns:
+            0.0 이상으로 보정된 float
+        """
+        try:
+            if value is None:
+                return default
+            coerced = float(value)
+        except (TypeError, ValueError):
+            return default
+        return max(0.0, coerced)
+
+    async def _sleep_for_stream_pacing(self, delay_seconds: float) -> None:
+        """스트리밍 청크 페이싱 전용 sleep 훅(테스트에서 교체 가능).
+
+        Args:
+            delay_seconds: 대기할 시간(초)
+        """
+        await asyncio.sleep(delay_seconds)
+
+    async def _pace_stream_chunk(self, last_sent_at: float | None) -> float:
+        """연속 chunk burst가 SSE에 한 번에 flush되지 않도록 최소 간격을 둔다(GAP #5).
+
+        간격(chunk_min_interval_seconds)이 0 이하이거나 첫 청크(last_sent_at=None)면
+        sleep 없이 현재 시각만 반환한다(무동작). 그 외에는 직전 전송 이후 경과
+        시간을 빼고 남은 만큼만 sleep 해, 이미 느린 청크는 추가 지연 없이 통과시킨다.
+
+        Args:
+            last_sent_at: 직전 청크 전송 시각(time.monotonic 기준, 첫 청크는 None)
+
+        Returns:
+            이번 청크 전송 직후의 time.monotonic 값(다음 호출의 기준점)
+        """
+        interval = self.stream_chunk_min_interval_seconds
+        if interval <= 0 or last_sent_at is None:
+            return time.monotonic()
+
+        elapsed = time.monotonic() - last_sent_at
+        delay = interval - elapsed
+        if delay > 0:
+            await self._sleep_for_stream_pacing(delay)
+        return time.monotonic()
 
     async def handle_session(
         self, session_id: str | None, context: dict[str, Any]
@@ -481,6 +541,9 @@ class ChatService:
         final_session_id = session_id
         message_id = str(uuid.uuid4())
         answer_chunks: list[str] = []
+        # GAP #5: 직전 청크 전송 시각(time.monotonic). 첫 청크는 None이라 페이싱
+        # 무동작이며, chunk_min_interval_seconds=0이면 전체 구간에서 무동작이다.
+        last_chunk_sent_at: float | None = None
 
         try:
             # 1. 세션 처리 (비스트리밍)
@@ -699,6 +762,10 @@ class ChatService:
                                 return
 
                             answer_chunks.append(str(text_chunk))
+                            # GAP #5: burst flush 방지를 위한 서버사이드 페이싱.
+                            last_chunk_sent_at = await self._pace_stream_chunk(
+                                last_chunk_sent_at
+                            )
                             yield {
                                 "event": "chunk",
                                 "data": text_chunk,
@@ -759,6 +826,10 @@ class ChatService:
 
                         for piece in self._split_fallback_answer_into_chunks(fallback_answer):
                             answer_chunks.append(piece)
+                            # GAP #5: 폴백 분할 청크도 동일하게 페이싱한다.
+                            last_chunk_sent_at = await self._pace_stream_chunk(
+                                last_chunk_sent_at
+                            )
                             yield {
                                 "event": "chunk",
                                 "data": piece,
