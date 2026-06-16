@@ -42,6 +42,11 @@ const UPLOAD_ACCEPT = SUPPORTED_UPLOAD_EXTENSIONS.join(',');
 // 동시 업로드 슬롯 수: 일괄 처리 시 한 번에 N개만 활성화해 서버/브라우저 과부하를 막는다.
 const MAX_ACTIVE_UPLOADS = 2;
 
+// 업로드 허용 상한: 분할(chunked) 업로드 도입으로 30MB 임계 초과 파일도 처리 가능해졌으므로
+// 기존 50MB 하드리밋을 상향한다. 다만 무제한은 브라우저 메모리/처리 시간 위험이 있어 합리적 상한(1GB)을 둔다.
+const MAX_UPLOAD_SIZE_BYTES = 1024 * 1024 * 1024; // 1GB
+const MAX_UPLOAD_SIZE_LABEL = '1GB';
+
 // 확장자 → 표시용 로더 라벨 매핑. 백엔드가 loader 타입을 내려주지 않으므로 클라이언트에서 추론한다.
 const FILE_LOADER_LABELS: Record<string, string> = {
   pdf: 'PDF',
@@ -170,14 +175,14 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
   const validateFile = useCallback((file: File): string | null => {
     const allowedExtensions = SUPPORTED_UPLOAD_EXTENSIONS;
     const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-    const maxSize = 50 * 1024 * 1024; // 50MB
 
     if (!allowedExtensions.includes(fileExtension)) {
       return '지원되지 않는 형식입니다. PDF, TXT, Markdown, DOCX, PPTX, Excel, HTML, JSON만 가능합니다.';
     }
 
-    if (file.size > maxSize) {
-      return '파일 크기는 50MB를 초과할 수 없습니다.';
+    // 분할 업로드로 대용량을 처리하되, 합리적 상한(MAX_UPLOAD_SIZE_BYTES)을 넘는 파일은 거부한다.
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      return `파일 크기는 ${MAX_UPLOAD_SIZE_LABEL}를 초과할 수 없습니다.`;
     }
 
     return null;
@@ -531,7 +536,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
             </p>
             <p className="text-sm text-center text-muted-foreground font-medium max-w-sm mx-auto">
               PDF, TXT, Markdown, DOCX, PPTX, Excel, HTML, JSON<br />
-              <span className="text-xs opacity-60">(파일당 최대 50MB 지원)</span>
+              <span className="text-xs opacity-60">(파일당 최대 {MAX_UPLOAD_SIZE_LABEL} 지원, 대용량은 분할 업로드)</span>
             </p>
           </div>
           <span className="inline-flex h-9 items-center justify-center rounded-full border border-border/60 bg-background px-8 mt-2 text-sm font-bold transition-all group-hover:border-primary group-hover:text-primary">
