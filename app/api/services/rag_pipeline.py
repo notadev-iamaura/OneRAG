@@ -663,11 +663,11 @@ class PreparedContext:
         Examples:
             # Multi-Query RRF
             PreparedContext(
-                session_context="사용자: 안녕하세요
-    봇: 안녕하세요! 무엇을 도와드릴까요?",
-                expanded_query="부산시 주민등록 발급 방법 및 필요 서류",
-                original_query="주민등록 발급",
-                expanded_queries=["부산시 주민등록 발급 방법", "주민등록등본 신청", ...],
+                session_context="User: Hello
+    Bot: Hello! How can I help you?",
+                expanded_query="expanded query with synonyms and related terms",
+                original_query="original user query",
+                expanded_queries=["query variant A", "query variant B", ...],
                 query_weights=[1.0, 0.8, 0.6, 0.4, 0.2]
             )
     """

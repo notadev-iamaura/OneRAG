@@ -1193,7 +1193,7 @@ class RetrievalOrchestrator:
             RRF 점수로 정렬된 검색 결과 리스트
 
         Example:
-            queries = ["부산 주민등록 발급", "부산시 등본 신청", "주민등록 온라인"]
+            queries = ["query variant A", "query variant B", "query variant C"]
             weights = [1.0, 0.8, 0.6]
             results = await _search_and_merge(queries, 15, weights=weights)
         """

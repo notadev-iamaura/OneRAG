@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 
 from .....lib.logger import get_logger
 from .base import DocumentLoaderStrategy
+from .labels import get_loader_labels
 
 logger = get_logger(__name__)
 
@@ -41,13 +42,17 @@ class XLSXLoader(DocumentLoaderStrategy):
     async def load(self, file_path: Path) -> list[Document]:
         """XLSX 파일 로드"""
         try:
+            labels = get_loader_labels()
             documents = []
             xl_file = pd.ExcelFile(file_path)
             for sheet_name in xl_file.sheet_names:
                 df = pd.read_excel(file_path, sheet_name=sheet_name)
                 # 헤더(컬럼명)·셀 값 모두 ISO 정규화를 적용해 날짜 노이즈를 제거한다(GAP #6).
                 column_names = [_excel_value_to_text(col) for col in df.columns.tolist()]
-                content_parts = [f"시트: {sheet_name}", f"컬럼: {', '.join(column_names)}"]
+                content_parts = [
+                    f"{labels['sheet']}: {sheet_name}",
+                    f"{labels['column']}: {', '.join(column_names)}",
+                ]
                 for _idx, row in df.iterrows():
                     row_text = [
                         f"{_excel_value_to_text(col)}: {_excel_value_to_text(value)}"

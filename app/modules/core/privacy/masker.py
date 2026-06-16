@@ -486,25 +486,22 @@ class PrivacyMasker:
 
     def _is_business_phone(self, phone: str) -> bool:
         """
-        사업자 전화번호인지 확인
+        사업자(지역번호) 전화번호인지 확인 — 개인전화 마스킹에서 제외용.
 
-        사업자 전화번호는 지역번호로 시작:
-        - 02: 서울
-        - 031~039: 경기 등
-        - 041~049: 충청 등
+        판별 기준은 config(privacy.yaml의 phone_business)에서 컴파일한
+        ``self.BUSINESS_PHONE_PATTERN``을 단일 진실원천으로 사용한다.
+        기본값은 한국 지역번호 규칙(02, 03X~06X)이며, 다른 국가 운영자가
+        phone_business를 자국 형식으로 오버라이드하면 개인/사업자 판별까지
+        일관되게 따라간다.
+
+        주: 이전에는 ``self.BUSINESS_PHONE_PATTERN``이 config에서 컴파일만 되고
+        미사용 데드 키였고, '010 시작=개인, 02/0XX=사업자' 한국 규칙이 코드에
+        하드코딩돼 있었다. 그 하드코딩은 phone_personal 오버라이드로 011/016
+        등 비-010 모바일이 들어오면 사업자로 오판해 마스킹을 건너뛰는(PII 유출)
+        잠재 결함이 있었다. 이제 config 패턴으로 단일화해 그 결함을 제거한다.
+        한국 기본 패턴에서는 010 입력에 대해 항상 False(=개인)로 동치 — 회귀 0.
         """
-        # 숫자만 추출
-        digits = re.sub(r"[-\s]", "", phone)
-
-        # 010으로 시작하면 개인 전화번호
-        if digits.startswith("010"):
-            return False
-
-        # 02 또는 0XX로 시작하면 사업자 전화번호
-        if digits.startswith("02") or (digits.startswith("0") and len(digits) >= 10):
-            return True
-
-        return False
+        return bool(self.BUSINESS_PHONE_PATTERN.fullmatch(phone.strip()))
 
     def contains_pii(self, text: str) -> bool:
         """

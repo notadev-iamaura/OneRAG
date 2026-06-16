@@ -47,3 +47,15 @@ uploads:
   #       category: ["category", "카테고리", "カテゴリ"]
   faq:
     column_aliases: {}
+
+  # 문서 로더 본문 라벨 (CSV/XLSX/PPTX의 인덱싱 본문에 prepend되는 구조 라벨).
+  # 이 라벨들은 검색 대상 텍스트에 그대로 들어가므로, 비한국어 배포는 자국어/영어로
+  # 오버라이드하거나 빈 문자열로 둘 수 있다. 미설정(빈 맵) 시 코드 내장 한국어
+  # 기본값으로 폴백한다(회귀 0).
+  #   - column 기본: "컬럼"  (CSV/XLSX 컬럼 라벨)
+  #   - sheet  기본: "시트"  (XLSX 시트 라벨)
+  #   - slide  기본: "슬라이드" (PPTX 슬라이드 라벨)
+  #   - notes  기본: "노트"  (PPTX 발표자 노트 라벨)
+  # 예시(영어): loaders: {labels: {column: "Columns", sheet: "Sheet", slide: "Slide", notes: "Notes"}}
+  loaders:
+    labels: {}
