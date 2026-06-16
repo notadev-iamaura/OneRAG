@@ -47,10 +47,15 @@ sql_search:
     #   no_results_message: 결과 없음 안내(기본 "검색 결과가 없습니다.")
     #   error_message_template: SQL 오류 안내({error} 자리표시자, 기본 "[SQL 검색 결과 없음: {error}]")
     #   no_match_message: 조건 불일치 안내(기본 "[SQL 검색 결과: 조건에 맞는 항목이 없습니다]")
+    #   result_header: 결과 컨텍스트 헤더(기본 "[SQL 검색 결과]")
+    #   truncation_notice_template: 일부 표시 안내({total}/{shown} 플레이스홀더,
+    #     기본 "\n(총 {total}개 중 상위 {shown}개 표시)")
     unknown_entity_label: null
     no_results_message: null
     error_message_template: null
     no_match_message: null
+    result_header: null
+    truncation_notice_template: null
 
   # RAG 파이프라인 통합 설정
   pipeline:

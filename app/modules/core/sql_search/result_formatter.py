@@ -62,6 +62,12 @@ class ResultFormatter:
         self.no_match_message = (
             self.config.get("no_match_message") or "[SQL 검색 결과: 조건에 맞는 항목이 없습니다]"
         )
+        # LLM 컨텍스트에 주입되는 결과 헤더/truncation 안내도 동일하게 외부화.
+        self.result_header = self.config.get("result_header") or "[SQL 검색 결과]"
+        self.truncation_notice_template = (
+            self.config.get("truncation_notice_template")
+            or "\n(총 {total}개 중 상위 {shown}개 표시)"
+        )
 
     def format_for_context(self, query_result: QueryResult, user_query: str) -> str:
         """
@@ -81,7 +87,7 @@ class ResultFormatter:
             return self.no_match_message
 
         # 결과 포맷팅
-        lines = ["[SQL 검색 결과]"]
+        lines = [self.result_header]
 
         for i, row in enumerate(query_result.data[: self.max_items], 1):
             line = self._format_row(row, i)
@@ -90,7 +96,9 @@ class ResultFormatter:
         # 추가 정보
         if query_result.metadata.get("truncated"):
             total = query_result.metadata.get("total_rows", 0)
-            lines.append(f"\n(총 {total}개 중 상위 {self.max_items}개 표시)")
+            lines.append(
+                self.truncation_notice_template.format(total=total, shown=self.max_items)
+            )
 
         return "\n".join(lines)
 

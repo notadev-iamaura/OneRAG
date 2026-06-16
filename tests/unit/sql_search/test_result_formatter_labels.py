@@ -73,3 +73,35 @@ class TestOverrideLabels:
         )
         # 엔티티명 필드가 없으면 폴백 라벨(영어)로 렌더
         assert "Unknown" in f.format_as_list(row)
+
+
+class TestResultHeaderAndTruncation:
+    def _rows(self, n: int, truncated: bool, total: int) -> QueryResult:
+        return QueryResult(
+            success=True,
+            data=[{"value": i} for i in range(n)],
+            row_count=n,
+            execution_time=0.0,
+            sql_query="SELECT 1",
+            metadata={"truncated": truncated, "total_rows": total},
+        )
+
+    def test_default_korean_header_and_truncation(self):
+        """미설정 시 한국어 헤더/truncation 안내 유지 (회귀 0)."""
+        f = ResultFormatter({"max_items": 2})
+        out = f.format_for_context(self._rows(2, True, 10), "q")
+        assert out.startswith("[SQL 검색 결과]")
+        assert "(총 10개 중 상위 2개 표시)" in out
+
+    def test_override_header_and_truncation(self):
+        f = ResultFormatter(
+            {
+                "max_items": 2,
+                "result_header": "[SQL Results]",
+                "truncation_notice_template": "\n(showing {shown} of {total})",
+            }
+        )
+        out = f.format_for_context(self._rows(2, True, 10), "q")
+        assert out.startswith("[SQL Results]")
+        assert "(showing 2 of 10)" in out
+        assert "총" not in out

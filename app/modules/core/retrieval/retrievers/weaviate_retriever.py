@@ -75,6 +75,11 @@ _TEXT_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "text")
 _INT_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "int")
 _NUMBER_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "number")
 _TEXT_ARRAY_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "text_array")
+
+# 메타데이터 기반 검색결과의 source_file 표시 접미사. 코드 인라인 하드코딩 대신
+# 단일 상수로 분리하고 생성자로 주입 가능하게 한다(미설정 시 한국어 기본=회귀 0).
+# 비한국어 운영자는 metadata_source_suffix 인자로 자국어/영어 라벨을 주입한다.
+_DEFAULT_METADATA_SOURCE_SUFFIX = " (메타데이터)"
 # 저장 시 소문자로 정규화되는 텍스트 프로퍼티(예: 확장자 기반 file_type).
 # 필터 값도 동일 규칙으로 소문자화해야 .equal() 매칭이 성립한다(#12).
 # 주의: document_id/file_hash/source_file 등 정확매칭 키는 절대 포함하면 안 된다.
@@ -132,6 +137,8 @@ class WeaviateRetriever:
         # Phase 3: 다중 컬렉션 검색 (Optional)
         additional_collections: list[str] | None = None,
         collection_properties: dict[str, list[str]] | None = None,
+        # 메타데이터 source_file 표시 접미사(미설정 시 한국어 기본)
+        metadata_source_suffix: str | None = None,
     ):
         """
         Weaviate Retriever 초기화 (DI Container)
@@ -167,6 +174,11 @@ class WeaviateRetriever:
         self.fusion_type = self._resolve_hybrid_fusion_type(fusion_type)
         self.additional_collections = additional_collections or []
         self.collection_properties = collection_properties or {}
+        self._metadata_source_suffix = (
+            metadata_source_suffix
+            if metadata_source_suffix is not None
+            else _DEFAULT_METADATA_SOURCE_SUFFIX
+        )
 
         # Weaviate 클라이언트 및 컬렉션 (DI)
         self.weaviate_client = weaviate_client
@@ -518,7 +530,7 @@ class WeaviateRetriever:
             # entity_name 또는 name 필드가 있으면 이를 source_file로 사용
             entity_name = metadata.get("entity_name") or metadata.get("name")
             if entity_name:
-                metadata["source_file"] = f"{entity_name} (메타데이터)"
+                metadata["source_file"] = f"{entity_name}{self._metadata_source_suffix}"
                 metadata["file_type"] = "METADATA"
 
             results.append(
