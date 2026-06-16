@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sidebar } from './Sidebar';
 import { PageHeader } from './PageHeader';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -29,6 +29,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
   // 반응형: 화면이 좁아지면 메인 사이드바 자동 닫기
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  // 직전 브레이크포인트 추적 — '데스크톱→모바일 전환' 또는 '모바일 최초 진입'에만
+  // 자동으로 닫고, 모바일에서 사용자가 직접 연 사이드바는 닫지 않기 위함.
+  const previousIsSmallScreenRef = useRef<boolean | null>(null);
 
   // 서버 상태 확인
   useEffect(() => {
@@ -52,12 +55,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     localStorage.setItem('sidebarOpen', JSON.stringify(sidebarOpen));
   }, [sidebarOpen]);
 
-  // 반응형: 화면이 좁아지면 메인 사이드바 자동 닫기
+  // 반응형: 화면이 좁아지는 '전환 시점'(또는 모바일 최초 진입)에만 사이드바 자동 닫기.
+  // sidebarOpen을 의존성에 두면 모바일에서 열 때마다 effect가 재발동해 즉시 닫히므로,
+  // 직전 브레이크포인트(ref)를 비교해 전환 시점만 처리하고 deps는 [isSmallScreen]로 한정.
   useEffect(() => {
-    if (isSmallScreen && sidebarOpen) {
+    const previousIsSmallScreen = previousIsSmallScreenRef.current;
+    if (isSmallScreen && previousIsSmallScreen !== true) {
       setSidebarOpen(false);
     }
-  }, [isSmallScreen, sidebarOpen]);
+    previousIsSmallScreenRef.current = isSmallScreen;
+  }, [isSmallScreen]);
 
   // 다크모드 토글
   const toggleDarkMode = () => {
@@ -112,7 +119,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     <div className="flex min-h-screen bg-background text-foreground transition-colors duration-300">
       <Sidebar
         open={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        onToggle={() => setSidebarOpen((open) => !open)}
       />
 
       <main
