@@ -88,6 +88,11 @@ self_rag:
     #     Respond as JSON: {{"relevance": 0.0-1.0, ...}}
     prompt_template: null
 
+    # 평가 컨텍스트의 문서 구분 라벨({index} 플레이스홀더). prompt_template를
+    # 다른 언어로 바꿔도 이 라벨이 한국어로 남던 비대칭을 해소한다. 미설정(null)
+    # 시 한국어 기본("문서 {index}:") 유지(회귀 0). 예(영어): "[Doc {index}]"
+    document_label_template: null
+
   # 6. 재검색 전략 설정 (Re-Retrieval Strategy)
   re_retrieval:
     strategy: "issue_based"  # 평가 결과의 issues 필드 기반 재검색

@@ -156,6 +156,8 @@ class EvaluatorFactory:
             # 미설정 시 None → InternalEvaluator가 코드 내장 한국어 기본
             # 평가 프롬프트를 사용한다 (회귀 0).
             prompt_template=internal_config.get("prompt_template"),
+            # 컨텍스트 문서 라벨 외부화: evaluation.internal.document_label_template.
+            document_label_template=internal_config.get("document_label_template"),
         )
 
         logger.info(

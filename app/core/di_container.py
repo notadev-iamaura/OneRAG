@@ -2026,6 +2026,8 @@ class AppContainer(containers.DeclarativeContainer):
         # 미설정 시 None → LLMQualityEvaluator가 코드 내장 한국어 기본 프롬프트를
         # 사용한다 (회귀 0).
         evaluation_prompt_template=config.self_rag.evaluation.prompt_template,
+        # 컨텍스트 문서 라벨 외부화: self_rag.evaluation.document_label_template.
+        document_label_template=config.self_rag.evaluation.document_label_template,
     )
 
     self_rag = providers.Singleton(
