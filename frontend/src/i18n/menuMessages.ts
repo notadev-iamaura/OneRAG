@@ -59,6 +59,16 @@ export interface MenuMessages {
     chunkContent: string;
     loadingFullContent: string;
     close: string;
+    // PDF 인라인 미리보기 / 인용 좌표(#56)
+    pdfPreview: string;
+    openInNewTab: string;
+    pdfPreviewLoading: string;
+    pdfPreviewFailed: string;
+    citationLocation: string;
+    pageSizePrefix: string;
+    pagePrefix: string;
+    confidencePrefix: string;
+    tablePrefix: string;
   };
   // PDF 인용 하이라이트 뷰어(#55)
   pdfViewer: {
@@ -120,6 +130,15 @@ const ko: MenuMessages = {
     chunkContent: "청크 내용",
     loadingFullContent: "전체 원문을 불러오는 중...",
     close: "닫기",
+    pdfPreview: "PDF 미리보기",
+    openInNewTab: "새 탭에서 열기",
+    pdfPreviewLoading: "PDF를 불러오는 중...",
+    pdfPreviewFailed: "PDF 미리보기를 불러올 수 없습니다.",
+    citationLocation: "인용 위치",
+    pageSizePrefix: "페이지 크기:",
+    pagePrefix: "p.",
+    confidencePrefix: "신뢰도",
+    tablePrefix: "표",
   },
   pdfViewer: {
     heading: "PDF 인용 위치",
@@ -179,6 +198,15 @@ const en: MenuMessages = {
     chunkContent: "Chunk content",
     loadingFullContent: "Loading full content...",
     close: "Close",
+    pdfPreview: "PDF preview",
+    openInNewTab: "Open in new tab",
+    pdfPreviewLoading: "Loading PDF...",
+    pdfPreviewFailed: "Failed to load the PDF preview.",
+    citationLocation: "Citation location",
+    pageSizePrefix: "Page size:",
+    pagePrefix: "p.",
+    confidencePrefix: "Confidence",
+    tablePrefix: "Table",
   },
   pdfViewer: {
     heading: "PDF Citation Location",
