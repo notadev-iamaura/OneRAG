@@ -130,6 +130,11 @@ class DocumentProcessorFactory:
             logger.warning(f"Overwriting existing processor for doc_type='{doc_type}'")
 
         cls._processors[doc_type] = processor_class  # type: ignore[assignment]
+        # 등록 종류를 Document 허용 집합에 추가해, 이 종류로 만든 Document가
+        # __post_init__ 검증을 통과하게 한다(닫힌 enum vs 확장성 모순 해소).
+        from .models import Document
+
+        Document.VALID_DOC_TYPES.add(doc_type)
         logger.info(f"Registered {processor_class.__name__} for doc_type='{doc_type}'")
 
     @classmethod
