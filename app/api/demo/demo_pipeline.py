@@ -92,6 +92,24 @@ def _resolve_prompt(env_name: str, default: str) -> str:
 RAG_SYSTEM_PROMPT = _resolve_prompt("DEMO_RAG_SYSTEM_PROMPT", DEFAULT_RAG_SYSTEM_PROMPT)
 RAG_USER_TEMPLATE = _resolve_prompt("DEMO_RAG_USER_TEMPLATE", DEFAULT_RAG_USER_TEMPLATE)
 
+# 컨텍스트 라벨 (기본값)
+# _build_context가 LLM 프롬프트({context})에 주입하는 한국어 라벨도 운영자가
+# 도메인/언어 전환 시 바꿀 수 있도록 환경 변수로 외부화한다. 위 프롬프트와 동일하게
+# 미설정/공백 시 아래 한국어 기본값을 그대로 사용한다(회귀 0).
+# - DEMO_CONTEXT_DOC_LABEL: 문서 라벨 템플릿 ({index} 자리표시자 필수, 문서 번호)
+# - DEMO_UNKNOWN_SOURCE: 출처 메타데이터가 비었을 때 표기할 기본 출처명
+# - DEMO_NO_DOCS_MESSAGE: 검색 결과가 없을 때 컨텍스트로 주입할 메시지
+DEFAULT_CONTEXT_DOC_LABEL = "[문서 {index}]"
+DEFAULT_UNKNOWN_SOURCE = "알 수 없는 출처"
+DEFAULT_NO_DOCS_MESSAGE = "관련 문서를 찾을 수 없습니다."
+
+# 모듈 로드 시 1회 해석 (env 미설정 시 기본값과 byte-identical)
+CONTEXT_DOC_LABEL = _resolve_prompt(
+    "DEMO_CONTEXT_DOC_LABEL", DEFAULT_CONTEXT_DOC_LABEL
+)
+UNKNOWN_SOURCE = _resolve_prompt("DEMO_UNKNOWN_SOURCE", DEFAULT_UNKNOWN_SOURCE)
+NO_DOCS_MESSAGE = _resolve_prompt("DEMO_NO_DOCS_MESSAGE", DEFAULT_NO_DOCS_MESSAGE)
+
 # 지원 파일 형식
 ALLOWED_EXTENSIONS = {"pdf", "txt", "md", "csv", "docx"}
 
@@ -610,14 +628,19 @@ class DemoPipeline:
         return sources
 
     def _build_context(self, sources: list[dict[str, Any]]) -> str:
-        """검색 결과를 컨텍스트 문자열로 조합"""
+        """검색 결과를 컨텍스트 문자열로 조합
+
+        라벨/출처/없음 메시지는 모듈 상수(env 오버라이드 가능)를 사용한다.
+        env 미설정 시 기존 한국어 출력과 byte 동치(회귀 0).
+        """
         if not sources:
-            return "관련 문서를 찾을 수 없습니다."
+            return NO_DOCS_MESSAGE
 
         parts = []
         for i, src in enumerate(sources, 1):
-            source_name = src.get("source", "알 수 없는 출처")
+            source_name = src.get("source", UNKNOWN_SOURCE)
             content = src.get("content", "")
-            parts.append(f"[문서 {i}] ({source_name})\n{content}")
+            doc_label = CONTEXT_DOC_LABEL.format(index=i)
+            parts.append(f"{doc_label} ({source_name})\n{content}")
 
         return "\n\n---\n\n".join(parts)

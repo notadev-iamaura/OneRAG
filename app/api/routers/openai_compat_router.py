@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from typing import Any
@@ -47,11 +48,75 @@ _modules: dict[str, Any] = {}
 # 검색 결과 최대 개수 (openai_compat.yaml에서 설정 가능)
 _MAX_SEARCH_RESULTS = 5
 
+# =============================================================================
+# RAG 프롬프트 래퍼 (기본값 + 외부화 오버라이드 경로)
+# =============================================================================
+# /v1/chat/completions(OpenAI 호환 API)는 글로벌 SDK 통합의 핵심 진입점이라,
+# 영어권/타도메인 사용자가 RAG 래퍼 문구를 코드 포크 없이 바꿀 수 있어야 한다.
+# 같은 기능의 demo_pipeline.py는 이미 env로 외부화돼 있어 비대칭을 해소한다.
+#
+# 우선순위(미설정 시 한국어 기본값과 byte-identical → 회귀 0):
+#   1) config: _modules["config"].openai_compat.rag_prompt_template (주입 시)
+#   2) env:    OPENAI_COMPAT_RAG_PROMPT_TEMPLATE
+#   3) 코드 내장 기본값(DEFAULT_RAG_PROMPT_TEMPLATE)
+#
+# 템플릿 자리표시자(필수):
+#   {context} - 검색된 참고문서 본문(아래 [문서 N] 포맷으로 조립됨)
+#   {query}   - 현재 사용자 질문
+DEFAULT_RAG_PROMPT_TEMPLATE = (
+    "다음 참고문서를 기반으로 질문에 답변하세요.\n\n"
+    "## 참고문서\n{context}\n\n"
+    "## 질문\n{query}"
+)
+
+# 개별 참고문서 항목 포맷(기본값). {index}/{content} 자리표시자 사용.
+# 외부화하지 않아도 래퍼만 바꾸면 대부분의 다국어/도메인 요구를 만족하지만,
+# 항목 라벨('[문서 N]')까지 영어화하려는 경우를 위해 함께 외부화한다.
+DEFAULT_RAG_DOC_ITEM_TEMPLATE = "[문서 {index}]\n{content}"
+
+# 환경 변수 키(코드가 실제로 읽는 키 — 데드키 아님)
+ENV_RAG_PROMPT_TEMPLATE = "OPENAI_COMPAT_RAG_PROMPT_TEMPLATE"
+ENV_RAG_DOC_ITEM_TEMPLATE = "OPENAI_COMPAT_RAG_DOC_ITEM_TEMPLATE"
+
 
 def set_modules(modules: dict[str, Any]) -> None:
     """모듈 의존성 주입 (main.py에서 호출)"""
     global _modules
     _modules = modules
+
+
+def _resolve_rag_template(config_key: str, env_name: str, default: str) -> str:
+    """RAG 프롬프트 래퍼 템플릿을 config → env → 기본값 순으로 해석한다.
+
+    미설정/공백이면 다음 우선순위로 폴백하여, 아무것도 주입하지 않으면
+    코드 내장 한국어 기본값과 byte-identical을 보장한다(회귀 0).
+
+    Args:
+        config_key: openai_compat 설정 섹션 내 키(예: "rag_prompt_template").
+        env_name: 환경 변수 이름(예: "OPENAI_COMPAT_RAG_PROMPT_TEMPLATE").
+        default: 코드 내장 기본 템플릿.
+
+    Returns:
+        해석된 템플릿 문자열(주입 우선순위: config > env > default).
+    """
+    # 1) config 주입 경로(_modules["config"]가 주입된 경우에만 동작)
+    config = _modules.get("config")
+    if config is not None:
+        try:
+            section = config.get("openai_compat") or {}
+            value = section.get(config_key) if isinstance(section, dict) else None
+        except Exception:  # noqa: BLE001 - config 접근 실패는 비치명적(env/기본값 폴백)
+            value = None
+        if isinstance(value, str) and value.strip():
+            return value
+
+    # 2) env 오버라이드 경로(demo_pipeline.py와 동일한 패턴)
+    env_value = os.getenv(env_name)
+    if env_value is not None and env_value.strip():
+        return env_value
+
+    # 3) 코드 내장 기본값
+    return default
 
 
 def _build_chat_history_from_messages(messages: list[Any]) -> dict[str, Any] | None:
@@ -157,21 +222,31 @@ async def _cleanup_ephemeral_session(session_module: Any, sid: str | None) -> No
 
 
 def _build_rag_prompt(query: str, documents: list[dict[str, Any]]) -> str:
-    """검색 결과를 포함한 RAG 프롬프트 구성"""
+    """검색 결과를 포함한 RAG 프롬프트 구성.
+
+    래퍼/항목 템플릿은 config → env → 코드 기본값 순으로 해석한다(외부화).
+    아무것도 주입하지 않으면 기존 한국어 프롬프트와 byte-identical을 유지한다(회귀 0).
+    """
     if not documents:
         return query
 
+    item_template = _resolve_rag_template(
+        "rag_doc_item_template",
+        ENV_RAG_DOC_ITEM_TEMPLATE,
+        DEFAULT_RAG_DOC_ITEM_TEMPLATE,
+    )
     doc_texts = []
     for i, doc in enumerate(documents, 1):
         content = doc.get("content", "")
-        doc_texts.append(f"[문서 {i}]\n{content}")
+        doc_texts.append(item_template.format(index=i, content=content))
 
     context = "\n\n".join(doc_texts)
-    return (
-        f"다음 참고문서를 기반으로 질문에 답변하세요.\n\n"
-        f"## 참고문서\n{context}\n\n"
-        f"## 질문\n{query}"
+    prompt_template = _resolve_rag_template(
+        "rag_prompt_template",
+        ENV_RAG_PROMPT_TEMPLATE,
+        DEFAULT_RAG_PROMPT_TEMPLATE,
     )
+    return prompt_template.format(context=context, query=query)
 
 
 def _doc_content(doc: Any) -> str:

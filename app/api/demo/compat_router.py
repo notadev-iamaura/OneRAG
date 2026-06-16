@@ -16,6 +16,7 @@
 """
 
 import json
+import os
 import time
 import uuid
 from collections.abc import AsyncGenerator
@@ -413,18 +414,53 @@ async def get_session_info(
 _prompts: dict[str, dict[str, Any]] = {}
 
 
+def _resolve_seed(env_name: str, default: str) -> str:
+    """데모 시드 프롬프트 문자열을 환경 변수에서 읽되, 미설정/공백이면 기본값으로 폴백.
+
+    demo_pipeline._resolve_prompt와 동일한 폴백 규칙을 따른다.
+    데모/샘플 성격이라 env 폴백만으로 충분하며, 미설정 시 한국어 기본값을
+    그대로 사용하여 회귀를 0으로 유지한다.
+    """
+    value = os.getenv(env_name)
+    if value is not None and value.strip():
+        return value
+    return default
+
+
+# 데모 프롬프트 관리 UI 시드 (기본값)
+# 운영자가 도메인/언어를 전환할 때 코드 수정 없이 시드 프롬프트를 바꿀 수 있도록
+# content/description을 환경 변수로 외부화한다. name/category는 안정 식별자라 유지.
+# 미설정/공백 시 아래 한국어 기본값을 그대로 사용한다(회귀 0).
+DEFAULT_SEED_SYSTEM_CONTENT = (
+    "당신은 RAG 기반 질문 답변 시스템입니다. "
+    "제공된 문서를 기반으로 정확하고 도움이 되는 답변을 작성하세요."
+)
+DEFAULT_SEED_SYSTEM_DESCRIPTION = "기본 시스템 프롬프트"
+DEFAULT_SEED_CONCISE_CONTENT = "핵심만 간결하게 답변하세요. 불필요한 설명은 생략합니다."
+DEFAULT_SEED_CONCISE_DESCRIPTION = "간결한 답변 스타일"
+DEFAULT_SEED_DETAILED_CONTENT = (
+    "상세하고 포괄적으로 답변하세요. "
+    "관련 배경 지식과 예시를 포함하여 설명합니다."
+)
+DEFAULT_SEED_DETAILED_DESCRIPTION = "상세한 답변 스타일"
+
+
 def _default_prompts() -> list[dict[str, Any]]:
-    """기본 시스템 프롬프트 (서버 시작 시 초기화)"""
+    """기본 시스템 프롬프트 (서버 시작 시 초기화)
+
+    content/description은 env 오버라이드(미설정 시 한국어 기본값=회귀 0)를 따른다.
+    """
     now = datetime.now(tz=UTC).isoformat()
     return [
         {
             "id": str(uuid.uuid4()),
             "name": "default-system",
-            "content": (
-                "당신은 RAG 기반 질문 답변 시스템입니다. "
-                "제공된 문서를 기반으로 정확하고 도움이 되는 답변을 작성하세요."
+            "content": _resolve_seed(
+                "DEMO_SEED_SYSTEM_CONTENT", DEFAULT_SEED_SYSTEM_CONTENT
             ),
-            "description": "기본 시스템 프롬프트",
+            "description": _resolve_seed(
+                "DEMO_SEED_SYSTEM_DESCRIPTION", DEFAULT_SEED_SYSTEM_DESCRIPTION
+            ),
             "category": "system",
             "is_active": True,
             "metadata": {},
@@ -434,8 +470,12 @@ def _default_prompts() -> list[dict[str, Any]]:
         {
             "id": str(uuid.uuid4()),
             "name": "concise-style",
-            "content": "핵심만 간결하게 답변하세요. 불필요한 설명은 생략합니다.",
-            "description": "간결한 답변 스타일",
+            "content": _resolve_seed(
+                "DEMO_SEED_CONCISE_CONTENT", DEFAULT_SEED_CONCISE_CONTENT
+            ),
+            "description": _resolve_seed(
+                "DEMO_SEED_CONCISE_DESCRIPTION", DEFAULT_SEED_CONCISE_DESCRIPTION
+            ),
             "category": "style",
             "is_active": False,
             "metadata": {},
@@ -445,11 +485,12 @@ def _default_prompts() -> list[dict[str, Any]]:
         {
             "id": str(uuid.uuid4()),
             "name": "detailed-style",
-            "content": (
-                "상세하고 포괄적으로 답변하세요. "
-                "관련 배경 지식과 예시를 포함하여 설명합니다."
+            "content": _resolve_seed(
+                "DEMO_SEED_DETAILED_CONTENT", DEFAULT_SEED_DETAILED_CONTENT
             ),
-            "description": "상세한 답변 스타일",
+            "description": _resolve_seed(
+                "DEMO_SEED_DETAILED_DESCRIPTION", DEFAULT_SEED_DETAILED_DESCRIPTION
+            ),
             "category": "style",
             "is_active": False,
             "metadata": {},

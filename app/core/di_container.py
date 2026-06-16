@@ -1633,6 +1633,10 @@ class AppContainer(containers.DeclarativeContainer):
         policy_engine=pii_policy_engine,
         audit_logger=pii_audit_logger,
         enabled=config.privacy.review.enabled,
+        # PII 마스킹 치환 라벨 오버라이드 (privacy.yaml). 비우면 코드 기본
+        # 한국어 라벨(DEFAULT_MASK_TEMPLATES)로 폴백한다(회귀 0). 비한국어
+        # 운영자는 review.mask_templates로 자국어 라벨을 코드 포크 없이 주입.
+        mask_templates=config.privacy.review.mask_templates,
     )
 
     # 통합 PII 처리 Facade (권장 진입점)

@@ -205,6 +205,29 @@ privacy:
     #     ORG: organization
     ner_label_mapping: {}
 
+    # ========================================
+    # PII 마스킹 치환 라벨 (review 전용 — PIIReviewProcessor)
+    # ========================================
+    # 범용화 정책: 비우면(`{}`) 코드 기본 라벨(DEFAULT_MASK_TEMPLATES, 한국어
+    # "[전화번호]"/"[이메일]"/"[주민등록번호]" 등)이 그대로 적용된다(회귀 0).
+    # 이 라벨은 마스킹된 문서 본문에 남아 출력에 노출되므로, 비한국어 운영자는
+    # 필요한 키만 자국어로 교체하면 된다(미설정 키는 한국어 기본값 폴백).
+    # 키는 PIIType 문자열을 쓴다:
+    #   phone | email | ssn | account | card | person_name | address
+    #   | organization | unknown
+    # 예시(영어):
+    #   mask_templates:
+    #     phone: "[Phone]"
+    #     email: "[Email]"
+    #     ssn: "[SSN]"
+    #     account: "[Account]"
+    #     card: "[Card]"
+    #     person_name: "[Name]"
+    #     address: "[Address]"
+    #     organization: "[Organization]"
+    #     unknown: "[PII]"
+    mask_templates: {}
+
     # 정책 설정
     policy:
       name: "default"

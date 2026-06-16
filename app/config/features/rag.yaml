@@ -181,6 +181,10 @@ rag:
   #       동일하게 사용된다(단일 진실원천). null/공백이면 코드 내장 한국어 기본값.
   #   - type_error_message: 생성 결과 타입 가드가 예상치 못한 타입을 만났을 때 반환하는
   #       안전 메시지. null/공백이면 코드 내장 한국어 기본값.
+  #   - no_documents_message: 스트리밍(SSE/WS) 경로에서 검색 결과가 0건일 때 사용자에게
+  #       chunk로 내보내는 안내 메시지(에러 아닌 informational). null/공백이면 코드 내장
+  #       한국어 기본값("관련 문서를 찾을 수 없습니다. 문서를 업로드했는지 확인하거나
+  #       질문을 바꿔 다시 시도해주세요."). 비한국어 운영자는 코드 포크 없이 교체 가능.
   generation_fallback:
     module_missing_message: null
     with_docs_message: null
@@ -188,6 +192,7 @@ rag:
     document_preview_unavailable: null
     prompt_leakage_blocked_message: null
     type_error_message: null
+    no_documents_message: null
 
   # ==========================================================================
   # 멀티턴 anchor soft boost (GAP B) - opt-in, 기본 OFF, 보수적
