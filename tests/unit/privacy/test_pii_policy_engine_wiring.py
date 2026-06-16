@@ -56,3 +56,21 @@ class TestPiiPolicyEngineFactory:
         engine = _create_pii_policy_engine("not-a-dict")
         assert isinstance(engine, PIIPolicyEngine)
         assert engine.policy.name == "default"
+
+    def test_whitelist_patterns_default_korean(self):
+        """whitelist_patterns 미설정 시 한국어 기본 목록 유지 (회귀 0)."""
+        engine = _create_pii_policy_engine({"entity_actions": {"phone": "mask"}})
+        # PIIPolicy.default()의 한국어 호칭 목록이 그대로 사용됨
+        assert "담당" in engine.policy.whitelist_patterns
+
+    def test_whitelist_patterns_override(self):
+        """config whitelist_patterns가 PII 리뷰 화이트리스트를 교체한다(비대칭 해소)."""
+        cfg = {"whitelist_patterns": ["manager", "staff", "support"]}
+        engine = _create_pii_policy_engine(cfg)
+        assert engine.policy.whitelist_patterns == ["manager", "staff", "support"]
+        assert "담당" not in engine.policy.whitelist_patterns
+
+    def test_whitelist_patterns_null_falls_back(self):
+        """yaml null → 한국어 기본 폴백."""
+        engine = _create_pii_policy_engine({"whitelist_patterns": None})
+        assert "담당" in engine.policy.whitelist_patterns

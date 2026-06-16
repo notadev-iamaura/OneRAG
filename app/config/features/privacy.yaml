@@ -248,6 +248,12 @@ privacy:
         address: "mask"
         organization: "review"
 
+      # PII 오탐 방지 화이트리스트(이름 등으로 오인되기 쉬운 호칭/직책 명사).
+      # 미설정(null/빈 목록)이면 코드 내장 한국어 기본 목록(담당/관리자/직원/고객
+      # 등)을 사용한다(회귀 0). 비한국어 운영자는 자국어 목록으로 교체한다.
+      # 예(영어): whitelist_patterns: ["manager", "staff", "customer", "support"]
+      whitelist_patterns: null
+
     # 감사 로그 설정
     audit:
       enabled: true

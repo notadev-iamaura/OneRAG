@@ -143,7 +143,11 @@ class BM25SynonymConfig(BaseModel):
     """동의어 사전 설정"""
 
     enabled: bool = True
-    csv_path: str = Field(default="docs/phase2/챗봇 - 동의어 사전.csv")
+    # 동의어 사전 경로. 실소비 경로는 domain.retrieval.synonyms.csv_path이며,
+    # 이 기본값은 BM25SynonymConfig 직접 인스턴스화 시에만 쓰인다. 특정 프로젝트
+    # 사설 파일명을 박지 않고 빈 경로(=동의어 비활성, synonym_manager가 graceful
+    # skip)로 둔다. 운영자는 config로 자신의 사전 경로를 지정한다.
+    csv_path: str = Field(default="")
     expand_query: bool = True
 
 

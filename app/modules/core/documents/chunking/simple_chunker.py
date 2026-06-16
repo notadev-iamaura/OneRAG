@@ -226,8 +226,9 @@ class SimpleChunker(BaseChunker):
         if "{question}" in self.content_template and "{answer}" in self.content_template:
             return self.content_template.format(question=question.strip(), answer=answer.strip())
 
-        # 템플릿이 없으면 기본 형식
-        return f"질문: {question.strip()}\n답변: {answer.strip()}"
+        # 템플릿에 placeholder가 없으면 언어중립으로 단순 결합한다(한국어 라벨 미주입).
+        # 라벨이 필요한 운영자는 content_template에 명시한다(예: "질문: {question}...").
+        return f"{question.strip()}\n{answer.strip()}"
 
     def validate_document(self, document: Document) -> None:
         """

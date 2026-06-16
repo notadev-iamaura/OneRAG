@@ -186,7 +186,12 @@ def _create_pii_policy_engine(policy_config: Any = None) -> Any:
                 cfg.get("quarantine_threshold", default_policy.quarantine_threshold)
             ),
             min_confidence=float(cfg.get("min_confidence", default_policy.min_confidence)),
-            whitelist_patterns=default_policy.whitelist_patterns,
+            # whitelist_patterns도 형제 키처럼 config에서 읽는다(미설정 시 한국어
+            # 기본 PII 오탐방지 목록 → 회귀 0). 비한국어 운영자가 코드 포크 없이
+            # 리뷰 화이트리스트를 교체할 수 있게 한다.
+            whitelist_patterns=(
+                cfg.get("whitelist_patterns") or default_policy.whitelist_patterns
+            ),
         )
     except (TypeError, ValueError):
         policy = default_policy  # 설정 파싱 실패 시 기본 정책으로 안전 폴백
