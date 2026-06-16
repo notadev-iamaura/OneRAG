@@ -58,7 +58,6 @@ from app.modules.core.privacy import (
 from app.modules.core.privacy.review import (
     HybridPIIDetector,
     PIIAuditLogger,
-    PIIPolicyEngine,
     PIIReviewProcessor,
 )
 
@@ -131,6 +130,68 @@ def _create_memory_service(*args: Any, **kwargs: Any) -> Any:
     from app.modules.core.session.services.memory_service import MemoryService
 
     return MemoryService(*args, **kwargs)
+
+
+def _create_pii_policy_engine(policy_config: Any = None) -> Any:
+    """config.privacy.review.policy에서 PIIPolicy를 구성해 PIIPolicyEngine을 만든다.
+
+    config의 entity_actions는 문자열 키/값(예: {"phone": "mask"})이므로 PIIType/
+    PolicyAction enum으로 정규화한다(value 단축 별칭 'review'→REVIEW_ONLY 등 허용).
+    기본 정책(PIIPolicy.default()) 위에 config를 오버라이드하므로 미설정 키는
+    기본 동작을 유지하고, 누락/오류 시 기본 정책으로 안전 폴백한다(회귀 0).
+
+    주: 이전에는 provider가 PIIPolicyEngine에 policy_name/entity_actions/...를
+    직접 넘겼으나 PIIPolicyEngine.__init__은 policy: PIIPolicy|None만 받아
+    인스턴스화 시 TypeError였다(PII 리뷰 활성화 시 크래시). 이 팩토리로 교정한다.
+    """
+    from app.modules.core.privacy.review.models import (
+        PIIPolicy,
+        PIIType,
+        PolicyAction,
+    )
+    from app.modules.core.privacy.review.policy import PIIPolicyEngine
+
+    # config 단축 표기 → PolicyAction 별칭 맵
+    action_aliases = {
+        "review": PolicyAction.REVIEW_ONLY,
+        "review_only": PolicyAction.REVIEW_ONLY,
+        "mask": PolicyAction.MASK_AND_PROCEED,
+        "mask_and_proceed": PolicyAction.MASK_AND_PROCEED,
+        "block": PolicyAction.BLOCK_ON_VIOLATION,
+        "block_on_violation": PolicyAction.BLOCK_ON_VIOLATION,
+        "quarantine": PolicyAction.QUARANTINE,
+    }
+
+    default_policy = PIIPolicy.default()
+    cfg = policy_config if isinstance(policy_config, dict) else {}
+    raw_actions = cfg.get("entity_actions")
+
+    # 기본 정책의 entity_actions 위에 config를 오버라이드(미설정 키는 기본 유지)
+    entity_actions = dict(default_policy.entity_actions)
+    if isinstance(raw_actions, dict):
+        for key, value in raw_actions.items():
+            try:
+                pii_type = PIIType(str(key).strip().lower())
+            except ValueError:
+                continue  # 알 수 없는 엔티티 타입은 건너뜀(graceful)
+            action = action_aliases.get(str(value).strip().lower())
+            if action is not None:
+                entity_actions[pii_type] = action
+
+    try:
+        policy = PIIPolicy(
+            name=str(cfg.get("name", default_policy.name)),
+            entity_actions=entity_actions,
+            quarantine_threshold=int(
+                cfg.get("quarantine_threshold", default_policy.quarantine_threshold)
+            ),
+            min_confidence=float(cfg.get("min_confidence", default_policy.min_confidence)),
+            whitelist_patterns=default_policy.whitelist_patterns,
+        )
+    except (TypeError, ValueError):
+        policy = default_policy  # 설정 파싱 실패 시 기본 정책으로 안전 폴백
+
+    return PIIPolicyEngine(policy)
 
 
 def _create_chat_store(config: dict[str, Any] | None, db_manager: Any) -> Any | None:
@@ -1611,12 +1672,11 @@ class AppContainer(containers.DeclarativeContainer):
     )
 
     # 정책 기반 PII 처리 결정 엔진
+    # PIIPolicyEngine은 policy: PIIPolicy만 받으므로, config의 정책 값을 팩토리에서
+    # PIIPolicy로 구성해 주입한다(이전 직접 kwargs 전달은 TypeError였음).
     pii_policy_engine = providers.Singleton(
-        PIIPolicyEngine,
-        policy_name=config.privacy.review.policy.name,
-        entity_actions=config.privacy.review.policy.entity_actions,
-        quarantine_threshold=config.privacy.review.policy.quarantine_threshold,
-        min_confidence=config.privacy.review.policy.min_confidence,
+        _create_pii_policy_engine,
+        policy_config=config.privacy.review.policy,
     )
 
     # MongoDB 감사 로거 (collection은 런타임에 주입)
