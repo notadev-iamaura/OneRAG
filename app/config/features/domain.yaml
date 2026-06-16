@@ -146,6 +146,12 @@ domain:
     # 간단 매핑 형식도 허용: schema_fields: {price: text, capacity: text}
     schema_fields: []
 
+    # 관리자 분석(/api/admin/weaviate/analytics)의 "엔티티 분포" 통계가
+    # 집계할 메타데이터 필드명. 미설정(null) 시 기본 "entity_name"으로
+    # 폴백한다. 자기 도메인의 엔티티 라벨 필드를 다른 이름으로 쓰면
+    # 여기에 지정하세요(예: item_title). 코드 수정 없이 통계가 반영됩니다.
+    entity_distribution_field: null
+
     schema:
       required_fields: ["name"]
       numeric_fields:

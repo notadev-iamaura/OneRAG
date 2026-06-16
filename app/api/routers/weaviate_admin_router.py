@@ -23,6 +23,37 @@ router = APIRouter(
     dependencies=[Depends(get_api_key)],
 )
 
+# 엔티티 분포 통계의 기본 집계 필드. 운영자가 자기 도메인의 엔티티 라벨
+# 필드를 다른 이름으로 정의하면 domain.yaml로 오버라이드한다.
+_DEFAULT_ENTITY_DISTRIBUTION_FIELD = "entity_name"
+
+
+def _resolve_entity_distribution_field() -> str:
+    """엔티티 분포 통계 집계 대상 필드명을 config에서 파생한다.
+
+    `domain.metadata.entity_distribution_field` 미설정 시 기본
+    "entity_name"으로 폴백한다(회귀 0). 운영자가 자기 도메인의 엔티티
+    라벨 필드를 다른 이름(예: item_title)으로 쓰면 이 키로 오버라이드해
+    코드 수정 없이 통계가 올바른 필드를 집계하게 한다.
+    """
+    try:
+        # 지연 임포트: 모듈 임포트 시 config 로딩 부작용을 피한다.
+        from app.lib.config_loader import load_config
+
+        config = load_config()
+    except Exception as e:  # 설정 로드 실패는 치명적이지 않다 — 기본 필드 사용
+        logger.warning(f"엔티티 분포 필드 config 로드 실패(기본값 사용): {e}")
+        return _DEFAULT_ENTITY_DISTRIBUTION_FIELD
+
+    field = (
+        config.get("domain", {})
+        .get("metadata", {})
+        .get("entity_distribution_field", None)
+    )
+    if isinstance(field, str) and field.strip():
+        return field.strip()
+    return _DEFAULT_ENTITY_DISTRIBUTION_FIELD
+
 
 @router.get("/status")
 async def check_weaviate_status():
@@ -306,9 +337,14 @@ async def get_weaviate_analytics():
         # 모든 문서 가져오기 (배치 처리)
         from collections import Counter
 
-        source_counter = Counter()
-        data_source_counter = Counter()
-        entity_counter = Counter()
+        # 엔티티 분포 집계 대상 필드는 도메인마다 다르다(웨딩=entity_name,
+        # 다른 도메인=item_title 등). 코드에 하드코딩하지 않고 config에서
+        # 파생한다. 미설정 시 기본 "entity_name"으로 폴백(회귀 0).
+        entity_field = _resolve_entity_distribution_field()
+
+        source_counter: Counter = Counter()
+        data_source_counter: Counter = Counter()
+        entity_counter: Counter = Counter()
 
         batch_size = 1000
         offset = 0
@@ -318,7 +354,7 @@ async def get_weaviate_analytics():
             batch = collection.query.fetch_objects(
                 limit=batch_size,
                 offset=offset,
-                return_properties=["source", "data_source", "entity_name"]
+                return_properties=["source", "data_source", entity_field]
             )
 
             if not batch.objects:
@@ -333,9 +369,9 @@ async def get_weaviate_analytics():
                 data_source = props.get("data_source", "Unknown")
                 data_source_counter[data_source] += 1
 
-                entity_name = props.get("entity_name")
-                if entity_name:
-                    entity_counter[entity_name] += 1
+                entity_value = props.get(entity_field)
+                if entity_value:
+                    entity_counter[entity_value] += 1
 
             processed += len(batch.objects)
             offset += batch_size
