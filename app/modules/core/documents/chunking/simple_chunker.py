@@ -32,7 +32,17 @@ class SimpleChunker(BaseChunker):
         175
     """
 
-    def __init__(self, content_template: str = "{question}\n{answer}"):
+    # 코드 내장 ko+en 기본 컬럼 별칭(회귀 안전판).
+    # config 미설정 시 이 목록을 사용해 기존 동작과 동치를 유지한다.
+    # 그 외 언어(예: 일본어 質問/回答)는 column_aliases로 추가한다.
+    DEFAULT_QUESTION_KEYS: list[str] = ["질문", "question", "Question", "Q", "query"]
+    DEFAULT_ANSWER_KEYS: list[str] = ["답변", "answer", "Answer", "A", "response"]
+
+    def __init__(
+        self,
+        content_template: str = "{question}\n{answer}",
+        column_aliases: dict[str, list[str]] | None = None,
+    ):
         """
         SimpleChunker 초기화
 
@@ -41,8 +51,26 @@ class SimpleChunker(BaseChunker):
                 - {question}: 질문 필드
                 - {answer}: 답변 필드
                 - 예: "Q: {question}\nA: {answer}"
+            column_aliases: 질문/답변 컬럼 별칭 맵({"question": [...], "answer": [...]}).
+                미지정(None) 시 코드 내장 ko+en 기본 별칭을 사용한다(회귀 0).
+                uploads.yaml의 `uploads.faq.column_aliases`로 임의 언어 컬럼명을
+                추가할 수 있다. 키가 부분 지정되면 미지정 키는 기본값으로 보강한다.
         """
         self.content_template = content_template
+
+        # 컬럼 별칭: config 주입 우선, 미설정 키는 ko+en 기본값으로 보강(회귀 0)
+        aliases = column_aliases or {}
+        self.question_keys: list[str] = aliases.get(
+            "question", list(self.DEFAULT_QUESTION_KEYS)
+        )
+        self.answer_keys: list[str] = aliases.get(
+            "answer", list(self.DEFAULT_ANSWER_KEYS)
+        )
+        # FAQProcessor 등이 동일 별칭을 재사용할 수 있도록 정규화된 맵을 노출한다.
+        self.column_aliases: dict[str, list[str]] = {
+            "question": self.question_keys,
+            "answer": self.answer_keys,
+        }
         logger.debug(f"SimpleChunker initialized with template: {content_template}")
 
     def chunk(self, document: Document) -> list[Chunk]:
@@ -95,21 +123,18 @@ class SimpleChunker(BaseChunker):
         Raises:
             KeyError: 필수 필드 누락
         """
-        # 필드명 유연성 (여러 형태 지원)
-        question_keys = ["질문", "question", "Question", "Q", "query"]
-        answer_keys = ["답변", "answer", "Answer", "A", "response"]
-
+        # 필드명 유연성 (config/기본 별칭 단일 소스 사용)
         question = None
         answer = None
 
         # 질문 필드 찾기
-        for key in question_keys:
+        for key in self.question_keys:
             if key in item:
                 question = item[key]
                 break
 
         # 답변 필드 찾기
-        for key in answer_keys:
+        for key in self.answer_keys:
             if key in item:
                 answer = item[key]
                 break

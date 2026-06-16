@@ -83,6 +83,16 @@ domain:
     # 자신의 도메인 카테고리를 사용하려면 아래 형식으로 키워드를 정의하세요.
     # 예: "비용": ["가격", "요금"], "절차": ["방법", "이용"]
     category_keywords: {}
+
+    # 콘텐츠 타입(question/instruction/conversation) 추론 마커.
+    # null(기본)이면 코드 내장 한국어 기본 마커를 사용한다(회귀 0).
+    # '?'(질문)는 언어 중립 신호라 마커와 무관하게 항상 적용된다.
+    # 비한국어 운영자는 아래 형식으로 자국어 마커를 정의하세요. 예:
+    #   content_type_markers:
+    #     question: ["when", "where", "what", "how", "why"]
+    #     instruction: ["please", "must", "note"]
+    #     conversation: ["hello", "thanks", "inquiry"]
+    content_type_markers: null
     schema:
       required_fields: ["name"]
       numeric_fields:
@@ -126,6 +136,25 @@ domain:
       farewell: ["잘가", "안녕히", "bye", "goodbye", "바이"]
       thanks: ["고마", "감사", "thank", "thx", "ㄱㅅ", "땡큐"]
       greeting: ["안녕", "hello", "hi", "헬로", "하이", "ㅎㅇ", "방가"]
+
+    # 라우터 분류 프롬프트 전체 템플릿(언어 자체 오버라이드용).
+    # null(기본)이면 코드 내장 한국어 템플릿을 사용한다(회귀 0).
+    # 비한국어 운영자는 아래에 자국어 지시문 템플릿을 직접 작성할 수 있다.
+    # 사용 가능한 자리표시자(placeholder):
+    #   {system_role} {domain_desc} {rag_categories_str}
+    #   {structured_desc} {general_desc} {both_desc}
+    #   {structured_entities_str} {structured_keywords_str}
+    #   {general_keywords_str} {both_keywords_str} {oos_examples_str}
+    #   {context} {query}  ← 런타임에 대화이력/사용자질문으로 치환됨
+    # 예시:
+    #   prompt_template: |
+    #     <system_instructions>
+    #     You are {system_role}. {domain_desc}
+    #     ...
+    #     </system_instructions>
+    #     <user_query>{query}</user_query>
+    #     <response_format>{ "needs_rag": boolean, ... }</response_format>
+    prompt_template: null
 
     system_role: "전문 서비스 지원 챗봇의 쿼리 분석 전문가"
     domain_description: "사용자의 질문에 대해 보유한 지식 베이스를 바탕으로 정확한 답변을 제공합니다."

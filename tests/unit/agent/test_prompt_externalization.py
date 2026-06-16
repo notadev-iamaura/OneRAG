@@ -208,6 +208,8 @@ class TestAgentFactoryPromptWiring:
         assert cfg.planner_system_prompt is None
         assert cfg.synthesizer_error_message is None
         assert cfg.reflector_empty_context is None
+        assert cfg.orchestrator_error_message is None
+        assert cfg.orchestrator_empty_context is None
 
     def test_factory_reads_prompts_section(self) -> None:
         """(b) mcp.agent.prompts.* 가 AgentConfig 필드로 전달됨 (데드 키 아님)"""
@@ -221,6 +223,8 @@ class TestAgentFactoryPromptWiring:
                             "planner_system": "P-SYS",
                             "synthesizer_error_message": "ERR",
                             "reflector_empty_context": "NOCTX",
+                            "orchestrator_error_message": "ORCH-ERR",
+                            "orchestrator_empty_context": "ORCH-NOCTX",
                         }
                     }
                 }
@@ -229,3 +233,5 @@ class TestAgentFactoryPromptWiring:
         assert cfg.planner_system_prompt == "P-SYS"
         assert cfg.synthesizer_error_message == "ERR"
         assert cfg.reflector_empty_context == "NOCTX"
+        assert cfg.orchestrator_error_message == "ORCH-ERR"
+        assert cfg.orchestrator_empty_context == "ORCH-NOCTX"

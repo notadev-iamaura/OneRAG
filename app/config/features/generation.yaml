@@ -59,6 +59,15 @@ generation:
     # high_value_terms:
     #   units: ["원", "년", "월", "일", "%", "kg"]
     #   keywords: ["회사명", "제품명", "기관", "조건", "규격", "모델"]
+    #
+    # signal_patterns: <source_signals> 추출용 연락처/규격/모델 라벨의 언어·규격 의존
+    #   부분을 외부화한다. URL/이메일은 언어 중립이라 항상 적용되고, 아래 라벨만
+    #   교체된다. 각 키가 없으면 코드 기본(ko 최소셋 + 영어/국제규격 ISO·IEC·JIS)을
+    #   사용한다(회귀 0). 자국 규격기관(KS/GB/ANSI 등)·외국어 라벨을 코드 포크 없이 추가.
+    # signal_patterns:
+    #   contact_labels: ["TEL", "FAX", "전화", "Phone", "Tél", "電話"]
+    #   standard_orgs: ["ISO", "IEC", "KS", "GB", "ANSI"]
+    #   model_labels: ["모델", "품번", "Model", "Réf", "型番"]
 
   # ========================================
   # 기본 프로바이더 설정

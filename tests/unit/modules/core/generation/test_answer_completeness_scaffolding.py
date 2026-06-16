@@ -156,3 +156,46 @@ class TestBuildPromptScaffolding:
         assert "<source_signals>" in user
         # 영어 source_signals 안내가 포함되어야 한다.
         assert "must not be dropped" in user or "include the relevant" in user.lower()
+
+
+class TestSignalPatternExternalization:
+    """source_signals 라벨 패턴(연락처/규격/모델) 외부화 회귀/오버라이드 (#4).
+
+    언어/규격 의존 라벨을 generation.answer_completeness.signal_patterns로 외부화한다.
+    (a) 미설정 시 코드 기본(ko 최소셋 + 국제규격/JIS)으로 기존 동작 동치 (회귀 0)
+    (b) config 오버라이드 시 외국어 라벨/자국 규격기관으로 교체 (데드 키 아님, 대체 의미)
+    """
+
+    def test_default_keeps_korean_and_jis(self) -> None:
+        """(a) 미설정 시 한국어 라벨·JIS 규격이 기존대로 매칭됨 (회귀 0)"""
+        gen = _make_gen()
+        content = "전화: 02-123-4567 규격 JIS B 7512 모델: GP-1200X"
+        signals = gen._format_content_signals(content)
+        assert "contact:" in signals  # 한국어 '전화' 라벨 매칭
+        assert "standard:" in signals  # JIS 규격 매칭 유지
+        assert "model_or_code:" in signals  # 한국어 '모델' 라벨 매칭
+
+    def test_override_swaps_labels(self) -> None:
+        """(b) config 오버라이드 시 외국어 라벨/자국 규격기관으로 교체 (대체 의미)"""
+        gen = _make_gen(
+            {
+                "answer_completeness": {
+                    "signal_patterns": {
+                        "contact_labels": ["Tél"],
+                        "standard_orgs": ["KS"],
+                        "model_labels": ["Réf"],
+                    }
+                }
+            }
+        )
+        # 프랑스어 라벨/KS 규격이 매칭됨
+        fr_signals = gen._format_content_signals(
+            "Tél: 01-23-45-67 KS A 0001 Réf: ABC-123"
+        )
+        assert "contact:" in fr_signals
+        assert "standard:" in fr_signals
+        assert "model_or_code:" in fr_signals
+        # 오버라이드는 '대체'이므로 한국어 라벨은 더 이상 매칭되지 않는다(병합 아님)
+        ko_signals = gen._format_content_signals("전화: 02-1 모델: AB-12")
+        assert "contact:" not in ko_signals
+        assert "model_or_code:" not in ko_signals

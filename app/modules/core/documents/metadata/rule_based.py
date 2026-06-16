@@ -42,10 +42,20 @@ class RuleBasedExtractor(BaseMetadataExtractor):
     PHONE_PATTERN = re.compile(r"\d{2,3}-\d{3,4}-\d{4}")
     EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 
+    # 코드 내장 한국어 기본 콘텐츠 타입 마커(회귀 안전판).
+    # config 미설정 시 이 맵을 사용해 기존 동작과 동치를 유지한다.
+    # '?' 같은 언어 중립 문장부호 판정은 코드에 유지하고, 언어 의존 단어만 마커화한다.
+    DEFAULT_CONTENT_TYPE_MARKERS: dict[str, list[str]] = {
+        "question": ["언제", "어디", "무엇", "어떻게", "왜"],
+        "instruction": ["해주세요", "하세요", "합니다", "주의"],
+        "conversation": ["안녕", "감사", "문의", "답변"],
+    }
+
     def __init__(
         self,
         use_konlpy: bool = True,
         category_keywords: dict[str, list[str]] | None = None,
+        content_type_markers: dict[str, list[str]] | None = None,
     ):
         """
         RuleBasedExtractor 초기화
@@ -57,10 +67,21 @@ class RuleBasedExtractor(BaseMetadataExtractor):
                 미지정 시 빈 dict(도메인 중립) — 카테고리를 추출하지 않아
                 잘못된 카테고리 오염을 방지한다. 운영자는 domain.yaml의
                 `domain.metadata.category_keywords`로 자신의 도메인 키워드를 주입한다.
+            content_type_markers: 콘텐츠 타입(question/instruction/conversation)
+                분류 마커 맵. 미지정(None) 시 코드 내장 한국어 기본 마커를
+                사용한다(회귀 0). 비한국어 운영자는 domain.yaml의
+                `domain.metadata.content_type_markers`로 자국어 마커를 주입한다.
+                '?'(질문) 같은 언어 중립 판정은 마커와 무관하게 항상 적용된다.
         """
         self.use_konlpy = use_konlpy
         # 기본값은 빈 dict: 도메인 미설정 시 카테고리 분류를 비활성화한다.
         self.category_keywords: dict[str, list[str]] = category_keywords or {}
+        # 콘텐츠 타입 마커: config 주입 우선, 미설정 시 한국어 기본값(회귀 0)
+        self.content_type_markers: dict[str, list[str]] = (
+            content_type_markers
+            if content_type_markers is not None
+            else {k: list(v) for k, v in self.DEFAULT_CONTENT_TYPE_MARKERS.items()}
+        )
         self.okt = None
 
         if self.use_konlpy:
@@ -187,22 +208,30 @@ class RuleBasedExtractor(BaseMetadataExtractor):
         """
         콘텐츠 유형 추론
 
+        마커는 config(domain.metadata.content_type_markers)로 외부화되며,
+        미설정 시 코드 내장 한국어 기본 마커를 사용한다(회귀 0). '?'(질문)는
+        언어 중립 판정이라 마커와 무관하게 항상 우선 적용된다.
+
         Args:
             text: 추론할 텍스트
 
         Returns:
             콘텐츠 유형 ('question', 'instruction', 'info', 'conversation')
         """
-        # 질문 패턴
-        if "?" in text or any(q in text for q in ["언제", "어디", "무엇", "어떻게", "왜"]):
+        question_markers = self.content_type_markers.get("question", [])
+        instruction_markers = self.content_type_markers.get("instruction", [])
+        conversation_markers = self.content_type_markers.get("conversation", [])
+
+        # 질문 패턴 ('?'는 언어 중립 신호로 항상 적용)
+        if "?" in text or any(q in text for q in question_markers):
             return "question"
 
         # 지시/안내 패턴
-        if any(i in text for i in ["해주세요", "하세요", "합니다", "주의"]):
+        if any(i in text for i in instruction_markers):
             return "instruction"
 
         # 대화 패턴
-        if any(c in text for c in ["안녕", "감사", "문의", "답변"]):
+        if any(c in text for c in conversation_markers):
             return "conversation"
 
         # 기본: 정보

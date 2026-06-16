@@ -149,6 +149,8 @@ mcp: &mcp_section
       reflector_system: null          # 품질평가 시스템 프롬프트 ({output_language} 보존)
       reflector_user: null            # 품질평가 사용자 프롬프트 ({query}/{answer}/{context} 보존)
       reflector_empty_context: null   # 컨텍스트 누락 시 대체 문자열
+      orchestrator_error_message: null # 최상위 예외 시 사용자 노출 답변 메시지
+      orchestrator_empty_context: null # Reflection 컨텍스트 추출 시 도구 결과 부재 대체어(내부 신호)
 
 # 레거시 호환 별칭 — mcp 섹션과 항상 동일 내용을 유지해야 한다 (위 주석 참고)
 tools: *mcp_section

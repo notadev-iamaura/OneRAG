@@ -224,24 +224,56 @@ _PII_EMERGENCY_BACKOFF_STEP = 16
 # <source_metadata> 블록으로 프롬프트 상단에 재배치한다. config opt-in이며 기본
 # 비활성(generation.answer_completeness.enabled=false → 기존 프롬프트 보존).
 #
-# 범용화: 패턴은 도메인 중립(URL/email/contact/spec/model)만 포함한다. 일본어 シート
-# 마커·mojibake decoded_hint 결합부는 차용하지 않는다.
+# 범용화: 패턴은 도메인 중립(URL/email/contact/spec/model)만 포함한다.
+# 언어 의존 라벨(연락처/모델/규격기관)은 아래 _DEFAULT_*_LABELS로 분리해
+# generation.answer_completeness.signal_patterns 설정으로 외부화한다(코드>config 폴백).
 URL_PATTERN = re.compile(r"(?:https?://|www\.)[^\s<>'\"）)】]+", re.IGNORECASE)
 EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
-# 연락처: TEL/FAX/전화/Phone 라벨 + 숫자열(전각/하이픈 변형 포함).
-CONTACT_PATTERN = re.compile(
-    r"(?:TEL|Tel|tel|전화|FAX|Fax|fax|Phone|phone)"
-    r"\s*[:：]?\s*[0-9０-９()+\-‐‑‒–—―－\s]{5,32}"
+
+# 연락처 라벨 기본값(ko 최소셋 + 영어). 숫자열(전각/하이픈 변형 포함)과 결합한다.
+_DEFAULT_CONTACT_LABELS = (
+    "TEL", "Tel", "tel", "전화", "FAX", "Fax", "fax", "Phone", "phone",
 )
-# 규격번호: ISO/IEC/JIS 등 국제 규격(도메인 중립적으로 널리 쓰임).
-STANDARD_PATTERN = re.compile(
-    r"(?:ISO/IEC|ISO|JIS|IEC)\s*[A-Z]?\s*[0-9０-９][0-9０-９A-Za-z./:\-]*"
+# 규격 기관 기본값. 국제 규격(ISO/IEC)을 항상 포함한다. JIS는 기존 동작 보존을 위해
+# 기본셋에 유지하되(회귀 0), 운영자는 signal_patterns.standard_orgs로 자국 규격기관
+# (KS/GB/ANSI 등)을 자유롭게 추가/교체할 수 있다(코드 포크 불필요).
+_DEFAULT_STANDARD_ORGS = ("ISO/IEC", "ISO", "JIS", "IEC")
+# 모델/품번/인증번호 라벨 기본값(ko 최소셋 + 영어).
+_DEFAULT_MODEL_LABELS = (
+    "모델", "품번", "제품번호", "Model", "MODEL", "model", "인증번호",
 )
-# 모델/품번/인증번호: 라벨 + 영숫자 코드.
-MODEL_NUMBER_PATTERN = re.compile(
-    r"(?:모델|품번|제품번호|Model|MODEL|model|인증번호)"
-    r"\s*[:：]?\s*[A-Za-z0-9０-９][A-Za-z0-9０-９._/\-]{2,}"
-)
+
+
+def _build_contact_pattern(labels: tuple[str, ...] | list[str]) -> re.Pattern[str]:
+    """연락처 라벨 목록으로 "라벨 + 숫자열" 패턴을 컴파일한다(전각/하이픈 변형 포함)."""
+    label_group = "|".join(re.escape(label) for label in labels)
+    return re.compile(
+        rf"(?:{label_group})"
+        r"\s*[:：]?\s*[0-9０-９()+\-‐‑‒–—―－\s]{5,32}"
+    )
+
+
+def _build_standard_pattern(orgs: tuple[str, ...] | list[str]) -> re.Pattern[str]:
+    """규격 기관 목록으로 "기관 + 규격번호" 패턴을 컴파일한다."""
+    org_group = "|".join(re.escape(org) for org in orgs)
+    return re.compile(
+        rf"(?:{org_group})\s*[A-Z]?\s*[0-9０-９][0-9０-９A-Za-z./:\-]*"
+    )
+
+
+def _build_model_pattern(labels: tuple[str, ...] | list[str]) -> re.Pattern[str]:
+    """모델/품번 라벨 목록으로 "라벨 + 영숫자 코드" 패턴을 컴파일한다."""
+    label_group = "|".join(re.escape(label) for label in labels)
+    return re.compile(
+        rf"(?:{label_group})"
+        r"\s*[:：]?\s*[A-Za-z0-9０-９][A-Za-z0-9０-９._/\-]{2,}"
+    )
+
+
+# 코드 기본 패턴(config 미설정 시 사용). 기존 동작과 동치 → 회귀 0.
+CONTACT_PATTERN = _build_contact_pattern(_DEFAULT_CONTACT_LABELS)
+STANDARD_PATTERN = _build_standard_pattern(_DEFAULT_STANDARD_ORGS)
+MODEL_NUMBER_PATTERN = _build_model_pattern(_DEFAULT_MODEL_LABELS)
 # 인용구: 큰따옴표/작은따옴표/한국어 인용부호로 묶인 2~220자 구문.
 QUOTED_PHRASE_PATTERN = re.compile(
     r"(?:[「『\"]([^」』\"]{2,220})[」』\"]|'([^']{2,220})')"
@@ -985,8 +1017,10 @@ class GenerationModule:
 
         except TimeoutError as e:
             logger.error(f"OpenRouter 응답 시간 초과 ({timeout}s): {model}")
+            # 사용자 노출 메시지는 ErrorCode.LLM_008의 양언어 템플릿으로 결정된다.
+            # (RAGException(error_code, **context) 시그니처상 message= 인자는 무시되므로
+            #  중복/사장된 한국어 문자열을 두지 않는다.)
             raise GenerationError(
-                message=f"AI 응답 시간이 초과되었습니다 ({timeout}초). 잠시 후 다시 시도해주세요.",
                 error_code=ErrorCode.LLM_008,
                 context={"model": model, "timeout_seconds": timeout},
                 original_error=e,
@@ -1209,8 +1243,8 @@ class GenerationModule:
     def _format_content_signals(self, content: str) -> str:
         """본문에서 QA 답변에 누락하면 안 되는 핵심 근거값을 신호로 추출한다(GAP #3).
 
-        도메인 중립 패턴(URL/이메일/연락처/규격번호/모델번호)만 사용한다. 일본어
-        シート 마커·mojibake decoded_hint는 차용하지 않는다.
+        도메인 중립 패턴(URL/이메일/연락처/규격번호/모델번호)만 사용한다.
+        언어 의존 라벨은 generation.answer_completeness.signal_patterns로 외부화된다.
 
         Args:
             content: 컨텍스트 문서 본문
@@ -1221,12 +1255,14 @@ class GenerationModule:
         if not content:
             return ""
 
+        # 언어/규격 의존 라벨 패턴을 config 우선으로 해소(코드 기본 = ko 최소셋 + 국제규격).
+        contact_pattern, standard_pattern, model_pattern = self._resolve_signal_patterns()
         signal_groups = [
             ("url", URL_PATTERN.findall(content)),
             ("email", EMAIL_PATTERN.findall(content)),
-            ("contact", CONTACT_PATTERN.findall(content)),
-            ("standard", STANDARD_PATTERN.findall(content)),
-            ("model_or_code", MODEL_NUMBER_PATTERN.findall(content)),
+            ("contact", contact_pattern.findall(content)),
+            ("standard", standard_pattern.findall(content)),
+            ("model_or_code", model_pattern.findall(content)),
         ]
         lines: list[str] = []
         seen: set[str] = set()
@@ -1285,6 +1321,50 @@ class GenerationModule:
             else list(_DEFAULT_HIGH_VALUE_KEYWORDS)
         )
         return _build_high_value_fact_pattern(units, keywords)
+
+    def _resolve_signal_patterns(
+        self,
+    ) -> tuple[re.Pattern[str], re.Pattern[str], re.Pattern[str]]:
+        """source_signals 추출에 쓰는 연락처/규격/모델 패턴을 config 우선으로 컴파일한다.
+
+        URL/이메일은 언어 중립이라 코드 상수를 그대로 쓰고, 언어/규격 의존 라벨만
+        generation.answer_completeness.signal_patterns 설정으로 외부화한다. 설정 형식:
+            signal_patterns:
+              contact_labels: ["TEL", "전화", "Phone", ...]  # 연락처 라벨
+              standard_orgs: ["ISO", "KS", "GB", "ANSI", ...]  # 규격 기관
+              model_labels: ["모델", "품번", "Model", ...]    # 모델/품번 라벨
+        각 키가 비거나 없으면 코드 기본(ko 최소셋 + 영어/국제규격)을 사용한다(회귀 0).
+
+        Returns:
+            (contact_pattern, standard_pattern, model_pattern) 튜플.
+        """
+        config = self._answer_completeness_config().get("signal_patterns")
+        if not isinstance(config, dict):
+            return CONTACT_PATTERN, STANDARD_PATTERN, MODEL_NUMBER_PATTERN
+
+        raw_contact = config.get("contact_labels")
+        raw_standard = config.get("standard_orgs")
+        raw_model = config.get("model_labels")
+        contact_labels = (
+            [str(label) for label in raw_contact]
+            if isinstance(raw_contact, list) and raw_contact
+            else list(_DEFAULT_CONTACT_LABELS)
+        )
+        standard_orgs = (
+            [str(org) for org in raw_standard]
+            if isinstance(raw_standard, list) and raw_standard
+            else list(_DEFAULT_STANDARD_ORGS)
+        )
+        model_labels = (
+            [str(label) for label in raw_model]
+            if isinstance(raw_model, list) and raw_model
+            else list(_DEFAULT_MODEL_LABELS)
+        )
+        return (
+            _build_contact_pattern(contact_labels),
+            _build_standard_pattern(standard_orgs),
+            _build_model_pattern(model_labels),
+        )
 
     def _format_answer_checklist(self, query: str, context_text: str) -> str:
         """답변 누락이 잦은 수치/날짜/연락처 후보 라인을 프롬프트 상단에 재배치한다(GAP #3).
@@ -1692,8 +1772,9 @@ class GenerationModule:
 
         if stream is None:
             self.stats["error_count"] += 1
+            # 사용자 노출 메시지는 ErrorCode.LLM_008의 양언어 템플릿으로 결정된다.
+            # (message= 인자는 RAGException 시그니처상 무시되므로 두지 않는다.)
             raise GenerationError(
-                message="모든 모델에서 스트리밍 응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요.",
                 error_code=ErrorCode.LLM_008,
                 context={"models_tried": models_to_try},
                 original_error=last_error,

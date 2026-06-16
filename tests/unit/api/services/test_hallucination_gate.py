@@ -132,3 +132,77 @@ class TestApplyHallucinationGate:
         original = _gen()
         out = pipeline._apply_hallucination_gate("2023년 매출", original, docs, {})
         assert out.answer == original.answer
+
+
+class TestHallucinationGateMessageExternalization:
+    """보류 메시지 외부화 회귀/오버라이드 (사용자노출 문자열 config화)."""
+
+    def test_default_message_is_builtin_korean(self, mock_modules) -> None:
+        """(a) 미설정 시 코드 내장 한국어 기본 메시지 사용 (회귀 0)"""
+        from app.api.services.rag_pipeline import HALLUCINATION_GATE_NO_ANSWER_MESSAGE
+
+        pipeline = _pipeline(mock_modules)
+        assert (
+            pipeline.hallucination_gate_no_answer_message
+            == HALLUCINATION_GATE_NO_ANSWER_MESSAGE
+        )
+        # 불일치 시 교체되는 답변 = 코드 기본 메시지
+        docs = [_doc("a", "report_2021.pdf")]
+        out = pipeline._apply_hallucination_gate("2023년 매출", _gen(), docs, {})
+        assert out.answer == HALLUCINATION_GATE_NO_ANSWER_MESSAGE
+
+    def test_override_message(self, mock_modules) -> None:
+        """(b) config 오버라이드 시 보류 메시지 교체 (데드 키 아님)"""
+        config: dict[str, Any] = {
+            "rag": {
+                "hallucination_gate": {
+                    "enabled": True,
+                    "no_answer_message": "No data for the requested period.",
+                },
+            },
+            "retrieval": {},
+            "reranking": {},
+        }
+        pipeline = RAGPipeline(config=config, **mock_modules)
+        assert (
+            pipeline.hallucination_gate_no_answer_message
+            == "No data for the requested period."
+        )
+        docs = [_doc("a", "report_2021.pdf")]
+        out = pipeline._apply_hallucination_gate("2023년 매출", _gen(), docs, {})
+        assert out.answer == "No data for the requested period."
+
+
+class TestGenerationFallbackMessageExternalization:
+    """생성 모듈 부재 폴백 메시지 외부화 회귀/오버라이드."""
+
+    def test_default_message_is_builtin_korean(self, mock_modules) -> None:
+        """(a) 미설정 시 코드 내장 한국어 기본값 (회귀 0)"""
+        from app.api.services.rag_pipeline import GENERATION_MODULE_MISSING_MESSAGE
+
+        pipeline = _pipeline(mock_modules)
+        assert (
+            pipeline.generation_module_missing_message
+            == GENERATION_MODULE_MISSING_MESSAGE
+        )
+        assert (
+            pipeline.generation_module_missing_message
+            == "죄송합니다. 답변을 생성할 수 없습니다."
+        )
+
+    def test_override_message(self, mock_modules) -> None:
+        """(b) config 오버라이드 시 폴백 메시지 교체 (데드 키 아님)"""
+        config: dict[str, Any] = {
+            "rag": {
+                "generation_fallback": {
+                    "module_missing_message": "Answer generation is unavailable.",
+                },
+            },
+            "retrieval": {},
+            "reranking": {},
+        }
+        pipeline = RAGPipeline(config=config, **mock_modules)
+        assert (
+            pipeline.generation_module_missing_message
+            == "Answer generation is unavailable."
+        )

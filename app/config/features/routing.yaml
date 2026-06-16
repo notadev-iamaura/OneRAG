@@ -78,6 +78,15 @@ routing:
   default_route: "rag"
   timeout_seconds: 10
 
+  # 세션 메타용 토픽 분류 키워드(cosmetic 라벨 — 검색/라우팅 미영향).
+  # di_container.extract_topic / ChatService.extract_topic 단일 소스가 참조한다.
+  # 비어 있거나 미설정(기본)이면 코드 내장 한국어 기본 맵을 사용한다(회귀 0).
+  # 비한국어 운영자는 아래 형식으로 자국어 키워드를 추가한다. 예:
+  #   topic_keywords:
+  #     search: ["search", "find", "lookup"]
+  #     help: ["help", "how", "guide"]
+  topic_keywords: {}
+
   rule_based:
     enabled: true
 
@@ -115,3 +124,17 @@ routing:
   complexity:
     simple_threshold: 0.3
     moderate_threshold: 0.6
+
+    # ComplexityCalculator(Self-RAG 라우팅용) 마커 외부화.
+    # depth_indicators: 분석성(깊이) 질문 판단 마커. null(기본)이면
+    #   코드 내장 한국어 기본 마커를 사용한다(회귀 0).
+    # multi_intent_indicators: 다중 의도 판단 마커. null(기본)이면 한국어 기본값 사용.
+    # 비한국어 운영자는 아래에 자국어 마커 리스트를 작성한다. 예:
+    #   depth_indicators: ["how", "why", "difference", "compare", "step", "reason"]
+    #   multi_intent_indicators: ["and", "or", "also", "additionally", "then"]
+    depth_indicators: null
+    multi_intent_indicators: null
+    # 언어 중립 다중 의도 신호(세미콜론/and·or/물음표) 보강 토글.
+    # false(기본)이면 기존 한국어 마커 점수와 완전히 동치다(회귀 0).
+    # true로 켜면 마커가 매칭되지 않는 언어에서도 병렬 신호로 점수를 보강한다.
+    use_language_neutral_signals: false

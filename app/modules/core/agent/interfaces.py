@@ -62,6 +62,12 @@ class AgentConfig:
             {query}/{answer}/{context} 플레이스홀더가 보존되어야 한다.
         reflector_empty_context: Reflector 컨텍스트 누락 시 대체 문자열 오버라이드.
             None이면 코드 내장 "컨텍스트 없음"을 사용한다.
+        orchestrator_error_message: Orchestrator 최상위 예외 시 사용자에게 반환되는
+            답변 메시지 오버라이드. None이면 코드 내장 한국어 기본 메시지를 사용한다.
+        orchestrator_empty_context: Orchestrator가 Reflection용 컨텍스트를 추출할 때
+            수집된 도구 결과가 없으면 사용하는 대체 문자열 오버라이드. 사용자에게
+            직접 노출되지 않고 LLM 프롬프트 내부 신호로만 쓰인다. None이면 코드 내장
+            "검색 결과 없음"을 사용한다.
     """
 
     # 도구 선택 방식: "llm" | "rule_based" | "hybrid"
@@ -126,6 +132,10 @@ class AgentConfig:
     reflector_user_prompt: str | None = None
     # Reflector: 컨텍스트 누락 시 대체 문자열
     reflector_empty_context: str | None = None
+    # Orchestrator: 최상위 예외 시 사용자 노출 답변 메시지
+    orchestrator_error_message: str | None = None
+    # Orchestrator: Reflection 컨텍스트 추출 시 도구 결과 부재 대체 문자열(내부 신호)
+    orchestrator_empty_context: str | None = None
 
     def __post_init__(self) -> None:
         """설정값 검증"""

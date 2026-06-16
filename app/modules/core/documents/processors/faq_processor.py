@@ -45,6 +45,8 @@ class FAQProcessor(BaseDocumentProcessor):
         metadata_extractor: RuleBasedExtractor | None = None,
         content_template: str = "질문: {question}\n답변: {answer}",
         category_keywords: dict[str, list[str]] | None = None,
+        content_type_markers: dict[str, list[str]] | None = None,
+        column_aliases: dict[str, list[str]] | None = None,
     ):
         """
         FAQProcessor 초기화
@@ -56,16 +58,29 @@ class FAQProcessor(BaseDocumentProcessor):
             category_keywords: 도메인 카테고리 분류 키워드. 기본 추출기를 생성할 때
                 주입한다(미지정 시 도메인 중립 — 카테고리 미추출). domain.yaml의
                 `domain.metadata.category_keywords`에서 전달.
+            content_type_markers: 콘텐츠 타입 추론 마커. 기본 추출기 생성 시 주입한다.
+                미지정 시 코드 내장 한국어 기본 마커 사용(회귀 0). domain.yaml의
+                `domain.metadata.content_type_markers`에서 전달.
+            column_aliases: 질문/답변 컬럼 별칭 맵({"question": [...], "answer": [...]}).
+                기본 청커(SimpleChunker)에 주입한다. 미지정 시 코드 내장 ko+en
+                기본 별칭 사용(회귀 0). uploads.yaml의 `uploads.faq.column_aliases`에서 전달.
         """
         # 기본 전략 설정
         if chunker is None:
-            chunker = SimpleChunker(content_template=content_template)
+            chunker = SimpleChunker(
+                content_template=content_template,
+                column_aliases=column_aliases,
+            )
 
         if metadata_extractor is None:
             metadata_extractor = RuleBasedExtractor(
                 use_konlpy=True,
                 category_keywords=category_keywords,
+                content_type_markers=content_type_markers,
             )
+
+        # 컬럼 검증/메타에서 재사용하기 위해 별칭을 청커와 단일 소스로 공유한다.
+        self.column_aliases = chunker.column_aliases
 
         super().__init__(
             chunker=chunker,
@@ -154,9 +169,9 @@ class FAQProcessor(BaseDocumentProcessor):
         columns = df.columns.tolist()
         logger.debug(f"DataFrame columns: {columns}")
 
-        # 필수 컬럼: 질문, 답변
-        question_keys = ["질문", "question", "Question", "Q", "query"]
-        answer_keys = ["답변", "answer", "Answer", "A", "response"]
+        # 필수 컬럼: 질문, 답변 (청커와 동일한 단일 소스 별칭 재사용 — 중복 제거)
+        question_keys = self.column_aliases.get("question", [])
+        answer_keys = self.column_aliases.get("answer", [])
 
         has_question = any(key in columns for key in question_keys)
         has_answer = any(key in columns for key in answer_keys)

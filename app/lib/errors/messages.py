@@ -514,6 +514,31 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "ko": "응답 생성 시작이 제한 시간({timeout}초)을 초과했습니다",
         "en": "Response generation did not start within the time limit ({timeout}s)",
     },
+    # STREAM (SSE 스트리밍) - 1개
+    # ko 값은 기존 chat_router 하드코딩 문자열과 동일(회귀 0).
+    "STREAM-001": {
+        "ko": "스트리밍 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "en": "An error occurred during streaming. Please try again later.",
+    },
+    # WEBSOCKET (양방향 스트리밍) - 4개
+    # 와이어 error_code(접미사 포함)를 카탈로그 키로 그대로 사용한다(테스트 계약 보존).
+    # ko 값은 기존 websocket_router 하드코딩 문자열과 동일(회귀 0).
+    "WS-001-INVALID_JSON": {
+        "ko": "잘못된 JSON 형식입니다.",
+        "en": "Invalid JSON format.",
+    },
+    "WS-002-VALIDATION_ERROR": {
+        "ko": "메시지 형식이 올바르지 않습니다.",
+        "en": "The message format is invalid.",
+    },
+    "WS-003-SERVICE_NOT_INITIALIZED": {
+        "ko": "채팅 서비스가 초기화되지 않았습니다.",
+        "en": "The chat service is not initialized.",
+    },
+    "WS-999-INTERNAL_ERROR": {
+        "ko": "스트리밍 처리 중 오류가 발생했습니다.",
+        "en": "An error occurred while processing the stream.",
+    },
 }
 
 # 에러 해결 방법 저장소: {error_code: {"ko": [...], "en": [...]}}
@@ -1776,6 +1801,55 @@ ERROR_SOLUTIONS: dict[str, dict[str, list[str]]] = {
             "Please try again in a moment",
             "Check your network connection",
             "If the problem persists, contact the administrator",
+        ],
+    },
+    # STREAM (SSE 스트리밍)
+    # ko 값은 기존 chat_router suggestion 문자열과 동일(회귀 0). suggestion은
+    # solutions[0]에서 파생된다(아래 chat_router 라우팅 참조).
+    "STREAM-001": {
+        "ko": [
+            "문제가 지속되면 관리자에게 문의하세요.",
+        ],
+        "en": [
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    # WEBSOCKET (양방향 스트리밍)
+    # ko 값은 기존 websocket_router solutions 리스트와 동일(회귀 0).
+    "WS-001-INVALID_JSON": {
+        "ko": [
+            "올바른 JSON 형식으로 메시지를 전송해주세요.",
+        ],
+        "en": [
+            "Please send the message in valid JSON format.",
+        ],
+    },
+    "WS-002-VALIDATION_ERROR": {
+        "ko": [
+            "type, message_id, content, session_id 필드를 확인해주세요.",
+            "content는 1자 이상 10000자 이하여야 합니다.",
+        ],
+        "en": [
+            "Check the type, message_id, content, and session_id fields.",
+            "content must be between 1 and 10000 characters.",
+        ],
+    },
+    "WS-003-SERVICE_NOT_INITIALIZED": {
+        "ko": [
+            "서버 관리자에게 문의해주세요.",
+        ],
+        "en": [
+            "Please contact the server administrator.",
+        ],
+    },
+    "WS-999-INTERNAL_ERROR": {
+        "ko": [
+            "잠시 후 다시 시도해주세요.",
+            "문제가 지속되면 관리자에게 문의해주세요.",
+        ],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
         ],
     },
 }

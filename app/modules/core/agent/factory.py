@@ -64,6 +64,8 @@ DEFAULT_AGENT_CONFIG = {
     "reflector_system_prompt": None,
     "reflector_user_prompt": None,
     "reflector_empty_context": None,
+    "orchestrator_error_message": None,
+    "orchestrator_empty_context": None,
 }
 
 
@@ -292,6 +294,14 @@ class AgentFactory:
             reflector_empty_context=prompts_yaml.get(
                 "reflector_empty_context",
                 defaults["reflector_empty_context"],
+            ),
+            orchestrator_error_message=prompts_yaml.get(
+                "orchestrator_error_message",
+                defaults["orchestrator_error_message"],
+            ),
+            orchestrator_empty_context=prompts_yaml.get(
+                "orchestrator_empty_context",
+                defaults["orchestrator_empty_context"],
             ),
         )
 

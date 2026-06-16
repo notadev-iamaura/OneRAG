@@ -30,7 +30,15 @@ from ...lib.auth import (
     get_api_key_auth,
     get_upload_token_ttl_seconds,
 )
-from ...lib.errors import ErrorCode, GenerationError, RetrievalError, SessionError, wrap_exception
+from ...lib.errors import (
+    ErrorCode,
+    GenerationError,
+    RetrievalError,
+    SessionError,
+    get_error_message,
+    get_error_solutions,
+    wrap_exception,
+)
 from ...lib.logger import get_logger
 from ..schemas.chat_schemas import (
     ChatHistoryResponse,
@@ -81,6 +89,20 @@ def get_real_client_ip(request: Request) -> str:
     fallback_ip = request.client.host if request.client else "unknown"
     logger.debug(f"Using fallback client IP: {fallback_ip}")
     return fallback_ip
+
+
+def _resolve_request_language(request: Request) -> str:
+    """요청 Accept-Language 헤더에서 에러 메시지 언어를 결정한다(ko|en, 기본 ko).
+
+    양언어 에러 카탈로그(app.lib.errors)는 "ko"/"en"만 지원한다. 헤더가 영어를
+    우선하면 "en"을, 그 외(미지정 포함)는 "ko"를 반환한다 → 한국어 기본(회귀 0).
+    """
+    accept_language = (request.headers.get("accept-language") or "").lower()
+    en_idx = accept_language.find("en")
+    ko_idx = accept_language.find("ko")
+    if en_idx != -1 and (ko_idx == -1 or en_idx < ko_idx):
+        return "en"
+    return "ko"
 
 
 def get_request_context(request: Request) -> dict[str, Any]:
@@ -732,6 +754,9 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest) -> Stre
     """
     _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
 
+    # 에러 메시지 언어를 요청 Accept-Language로 결정(기본 ko → 회귀 0)
+    error_lang = _resolve_request_language(request)
+
     async def event_generator():
         """
         SSE 이벤트 생성기
@@ -758,10 +783,16 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest) -> Stre
             # 스트리밍 중 에러 발생 시 에러 이벤트 전송
             logger.error("스트리밍 에러", exc_info=True, error=str(e))
 
+            # 사용자 노출 메시지/해결방법을 양언어 에러 카탈로그(ErrorCode.STREAM_001)
+            # 에서 lang별로 조회한다 → Accept-Language 기반 한/영 자동 전환. 기본 ko
+            # 카탈로그 값은 기존 하드코딩 문자열과 동일하다 → 회귀 0.
+            stream_solutions = get_error_solutions(
+                ErrorCode.STREAM_001.value, lang=error_lang
+            )
             error_event = StreamErrorEvent(
                 error_code=ErrorCode.STREAM_001.value,
-                message="스트리밍 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-                suggestion="문제가 지속되면 관리자에게 문의하세요.",
+                message=get_error_message(ErrorCode.STREAM_001.value, lang=error_lang),
+                suggestion=stream_solutions[0] if stream_solutions else None,
             )
 
             # 에러 이벤트를 SSE 형식으로 전송

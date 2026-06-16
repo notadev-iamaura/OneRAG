@@ -267,6 +267,30 @@ class TestStreamEndpointErrorHandling:
             "에러 발생 시 error 이벤트가 전송되어야 함"
         )
 
+    def test_stream_error_default_korean_message(self, app_with_error_service):
+        """(a) Accept-Language 미지정 → 카탈로그 ko 값 = 기존 하드코딩 문자열 (회귀 0)"""
+        client = TestClient(app_with_error_service)
+        response = client.post("/chat/stream", json={"message": "에러 테스트"})
+        assert response.status_code == 200
+        # STREAM-001의 ko 카탈로그 메시지가 SSE error 이벤트에 포함되어야 함
+        assert "스트리밍 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요." in response.text
+        assert "STREAM-001" in response.text
+
+    def test_stream_error_english_message_via_accept_language(
+        self, app_with_error_service
+    ):
+        """(b) Accept-Language: en → 영어 메시지로 자동 전환"""
+        client = TestClient(app_with_error_service)
+        response = client.post(
+            "/chat/stream",
+            json={"message": "error test"},
+            headers={"Accept-Language": "en-US,en;q=0.9"},
+        )
+        assert response.status_code == 200
+        # 영어 카탈로그 메시지가 포함되고, 한국어는 포함되지 않아야 함
+        assert "An error occurred during streaming" in response.text
+        assert "스트리밍 중 오류가 발생했습니다" not in response.text
+
 
 class TestStreamEndpointWithoutService:
     """ChatService 미초기화 상태 테스트"""

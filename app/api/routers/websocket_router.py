@@ -45,6 +45,7 @@ from app.api.schemas.websocket import (
 )
 from app.api.services.websocket_manager import WebSocketManager
 from app.lib.auth import get_api_key_auth, verify_websocket_session_token
+from app.lib.errors import get_error_message, get_error_solutions
 from app.lib.logger import get_logger
 
 router = APIRouter()
@@ -72,6 +73,27 @@ def set_chat_service(service: Any) -> None:
         logger.info("ChatService 주입 완료")
     else:
         logger.debug("ChatService 해제됨")
+
+
+def _resolve_websocket_language(websocket: WebSocket) -> str:
+    """WebSocket 핸드셰이크의 Accept-Language 헤더에서 에러 메시지 언어를 결정한다.
+
+    양언어 에러 카탈로그(app.lib.errors)는 "ko"/"en"만 지원한다. 헤더가 영어를
+    우선하면 "en"을, 그 외(미지정 포함)는 "ko"를 반환한다 → 한국어 기본(회귀 0).
+
+    Args:
+        websocket: FastAPI WebSocket 객체
+
+    Returns:
+        "ko" 또는 "en"
+    """
+    accept_language = (websocket.headers.get("accept-language") or "").lower()
+    # 가장 단순·견고한 규칙: 'en'이 'ko'보다 먼저 나오거나 ko가 없으면 영어로 본다.
+    en_idx = accept_language.find("en")
+    ko_idx = accept_language.find("ko")
+    if en_idx != -1 and (ko_idx == -1 or en_idx < ko_idx):
+        return "en"
+    return "ko"
 
 
 def _extract_websocket_api_key(websocket: WebSocket) -> str | None:
@@ -141,24 +163,46 @@ async def _send_error(
     websocket: WebSocket,
     message_id: str,
     error_code: str,
-    message: str,
+    message: str | None = None,
     solutions: list[str] | None = None,
+    lang: str = "ko",
 ) -> None:
     """
     에러 이벤트 전송 헬퍼
 
+    message/solutions가 명시되지 않으면 양언어 에러 카탈로그(app.lib.errors)에서
+    error_code를 키로 lang별 메시지/해결방법을 조회한다. 카탈로그에 없는 코드
+    (예: 파이프라인에서 포워딩된 코드)는 명시값 또는 한국어 폴백을 사용한다 → 회귀 0.
+
     Args:
         websocket: WebSocket 연결
         message_id: 메시지 ID
-        error_code: 에러 코드
-        message: 에러 메시지
-        solutions: 해결 방법 목록
+        error_code: 에러 코드 (와이어 계약 그대로, 카탈로그 키로도 사용)
+        message: 에러 메시지 명시값(None이면 카탈로그 조회)
+        solutions: 해결 방법 목록 명시값(None이면 카탈로그 조회)
+        lang: 메시지 언어("ko"|"en", 기본 ko → 회귀 0)
     """
+    resolved_message = message
+    resolved_solutions = solutions
+
+    # 명시값이 없으면 카탈로그에서 lang별 메시지/해결방법을 조회(양언어 자동 전환).
+    # 카탈로그에 없는 코드는 KeyError → 폴백 유지(기존 동작 보존).
+    if resolved_message is None:
+        try:
+            resolved_message = get_error_message(error_code, lang=lang)
+        except KeyError:
+            resolved_message = "스트리밍 처리 중 오류가 발생했습니다."
+    if resolved_solutions is None:
+        try:
+            resolved_solutions = get_error_solutions(error_code, lang=lang)
+        except KeyError:
+            resolved_solutions = None
+
     error_event = WSStreamErrorEvent(
         message_id=message_id,
         error_code=error_code,
-        message=message,
-        solutions=solutions or ["잠시 후 다시 시도해주세요."],
+        message=resolved_message,
+        solutions=resolved_solutions or ["잠시 후 다시 시도해주세요."],
     )
     await websocket.send_json(error_event.model_dump())
 
@@ -186,6 +230,9 @@ async def websocket_chat(
     """
     if not await _authenticate_websocket(websocket, session_id, ws_token):
         return
+
+    # 핸드셰이크 Accept-Language로 에러 메시지 언어를 결정(기본 ko → 회귀 0)
+    lang = _resolve_websocket_language(websocket)
 
     # WebSocket 연결 수락 및 등록
     await ws_manager.connect(session_id, websocket)
@@ -219,8 +266,7 @@ async def websocket_chat(
                     websocket=websocket,
                     message_id=message_id,
                     error_code="WS-001-INVALID_JSON",
-                    message="잘못된 JSON 형식입니다.",
-                    solutions=["올바른 JSON 형식으로 메시지를 전송해주세요."],
+                    lang=lang,
                 )
                 continue
 
@@ -237,11 +283,7 @@ async def websocket_chat(
                     websocket=websocket,
                     message_id=message_id,
                     error_code="WS-002-VALIDATION_ERROR",
-                    message="메시지 형식이 올바르지 않습니다.",
-                    solutions=[
-                        "type, message_id, content, session_id 필드를 확인해주세요.",
-                        "content는 1자 이상 10000자 이하여야 합니다.",
-                    ],
+                    lang=lang,
                 )
                 continue
 
@@ -255,8 +297,7 @@ async def websocket_chat(
                     websocket=websocket,
                     message_id=client_message.message_id,
                     error_code="WS-003-SERVICE_NOT_INITIALIZED",
-                    message="채팅 서비스가 초기화되지 않았습니다.",
-                    solutions=["서버 관리자에게 문의해주세요."],
+                    lang=lang,
                 )
                 continue
 
@@ -290,6 +331,7 @@ async def websocket_chat(
                 websocket=websocket,
                 client_message=client_message,
                 session_id=message_session_id,
+                lang=lang,
             )
 
     except Exception as e:
@@ -310,6 +352,7 @@ async def _process_streaming(
     websocket: WebSocket,
     client_message: ClientMessage,
     session_id: str,
+    lang: str = "ko",
 ) -> None:
     """
     스트리밍 처리 로직
@@ -321,6 +364,7 @@ async def _process_streaming(
         client_message: 클라이언트 메시지
         session_id: 메시지별 세션 ID (payload의 session_id — 후속 메시지에서는
             stream_start로 회신된 서버 확정 ID가 담겨 멀티턴 컨텍스트를 유지)
+        lang: 에러 메시지 언어("ko"|"en", 기본 ko → 회귀 0)
     """
     message_id = client_message.message_id
     start_time = time.time()
@@ -382,12 +426,15 @@ async def _process_streaming(
                 sources = done_data.get("sources", [])
 
             elif event_type == "error":
-                # 스트리밍 중 에러 발생
+                # 스트리밍 중 에러 발생: 파이프라인이 전달한 error_code/message를
+                # 그대로 포워딩한다(상위 단계에서 이미 메시지가 확정된 경로).
+                # message가 비면 한국어 기본 폴백을 유지한다 → 회귀 0.
                 await _send_error(
                     websocket=websocket,
                     message_id=message_id,
                     error_code=event.get("error_code", "GEN-999"),
                     message=event.get("message", "스트리밍 중 오류가 발생했습니다."),
+                    lang=lang,
                 )
                 return
 
@@ -441,6 +488,5 @@ async def _process_streaming(
             websocket=websocket,
             message_id=message_id,
             error_code="WS-999-INTERNAL_ERROR",
-            message="스트리밍 처리 중 오류가 발생했습니다.",
-            solutions=["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+            lang=lang,
         )

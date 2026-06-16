@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from dependency_injector import containers, providers
@@ -28,6 +29,7 @@ from app.lib.config_validator import get_env_int, get_env_url
 from app.lib.logger import get_logger
 from app.lib.metrics import CostTracker, PerformanceMetrics
 from app.lib.startup_policy import is_retrieval_required
+from app.lib.topic_extractor import extract_topic
 
 # Phase 5: Agent 모듈 (Agentic RAG Orchestrator)
 from app.modules.core.agent import AgentFactory
@@ -228,34 +230,28 @@ def initialize_llm_factory_wrapper(config: dict) -> LLMClientFactory:
     return get_llm_factory()
 
 
-def extract_topic_default(message: str) -> str:
+def extract_topic_default(message: object) -> str:
+    """RAGPipeline 주입용 기본 토픽 추출 함수(lib.extract_topic 위임).
+
+    config 미주입 경로이므로 코드 내장 한국어 기본 키워드를 사용한다.
+    토픽 추출 로직의 단일 소스는 app.lib.topic_extractor이다.
     """
-    기본 토픽 추출 함수
+    return extract_topic(message)
+
+
+def build_extract_topic_func(config: dict) -> Callable[[object], str]:
+    """config의 routing.topic_keywords를 바인딩한 토픽 추출 함수를 생성한다.
+
+    RAGPipeline에 주입되는 extract_topic_func은 (message) 단일 인자만
+    받으므로, config에서 읽은 키워드 맵을 클로저로 바인딩해 단일 소스
+    함수(lib.extract_topic)에 위임한다. 미설정 시 한국어 기본 맵을 쓴다(회귀 0).
     """
-    if isinstance(message, list):
-        message = " ".join(str(item) for item in message)
-    elif not isinstance(message, str):
-        message = str(message)
+    topic_keywords = config.get("routing", {}).get("topic_keywords")
 
-    if not message:
-        return "general"
+    def _extract(message: object) -> str:
+        return extract_topic(message, topic_keywords)
 
-    # 범용 키워드 매핑 (검색, 도움말, 일반 대화 등)
-    keywords = {
-        "search": ["검색", "찾기", "찾아", "조회", "정보", "어디", "알려"],
-        "help": ["도움", "어떻게", "방법", "안내", "사용법", "매뉴얼"],
-        "greeting": ["안녕", "반가워", "하이", "헬로"],
-        "thanks": ["고마워", "감사", "땡큐"],
-    }
-
-    try:
-        lower_message = message.lower()
-        for topic, words in keywords.items():
-            if any(word in lower_message for word in words):
-                return topic
-        return "general"
-    except Exception:
-        return "general"
+    return _extract
 
 
 async def create_reranker_instance_v2(
@@ -1931,6 +1927,13 @@ class AppContainer(containers.DeclarativeContainer):
         length_weight=0.3,
         depth_weight=0.4,
         multi_intent_weight=0.3,
+        # 복잡도 마커 외부화: routing.complexity.{depth_indicators,multi_intent_indicators}.
+        # 미설정 시 None → ComplexityCalculator가 코드 내장 한국어 기본 마커를
+        # 사용한다(회귀 0). 비한국어 운영자는 routing.yaml로 자국어 마커를 주입한다.
+        depth_indicators=config.routing.complexity.depth_indicators,
+        multi_intent_indicators=config.routing.complexity.multi_intent_indicators,
+        # 언어 중립 신호 보강 토글(기본 False — 기존 동작 동치).
+        use_language_neutral_signals=config.routing.complexity.use_language_neutral_signals,
     )
 
     answer_evaluator = providers.Singleton(
@@ -2000,7 +2003,11 @@ class AppContainer(containers.DeclarativeContainer):
         generation_module=generation,
         session_module=session,
         self_rag_module=self_rag,  # ✅ Self-RAG 모듈 주입
-        extract_topic_func=extract_topic_default,  # 함수 직접 전달
+        # 토픽 추출 함수: config(routing.topic_keywords) 바인딩.
+        # 미설정 시 한국어 기본 키워드로 동작한다(회귀 0).
+        extract_topic_func=providers.Callable(
+            build_extract_topic_func, config=config
+        ),
         circuit_breaker_factory=circuit_breaker_factory,  # ✅ Circuit Breaker Factory 주입
         cost_tracker=cost_tracker,  # ✅ 비용 추적기 주입
         performance_metrics=performance_metrics,  # ✅ 성능 메트릭 주입

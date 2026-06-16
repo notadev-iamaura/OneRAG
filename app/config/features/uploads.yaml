@@ -31,3 +31,13 @@ uploads:
   # type을 disabled/none/off로 두면 감사 기록을 비활성화한다.
   audit_event_store:
     type: "${ONERAG_AUDIT_EVENT_STORE:-sqlite}"
+
+  # FAQ 파싱 시 인식하는 질문/답변 컬럼 별칭.
+  # 미설정 키는 코드 내장 ko+en 기본 별칭으로 보강된다(회귀 0).
+  # 그 외 언어 컬럼명(예: 일본어 質問/回答)을 추가하려면 아래에 작성한다. 예:
+  #   faq:
+  #     column_aliases:
+  #       question: ["질문", "question", "質問", "Pregunta"]
+  #       answer: ["답변", "answer", "回答", "Respuesta"]
+  faq:
+    column_aliases: {}

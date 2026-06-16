@@ -22,6 +22,7 @@ from typing import Any
 from ...lib.errors import ErrorCode, SessionError
 from ...lib.logger import get_logger
 from ...lib.metrics import CostTracker, PerformanceMetrics
+from ...lib.topic_extractor import extract_topic
 from ...lib.types import RAGResultDict, SessionInfoDict, SessionResult, StatsDict
 from .rag_pipeline import RAGPipeline
 
@@ -239,38 +240,15 @@ class ChatService:
             ) from e
 
     def extract_topic(self, message: str) -> str:
+        """토픽 추출 (키워드 기반).
+
+        lib의 단일 소스 함수(topic_extractor.extract_topic)에 위임한다(DRY).
+        토픽 키워드는 config(routing.topic_keywords)로 외부화되며, 미설정 시
+        코드 내장 한국어 기본 맵을 사용한다(회귀 0). 토픽은 세션 메타(cosmetic)
+        라벨이라 검색/라우팅 동작에는 영향을 주지 않는다.
         """
-        토픽 추출 (간단한 키워드 기반)
-
-        기존 코드: chat.py의 extract_topic() 함수 (L301-329)
-        """
-        # 안전한 메시지 처리
-        if isinstance(message, list):
-            message = " ".join(str(item) for item in message)
-        elif not isinstance(message, str):
-            message = str(message)
-
-        if not message:
-            return "general"
-
-        keywords = {
-            "search": ["검색", "찾기", "찾아", "검색해"],
-            "document": ["문서", "파일", "자료", "데이터"],
-            "help": ["도움", "도와", "설명", "알려"],
-            "technical": ["기술", "개발", "코드", "프로그래밍"],
-            "general": ["일반", "기본", "소개", "개요"],
-        }
-
-        try:
-            lower_message = message.lower()
-
-            for topic, words in keywords.items():
-                if any(word in lower_message for word in words):
-                    return topic
-
-            return "general"
-        except Exception:
-            return "general"
+        topic_keywords = self.config.get("routing", {}).get("topic_keywords")
+        return extract_topic(message, topic_keywords)
 
     @traceable(
         name="RAGPipeline",

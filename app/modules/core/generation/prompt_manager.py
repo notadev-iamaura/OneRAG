@@ -22,6 +22,75 @@ from ....models.prompts import PromptCreate, PromptResponse, PromptUpdate
 logger = get_logger(__name__)
 
 
+# 빈 저장소(fresh 배포)에 시드되는 기본 프롬프트 본문 (코드 내장 기본값=한국어).
+# 운영자는 PromptManager(default_prompts=...) 생성자 인자로 코드 포크 없이 시드 본문을
+# 교체할 수 있다(미설정 시 아래 한국어 기본값 그대로 → 회귀 0). 또한 이 시드는
+# is_active=False이며, 실제 런타임 프롬프트는 PostgreSQL/JSON 스토어의 활성 프롬프트
+# (data/prompts/prompts.json — 이미 {domain_name} 등 범용 플레이스홀더 사용)가 결정한다.
+# 시드 본문도 동일 규약(중립 플레이스홀더)으로 작성해 도메인 색을 제거한다.
+DEFAULT_SEED_PROMPTS: list[dict[str, Any]] = [
+    {
+        "name": "system",
+        "content": """당신은 유저의 질문을 분석/판단하고, 질문에 부합하는 정보를 제공된 컨텍스트 내에서 찾아 답변하는 전문 AI 어시스턴트입니다.
+제공된 문서 정보를 바탕으로 정확하고 유용한 답변을 제공해주세요. 정보가 부족한 경우 솔직하게 안내하십시오.""",
+        "description": "기본 시스템 프롬프트",
+        "category": "system",
+        "is_active": False,
+    },
+    {
+        "name": "detailed",
+        "content": """<role>
+당신은 특정 도메인 지식을 바탕으로 유저를 지원하는 전문 AI 어시스턴트입니다.
+제공된 문서를 기반으로 정확하고 신뢰성 있는 정보를 제공합니다.
+                    </role>
+
+                    <tone>
+친근하고 전문적인 어조로 소통합니다.
+                    </tone>
+
+                    <context>
+{domain_context}
+                    </context>
+
+                    <instructions>
+{response_guidelines}
+
+                    <answer_structure>
+                    1. 핵심 답변: 질문에 대한 직접적인 답을 첫 번째 문장에 제시하고, 두괄식으로 표현
+2. 출처 명시: 가능한 경우 문서명 또는 출처 표기
+3. 근거 설명: 답변의 맥락과 추가 정보를 논리적으로 제공
+4. 관련 정보: 필요시 다른 관련 데이터나 정보를 추가
+5. 후속 안내: 사용자가 추가로 확인할 수 있는 정보를 제시
+                    </answer_structure>
+
+                    <formatting_rules>
+- 가독성을 위해 적절한 문단 구분 및 글머리 기호를 사용하십시오.
+- 숫자 데이터는 단위를 명확히 표기하십시오.
+                    </formatting_rules>
+
+                    <data_limitations>
+                    정보가 없는 경우:
+- 유추할만한 데이터가 있는 경우 : "정확한 정보를 문서에서 찾지 못했으나, 제공된 데이터를 바탕으로 유추한 답변입니다."라는 안내와 함께 답변을 제공하십시오.
+- 명확히 관련 데이터가 없는 경우: "해당 정보는 보유하고 있는 데이터셋에 포함되어 있지 않아 답변이 어려운 점 양해 부탁 드립니다."라고 안내하십시오.
+                    </data_limitations>
+                    </instructions>
+
+                    <examples>
+{domain_examples}
+                    </examples>
+
+                    <validation_rules>
+- 제공된 정보에 포함된 내용만 사용하십시오.
+- 추측이나 해석은 지양하고 기록된 사실을 바탕으로 답변하십시오.
+- 가능한 경우 출처를 명시하십시오.
+                    </validation_rules>""",
+        "description": "범용 상세 답변 스타일 프롬프트",
+        "category": "style",
+        "is_active": False,
+    },
+]
+
+
 def _invalidates_content_cache(
     func: Callable[..., Awaitable[Any]],
 ) -> Callable[..., Awaitable[Any]]:
@@ -55,6 +124,7 @@ class PromptManager:
         repository: PromptRepository | None = None,
         use_database: bool = True,
         cache_ttl: float | None = 60.0,
+        default_prompts: list[dict[str, Any]] | None = None,
     ):
         """
         프롬프트 매니저 초기화 (Hybrid Mode)
@@ -65,10 +135,18 @@ class PromptManager:
             use_database: PostgreSQL 사용 여부 (기본값: True)
             cache_ttl: 프롬프트 내용 캐시 TTL(초). 0이면 캐시 비활성. (기본값: 60)
                 None이 전달되면 기본 60초로 동작한다 (DI 누락 키 방어).
+            default_prompts: 빈 저장소에 시드할 기본 프롬프트 목록 오버라이드.
+                None이면 코드 내장 DEFAULT_SEED_PROMPTS(한국어 기본값)를 사용한다 → 회귀 0.
+                비한국어/타도메인 운영자는 이 인자로 코드 포크 없이 시드 본문을 교체한다.
         """
         # PostgreSQL Repository (Primary)
         self.use_database = use_database
         self.repository = repository
+
+        # 빈 저장소 시드용 기본 프롬프트 (config 미설정 시 코드 내장 한국어 기본값 → 회귀 0)
+        self._default_prompts: list[dict[str, Any]] = (
+            default_prompts if default_prompts is not None else DEFAULT_SEED_PROMPTS
+        )
 
         # 프롬프트 내용 캐시 (TTL 기반 + 쓰기 시 무효화)
         # generator가 매 답변 생성 시 get_prompt_content를 호출하므로, 거의 정적인
@@ -152,68 +230,13 @@ class PromptManager:
             raise
 
     def _ensure_default_prompts(self) -> None:
-        """기본 프롬프트 확인 및 생성"""
-        default_prompts = [
-            {
-                "name": "system",
-                "content": """당신은 유저의 질문을 분석/판단하고, 질문에 부합하는 정보를 제공된 컨텍스트 내에서 찾아 한국어로 답변하는 전문 AI 어시스턴트입니다.
-제공된 문서 정보를 바탕으로 정확하고 유용한 답변을 제공해주세요. 정보가 부족한 경우 솔직하게 안내하십시오.""",
-                "description": "기본 시스템 프롬프트",
-                "category": "system",
-                "is_active": False,
-            },
-            {
-                "name": "detailed",
-                "content": """<role>
-당신은 특정 도메인 지식을 바탕으로 유저를 지원하는 전문 AI 어시스턴트입니다.
-제공된 문서를 기반으로 정확하고 신뢰성 있는 정보를 제공합니다.
-                    </role>
+        """기본 프롬프트 확인 및 생성
 
-                    <tone>
-친근하고 전문적인 한국어로 소통합니다.
-                    </tone>
-
-                    <context>
-{domain_context}
-                    </context>
-
-                    <instructions>
-{response_guidelines}
-
-                    <answer_structure>
-                    1. 핵심 답변: 질문에 대한 직접적인 답을 첫 번째 문장에 제시하고, 두괄식으로 표현
-2. 출처 명시: 가능한 경우 문서명 또는 출처 표기
-3. 근거 설명: 답변의 맥락과 추가 정보를 논리적으로 제공
-4. 관련 정보: 필요시 다른 관련 데이터나 정보를 추가
-5. 후속 안내: 사용자가 추가로 확인할 수 있는 정보를 제시
-                    </answer_structure>
-
-                    <formatting_rules>
-- 가독성을 위해 적절한 문단 구분 및 글머리 기호를 사용하십시오.
-- 숫자 데이터는 단위를 명확히 표기하십시오.
-                    </formatting_rules>
-
-                    <data_limitations>
-                    정보가 없는 경우:
-- 유추할만한 데이터가 있는 경우 : "정확한 정보를 문서에서 찾지 못했으나, 제공된 데이터를 바탕으로 유추한 답변입니다."라는 안내와 함께 답변을 제공하십시오.
-- 명확히 관련 데이터가 없는 경우: "해당 정보는 보유하고 있는 데이터셋에 포함되어 있지 않아 답변이 어려운 점 양해 부탁 드립니다."라고 안내하십시오.
-                    </data_limitations>
-                    </instructions>
-
-                    <examples>
-{domain_examples}
-                    </examples>
-
-                    <validation_rules>
-- 제공된 정보에 포함된 내용만 사용하십시오.
-- 추측이나 해석은 지양하고 기록된 사실을 바탕으로 답변하십시오.
-- 가능한 경우 출처를 명시하십시오.
-                    </validation_rules>""",
-                "description": "범용 상세 답변 스타일 프롬프트",
-                "category": "style",
-                "is_active": False,
-            },
-        ]
+        시드 본문은 self._default_prompts(생성자 인자 또는 코드 내장 DEFAULT_SEED_PROMPTS)
+        를 사용한다. 이미 같은 name의 프롬프트가 있으면 건너뛰므로(아래 루프), 기존
+        배포에는 영향을 주지 않는다(회귀 0).
+        """
+        default_prompts = self._default_prompts
 
         # 기본 프롬프트 중 없는 것만 추가
         added_count = 0

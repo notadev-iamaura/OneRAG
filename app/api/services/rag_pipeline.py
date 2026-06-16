@@ -75,12 +75,17 @@ _RERANK_METADATA_KEYS = {"rerank_score", "rerank_method", "original_score"}
 _CONTEXT_EXPANSION_MAX_WINDOW = 3
 
 # 환각 방지 게이트(GAP C): 질문 기간과 문서 기간이 완전 불일치할 때 사용하는 보류 메시지.
-# JP의 전체 i18n(RESPONSE_LANGUAGE_PROFILES)은 차용하지 않고 한국어 기본 문자열만 둔다.
+# 코드 내장 기본값=한국어. 운영자는 rag.yaml hallucination_gate.no_answer_message로
+# 코드 포크 없이 오버라이드한다 → 미설정 시 회귀 0(아래 기본 문자열 그대로 사용).
 HALLUCINATION_GATE_NO_ANSWER_MESSAGE = (
     "질문하신 기간에 해당하는 내용을 제공된 문서에서 확인하지 못했습니다. "
     "다른 기간의 데이터로 추정하지 않았습니다. 정확한 기간을 확인하시거나 "
     "관련 문서를 추가해 주세요."
 )
+
+# 생성 모듈 부재 시 사용자에게 반환되는 답변 폴백 (코드 내장 기본값=한국어).
+# 운영자는 rag.yaml generation_fallback.module_missing_message로 오버라이드한다 → 회귀 0.
+GENERATION_MODULE_MISSING_MESSAGE = "죄송합니다. 답변을 생성할 수 없습니다."
 
 # ============================================================================
 # 정확 식별자(exact-identifier) 검색 보강 패턴 (GAP A) - 언어무관/도메인무관
@@ -945,6 +950,31 @@ class RAGPipeline:
             if isinstance(hallucination_config, dict)
             else True
         )
+        # 보류 메시지 외부화: config 우선, 미설정/공백이면 코드 내장 한국어 기본값(회귀 0).
+        configured_gate_message = (
+            hallucination_config.get("no_answer_message")
+            if isinstance(hallucination_config, dict)
+            else None
+        )
+        self.hallucination_gate_no_answer_message: str = (
+            configured_gate_message
+            if isinstance(configured_gate_message, str) and configured_gate_message.strip()
+            else HALLUCINATION_GATE_NO_ANSWER_MESSAGE
+        )
+
+        # 생성 모듈 부재 시 답변 폴백 메시지 외부화 (config 우선, 미설정 시 코드 기본).
+        generation_fallback_config = rag_config.get("generation_fallback", {})
+        configured_missing_message = (
+            generation_fallback_config.get("module_missing_message")
+            if isinstance(generation_fallback_config, dict)
+            else None
+        )
+        self.generation_module_missing_message: str = (
+            configured_missing_message
+            if isinstance(configured_missing_message, str)
+            and configured_missing_message.strip()
+            else GENERATION_MODULE_MISSING_MESSAGE
+        )
 
         # 멀티턴 anchor soft boost 설정 (GAP B, 기본 OFF, 보수적)
         # 직전 대화에서 인용된 문서(anchor)를 후속 질문 리랭킹 후처리에서 hard-filter
@@ -1546,8 +1576,8 @@ class RAGPipeline:
         logger.info("환각 게이트: 질문 기간과 문서 기간 불일치 → '확인 불가' 응답으로 교체")
         return replace(
             generation_result,
-            answer=HALLUCINATION_GATE_NO_ANSWER_MESSAGE,
-            text=HALLUCINATION_GATE_NO_ANSWER_MESSAGE,
+            answer=self.hallucination_gate_no_answer_message,
+            text=self.hallucination_gate_no_answer_message,
         )
 
     @staticmethod
@@ -3722,8 +3752,8 @@ class RAGPipeline:
         if not self.generation_module:
             logger.error("생성 모듈 없음")
             return GenerationResult(
-                answer="죄송합니다. 답변을 생성할 수 없습니다.",
-                text="죄송합니다. 답변을 생성할 수 없습니다.",
+                answer=self.generation_module_missing_message,
+                text=self.generation_module_missing_message,
                 tokens_used=0,
                 model_used="none",
                 provider="none",

@@ -212,7 +212,28 @@ class LLMQueryRouter:
         return bool(os.getenv(env_var))
 
     def _build_router_prompt(self) -> str:
-        """LLM 라우터용 구조화된 프롬프트 구성 (도메인 설정 기반 동적 생성)"""
+        """LLM 라우터용 구조화된 프롬프트 구성 (도메인 설정 기반 동적 생성)
+
+        프롬프트 본문(지시문/판단항목/JSON 포맷)의 언어 자체를 config로
+        오버라이드할 수 있도록 planner/synthesizer와 동일한 full-template
+        패턴을 적용한다. 우선순위는 다음과 같다(회귀 0 보장):
+
+        1) domain.router.prompt_template 가 있으면 그 템플릿을 사용한다.
+           운영자는 비한국어 지시문 템플릿을 직접 주입할 수 있다.
+        2) 없으면 현재 한국어 본문을 코드 기본값(폴백)으로 사용한다.
+        3) domain.router 설정 자체가 비어 있으면 영어 제네릭 폴백을 쓴다.
+
+        템플릿 자리표시자(placeholder) — 운영자가 prompt_template에서 사용 가능:
+        - {system_role}: 시스템 역할 (domain.router.system_role)
+        - {domain_desc}: 도메인 설명 (domain.router.domain_description)
+        - {rag_categories_str}: RAG 카테고리 목록(개행 구분)
+        - {structured_desc}/{general_desc}/{both_desc}: 각 data_source 설명
+        - {structured_entities_str}: 구조화 엔티티 예시(상위 20개)
+        - {structured_keywords_str}/{general_keywords_str}/{both_keywords_str}:
+          각 data_source 트리거 키워드(쉼표 구분)
+        - {oos_examples_str}: 범위 이탈 예시(개행 구분)
+        - {{context}}/{{query}}: 런타임 치환 자리표시자(이스케이프 필요)
+        """
 
         # 1. 도메인 설정 로드
         domain_config = self.config.get("domain", {}).get("router", {})
@@ -257,7 +278,53 @@ class LLMQueryRouter:
         oos_examples = domain_config.get("out_of_scope_examples", [])
         oos_examples_str = "\n".join([f"- \"{ex}\" → is_out_of_scope=true" for ex in oos_examples])
 
-        return f"""<system_instructions>
+        # 6. 템플릿 placeholder 값 집합 구성
+        #    config 템플릿과 코드 기본 템플릿이 동일한 placeholder 세트를 공유한다.
+        template_values: dict[str, str] = {
+            "system_role": system_role,
+            "domain_desc": domain_desc,
+            "rag_categories_str": rag_categories_str,
+            "structured_desc": structured_cfg.get("description", "Specific Entity Info"),
+            "general_desc": general_cfg.get("description", "General Info"),
+            "both_desc": both_cfg.get("description", "Hybrid Info"),
+            "structured_entities_str": structured_entities_str,
+            "structured_keywords_str": structured_keywords_str,
+            "general_keywords_str": general_keywords_str,
+            "both_keywords_str": both_keywords_str,
+            "oos_examples_str": oos_examples_str,
+        }
+
+        # 7. config 템플릿 우선 사용(없으면 코드 한국어 기본 템플릿)
+        #    런타임 치환 placeholder({context}/{query})는 보존해야 하므로
+        #    안전 포맷터로 미정의 키를 그대로 남긴다.
+        config_template = domain_config.get("prompt_template")
+        if isinstance(config_template, str) and config_template.strip():
+            logger.debug("도메인 라우터 prompt_template(config) 사용")
+            return self._safe_format(config_template, template_values)
+
+        return self._safe_format(self._default_router_template(), template_values)
+
+    @staticmethod
+    def _safe_format(template: str, values: dict[str, str]) -> str:
+        """템플릿의 알려진 placeholder만 치환하고 나머지(예: {context}, {query})는 보존한다.
+
+        str.format은 미정의 키에서 KeyError를 던지므로, 설계 placeholder만
+        담은 dict를 순회 치환하는 안전 포맷터를 사용한다. 이렇게 하면
+        런타임 치환용 {context}/{query}와 JSON 예시의 중괄호가 그대로 유지된다.
+        """
+        result = template
+        for key, value in values.items():
+            result = result.replace("{" + key + "}", value)
+        return result
+
+    @staticmethod
+    def _default_router_template() -> str:
+        """코드 내장 한국어 기본 라우터 템플릿(회귀 안전판).
+
+        placeholder는 _safe_format이 치환한다. JSON 예시의 중괄호와
+        런타임 치환용 {context}/{query}는 그대로 보존된다.
+        """
+        return """<system_instructions>
 당신은 {system_role}입니다.
 
 {domain_desc}
@@ -283,7 +350,7 @@ class LLMQueryRouter:
 
 **data_source 판단 기준**:
 
-### data_source = "structured" ({structured_cfg.get('description', 'Specific Entity Info')})
+### data_source = "structured" ({structured_desc})
 다음 조건을 **모두 만족**할 때 "structured" 선택:
 1. **특정 엔티티(이름/제목)**가 명시됨
 2. **규정/정책/비용** 관련 질문
@@ -294,12 +361,12 @@ class LLMQueryRouter:
 ✅ 규정/정책 키워드:
 [{structured_keywords_str}]
 
-### data_source = "general" ({general_cfg.get('description', 'General Info')})
+### data_source = "general" ({general_desc})
 다음 경우 "general" 선택:
 1. **엔티티명 없는** 일반 질문
 2. **절차/방법/추천/비교** 질문 ({general_keywords_str})
 
-### data_source = "both" ({both_cfg.get('description', 'Hybrid Info')})
+### data_source = "both" ({both_desc})
 다음 경우 "both" 선택:
 1. **특정 엔티티 + 후기/평가/경험** 질문 ({both_keywords_str})
 2. 규정이 아닌 주관적 의견 요청
@@ -316,16 +383,16 @@ class LLMQueryRouter:
 </analysis_guidelines>
 
 <conversation_history>
-{{context}}
+{context}
 </conversation_history>
 
 <user_query>
-{{query}}
+{query}
 </user_query>
 
 <response_format>
 반드시 아래 JSON 형식으로만 출력하세요 (부가 설명이나 마크다운 코드 블록 금지):
-{{{{
+{
   "is_greeting": true/false,
   "is_harmful": true/false,
   "is_attack": true/false,
@@ -333,11 +400,16 @@ class LLMQueryRouter:
   "needs_rag": true/false,
   "data_source": "structured" | "general" | "both",
   "reasoning": "판단 근거 설명"
-}}}}
+}
 </response_format>"""
 
     def _build_default_prompt(self) -> str:
-        """기본(Fallback) 프롬프트 생성"""
+        """기본(Fallback) 영어 제네릭 프롬프트 생성.
+
+        full-template 폴백과 동일한 런타임 placeholder({context}/{query})를
+        단일 중괄호로 사용한다. JSON 예시의 중괄호도 단일 중괄호다(런타임은
+        _safe replace 방식으로 치환되므로 이스케이프가 필요 없다).
+        """
         return """<system_instructions>
 You are an intelligent query analysis assistant.
 Analyze the user's query and determine the appropriate routing action.
@@ -353,12 +425,16 @@ Return response in JSON format.
 6. data_source: "general" (default)
 </analysis_guidelines>
 
+<conversation_history>
+{context}
+</conversation_history>
+
 <user_query>
 {query}
 </user_query>
 
 <response_format>
-{{
+{
   "is_greeting": boolean,
   "is_harmful": boolean,
   "is_attack": boolean,
@@ -366,7 +442,7 @@ Return response in JSON format.
   "needs_rag": boolean,
   "data_source": "general",
   "reasoning": string
-}}
+}
 </response_format>"""
 
     async def analyze_and_route(
@@ -488,8 +564,12 @@ Return response in JSON format.
             raise ValueError("Generation module not available for LLM routing")
 
         # 프롬프트 구성 (인젝션 방어)
+        # 주의: 라우터 프롬프트에는 JSON 예시의 리터럴 중괄호가 포함되므로
+        # str.format을 쓰면 KeyError가 발생한다. {context}/{query}만 안전 치환한다.
         context_text = escape_xml(session_context) if session_context else "대화 이력 없음"
-        prompt = self.router_prompt.format(query=escape_xml(query), context=context_text)
+        prompt = self.router_prompt.replace("{context}", context_text).replace(
+            "{query}", escape_xml(query)
+        )
 
         # LLM 호출 (Circuit Breaker + LLM Factory)
         try:
