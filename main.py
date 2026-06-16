@@ -474,9 +474,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("✅ WebSocket 라우터에 ChatService 주입 완료")
 
         # OpenAI 호환 API에 모듈 주입
+        # chat_service를 주입해야 /v1이 메인 채팅과 동일한 RAG 체인을 재사용하고
+        # (rerank·멀티쿼리), messages 배열의 멀티턴 히스토리를 임시 세션으로 적재해
+        # standalone-rewrite/anchor가 직전 맥락을 참조한다(미주입 시 retriever 폴백).
         set_openai_modules({
             "llm_factory": modules_dict.get("llm_factory"),
             "retrieval": modules_dict.get("retrieval"),
+            "chat_service": chat_service_instance,
         })
         logger.info("✅ OpenAI 호환 API 모듈 주입 완료")
 

@@ -71,3 +71,24 @@ mongodb:
       # numCandidates 배수 (더 많은 후보 검토로 정확도 향상)
       # 권장: top_k * 10 ~ top_k * 20
       num_candidates_multiplier: 10
+
+  # ============================================================
+  # Hybrid Search 설정 (mongodb_hybrid 프로바이더 전용, opt-in)
+  # ============================================================
+  # VECTOR_DB_PROVIDER=mongodb_hybrid 로 선택 시 사용되는 하이브리드 설정.
+  # 기본 mongodb 프로바이더(Dense 전용)는 이 섹션을 사용하지 않으므로 회귀 없음.
+  #
+  # 동작: $vectorSearch(Dense)와 $search(BM25 full-text)를 병렬 실행 후
+  #       Python client-side RRF로 통합한다. Atlas tier의 $rankFusion 미지원
+  #       제약 없이 하이브리드 검색을 제공한다.
+  #
+  # 사전 요구사항(Atlas UI):
+  # 1. Vector Search 인덱스(vector_search.index_name)
+  # 2. Full-Text Search 인덱스(아래 fulltext_index_name; content 필드 매핑)
+  hybrid_search:
+    # 하이브리드 활성화 시 사용할 Full-Text Search 인덱스 이름
+    fulltext_index_name: "${MONGODB_FULLTEXT_INDEX:-default}"
+
+    # RRF 융합 가중치 (합이 1.0일 필요 없음; 상대 비중만 결정)
+    dense_weight: 0.6
+    sparse_weight: 0.4

@@ -80,7 +80,7 @@ def _build_gen(chunks: list[str], state: dict[str, bool] | None = None) -> Gener
 
     gen.client = _Client()  # type: ignore[attr-defined]
 
-    async def _build_prompt(q: str, c: str, o: dict) -> tuple[str, str]:
+    async def _build_prompt(*args: object, **kwargs: object) -> tuple[str, str]:
         return ("sys", "user")
 
     gen._build_prompt = _build_prompt  # type: ignore[assignment]

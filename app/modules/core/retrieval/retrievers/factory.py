@@ -100,6 +100,14 @@ _DEFAULT_PROVIDERS: dict[str, RetrieverProviderInfo] = {
         "hybrid_support": False,
         "description": "MongoDB Atlas Dense Retriever - 클라우드 관리형 벡터 검색 (하이브리드 미지원)",
     },
+    "mongodb_hybrid": {
+        "class_path": "app.modules.core.retrieval.retrievers.mongodb_retriever.MongoDBRetriever",
+        "hybrid_support": True,
+        "description": (
+            "MongoDB 하이브리드 Retriever - $vectorSearch + $search(BM25) 병렬 후 "
+            "client-side RRF 통합 (Atlas tier 제약 없는 하이브리드)"
+        ),
+    },
     "grok": {
         "class_path": "app.modules.core.retrieval.retrievers.grok_retriever.GrokRetriever",
         "hybrid_support": True,
@@ -214,10 +222,13 @@ class RetrieverFactory:
         - pinecone: Dense + Sparse 하이브리드 (추후 지원)
         - qdrant: Dense + Full-Text 하이브리드 (추후 지원)
 
+        하이브리드 추가 지원 DB:
+        - mongodb_hybrid: $vectorSearch + $search(BM25) client-side RRF
+
         미지원 DB:
         - chroma: Dense 전용
         - pgvector: Dense 전용 (기본)
-        - mongodb: Dense 전용 (레거시)
+        - mongodb: Dense 전용 (레거시; 하이브리드는 mongodb_hybrid 사용)
 
         Args:
             provider: provider 이름
@@ -385,5 +396,7 @@ class RetrieverFactory:
             "qdrant": "qdrant-client",
             "milvus": "pymilvus",
             "pgvector": "pgvector",
+            "mongodb": "pymongo",
+            "mongodb_hybrid": "pymongo",
         }
         return package_map.get(provider, provider)

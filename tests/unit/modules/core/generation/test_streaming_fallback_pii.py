@@ -62,7 +62,7 @@ def _build_gen(
     gen.client = _Client()  # type: ignore[attr-defined]
     gen._create_calls = calls  # type: ignore[attr-defined]
 
-    async def _build_prompt(q: str, c: str, o: dict) -> tuple[str, str]:
+    async def _build_prompt(*args: object, **kwargs: object) -> tuple[str, str]:
         return ("sys", "user")
 
     gen._build_prompt = _build_prompt  # type: ignore[assignment]
