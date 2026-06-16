@@ -123,8 +123,9 @@ describe('useChatSession', () => {
   });
 
   it('should restore an existing session from localStorage', async () => {
-    // 먼저 localStorage에 세션 ID 설정
+    // 복원 가능한 활성 세션(세션 ID + 생성 시각)을 저장해 TTL(30일) 검사를 통과시킨다.
     localStorage.setItem('chatSessionId', 'existing-session');
+    localStorage.setItem('chatSessionCreatedAt', String(Date.now()));
     expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
 
     const mockGetChatHistory = vi.fn().mockResolvedValue({
@@ -154,13 +155,16 @@ describe('useChatSession', () => {
     expect(mockService.startNewSession).not.toHaveBeenCalled();
   });
 
-  it('should handle session restoration failure by creating a new session', async () => {
+  it('should preserve the stored session instead of discarding it when history load fails', async () => {
+    // [대화방 소실 방지] 히스토리 로드 실패를 세션 폐기로 승격하지 않는다.
+    // 백엔드 PostgreSQL이 진실원본이며, 전송 시 같은 session_id로 복원된다.
     localStorage.setItem('chatSessionId', 'existing-session');
+    localStorage.setItem('chatSessionCreatedAt', String(Date.now()));
     expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
 
     const mockGetChatHistory = vi.fn().mockRejectedValue(new Error('History not found'));
     const mockStartNewSession = vi.fn().mockResolvedValue({
-      data: { session_id: 'recovered-session' },
+      data: { session_id: 'should-not-be-created' },
       status: 200,
     });
 
@@ -178,10 +182,11 @@ describe('useChatSession', () => {
       expect(result.current.isSessionInitialized).toBe(true);
     });
 
-    // 히스토리 로드 실패 후 새 세션 생성
+    // 히스토리 로드 실패 후에도 기존 세션을 유지하고 새 세션을 생성하지 않는다.
     expect(mockGetChatHistory).toHaveBeenCalledWith('existing-session');
-    expect(mockStartNewSession).toHaveBeenCalled();
-    expect(result.current.sessionId).toBe('recovered-session');
+    expect(mockStartNewSession).not.toHaveBeenCalled();
+    expect(result.current.sessionId).toBe('existing-session');
+    expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
   });
 
   it('should start a new session when handleNewSession is called', async () => {

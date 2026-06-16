@@ -23,6 +23,13 @@ function createLocalStorageMock(): Storage {
   };
 }
 
+// 저장된 세션을 '복원 가능한 활성 세션'으로 만드는 헬퍼.
+// 세션 ID와 생성 시각(now)을 함께 설정해, useChatSessionCore의 TTL(30일) 검사를 통과시킨다.
+function setRestorableStoredSession(sessionId: string): void {
+  localStorage.setItem('chatSessionId', sessionId);
+  localStorage.setItem('chatSessionCreatedAt', String(Date.now()));
+}
+
 // Mock 서비스 생성 헬퍼
 function createMockChatAPIService(overrides?: Partial<IChatAPIService>): IChatAPIService {
   return {
@@ -96,8 +103,8 @@ describe('useChatSessionCore', () => {
     });
 
     it('주입받은 서비스로 히스토리를 로드해야 함', async () => {
-      // 먼저 localStorage에 세션 ID 설정
-      localStorage.setItem('chatSessionId', 'existing-session');
+      // 복원 가능한 활성 세션(세션 ID + 생성 시각)을 저장
+      setRestorableStoredSession('existing-session');
       expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
 
       const mockGetChatHistory = vi.fn().mockResolvedValue({
@@ -123,6 +130,8 @@ describe('useChatSessionCore', () => {
       // 히스토리 로드 검증
       expect(mockGetChatHistory).toHaveBeenCalledWith('existing-session');
       expect(result.current.sessionId).toBe('existing-session');
+      // 새 세션을 만들지 않고 기존 세션을 그대로 유지해야 한다.
+      expect(mockService.startNewSession).not.toHaveBeenCalled();
     });
 
     it('fallback 세션이 저장되어 있으면 새 세션을 생성해야 함', async () => {
@@ -219,13 +228,14 @@ describe('useChatSessionCore', () => {
       );
     });
 
-    it('히스토리 로드 실패 시 새 세션을 생성해야 함', async () => {
-      localStorage.setItem('chatSessionId', 'existing-session');
-      expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
+    it('히스토리 로드 실패 시에도 저장 세션을 폐기하지 않고 보존해야 함', async () => {
+      // [대화방 소실 방지] 일시적 네트워크/5xx/멀티 인스턴스 미스로 히스토리 로드가
+      // 실패해도, 백엔드 PostgreSQL에 멀쩡한 대화방이 있을 수 있으므로 세션을 유지한다.
+      setRestorableStoredSession('existing-session');
 
       const mockGetChatHistory = vi.fn().mockRejectedValue(new Error('History not found'));
       const mockStartNewSession = vi.fn().mockResolvedValue({
-        data: { session_id: 'recovered-session' },
+        data: { session_id: 'should-not-be-created' },
         status: 200,
       });
 
@@ -242,10 +252,101 @@ describe('useChatSessionCore', () => {
         expect(result.current.isSessionInitialized).toBe(true);
       });
 
-      // 히스토리 로드 실패 후 새 세션 생성
+      // 히스토리 로드는 시도하되, 실패해도 새 세션을 생성하지 않는다.
       expect(mockGetChatHistory).toHaveBeenCalledWith('existing-session');
+      expect(mockStartNewSession).not.toHaveBeenCalled();
+      // 저장된 세션 ID를 그대로 유지(localStorage 포함)한다.
+      expect(result.current.sessionId).toBe('existing-session');
+      expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
+      // 빈 화면으로 진입(전송 시 백엔드가 같은 session_id로 복원).
+      expect(defaultOptions.setMessages).toHaveBeenCalledWith([]);
+      // 일시 오류는 사용자에게 안내한다.
+      expect(defaultOptions.showToast).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'warning' })
+      );
+    });
+
+    it('생성 시각이 없는 레거시 저장 세션은 새 세션으로 대체해야 함', async () => {
+      // createdAt 없이 세션 ID만 있는 레거시 상태(복원 윈도우 기준점 없음).
+      localStorage.setItem('chatSessionId', 'legacy-session');
+
+      const mockGetChatHistory = vi.fn();
+      const mockStartNewSession = vi.fn().mockResolvedValue({
+        data: { session_id: 'fresh-session' },
+        status: 200,
+      });
+
+      const mockService = createMockChatAPIService({
+        getChatHistory: mockGetChatHistory,
+        startNewSession: mockStartNewSession,
+      });
+
+      const { result } = renderHook(() =>
+        useChatSessionCore(mockService, defaultOptions)
+      );
+
+      await waitFor(() => {
+        expect(result.current.isSessionInitialized).toBe(true);
+      });
+
+      // TTL 검사에서 만료로 간주 → 기존 세션을 조회하지 않고 새 세션을 생성한다.
+      expect(mockGetChatHistory).not.toHaveBeenCalled();
       expect(mockStartNewSession).toHaveBeenCalled();
-      expect(result.current.sessionId).toBe('recovered-session');
+      expect(result.current.sessionId).toBe('fresh-session');
+    });
+
+    it('복원 TTL(30일)을 벗어난 저장 세션은 새 세션으로 대체해야 함', async () => {
+      // 31일 전 생성 시각 → 복원 윈도우 만료.
+      const expiredCreatedAt = Date.now() - 31 * 24 * 60 * 60 * 1000;
+      localStorage.setItem('chatSessionId', 'expired-session');
+      localStorage.setItem('chatSessionCreatedAt', String(expiredCreatedAt));
+
+      const mockGetChatHistory = vi.fn();
+      const mockStartNewSession = vi.fn().mockResolvedValue({
+        data: { session_id: 'after-expiry-session' },
+        status: 200,
+      });
+
+      const mockService = createMockChatAPIService({
+        getChatHistory: mockGetChatHistory,
+        startNewSession: mockStartNewSession,
+      });
+
+      const { result } = renderHook(() =>
+        useChatSessionCore(mockService, defaultOptions)
+      );
+
+      await waitFor(() => {
+        expect(result.current.isSessionInitialized).toBe(true);
+      });
+
+      expect(mockGetChatHistory).not.toHaveBeenCalled();
+      expect(mockStartNewSession).toHaveBeenCalled();
+      expect(result.current.sessionId).toBe('after-expiry-session');
+    });
+
+    it('히스토리 로드 성공 시 생성 시각(TTL)을 갱신해야 함', async () => {
+      // 29일 전(아직 복원 가능) 생성 시각으로 저장.
+      const oldCreatedAt = Date.now() - 29 * 24 * 60 * 60 * 1000;
+      localStorage.setItem('chatSessionId', 'active-session');
+      localStorage.setItem('chatSessionCreatedAt', String(oldCreatedAt));
+
+      const mockService = createMockChatAPIService({
+        getChatHistory: vi.fn().mockResolvedValue({ data: { messages: [] } }),
+      });
+
+      const { result } = renderHook(() =>
+        useChatSessionCore(mockService, defaultOptions)
+      );
+
+      await waitFor(() => {
+        expect(result.current.isSessionInitialized).toBe(true);
+      });
+
+      // 복원 성공 시 생성 시각이 현재 시각으로 갱신되어 활성 세션이 유지된다.
+      const refreshedCreatedAt = Number(localStorage.getItem('chatSessionCreatedAt'));
+      expect(refreshedCreatedAt).toBeGreaterThan(oldCreatedAt);
+      expect(result.current.sessionId).toBe('active-session');
     });
   });
 

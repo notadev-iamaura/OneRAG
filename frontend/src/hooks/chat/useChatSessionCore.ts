@@ -60,6 +60,47 @@ export interface UseChatSessionCoreReturn {
   handleNewSession: () => Promise<void>;
 }
 
+// 세션 ID와 생성 시각을 저장하는 localStorage 키.
+const CHAT_SESSION_ID_STORAGE_KEY = 'chatSessionId';
+const CHAT_SESSION_CREATED_AT_STORAGE_KEY = 'chatSessionCreatedAt';
+
+// 클라이언트 세션 복원 윈도우(30일).
+// 대화 내용은 백엔드 PostgreSQL(postgres_chat_store)에 영속화되므로, PG가 진실원본이다.
+// 짧은 윈도우로 저장된 세션을 폐기하면 PG에 멀쩡한 대화방이 있어도 다음 진입 시
+// '방 사라짐'으로 보인다. 윈도우를 30일로 넉넉히 잡아 활성 사용자의 대화방이
+// 클라이언트 만료로 사라지지 않게 한다.
+const CHAT_SESSION_RESTORE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * 저장된 세션 생성 시각이 복원 가능한 윈도우(30일) 안에 있는지 판정한다.
+ * 생성 시각이 없거나(레거시/누락) 만료됐으면 false.
+ */
+function isStoredChatSessionRestorable(createdAtValue: string | null): boolean {
+  const createdAt = Number(createdAtValue);
+  return (
+    Number.isFinite(createdAt) &&
+    createdAt > 0 &&
+    createdAt >= Date.now() - CHAT_SESSION_RESTORE_TTL_MS
+  );
+}
+
+/**
+ * 세션 ID와 생성 시각을 함께 저장한다(복원 TTL 윈도우 기준점 갱신).
+ * 히스토리 로드 성공/실패와 무관하게 '활성 세션'을 표시하는 용도로 호출한다.
+ */
+function persistChatSessionId(newSessionId: string): void {
+  localStorage.setItem(CHAT_SESSION_ID_STORAGE_KEY, newSessionId);
+  localStorage.setItem(CHAT_SESSION_CREATED_AT_STORAGE_KEY, String(Date.now()));
+}
+
+/**
+ * 저장된 세션 ID와 생성 시각을 모두 제거한다(세션 폐기).
+ */
+function clearStoredChatSessionId(): void {
+  localStorage.removeItem(CHAT_SESSION_ID_STORAGE_KEY);
+  localStorage.removeItem(CHAT_SESSION_CREATED_AT_STORAGE_KEY);
+}
+
 /**
  * Fallback 세션 ID 생성
  */
@@ -116,7 +157,7 @@ export function useChatSessionCore(
       });
 
       setSessionId(newSessionId);
-      localStorage.setItem('chatSessionId', newSessionId);
+      persistChatSessionId(newSessionId);
 
       if (context.includes('불일치') || context.includes('복구')) {
         showToast({
@@ -145,7 +186,7 @@ export function useChatSessionCore(
     // 보조로 참조하는 전역 로그가 새 방으로 넘어와 이전 방 메트릭을 고정 표시하는 것을 방지한다.
     setApiLogs([]);
     setSessionId(targetSessionId);
-    localStorage.setItem('chatSessionId', targetSessionId);
+    persistChatSessionId(targetSessionId);
 
     try {
       const response = await chatAPI.getChatHistory(targetSessionId);
@@ -189,12 +230,25 @@ export function useChatSessionCore(
       return;
     }
 
-    let storedSessionId = localStorage.getItem('chatSessionId');
+    let storedSessionId = localStorage.getItem(CHAT_SESSION_ID_STORAGE_KEY);
 
     // fallback 세션이면 새로 생성
     if (storedSessionId && storedSessionId.startsWith('fallback-')) {
       logger.log('fallback 세션 감지, 백엔드 세션 생성을 재시도합니다:', storedSessionId);
-      localStorage.removeItem('chatSessionId');
+      clearStoredChatSessionId();
+      storedSessionId = null;
+    }
+
+    // 복원 윈도우(30일)를 벗어났거나 생성 시각이 없으면 새 세션을 생성한다.
+    // (활성 사용자의 대화방은 30일 윈도우 안에서 그대로 유지된다.)
+    if (
+      storedSessionId &&
+      !isStoredChatSessionRestorable(
+        localStorage.getItem(CHAT_SESSION_CREATED_AT_STORAGE_KEY)
+      )
+    ) {
+      logger.log('저장된 세션 생성 시각이 없거나 만료되어 새 세션을 생성합니다:', storedSessionId);
+      clearStoredChatSessionId();
       storedSessionId = null;
     }
 
@@ -220,76 +274,32 @@ export function useChatSessionCore(
             : [];
 
           setMessages(historyMessages);
+          // 복원 성공 → 생성 시각(TTL)을 갱신해 활성 세션으로 유지한다.
+          persistChatSessionId(storedSessionId);
           setIsSessionInitialized(true);
         } catch (historyError) {
-          // 히스토리 로드 실패 시 새 세션 생성
-          logger.warn('채팅 기록을 불러올 수 없습니다:', historyError);
-          logger.log('세션 유효성 검증을 위해 새 세션 생성');
+          // [대화방 소실 방지] 히스토리 로드 실패를 '세션 폐기'로 승격하지 않는다.
+          //
+          // 과거에는 일시적 네트워크/타임아웃/5xx/멀티 인스턴스 미스 한 번에도
+          // 곧바로 새 세션을 생성해 localStorage의 session_id를 덮어썼다.
+          // 그 결과 백엔드 PostgreSQL(postgres_chat_store)에 멀쩡한 대화방이
+          // 있어도 그 참조를 영구 분실했다.
+          //
+          // OneRAG 백엔드는 대화를 PG에 영속화하고, 전송 시 같은 session_id로
+          // 세션을 복원하므로(진실원본은 PG), 여기서는 저장된 세션을 그대로
+          // 유지하고 빈 화면으로 진입한다. 사용자가 메시지를 보내면 백엔드가
+          // 같은 대화방으로 이어주고, 다음 진입 시 이력도 정상 복원된다.
+          logger.warn('채팅 기록 로드 실패 — 세션 유지(전송 시 복원):', historyError);
+          setSessionId(storedSessionId);
+          setMessages([]);
+          // 생성 시각(TTL)을 갱신해 활성 세션으로 유지한다(일시 오류로 만료시키지 않음).
+          persistChatSessionId(storedSessionId);
+          setIsSessionInitialized(true);
 
-          const startTime = Date.now();
-          const requestLogId = createClientId('session-validate');
-          const requestLog: ApiLog = {
-            id: requestLogId,
-            timestamp: new Date().toISOString(),
-            type: 'request',
-            method: 'POST',
-            endpoint: '/api/chat/session',
-            data: {},
-          };
-          setApiLogs((prev) => [...prev, requestLog]);
-
-          try {
-            const newSessionResponse = await chatAPI.startNewSession();
-            const duration = Date.now() - startTime;
-            const validSessionId = newSessionResponse.data.session_id;
-
-            const responseLog: ApiLog = {
-              id: createClientId('session-validate-res'),
-              timestamp: new Date().toISOString(),
-              type: 'response',
-              method: 'POST',
-              endpoint: '/api/chat/session',
-              data: newSessionResponse.data,
-              status: newSessionResponse.status,
-              duration,
-            };
-            setApiLogs((prev) => [...prev, responseLog]);
-
-            setSessionId(validSessionId);
-            localStorage.setItem('chatSessionId', validSessionId);
-            persistWebSocketToken(validSessionId, newSessionResponse.data.ws_token);
-            setIsSessionInitialized(true);
-
-            showToast({
-              type: 'info',
-              message: '새로운 세션으로 시작합니다.',
-            });
-          } catch (newSessionError: unknown) {
-            const duration = Date.now() - startTime;
-            const errorLog: ApiLog = {
-              id: createClientId('session-validate-err'),
-              timestamp: new Date().toISOString(),
-              type: 'response',
-              method: 'POST',
-              endpoint: '/api/chat/session',
-              data: {
-                error: newSessionError instanceof Error ? newSessionError.message : 'Unknown error',
-              },
-              status: (newSessionError as AxiosError<ApiErrorResponse>)?.response?.status || 0,
-              duration,
-            };
-            setApiLogs((prev) => [...prev, errorLog]);
-
-            // fallback 세션 생성
-            const fallbackSessionId = generateFallbackSessionId();
-            setSessionId(fallbackSessionId);
-            setIsSessionInitialized(true);
-
-            showToast({
-              type: 'warning',
-              message: '백엔드 연결 실패. 오프라인 모드로 동작합니다.',
-            });
-          }
+          showToast({
+            type: 'warning',
+            message: '대화 기록을 불러오지 못했습니다. 메시지를 보내면 이어서 복원됩니다.',
+          });
         }
       } else {
         // 새 세션 생성
@@ -323,7 +333,7 @@ export function useChatSessionCore(
           setApiLogs((prev) => [...prev, responseLog]);
 
           setSessionId(newSessionId);
-          localStorage.setItem('chatSessionId', newSessionId);
+          persistChatSessionId(newSessionId);
           persistWebSocketToken(newSessionId, response.data.ws_token);
           setIsSessionInitialized(true);
         } catch (error: unknown) {
@@ -383,7 +393,7 @@ export function useChatSessionCore(
       const newSessionId = response.data.session_id;
 
       setSessionId(newSessionId);
-      localStorage.setItem('chatSessionId', newSessionId);
+      persistChatSessionId(newSessionId);
       persistWebSocketToken(newSessionId, response.data.ws_token);
       setMessages([]);
       setSessionInfo(null);

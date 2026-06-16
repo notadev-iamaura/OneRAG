@@ -120,8 +120,9 @@ describe('useChatSessionWithDI', () => {
     });
 
     it('저장된 세션이 있으면 히스토리를 로드해야 함', async () => {
-      // 먼저 localStorage에 세션 ID 설정
+      // 복원 가능한 활성 세션(세션 ID + 생성 시각)을 저장해 TTL(30일) 검사를 통과시킨다.
       localStorage.setItem('chatSessionId', 'existing-session');
+      localStorage.setItem('chatSessionCreatedAt', String(Date.now()));
       expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
 
       const mockGetChatHistory = vi.fn().mockResolvedValue({
@@ -248,13 +249,16 @@ describe('useChatSessionWithDI', () => {
       );
     });
 
-    it('히스토리 로드 실패 시 새 세션을 생성해야 함', async () => {
+    it('히스토리 로드 실패 시에도 저장 세션을 폐기하지 않고 보존해야 함', async () => {
+      // [대화방 소실 방지] 일시적 네트워크/5xx 등으로 히스토리 로드가 실패해도,
+      // 백엔드 PostgreSQL에 멀쩡한 대화방이 있을 수 있으므로 세션을 유지한다.
       localStorage.setItem('chatSessionId', 'existing-session');
+      localStorage.setItem('chatSessionCreatedAt', String(Date.now()));
       expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
 
       const mockGetChatHistory = vi.fn().mockRejectedValue(new Error('History not found'));
       const mockStartNewSession = vi.fn().mockResolvedValue({
-        data: { session_id: 'recovered-session' },
+        data: { session_id: 'should-not-be-created' },
         status: 200,
       });
 
@@ -272,10 +276,11 @@ describe('useChatSessionWithDI', () => {
         expect(result.current.isSessionInitialized).toBe(true);
       });
 
-      // 히스토리 로드 실패 후 새 세션 생성
+      // 히스토리 로드는 시도하되, 실패해도 새 세션을 생성하지 않고 기존 세션을 유지한다.
       expect(mockGetChatHistory).toHaveBeenCalledWith('existing-session');
-      expect(mockStartNewSession).toHaveBeenCalled();
-      expect(result.current.sessionId).toBe('recovered-session');
+      expect(mockStartNewSession).not.toHaveBeenCalled();
+      expect(result.current.sessionId).toBe('existing-session');
+      expect(localStorage.getItem('chatSessionId')).toBe('existing-session');
     });
   });
 
