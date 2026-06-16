@@ -96,6 +96,15 @@ class NotionBatchConfig:
     # 속성→본문 결합 시 건너뛸 속성명(제목으로 이미 포함된 엔티티명 컬럼).
     # 빈 목록이면 코드 기본값({"업체명","이름","Name"})을 사용한다(회귀 0).
     skip_property_keys: list[str] = field(default_factory=list)
+    # Notion bool(체크박스) 속성을 인덱싱 텍스트로 렌더링할 라벨. 검색 토큰에
+    # 들어가므로 비한국어 코퍼스는 env로 영어 등으로 오버라이드한다(미설정 시
+    # 한국어 기본 "예"/"아니오" 유지 → 회귀 0).
+    boolean_true_label: str = field(
+        default_factory=lambda: os.getenv("NOTION_BOOLEAN_TRUE_LABEL", "예")
+    )
+    boolean_false_label: str = field(
+        default_factory=lambda: os.getenv("NOTION_BOOLEAN_FALSE_LABEL", "아니오")
+    )
 
 
 # ============================================================================
@@ -553,7 +562,7 @@ class NotionBatchProcessor:
             return value.strip()
 
         if isinstance(value, bool):
-            return "예" if value else "아니오"
+            return self.config.boolean_true_label if value else self.config.boolean_false_label
 
         if isinstance(value, int | float):
             return str(value)

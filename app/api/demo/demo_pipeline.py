@@ -102,6 +102,8 @@ RAG_USER_TEMPLATE = _resolve_prompt("DEMO_RAG_USER_TEMPLATE", DEFAULT_RAG_USER_T
 DEFAULT_CONTEXT_DOC_LABEL = "[문서 {index}]"
 DEFAULT_UNKNOWN_SOURCE = "알 수 없는 출처"
 DEFAULT_NO_DOCS_MESSAGE = "관련 문서를 찾을 수 없습니다."
+# - DEMO_STREAM_TIMEOUT_MESSAGE: 스트리밍 타임아웃 시 사용자에게 노출할 안내 메시지
+DEFAULT_STREAM_TIMEOUT_MESSAGE = "답변 생성이 지연되고 있습니다. 잠시 후 다시 시도해주세요."
 
 # 모듈 로드 시 1회 해석 (env 미설정 시 기본값과 byte-identical)
 CONTEXT_DOC_LABEL = _resolve_prompt(
@@ -109,6 +111,9 @@ CONTEXT_DOC_LABEL = _resolve_prompt(
 )
 UNKNOWN_SOURCE = _resolve_prompt("DEMO_UNKNOWN_SOURCE", DEFAULT_UNKNOWN_SOURCE)
 NO_DOCS_MESSAGE = _resolve_prompt("DEMO_NO_DOCS_MESSAGE", DEFAULT_NO_DOCS_MESSAGE)
+STREAM_TIMEOUT_MESSAGE = _resolve_prompt(
+    "DEMO_STREAM_TIMEOUT_MESSAGE", DEFAULT_STREAM_TIMEOUT_MESSAGE
+)
 
 # 지원 파일 형식
 ALLOWED_EXTENSIONS = {"pdf", "txt", "md", "csv", "docx"}
@@ -542,7 +547,7 @@ class DemoPipeline:
             skip_remaining_stream = True
         except TimeoutError:
             await stream_iter.aclose()
-            first_token = "답변 생성이 지연되고 있습니다. 잠시 후 다시 시도해주세요."
+            first_token = STREAM_TIMEOUT_MESSAGE
             skip_remaining_stream = True
 
         if first_token:

@@ -188,13 +188,57 @@ def document_property_types() -> dict[str, str]:
     return {name: type_category for name, type_category, _ in _document_property_defs()}
 
 
+def _resolve_bm25_tokenization() -> Any:
+    """content(BM25 대상) 필드의 토크나이저를 config에서 해석한다(기본 WORD).
+
+    `weaviate.schema.bm25_tokenization`(문자열: word|whitespace|lowercase|field|
+    trigram|gse|gse_ch|kagome_kr|kagome_ja)를 weaviate Tokenization enum으로
+    매핑한다. 한국어 코퍼스는 kagome_kr, 일본어는 kagome_ja 등으로 BM25 품질을
+    바꿀 수 있다. 미설정/미지원 값/로드 실패 시 WORD로 폴백한다(회귀 0).
+    설치된 weaviate-client에 없는 enum 멤버는 매핑에서 자동 제외해 버전 안전하다.
+    """
+    from weaviate.classes.config import Tokenization
+
+    name_map: dict[str, Any] = {}
+    for key, attr in (
+        ("word", "WORD"),
+        ("whitespace", "WHITESPACE"),
+        ("lowercase", "LOWERCASE"),
+        ("field", "FIELD"),
+        ("trigram", "TRIGRAM"),
+        ("gse", "GSE"),
+        ("gse_ch", "GSE_CH"),
+        ("kagome_kr", "KAGOME_KR"),
+        ("kagome_ja", "KAGOME_JA"),
+    ):
+        member = getattr(Tokenization, attr, None)
+        if member is not None:
+            name_map[key] = member
+
+    try:
+        # 지연 임포트: 모듈 임포트 시 config 로딩 부작용을 피한다.
+        from app.lib.config_loader import load_config
+
+        config = load_config()
+        raw = config.get("weaviate", {}).get("schema", {}).get("bm25_tokenization")
+    except Exception as e:  # 설정 로드 실패는 치명적이지 않다 — 기본 WORD 사용
+        logger.warning(f"BM25 토크나이저 config 로드 실패(WORD 사용): {e}")
+        return Tokenization.WORD
+
+    if isinstance(raw, str):
+        return name_map.get(raw.strip().lower(), Tokenization.WORD)
+    return Tokenization.WORD
+
+
 def _document_schema_properties() -> list[Any]:
     """Return the canonical Documents collection properties.
 
     코어 도메인 무관 필드 + domain.yaml로 정의된 도메인 필드를 합쳐
     weaviate Property 객체 목록으로 변환한다.
     """
-    from weaviate.classes.config import DataType, Property, Tokenization
+    from weaviate.classes.config import DataType, Property
+
+    content_tokenization = _resolve_bm25_tokenization()
 
     type_to_datatype = {
         "text": DataType.TEXT,
@@ -213,7 +257,7 @@ def _document_schema_properties() -> list[Any]:
                     data_type=DataType.TEXT,
                     description=description,
                     skip_vectorization=False,
-                    tokenization=Tokenization.WORD,
+                    tokenization=content_tokenization,
                 )
             )
             continue

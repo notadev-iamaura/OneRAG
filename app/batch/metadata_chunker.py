@@ -35,6 +35,13 @@ logger = get_logger(__name__)
 # `domain.batch.section_keywords`에 정의하여 주입한다(IngestionService 경유).
 DEFAULT_SECTION_KEYWORDS: dict[str, list[str]] = {}
 
+# 섹션 분류/헤더 폴백 라벨 기본값(한국어). 인덱싱 청크의 section/section_class
+# 메타데이터로 저장되므로 비한국어 운영자는 domain.yaml의
+# `domain.batch.default_section_label`/`default_section_header`로 자국어 라벨을
+# 주입한다(미설정 시 아래 한국어 기본값 유지 → 회귀 0).
+DEFAULT_SECTION_LABEL = "기타"  # classify_section 미분류 폴백
+DEFAULT_SECTION_HEADER = "일반"  # split_by_section_header 기본 헤더
+
 # 청킹 대상 필드 기본값 (도메인 중립)
 #
 # 마찬가지로 코드 기본값은 도메인 범용 필드만 포함한다. 특정 도메인 필드명은
@@ -102,7 +109,11 @@ class ChunkingResult:
 # =============================================================================
 
 
-def classify_section(text: str, section_keywords: dict[str, list[str]] | None = None) -> str:
+def classify_section(
+    text: str,
+    section_keywords: dict[str, list[str]] | None = None,
+    default_label: str = DEFAULT_SECTION_LABEL,
+) -> str:
     """
     텍스트를 섹션으로 분류
 
@@ -111,12 +122,14 @@ def classify_section(text: str, section_keywords: dict[str, list[str]] | None = 
     Args:
         text: 분류할 텍스트
         section_keywords: 섹션 분류 키워드 딕셔너리
+        default_label: 미분류 시 폴백 라벨(기본 "기타"). 비한국어 운영자는
+            domain.batch.default_section_label로 자국어 라벨을 주입한다.
 
     Returns:
         섹션명
     """
     text_lower = text.lower()
-    # 키워드가 명시되지 않으면 도메인 중립 기본값(빈 dict) 사용 → 항상 "기타"로 분류.
+    # 키워드가 명시되지 않으면 도메인 중립 기본값(빈 dict) 사용 → 항상 default_label로 분류.
     keywords_dict = section_keywords or DEFAULT_SECTION_KEYWORDS
 
     # 각 섹션별 점수 계산
@@ -132,7 +145,7 @@ def classify_section(text: str, section_keywords: dict[str, list[str]] | None = 
     if scores:
         return max(scores, key=lambda k: scores[k])
 
-    return "기타"
+    return default_label
 
 
 def extract_section_header(text: str) -> str | None:
@@ -180,12 +193,16 @@ def split_by_delimiter(text: str, delimiter_pattern: str = r"[—]{4,}|[-]{8,}")
     return [s.strip() for s in sections if s.strip()]
 
 
-def split_by_section_header(text: str) -> list[tuple[str, str]]:
+def split_by_section_header(
+    text: str, default_header: str = DEFAULT_SECTION_HEADER
+) -> list[tuple[str, str]]:
     """
     섹션 헤더([...])로 텍스트 분할
 
     Args:
         text: 분할할 텍스트
+        default_header: 헤더가 없는 선행 내용에 붙는 기본 헤더(기본 "일반").
+            domain.batch.default_section_header로 자국어 라벨을 주입한다.
 
     Returns:
         [(섹션명, 내용)] 리스트
@@ -195,7 +212,7 @@ def split_by_section_header(text: str) -> list[tuple[str, str]]:
     parts = re.split(pattern, text)
 
     results: list[tuple[str, str]] = []
-    current_header = "일반"
+    current_header = default_header
 
     for part in parts:
         part = part.strip()
@@ -283,6 +300,8 @@ class MetadataChunker:
         overlap_chars: int = OVERLAP_CHARS,
         target_fields: list[str] | None = None,
         section_keywords: dict[str, list[str]] | None = None,
+        default_section_label: str = DEFAULT_SECTION_LABEL,
+        default_section_header: str = DEFAULT_SECTION_HEADER,
     ):
         """
         청커 초기화
@@ -292,6 +311,8 @@ class MetadataChunker:
             overlap_chars: 오버랩 크기 (문자)
             target_fields: 청킹 대상 속성 필드 목록
             section_keywords: 섹션 분류 키워드 딕셔너리
+            default_section_label: 미분류 청크 섹션 폴백 라벨(기본 "기타")
+            default_section_header: 헤더 없는 선행 내용 기본 헤더(기본 "일반")
         """
         self.max_chunk_chars = max_chunk_chars
         self.overlap_chars = overlap_chars
@@ -301,6 +322,9 @@ class MetadataChunker:
         self.section_keywords = (
             section_keywords if section_keywords is not None else dict(DEFAULT_SECTION_KEYWORDS)
         )
+        # 섹션 폴백 라벨(미분류/기본 헤더) — 인덱싱 메타데이터로 저장되므로 외부화.
+        self.default_section_label = default_section_label
+        self.default_section_header = default_section_header
 
         logger.info(
             f"MetadataChunker 초기화: max={max_chunk_chars}자, overlap={overlap_chars}자, "
@@ -368,14 +392,18 @@ class MetadataChunker:
 
         for section_text in sections:
             # 섹션 헤더로 추가 분할
-            header_sections = split_by_section_header(section_text)
+            header_sections = split_by_section_header(
+                section_text, self.default_section_header
+            )
 
             if header_sections:
                 for _header, text in header_sections:
                     # 크기 제한 적용
                     sub_chunks = split_into_chunks(text, self.max_chunk_chars, self.overlap_chars)
                     for sub_chunk in sub_chunks:
-                        section_class = classify_section(sub_chunk, self.section_keywords)
+                        section_class = classify_section(
+                            sub_chunk, self.section_keywords, self.default_section_label
+                        )
                         all_text_chunks.append((section_class, sub_chunk))
             else:
                 # 헤더 없이 그냥 분할
@@ -383,7 +411,9 @@ class MetadataChunker:
                     section_text, self.max_chunk_chars, self.overlap_chars
                 )
                 for sub_chunk in sub_chunks:
-                    section_class = classify_section(sub_chunk, self.section_keywords)
+                    section_class = classify_section(
+                        sub_chunk, self.section_keywords, self.default_section_label
+                    )
                     all_text_chunks.append((section_class, sub_chunk))
 
         # 3단계: Chunk 객체 생성

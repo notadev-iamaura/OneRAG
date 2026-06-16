@@ -55,9 +55,10 @@ class IngestionService:
         """
         config의 도메인 배치 설정으로 MetadataChunker를 생성
 
-        domain.yaml의 `domain.batch.section_keywords`와 `domain.batch.target_fields`를
-        읽어 청커에 주입한다. 설정이 없으면 MetadataChunker 내부의 도메인 중립 기본값을
-        사용한다(OSS 기본 배포 = 도메인 중립).
+        domain.yaml의 `domain.batch.section_keywords`/`target_fields`와 미분류
+        폴백 라벨(`default_section_label`/`default_section_header`)을 읽어 청커에
+        주입한다. 설정이 없으면 MetadataChunker 내부의 도메인 중립/한국어 기본값을
+        사용한다(OSS 기본 배포 = 도메인 중립, 회귀 0).
 
         Returns:
             도메인 설정이 반영된 MetadataChunker 인스턴스
@@ -68,10 +69,19 @@ class IngestionService:
         section_keywords = batch_config.get("section_keywords")
         target_fields = batch_config.get("target_fields")
 
-        return MetadataChunker(
-            section_keywords=section_keywords,
-            target_fields=target_fields,
-        )
+        # 섹션 폴백 라벨은 문자열 기본값이라 None이면 청커 기본을 쓰도록 분기 주입한다.
+        chunker_kwargs: dict[str, Any] = {
+            "section_keywords": section_keywords,
+            "target_fields": target_fields,
+        }
+        default_section_label = batch_config.get("default_section_label")
+        if isinstance(default_section_label, str) and default_section_label.strip():
+            chunker_kwargs["default_section_label"] = default_section_label
+        default_section_header = batch_config.get("default_section_header")
+        if isinstance(default_section_header, str) and default_section_header.strip():
+            chunker_kwargs["default_section_header"] = default_section_header
+
+        return MetadataChunker(**chunker_kwargs)
 
     def _get_title_strip_chars(self) -> list[str]:
         """

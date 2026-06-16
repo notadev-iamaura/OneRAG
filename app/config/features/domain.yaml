@@ -76,6 +76,12 @@ domain:
       - "내용"
       - "설명"
 
+    # 섹션 미분류/기본 헤더 폴백 라벨. 인덱싱 청크의 section/section_class
+    # 메타데이터로 저장된다. 미설정 시 코드 한국어 기본("기타"/"일반") 유지(회귀 0).
+    # 비한국어 운영자는 자국어 라벨로 지정. 예: default_section_label: "Others"
+    default_section_label: null   # classify_section 미분류 폴백(기본 "기타")
+    default_section_header: null  # split_by_section_header 기본 헤더(기본 "일반")
+
     # Notion 속성→본문 결합 시 건너뛸 속성명(제목으로 이미 포함된 엔티티명 컬럼).
     # 미설정/빈 목록이면 코드 기본값({"업체명","이름","Name"})을 사용한다(회귀 0).
     # 비한국/타 도메인 Notion DB는 자신의 제목 속성명을 지정하세요.

@@ -4,16 +4,16 @@ Weaviate Retriever - 하이브리드 검색 (Dense + Sparse BM25)
 주요 기능:
 - 내장 하이브리드 검색 (alpha 파라미터로 가중치 조절)
 - Vector Search (Dense, 3072 dimensions, cosine)
-- BM25 Search (Sparse, 한국어 토크나이저 kagome_kr)
+- BM25 Search (Sparse, 토크나이저는 weaviate.schema.bm25_tokenization 설정, 기본 word)
 - IRetriever 인터페이스 구현
 - Phase 2: BM25 고도화 (동의어 확장, 불용어 제거, 사용자 사전)
 
 데이터 구조:
 - vector: 3072차원 float 배열 (Gemini embedding-001)
-- content: 텍스트 내용 (tokenization: kagome_kr)
+- content: 텍스트 내용 (tokenization: config 설정값, 기본 word)
 - source_file: 출처 파일명
 - file_type: 파일 타입
-- keywords: LLM 추출 키워드 배열 (tokenization: kagome_kr)
+- keywords: LLM 추출 키워드 배열
 
 의존성:
 - weaviate-client: Weaviate Python 클라이언트 (v4+)
@@ -102,7 +102,7 @@ class WeaviateRetriever:
     특징:
     - Weaviate 내장 하이브리드 검색 (alpha 파라미터)
     - Gemini 3072d embedding 지원
-    - BM25 Full-Text Search (한국어 토크나이저 kagome_kr)
+    - BM25 Full-Text Search (토크나이저 설정 가능, 기본 word)
     - Client-side RRF 불필요 (Weaviate 내장)
 
     아키텍처:
@@ -112,10 +112,10 @@ class WeaviateRetriever:
 
     데이터 스키마:
     - vector: float[] (3072 dimensions)
-    - content: string (tokenization: kagome_kr)
+    - content: string (tokenization: config 설정값, 기본 word)
     - source_file: string
     - file_type: string
-    - keywords: string[] (tokenization: kagome_kr)
+    - keywords: string[]
     """
 
     def __init__(

@@ -4,7 +4,7 @@ Weaviate 연결 및 관리 모듈
 주요 기능:
 - Weaviate Vector Database 연결 (로컬/프로덕션)
 - Collection 관리 및 Health Check
-- 한국어 토크나이저(kagome_kr) 지원
+- BM25 토크나이저 설정 가능 (weaviate.schema.bm25_tokenization, 기본 word)
 - 연결 풀링 및 재시도 로직
 
 의존성:
