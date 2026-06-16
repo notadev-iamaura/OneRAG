@@ -420,6 +420,111 @@ const transformApiDocument = (apiDoc: ApiDocument): Document => {
   };
 };
 
+// 분할(chunked) 업로드 설정 상수
+// 임계값 이상의 파일은 단일 multipart POST 대신 분할 업로드 경로로 라우팅한다.
+// 리버스 프록시 바디 한도(nginx client_max_body_size, Cloud Run 32MB 등)를 우회하기 위함이다.
+const CHUNKED_UPLOAD_THRESHOLD_BYTES = 30 * 1024 * 1024; // 30MB
+// 서버가 권장 chunk_size를 내려주지 못한 경우 사용할 기본 조각 크기.
+const DEFAULT_CHUNKED_UPLOAD_CHUNK_SIZE_BYTES = 8 * 1024 * 1024; // 8MB
+
+// 백엔드 분할 업로드 응답 계약(app/api/upload.py 확인).
+// POST /api/upload/chunked/start → ChunkedUploadStartResponse
+type ChunkedUploadStartResponse = {
+  job_id: string;
+  message: string;
+  filename: string;
+  file_size: number;
+  chunk_size: number;
+  timestamp: string;
+};
+
+// POST /api/upload/chunked/{job_id}/chunk → ChunkedUploadChunkResponse
+type ChunkedUploadChunkResponse = {
+  job_id: string;
+  status: string;
+  received_size: number;
+  file_size: number;
+  progress: number;
+  message: string;
+  timestamp: string;
+};
+
+/**
+ * 대용량 파일을 분할 업로드한다.
+ *
+ * 백엔드 계약(추측 금지, app/api/upload.py 확인):
+ * 1) POST /api/upload/chunked/start — JSON 바디 {filename, content_type?, file_size, metadata?}
+ *    → {job_id, chunk_size, ...}. chunk_size는 서버 권장 조각 크기(8MB).
+ * 2) POST /api/upload/chunked/{job_id}/chunk — multipart(form-data): 파일 필드 `chunk` + 폼 필드 `offset`(정수).
+ *    offset은 서버가 지금까지 수신한 누적 바이트(received_size)와 정확히 일치해야 하며(순차성),
+ *    불일치 시 409를 반환한다. 응답의 received_size를 다음 offset으로 사용한다.
+ * 3) POST /api/upload/chunked/{job_id}/complete — JSON 바디 {metadata?}
+ *    → 단일 업로드와 동일한 UploadResponse({job_id, message, filename, ...}). 별도 정규화 불필요.
+ *
+ * 단일테넌트(OneRAG)이므로 멀티테넌트 operator-scoping(company_id 등)은 포함하지 않는다.
+ *
+ * @param file 업로드 대상 파일
+ * @param metadata 시작/완료 요청에 함께 전달할 메타데이터(없으면 undefined)
+ * @param onProgress 진행률 콜백(조각 단위 1~99%, 완료 시 100%)
+ */
+const uploadDocumentInChunks = async (
+  file: File,
+  metadata: Record<string, unknown> | undefined,
+  onProgress?: (progress: number) => void,
+) => {
+  // 1) 분할 업로드 시작: job_id와 서버 권장 chunk_size를 발급받는다.
+  const startResponse = await api.post<ChunkedUploadStartResponse>(
+    '/api/upload/chunked/start',
+    {
+      filename: file.name,
+      content_type: file.type || undefined,
+      file_size: file.size,
+      metadata,
+    },
+  );
+
+  const jobId = startResponse.data.job_id;
+  // 서버가 chunk_size를 내려주면 그대로 따르고(권장), 없으면 기본값으로 폴백한다(graceful).
+  const chunkSize = startResponse.data.chunk_size || DEFAULT_CHUNKED_UPLOAD_CHUNK_SIZE_BYTES;
+
+  // 2) 조각 전송: 순차 offset으로 file.slice 루프. 백엔드 received_size를 다음 offset으로 신뢰한다.
+  let offset = 0;
+  while (offset < file.size) {
+    const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+    const formData = new FormData();
+    formData.append('chunk', chunk, `${file.name}.part`);
+    formData.append('offset', String(offset));
+
+    const chunkResponse = await api.post<ChunkedUploadChunkResponse>(
+      `/api/upload/chunked/${jobId}/chunk`,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      },
+    );
+
+    // 서버가 기록한 누적 수신 크기를 다음 offset으로 사용해 순차성을 보장한다.
+    offset = chunkResponse.data.received_size;
+    if (onProgress) {
+      // 조각 진행률은 1~99% 구간으로 환산한다(완료 단계 100%와 분리).
+      onProgress(Math.max(1, Math.min(99, Math.round((offset * 100) / file.size))));
+    }
+  }
+
+  // 3) 완료: 백엔드가 3중 검증(선언/수신/실측 크기 일치) 후 단일 업로드와 동일한 처리 경로로 합류한다.
+  // complete 응답은 단일 업로드와 동일한 UploadResponse 형태이므로 호출부에서 추가 정규화가 필요 없다.
+  const completeResponse = await api.post<UploadResponse>(
+    `/api/upload/chunked/${jobId}/complete`,
+    { metadata },
+  );
+  if (onProgress) {
+    onProgress(100);
+  }
+  return completeResponse;
+};
+
 // Document API
 export const documentAPI = {
   // 문서 목록 조회
@@ -457,6 +562,15 @@ export const documentAPI = {
 
   // 문서 업로드
   upload: (file: File, onProgress?: (progress: number) => void, settings?: { splitterType?: string; chunkSize?: number; chunkOverlap?: number }) => {
+    // 임계값을 초과하는 대용량 파일은 분할 업로드 경로로 라우팅한다.
+    // (단일 multipart POST는 프록시 바디 한도에 막히므로) 임계값 이하 파일은 기존 단일 경로를 완전히 보존한다.
+    if (file.size > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
+      // 분할 경로에는 플랫 폼 필드(splitter_type 등)를 받는 엔드포인트가 없으므로,
+      // 설정을 metadata.requested_upload_settings로 보존해 전달한다(백엔드 best-effort 보관).
+      const metadata = settings ? { requested_upload_settings: settings } : undefined;
+      return uploadDocumentInChunks(file, metadata, onProgress);
+    }
+
     const formData = new FormData();
     formData.append('file', file);
 
