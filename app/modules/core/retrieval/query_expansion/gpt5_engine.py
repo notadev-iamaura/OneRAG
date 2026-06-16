@@ -40,7 +40,12 @@ logger = structlog.get_logger(__name__)
 _SIMPLE_QUERY_MAX_CHARS = 10
 _SIMPLE_QUERY_MAX_TOKENS = 4
 _QUERY_PUNCTUATION = ("?", "？", "!", "！")
-_KOREAN_JAPANESE_QUESTION_MARKERS = (
+# 단순 쿼리 판정용 질문 마커의 코드 기본값(언어 중립 명칭, ko 최소셋).
+# 범용화: 이전 상수명 _KOREAN_JAPANESE_QUESTION_MARKERS는 일본어 포크 출신을
+# 노출했고 일본어 마커를 기본 포함했다. 이제 코드 기본은 ko 최소셋만 두고,
+# 일본어/기타 언어 마커는 query_expansion.yaml question_markers 설정으로 추가한다
+# (코드 포크 불필요). 예시는 해당 yaml의 주석 참고.
+_DEFAULT_QUESTION_MARKERS = (
     "어떻게",
     "왜",
     "무엇",
@@ -57,15 +62,6 @@ _KOREAN_JAPANESE_QUESTION_MARKERS = (
     "나요",
     "습니까",
     "입니까",
-    "なぜ",
-    "どう",
-    "何",
-    "いつ",
-    "どこ",
-    "誰",
-    "どれ",
-    "ですか",
-    "ますか",
 )
 _ENGLISH_QUESTION_RE = re.compile(
     r"\b(?:how|why|what|when|where|which|who|whom|whose)\b",
@@ -144,7 +140,9 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
             expansion_language_en: 영어 시스템 메시지에 삽입되는 언어 이름
                 (기본값: "Korean"). 기존 영어 시스템 메시지 동작을 보존한다.
             question_markers: 단순 쿼리 판정용 질문 마커 목록 오버라이드.
-                None이면 기존 한/일 질문 마커 기본값을 사용한다.
+                None이면 코드 기본값(_DEFAULT_QUESTION_MARKERS = ko 최소셋)을
+                사용한다. 일본어/기타 언어 마커는 query_expansion.yaml
+                question_markers 설정으로 추가한다(코드 포크 불필요).
 
         Raises:
             ValueError: llm_factory가 None인 경우
@@ -171,7 +169,7 @@ class GPT5QueryExpansionEngine(IQueryExpansionEngine):
         self.question_markers: tuple[str, ...] = (
             tuple(question_markers)
             if question_markers is not None
-            else _KOREAN_JAPANESE_QUESTION_MARKERS
+            else _DEFAULT_QUESTION_MARKERS
         )
 
         # TTL 캐시 초기화

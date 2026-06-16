@@ -54,12 +54,28 @@ def test_from_config_defaults_korean_without_setting() -> None:
     assert engine.expansion_language == "한국어"
 
 
-def test_question_markers_default_includes_korean_japanese() -> None:
-    """질문 마커 기본값은 기존 한/일 마커를 포함한다(하위 호환)."""
+def test_question_markers_default_is_korean_only() -> None:
+    """질문 마커 기본값은 한국어 최소셋만 포함한다(일본어 마커 제거, JP 잔재 제거)."""
     engine = GPT5QueryExpansionEngine(llm_factory=MagicMock())
-    # 기존 한국어 질문 마커로 복잡 쿼리 판정이 유지된다
+    # 한국어 질문 마커로 복잡 쿼리 판정이 유지된다(회귀 0)
     assert engine._is_simple_query("어떻게 복구하나요") is False
+    # 일본어 의문사 마커는 더 이상 기본값에 없다.
+    # "なぜ"(2자/1토큰/구두점 없음)는 마커가 없으므로 단순 쿼리로 판정된다.
+    assert engine._is_simple_query("なぜ") is True
+
+
+def test_japanese_markers_must_be_added_via_config() -> None:
+    """일본어 질문 마커는 코드 포크 없이 config로 추가하면 다시 인식된다(범용화)."""
+    config = {
+        "query_expansion": {
+            "question_markers": ["なぜ", "どう", "ですか", "어떻게"],
+        }
+    }
+    engine = GPT5QueryExpansionEngine.from_config(config, llm_factory=MagicMock())
+    # config로 추가한 일본어 마커가 질문 신호로 인식된다
     assert engine._is_simple_query("なぜ") is False
+    # 함께 나열한 한국어 마커도 유효하다
+    assert engine._is_simple_query("어떻게 복구하나요") is False
 
 
 def test_question_markers_override_from_config() -> None:
