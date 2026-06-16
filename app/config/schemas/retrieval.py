@@ -188,6 +188,37 @@ class ContextExpansionConfig(BaseConfig):
     )
 
 
+class NamedDocumentRescueConfig(BaseConfig):
+    """
+    명시 문서명 기반 컨텍스트 보강(named-document chunk rescue) 설정
+
+    사용자가 질문에서 파일명(확장자) 또는 따옴표 인용구로 특정 문서를 지목하면,
+    벡터 검색이 그 문서를 놓쳐도 list_documents/get_document_chunks로 해당 문서
+    청크를 직접 fetch해 검색 결과 앞에 prepend합니다. 기본값은 비활성화입니다.
+
+    인접 청크 확장(context_expansion)과는 독립된 별개 경로입니다.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="명시 문서명 기반 컨텍스트 보강 활성화 여부",
+    )
+
+    max_chunks: int = Field(
+        default=4,
+        ge=1,
+        le=12,
+        description="명시 문서에서 prepend할 최대 청크 수 (1-12)",
+    )
+
+    digest_max_lines: int = Field(
+        default=40,
+        ge=20,
+        le=120,
+        description="명시 문서 digest로 뽑을 최대 라인 수 (20-120)",
+    )
+
+
 class RAGConfig(BaseConfig):
     """
     RAG 파이프라인 설정
@@ -235,6 +266,11 @@ class RAGConfig(BaseConfig):
     context_expansion: ContextExpansionConfig = Field(
         default_factory=ContextExpansionConfig,
         description="인접 청크 컨텍스트 확장 설정",
+    )
+
+    named_document_rescue: NamedDocumentRescueConfig = Field(
+        default_factory=NamedDocumentRescueConfig,
+        description="명시 문서명 기반 컨텍스트 보강 설정",
     )
 
     @field_validator("rerank_top_k")

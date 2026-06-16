@@ -100,6 +100,134 @@ _LATIN_PHRASE_PATTERN = re.compile(r"\b[A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z][A-Za-z
 # 캘린더 연도(20xx)만 매칭(언어무관). JP fiscal(N年度) 휴리스틱은 채택하지 않는다.
 _CALENDAR_YEAR_PATTERN = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
 
+# ============================================================================
+# 명시 문서명 기반 컨텍스트 보강(named-document chunk rescue) 패턴 (GAP #1)
+# ============================================================================
+# 사용자가 질문에서 파일명(확장자) 또는 따옴표 인용구로 특정 문서를 지목하면,
+# 벡터 검색이 그 문서를 놓쳐도 list_documents/get_document_chunks로 해당 문서
+# 청크를 직접 fetch해 검색 결과 앞에 prepend한다. JP의 일본어 전용 신호어
+# (_japanese_signal_terms)·표/행(row/컬럼) 휴리스틱은 제거하고 범용 패턴만 채택.
+#
+# 파일명: 따옴표(ASCII/유니코드)로 감싼 `...확장자` 형태. 확장자는 GAP 명세 9종.
+_DOCUMENT_FILENAME_PATTERN = re.compile(
+    r"""['"“”‘’「」『』]([^'"“”‘’「」『』]+?\.(?:pdf|docx|pptx|xlsx|csv|txt|md|html|json))['"“”‘’「」『』]"""
+    r"""|((?:[^\s'"“”‘’「」『』])+?\.(?:pdf|docx|pptx|xlsx|csv|txt|md|html|json))(?![A-Za-z0-9])""",
+    re.IGNORECASE,
+)
+# 따옴표 인용구(3자 이상). 파일명으로 이미 잡힌 것은 소비자가 제외한다.
+_QUOTED_TEXT_PATTERN = re.compile(r"""['"“”‘’「」『』]([^'"“”‘’「」『』]{3,})['"“”‘’「」『』]""")
+# 본문 라인에서 고가치 신호(연락처/URL/숫자+단위/날짜)를 식별하는 범용 패턴.
+# JP의 일본어 전용 토큰(会社名/円/株式会社 등)은 제거하고 언어무관 신호만 둔다.
+_NAMED_DOCUMENT_HIGH_VALUE_PATTERN = re.compile(
+    r"(?:https?://|www\.|tel|fax|e-?mail|[0-9]+(?:\.[0-9]+)?\s*(?:%|kg|g|mm|cm|km|m|usd|원|\$|€|£)"
+    r"|\b20\d{2}[-/.]?\d{0,2}[-/.]?\d{0,2}\b)",
+    re.IGNORECASE,
+)
+# 매칭용 토큰화 패턴: ASCII 영숫자 런 또는 CJK(한/중/일) 문자 런.
+_NAMED_DOCUMENT_TOKEN_PATTERN = re.compile(
+    r"[a-z0-9]+|[぀-ヿ㐀-䶿一-鿿가-힣]+"
+)
+# 문서 목록 조회 시 한 번에 가져올 최대 문서 수(명시 문서 매칭용 풀스캔).
+_NAMED_DOCUMENT_LIST_PAGE_SIZE = 10000
+
+
+def _normalize_named_document_text(value: str | None) -> str:
+    """명시 문서 매칭/스코어링용 정규화(GAP #1, 언어무관).
+
+    NFKC 정규화 + lower 후 공백을 제거해, 전각/반각·대소문자·공백 차이에 무관하게
+    파일명/본문 토큰을 비교할 수 있게 한다.
+    """
+    if not value:
+        return ""
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", value).lower())
+
+
+def _requested_document_filenames(message: str) -> list[str]:
+    """질문에서 지목된 문서 파일명을 추출한다(GAP #1).
+
+    따옴표로 감싼 파일명과 비따옴표(공백 구분) 파일명을 모두 인식하며,
+    등장 순서를 보존한 채 중복을 제거한다.
+    """
+    filenames: list[str] = []
+    for match in _DOCUMENT_FILENAME_PATTERN.finditer(message):
+        filename = (match.group(1) or match.group(2) or "").strip()
+        if filename:
+            filenames.append(filename)
+    return list(dict.fromkeys(filenames))
+
+
+def _quoted_content_hints(message: str) -> list[str]:
+    """질문의 따옴표 인용구를 추출한다(GAP #1, 파일명 제외).
+
+    파일명으로 이미 인식된 따옴표 내용은 제외하고, 정규화 키 기준 중복을 제거한다.
+    """
+    filenames = {_normalize_named_document_text(name) for name in _requested_document_filenames(message)}
+    hints: list[str] = []
+    for match in _QUOTED_TEXT_PATTERN.finditer(message):
+        hint = _normalize_named_document_text(match.group(1).strip())
+        if hint and hint not in filenames:
+            hints.append(hint)
+    return list(dict.fromkeys(hint for hint in hints if hint))
+
+
+def _named_document_match_terms(query: str) -> set[str]:
+    """본문 매칭용 질의 토큰 집합을 만든다(GAP #1, 언어무관).
+
+    ASCII 토큰은 3자 이상만, CJK 토큰은 3~8자 n-gram으로 확장해 부분 일치를 잡는다.
+    토큰 폭증을 막기 위해 상한(240)을 둔다.
+    """
+    normalized_query = _normalize_named_document_text(query)
+    terms: set[str] = set()
+    for token in _NAMED_DOCUMENT_TOKEN_PATTERN.findall(normalized_query):
+        if token.isascii():
+            if len(token) >= 3:
+                terms.add(token)
+            continue
+        max_size = min(8, len(token))
+        for size in range(3, max_size + 1):
+            for start in range(0, len(token) - size + 1):
+                terms.add(token[start : start + size])
+                if len(terms) >= 240:
+                    return terms
+    return terms
+
+
+def _document_matches_requested_filename(filename: str, document: Any) -> bool:
+    """문서 메타데이터가 지목 파일명과 일치하는지 판정한다(GAP #1).
+
+    파일명 전체와 확장자 제거 stem을 모두 정규화해 비교하므로, 경로/확장자/표기
+    차이에 관대하게 매칭한다.
+    """
+    requested = _normalize_named_document_text(os.path.basename(filename))
+    requested_stem = _normalize_named_document_text(
+        os.path.splitext(os.path.basename(filename))[0]
+    )
+    metadata = _document_metadata(document)
+    candidates: list[Any] = [
+        metadata.get("source_file"),
+        metadata.get("filename"),
+        metadata.get("document_name"),
+        metadata.get("file_name"),
+    ]
+    if isinstance(document, dict):
+        candidates.extend(
+            [
+                document.get("filename"),
+                document.get("document_name"),
+                document.get("source_file"),
+            ]
+        )
+    for candidate in candidates:
+        if not isinstance(candidate, str) or not candidate:
+            continue
+        normalized = _normalize_named_document_text(os.path.basename(candidate))
+        normalized_stem = _normalize_named_document_text(
+            os.path.splitext(os.path.basename(candidate))[0]
+        )
+        if normalized == requested or normalized_stem == requested_stem:
+            return True
+    return False
+
 
 def _is_numeric_score(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool)
@@ -1857,6 +1985,319 @@ class RAGPipeline:
             )
         return expanded
 
+    # ========================================================================
+    # 명시 문서명 기반 컨텍스트 보강 (named-document chunk rescue) - GAP #1
+    # ========================================================================
+    def _resolve_named_document_rescue(self) -> tuple[bool, int, int]:
+        """명시 문서 보강 설정을 해석한다(opt-in, 기본 OFF).
+
+        Returns:
+            (enabled, max_chunks, digest_max_lines)
+        """
+        rag_config = self.config.get("rag", {})
+        configured = rag_config.get("named_document_rescue", {})
+        rescue_config = configured if isinstance(configured, dict) else {}
+
+        enabled = _coerce_bool(rescue_config.get("enabled"), default=False)
+        max_chunks = _coerce_bounded_int(rescue_config.get("max_chunks"), 4, 1, 12)
+        digest_max_lines = _coerce_bounded_int(
+            rescue_config.get("digest_max_lines"), 40, 20, 120
+        )
+        return enabled, max_chunks, digest_max_lines
+
+    async def _list_documents_for_named_rescue(self) -> list[dict[str, Any]]:
+        """retriever에서 문서 목록을 조회한다(GAP #1, 미지원 시 빈 리스트)."""
+        retrieval_module = self.retrieval_module
+        if asyncio.iscoroutine(retrieval_module) or isinstance(
+            retrieval_module, asyncio.Future
+        ):
+            retrieval_module = await retrieval_module
+
+        method = getattr(retrieval_module, "list_documents", None)
+        if not callable(method):
+            orchestrator = getattr(retrieval_module, "orchestrator", None)
+            method = getattr(orchestrator, "list_documents", None)
+        if not callable(method):
+            logger.debug("명시 문서 보강 스킵 - list_documents 미지원")
+            return []
+
+        try:
+            payload = await method(page=1, page_size=_NAMED_DOCUMENT_LIST_PAGE_SIZE)
+        except NotImplementedError:
+            logger.debug("명시 문서 보강 스킵 - list_documents 미구현")
+            return []
+        except Exception as exc:
+            logger.warning(
+                "명시 문서 목록 조회 실패 - 원본 검색 결과 유지",
+                extra={"error": str(exc)},
+                exc_info=True,
+            )
+            return []
+
+        if isinstance(payload, dict) and isinstance(payload.get("documents"), list):
+            return [doc for doc in payload["documents"] if isinstance(doc, dict)]
+        if isinstance(payload, list):
+            return [doc for doc in payload if isinstance(doc, dict)]
+        return []
+
+    async def _get_chunks_for_named_rescue(self, document_id: str) -> list[Any]:
+        """지목 문서의 전체 청크를 조회한다(GAP #1, 미지원/실패 시 빈 리스트)."""
+        retrieval_module = self.retrieval_module
+        if asyncio.iscoroutine(retrieval_module) or isinstance(
+            retrieval_module, asyncio.Future
+        ):
+            retrieval_module = await retrieval_module
+
+        method = getattr(retrieval_module, "get_document_chunks", None)
+        if not callable(method):
+            orchestrator = getattr(retrieval_module, "orchestrator", None)
+            method = getattr(orchestrator, "get_document_chunks", None)
+        if not callable(method):
+            return []
+
+        try:
+            chunks = await method(document_id)
+        except NotImplementedError:
+            return []
+        except Exception as exc:
+            logger.warning(
+                "명시 문서 청크 조회 실패 - 해당 문서 보강 생략",
+                extra={"document_id": document_id, "error": str(exc)},
+                exc_info=True,
+            )
+            return []
+        return chunks if isinstance(chunks, list) else []
+
+    def _named_document_chunk_result(
+        self,
+        chunk: Any,
+        document_record: dict[str, Any],
+        score: float,
+    ) -> SearchResult | None:
+        """청크를 보강용 SearchResult로 변환한다(GAP #1)."""
+        content = _document_content(chunk)
+        if not content.strip():
+            return None
+
+        metadata = dict(_document_metadata(chunk))
+        metadata.pop("content", None)
+        metadata.pop("embedding", None)
+        metadata["named_document_rescue"] = True
+        metadata.setdefault("document_id", document_record.get("id"))
+        metadata.setdefault("source_file", document_record.get("filename"))
+        metadata.setdefault("file_type", document_record.get("file_type"))
+
+        chunk_id = _document_value(chunk, "id")
+        if chunk_id in (None, ""):
+            document_id = metadata.get("document_id") or "unknown"
+            chunk_index = metadata.get("chunk_index", metadata.get("chunk", "na"))
+            chunk_id = f"{document_id}:named:{chunk_index}"
+        return SearchResult(
+            id=str(chunk_id), content=content, score=score, metadata=metadata
+        )
+
+    def _rank_named_document_chunks(
+        self,
+        message: str,
+        chunks: list[Any],
+        document_record: dict[str, Any],
+        max_chunks: int,
+    ) -> list[SearchResult]:
+        """지목 문서 청크를 질의 관련성 기준으로 정렬해 상위 N개를 반환한다(GAP #1)."""
+        terms = _named_document_match_terms(message)
+        quoted_hints = _quoted_content_hints(message)
+        scored_chunks: list[tuple[int, int, SearchResult]] = []
+        for index, chunk in enumerate(chunks):
+            result = self._named_document_chunk_result(chunk, document_record, 1.0)
+            if result is None:
+                continue
+            normalized_content = _normalize_named_document_text(result.content)
+            content_score = sum(len(term) for term in terms if term in normalized_content)
+            content_score += sum(
+                len(hint) * 3 for hint in quoted_hints if hint in normalized_content
+            )
+            chunk_index = _context_chunk_index(result)
+            stable_index = chunk_index if chunk_index is not None else index
+            scored_chunks.append((content_score, stable_index, result))
+
+        if not scored_chunks:
+            return []
+
+        ranked = sorted(scored_chunks, key=lambda item: (-item[0], item[1]))
+        selected = ranked[:max_chunks]
+        # 질의와 겹치는 라인이 전혀 없으면(최고점=0) 원래 청크 순서대로 앞부분을 제공한다.
+        if selected and selected[0][0] == 0:
+            selected = sorted(scored_chunks, key=lambda item: item[1])[:max_chunks]
+
+        results: list[SearchResult] = []
+        for offset, (_, _, result) in enumerate(selected):
+            # 실제 히트보다 약간 낮은 점수대로 두어 정렬/표기 오염을 방지한다.
+            result.score = max(0.95 - (offset * 0.01), 0.5)
+            results.append(result)
+        return results
+
+    def _named_document_digest_result(
+        self,
+        message: str,
+        chunks: list[Any],
+        document_record: dict[str, Any],
+        max_lines: int,
+    ) -> SearchResult | None:
+        """지목 문서 전체에서 질의 관련 라인을 모아 digest 결과를 만든다(GAP #1).
+
+        벡터 검색이 놓친 문서라도 사용자가 명시한 이상, 전체에서 후보 근거를 한 번에
+        제공해 답변 누락을 막는다. _generation_only로 표기해 인접 청크 확장/카운트에서
+        제외되도록 한다.
+        """
+        terms = _named_document_match_terms(message)
+        quoted_hints = _quoted_content_hints(message)
+        scored_lines: list[tuple[int, int, str]] = []
+        seen: set[str] = set()
+
+        for chunk_order, chunk in enumerate(chunks):
+            chunk_index = _context_chunk_index(chunk)
+            stable_chunk_index = chunk_index if chunk_index is not None else chunk_order
+            content = _document_content(chunk)
+            for line_order, raw_line in enumerate(content.splitlines()):
+                line = " ".join(raw_line.split())
+                if not line:
+                    continue
+                if len(line) > 260:
+                    line = f"{line[:257]}..."
+                normalized_line = _normalize_named_document_text(line)
+                if not normalized_line or normalized_line in seen:
+                    continue
+
+                score = 0
+                if any(hint and hint in normalized_line for hint in quoted_hints):
+                    score += 80
+                score += sum(min(len(term), 12) for term in terms if term in normalized_line)
+                if _NAMED_DOCUMENT_HIGH_VALUE_PATTERN.search(line):
+                    score += 10
+                if score <= 0:
+                    continue
+
+                seen.add(normalized_line)
+                scored_lines.append(
+                    (
+                        score,
+                        (stable_chunk_index * 1000) + line_order,
+                        f"chunk {stable_chunk_index} line {line_order + 1}: {line}",
+                    )
+                )
+
+        if not scored_lines:
+            return None
+
+        selected = sorted(scored_lines, key=lambda item: (-item[0], item[1]))[:max_lines]
+        selected = sorted(selected, key=lambda item: item[1])
+        digest_lines = [
+            "named_document_digest: 질문에 명시된 문서 전체에서 뽑은 관련 후보 근거입니다.",
+            *[line for _, _, line in selected],
+        ]
+
+        document_id = str(document_record.get("id") or "named-document")
+        filename = str(
+            document_record.get("filename") or document_record.get("source_file") or ""
+        )
+        metadata: dict[str, Any] = {
+            "document_id": document_id,
+            "source_file": filename,
+            "file_type": document_record.get("file_type"),
+            "chunk_index": -1,
+            "named_document_digest": True,
+            "_generation_only": True,
+        }
+        return SearchResult(
+            id=f"{document_id}:named-digest",
+            content="\n".join(digest_lines),
+            score=0.99,
+            metadata=metadata,
+        )
+
+    async def prepend_named_document_chunks(
+        self,
+        message: str,
+        ranked_results: list[Any],
+        options: dict[str, Any],
+    ) -> list[Any]:
+        """질문에 명시된 문서의 청크를 검색 결과 앞에 prepend한다(GAP #1, 기본 OFF).
+
+        사용자가 파일명(확장자)이나 따옴표 인용구로 특정 문서를 지목하면, 벡터 검색이
+        그 문서를 놓쳐도 list_documents/get_document_chunks로 직접 fetch해 digest +
+        ranked chunks를 앞에 붙인다. 인접 청크 확장(expand_context_documents)과는
+        독립된 별개 경로이며, 미지원 retriever면 graceful no-op으로 원본을 유지한다.
+
+        Args:
+            message: 사용자 질문(원문)
+            ranked_results: 리랭킹까지 끝난 검색 결과
+            options: 요청 옵션(현재 미사용, 시그니처 호환/확장 여지용)
+
+        Returns:
+            보강된 결과(앞: 명시 문서 digest/청크, 뒤: 원본). no-op이면 원본 그대로.
+        """
+        enabled, max_chunks, digest_max_lines = self._resolve_named_document_rescue()
+        if not enabled or not ranked_results:
+            return ranked_results
+
+        requested_filenames = _requested_document_filenames(message)
+        if not requested_filenames:
+            return ranked_results
+
+        document_records = await self._list_documents_for_named_rescue()
+        if not document_records:
+            return ranked_results
+
+        rescued: list[SearchResult] = []
+        for filename in requested_filenames:
+            matching_records = [
+                document
+                for document in document_records
+                if _document_matches_requested_filename(filename, document)
+            ]
+            # 동명 문서가 여럿이어도 첫 매칭 1건만 보강해 컨텍스트 폭증을 막는다.
+            for record in matching_records[:1]:
+                document_id = record.get("id")
+                if document_id in (None, ""):
+                    continue
+                chunks = await self._get_chunks_for_named_rescue(str(document_id))
+                if not chunks:
+                    continue
+                digest = self._named_document_digest_result(
+                    message, chunks, record, digest_max_lines
+                )
+                if digest is not None:
+                    rescued.append(digest)
+                rescued.extend(
+                    self._rank_named_document_chunks(
+                        message, chunks, record, max_chunks
+                    )
+                )
+
+        if not rescued:
+            return ranked_results
+
+        # 명시 문서 보강 결과를 앞에, 원본을 뒤에 두고 청크 동일성 기준 중복을 제거한다.
+        expanded: list[Any] = []
+        seen: set[tuple[Any, ...]] = set()
+        for document in [*rescued, *ranked_results]:
+            identity = _context_chunk_identity(document)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            expanded.append(document)
+
+        logger.info(
+            "명시 문서명 기반 컨텍스트 보강 완료",
+            extra={
+                "requested_filenames": requested_filenames,
+                "rescued_chunks": len(rescued),
+                "base_count": len(ranked_results),
+                "expanded_count": len(expanded),
+            },
+        )
+        return expanded
+
     def _resolve_rag_mode(self, options: dict[str, Any]) -> str:
         """Resolve local/grok_search/grok_answer without changing default local flow."""
         explicit_mode = options.get("rag_mode") or options.get("grok_mode")
@@ -2441,13 +2882,19 @@ class RAGPipeline:
                     debug_trace_data["retrieved_documents"][i]["rerank_score"] = rerank_score
 
         tracker.start_stage("expand_context")
-        context_documents = await self.expand_context_documents(rerank_results.documents, options)
+        # 명시 문서명 기반 보강(GAP #1, 기본 OFF): 질문에 파일명/인용구로 지목된 문서를
+        # 검색이 놓쳤을 때 그 문서 청크를 결과 앞에 prepend한다. 인접 청크 확장과는
+        # 별개 경로이며, 보강된 결과를 인접 청크 확장의 입력으로 넘겨 일관 처리한다.
+        base_documents = await self.prepend_named_document_chunks(
+            message, rerank_results.documents, options
+        )
+        context_documents = await self.expand_context_documents(base_documents, options)
         tracker.end_stage("expand_context")
 
         tracker.start_stage("generate_answer")
         generation_options = {**options}
-        # 인접 청크 확장으로 문서가 늘어났을 때만 프롬프트 한도를 상향(20)해
-        # 실제 검색 히트가 이웃 청크에 밀려 프롬프트에서 빠지지 않게 한다(#3).
+        # 컨텍스트 확장/명시 문서 보강으로 문서가 늘어났을 때만 프롬프트 한도를 상향(20)해
+        # 실제 검색 히트가 이웃/보강 청크에 밀려 프롬프트에서 빠지지 않게 한다(#3).
         if len(context_documents) > len(rerank_results.documents):
             generation_options.setdefault("max_context_documents", 20)
         if sql_search_result and sql_search_result.used:
@@ -2496,11 +2943,13 @@ class RAGPipeline:
             topic=self.extract_topic_func(message),
             processing_time=time.time() - start_time,
             search_count=retrieval_results.count,
-            # 인접 청크 확장으로 추가된 이웃 청크는 실제 히트가 아니므로 카운트에서 제외(#4)
+            # 인접 청크 확장 이웃 청크와 명시 문서 digest(_generation_only)는 실제 히트가
+            # 아니므로 카운트에서 제외(#4, GAP #1)
             ranked_count=sum(
                 1
                 for doc in context_documents
                 if not _document_metadata(doc).get("context_expanded")
+                and not _document_metadata(doc).get("_generation_only")
             ),
             model_info=generation_result.model_info,
             routing_metadata=route_decision.metadata,
@@ -3844,9 +4293,10 @@ class RAGPipeline:
 
         try:
             for idx, doc in enumerate(ranked_results):
-                # 인접 청크 확장으로 추가된 이웃 청크는 실제 검색 히트가 아니므로
-                # 사용자 인용 소스에서 제외한다(점수/카운트 오염 방지)(#4).
-                if _document_metadata(doc).get("context_expanded"):
+                # 인접 청크 확장 이웃 청크와 명시 문서 digest(_generation_only)는 실제
+                # 검색 히트가 아니므로 사용자 인용 소스에서 제외한다(오염 방지)(#4, GAP #1).
+                metadata = _document_metadata(doc)
+                if metadata.get("context_expanded") or metadata.get("_generation_only"):
                     continue
                 source_data = self._format_rag_source(idx, doc)
                 if source_data:

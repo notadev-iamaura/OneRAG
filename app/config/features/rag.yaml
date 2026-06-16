@@ -43,6 +43,24 @@ rag:
     max_window: 3
 
   # ==========================================================================
+  # 명시 문서명 기반 컨텍스트 보강 (named-document chunk rescue) - opt-in
+  # ==========================================================================
+  # 사용자가 질문에서 파일명(예: '규정집.pdf') 또는 따옴표 인용구로 특정 문서를
+  # 지목하면, 벡터 검색이 그 문서를 놓쳐도 list_documents/get_document_chunks로
+  # 해당 문서 청크를 직접 fetch해 검색 결과 앞에 prepend한다(digest + ranked).
+  # 인접 청크 확장(context_expansion)과는 독립된 별개 경로다.
+  #
+  # 기본 OFF: enabled=false면 파일명/인용구가 있어도 추가 조회를 전혀 하지 않아
+  # 기존 검색/소스 동작이 그대로 유지된다(회귀 안전판). retriever가 list_documents
+  # 또는 get_document_chunks를 지원하지 않으면 graceful no-op(원본 결과 유지).
+  named_document_rescue:
+    enabled: false
+    # 명시 문서에서 prepend할 최대 청크 수 (1-12)
+    max_chunks: 4
+    # 명시 문서 digest로 뽑을 최대 라인 수 (20-120)
+    digest_max_lines: 40
+
+  # ==========================================================================
   # 파이프라인 타임아웃 예산 (SLA Budget) - opt-in
   # ==========================================================================
   # 각 stage에 개별 deadline을, 전체에 총 budget을 부여해 무한 대기를 막는다.
