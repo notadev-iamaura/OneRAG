@@ -163,6 +163,16 @@ class SQLSearchService:
             config=config.get("formatter", {}),
         )
 
+        # 멀티쿼리 LLM 컨텍스트 라벨(출력 언어 일관성용 — formatter 라벨과 동일 패턴 외부화).
+        # 미설정 시 한국어 기본값(회귀 0). 비한국어 운영자는 sql_search.yaml의
+        # multi_query.* 로 자국어/영어 라벨을 주입한다.
+        multi_query_cfg = config.get("multi_query", {})
+        self.category_section_header_template: str = (
+            multi_query_cfg.get("category_section_header_template")
+            or "=== {category} 검색 결과 ==="
+        )
+        self.all_category_label: str = multi_query_cfg.get("all_category_label") or "전체"
+
         logger.info(f"SQLSearchService 초기화: enabled={self.enabled}")
 
     async def search(self, user_query: str) -> SQLSearchResult:
@@ -332,7 +342,8 @@ class SQLSearchService:
                 result = await self.executor.execute_safe(query.sql_query)
                 if result.success:
                     formatted = self.formatter.format_for_context(
-                        result, f"{user_query} ({query.target_category or '전체'})"
+                        result,
+                        f"{user_query} ({query.target_category or self.all_category_label})",
                     )
                     return SingleQueryResult(
                         query=query,
@@ -370,10 +381,11 @@ class SQLSearchService:
         combined_contexts = []
         for qr in successful_results:
             if qr.formatted_context:
-                category = qr.query.target_category or "전체"
-                combined_contexts.append(
-                    f"=== {category.upper()} 검색 결과 ===\n{qr.formatted_context}"
+                category = qr.query.target_category or self.all_category_label
+                header = self.category_section_header_template.format(
+                    category=category.upper()
                 )
+                combined_contexts.append(f"{header}\n{qr.formatted_context}")
 
         formatted_context = "\n\n".join(combined_contexts)
 

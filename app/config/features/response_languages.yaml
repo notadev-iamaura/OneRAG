@@ -62,6 +62,8 @@ generation:
           <source_signals>는 본문에서 추출한 URL·이메일·연락처·규격번호·모델번호 등
           QA에서 누락하면 안 되는 핵심 근거값입니다. 질문과 관련된 값을 답변에 명시하세요.
         sql_search_results_intro: "아래는 데이터베이스에서 조회한 정확한 메타데이터 정보입니다:"
+        # LLM 컨텍스트의 각 문서 블록 프리픽스('[문서 N]'). 쓰기·파싱 모두 이 값을 쓴다.
+        context_block_label: "[문서"
         extractive_prefix: "검색된 문서에서 확인할 수 있는 근거는 다음과 같습니다."
         extractive_bullet: "근거 "
         extractive_no_content: "검색된 문서의 본문을 확인할 수 없습니다. 질문을 바꿔 다시 시도해주세요."
@@ -109,6 +111,7 @@ generation:
           numbers, model numbers) extracted from the body that must not be dropped in QA.
           Include the question-related values in the answer.
         sql_search_results_intro: "The following is precise metadata retrieved from the database:"
+        context_block_label: "[Document"
         extractive_prefix: "The following evidence was found in the retrieved documents."
         extractive_bullet: "Evidence "
         extractive_no_content: >-
@@ -156,6 +159,7 @@ generation:
       #     <source_signals>は本文から抽出したURL・メール・連絡先・規格番号・型番など、
       #     QAで落としてはならない重要な根拠値です。質問に関係する値を回答に明示してください。
       #   sql_search_results_intro: "以下はデータベースから取得した正確なメタデータ情報です:"
+      #   context_block_label: "[文書"
       #   extractive_prefix: "検索された文書から確認できる根拠は次のとおりです。"
       #   extractive_bullet: "根拠 "
       #   extractive_no_content: "検索された文書の本文を確認できませんでした。質問を変えて再度お試しください。"

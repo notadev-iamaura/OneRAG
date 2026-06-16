@@ -106,6 +106,7 @@ _DEFAULT_RESPONSE_LANGUAGE_PROFILES: dict[str, dict[str, Any]] = {
             "QA에서 누락하면 안 되는 핵심 근거값입니다. 질문과 관련된 값을 답변에 명시하세요."
         ),
         "sql_search_results_intro": "아래는 데이터베이스에서 조회한 정확한 메타데이터 정보입니다:",
+        "context_block_label": "[문서",
         "extractive_prefix": "검색된 문서에서 확인할 수 있는 근거는 다음과 같습니다.",
         "extractive_bullet": "근거 ",
         "extractive_no_content": (
@@ -160,6 +161,7 @@ _DEFAULT_RESPONSE_LANGUAGE_PROFILES: dict[str, dict[str, Any]] = {
             "Include the question-related values in the answer."
         ),
         "sql_search_results_intro": "The following is precise metadata retrieved from the database:",
+        "context_block_label": "[Document",
         "extractive_prefix": "The following evidence was found in the retrieved documents.",
         "extractive_bullet": "Evidence ",
         "extractive_no_content": (
@@ -1137,6 +1139,21 @@ class GenerationModule:
             return DEFAULT_CONTEXT_DOCUMENT_LIMIT
         return max(1, min(limit, MAX_CONTEXT_DOCUMENT_LIMIT))
 
+    def _resolve_context_block_label(self, options: dict[str, Any] | None) -> str:
+        """선택된 언어 프로파일에서 문서 블록 라벨('[문서')을 해소한다.
+
+        쓰기(_build_context)와 파싱(_format_answer_checklist 라인 스킵)이 동일
+        프로파일의 동일 라벨을 쓰도록 단일 해소 지점을 제공한다. 프로파일에
+        context_block_label이 없으면 코드 기본값(_CONTEXT_BLOCK_LABEL)으로
+        폴백한다(회귀 0). __init__을 우회해 생성된 인스턴스(테스트 등, gen_config
+        미설정)에서도 안전하도록 프로파일 해소 실패 시 기본값으로 폴백한다.
+        """
+        if not hasattr(self, "gen_config"):
+            return _CONTEXT_BLOCK_LABEL
+        profile = self._response_language_profile(options)
+        label = profile.get("context_block_label")
+        return label if isinstance(label, str) and label else _CONTEXT_BLOCK_LABEL
+
     def _build_context(
         self, context_documents: list[Any], options: dict[str, Any] | None = None
     ) -> str:
@@ -1150,6 +1167,10 @@ class GenerationModule:
 
         # 동적 한도: 확장 시 이웃 청크가 상위 히트를 프롬프트에서 밀어내지 않도록 함
         max_documents = self._context_document_limit(options)
+        # 문서 블록 라벨은 선택된 언어 프로파일에서 해소한다(출력 언어 일관성).
+        # 소비부(_format_answer_checklist의 라인 스킵)도 동일 프로파일 라벨을 받아
+        # 쓰기/파싱이 항상 같은 마커를 쓴다(미설정 시 코드 기본 "[문서" → 회귀 0).
+        context_block_label = self._resolve_context_block_label(options)
         context_parts = []
         for i, doc in enumerate(context_documents[:max_documents]):
             content = ""
@@ -1163,9 +1184,7 @@ class GenerationModule:
                 content = doc
 
             if content:
-                # 컨텍스트 블록 라벨은 단일 상수(_CONTEXT_BLOCK_LABEL)를 참조한다.
-                # 소비부(_build_source_signal_block)가 같은 마커로 라인 스킵을 판정한다.
-                context_parts.append(f"{_CONTEXT_BLOCK_LABEL} {i+1}]\n{content}\n")
+                context_parts.append(f"{context_block_label} {i+1}]\n{content}\n")
 
         return "\n".join(context_parts)
 
@@ -1433,7 +1452,9 @@ class GenerationModule:
             _build_model_pattern(model_labels),
         )
 
-    def _format_answer_checklist(self, query: str, context_text: str) -> str:
+    def _format_answer_checklist(
+        self, query: str, context_text: str, context_block_label: str = _CONTEXT_BLOCK_LABEL
+    ) -> str:
         """답변 누락이 잦은 수치/날짜/연락처 후보 라인을 프롬프트 상단에 재배치한다(GAP #3).
 
         인용구 일치(가중 +5)와 신호 라벨(+4), 고가치 사실 패턴(+2)으로 점수를 매겨
@@ -1476,7 +1497,7 @@ class GenerationModule:
         seen: set[str] = set()
         for order, raw_line in enumerate(context_text.splitlines()):
             line = " ".join(raw_line.split())
-            if not line or line.startswith(("<", "</", _CONTEXT_BLOCK_LABEL)):
+            if not line or line.startswith(("<", "</", context_block_label)):
                 continue
             if len(line) > 260:
                 line = f"{line[:257]}..."
@@ -1554,7 +1575,13 @@ class GenerationModule:
             parts.append("</source_signals>\n")
 
         # 3) answer_checklist: 답변 누락 방지용 후보 근거 라인(질문 트리거 시).
-        answer_checklist = self._format_answer_checklist(query, context_text)
+        # 라인 스킵 마커는 쓰기(_build_context)와 동일한 프로파일의 라벨을 전달해
+        # 쓰기/파싱이 항상 일치하게 한다(언어 전환 시에도 desync 없음).
+        answer_checklist = self._format_answer_checklist(
+            query,
+            context_text,
+            context_block_label=profile.get("context_block_label") or _CONTEXT_BLOCK_LABEL,
+        )
         if answer_checklist:
             parts.append("<answer_checklist>")
             parts.append(profile["answer_checklist_instruction"])

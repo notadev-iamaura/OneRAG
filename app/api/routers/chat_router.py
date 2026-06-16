@@ -92,12 +92,15 @@ def get_real_client_ip(request: Request) -> str:
     return fallback_ip
 
 
-def _resolve_request_language(request: Request) -> str:
+def _resolve_request_language(request: Request | None) -> str:
     """요청 Accept-Language 헤더에서 에러 메시지 언어를 결정한다(ko|en, 기본 ko).
 
     양언어 에러 카탈로그(app.lib.errors)는 "ko"/"en"만 지원한다. 헤더가 영어를
-    우선하면 "en"을, 그 외(미지정 포함)는 "ko"를 반환한다 → 한국어 기본(회귀 0).
+    우선하면 "en"을, 그 외(미지정/None 포함)는 "ko"를 반환한다 → 한국어 기본(회귀 0).
+    request가 None(FastAPI 주입 없이 직접 호출 등)이면 "ko"로 폴백한다.
     """
+    if request is None:
+        return "ko"
     accept_language = (request.headers.get("accept-language") or "").lower()
     en_idx = accept_language.find("en")
     ko_idx = accept_language.find("ko")
@@ -672,7 +675,8 @@ async def get_session_info(request: Request, session_id: str) -> SessionInfoResp
 
 @router.post("/chat/feedback", response_model=FeedbackResponse)
 async def process_feedback(
-    request: Request, feedback_request: FeedbackRequest
+    feedback_request: FeedbackRequest,
+    http_request: Request = None,  # type: ignore[assignment]
 ) -> FeedbackResponse:
     """
     사용자 피드백 처리
@@ -734,7 +738,7 @@ async def process_feedback(
         logger.error("피드백 처리 오류", error=str(error), exc_info=True)
         # 실패 메시지는 양언어 카탈로그(FEEDBACK-001)에서 Accept-Language별로 조회한다.
         # 기본 ko 카탈로그 값은 기존 하드코딩 문자열과 동일하다 → 회귀 0.
-        lang = _resolve_request_language(request)
+        lang = _resolve_request_language(http_request)
         return FeedbackResponse(
             success=False,
             feedback_id=None,

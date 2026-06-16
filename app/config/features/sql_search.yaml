@@ -57,6 +57,20 @@ sql_search:
     result_header: null
     truncation_notice_template: null
 
+  # 멀티쿼리 결과를 LLM 컨텍스트로 합칠 때의 라벨(출력 언어 일관성용).
+  # 미설정(null) 시 한국어 기본값 유지(회귀 0). 비한국어 운영자는 자국어/영어로 지정.
+  #   category_section_header_template: 카테고리 섹션 헤더({category} 플레이스홀더,
+  #     기본 "=== {category} 검색 결과 ===")
+  #   all_category_label: 카테고리 미지정 폴백 라벨(기본 "전체")
+  #   entity_name_fallback_template: SQL Source의 엔티티명 폴백({index} 플레이스홀더,
+  #     기본 "결과 {index}") — rag_pipeline _format_sql_row에서 사용
+  #   preview_fallback: SQL Source 미리보기 폴백(기본 "SQL 쿼리 결과")
+  multi_query:
+    category_section_header_template: null
+    all_category_label: null
+    entity_name_fallback_template: null
+    preview_fallback: null
+
   # RAG 파이프라인 통합 설정
   pipeline:
     # SQL 검색과 RAG 검색 병렬 실행

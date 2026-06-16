@@ -946,6 +946,19 @@ class RAGPipeline:
             grok_answer_provider: Grok이 검색과 답변을 모두 맡는 provider (선택적)
         """
         self.config = config
+        # SQL Source(_format_sql_row) 라벨: 출력 언어 일관성을 위해 외부화.
+        # sql_search.multi_query에서 읽어 service.py의 all_category_label과 단일
+        # 진실원천을 공유한다. 미설정 시 한국어 기본값(회귀 0).
+        _sql_multi_query = config.get("sql_search", {}).get("multi_query", {})
+        self._sql_all_category_label: str = (
+            _sql_multi_query.get("all_category_label") or "전체"
+        )
+        self._sql_entity_name_fallback_template: str = (
+            _sql_multi_query.get("entity_name_fallback_template") or "결과 {index}"
+        )
+        self._sql_preview_fallback: str = (
+            _sql_multi_query.get("preview_fallback") or "SQL 쿼리 결과"
+        )
         self.query_router = query_router
         self.query_expansion = query_expansion
         self.retrieval_module = retrieval_module
@@ -4341,7 +4354,11 @@ class RAGPipeline:
         category: str | None = None,
     ) -> dict[str, Any]:
         """SQL 검색 결과의 한 행을 Source 객체로 변환"""
-        entity_name = row.get("entity_name") or row.get("name") or f"결과 {row_idx + 1}"
+        entity_name = (
+            row.get("entity_name")
+            or row.get("name")
+            or self._sql_entity_name_fallback_template.format(index=row_idx + 1)
+        )
         row_preview = ", ".join(f"{k}: {v}" for k, v in row.items() if v is not None)
 
         if row_preview and self.privacy_masker:
@@ -4365,7 +4382,7 @@ class RAGPipeline:
             source_type="sql",
             document_name=document_name,
             relevance=100.0,
-            content_preview=row_preview[:200] if row_preview else "SQL 쿼리 결과",
+            content_preview=row_preview[:200] if row_preview else self._sql_preview_fallback,
             metadata={key: value for key, value in metadata.items() if value is not None},
             additional_metadata={"row_keys": sorted(str(key) for key in row.keys())},
         )
@@ -4388,7 +4405,7 @@ class RAGPipeline:
 
             sql_result = query_result.result
             sql_query = query_result.query.sql_query
-            category = query_result.query.target_category or "전체"
+            category = query_result.query.target_category or self._sql_all_category_label
 
             for row_idx, row in enumerate(sql_result.data):
                 if added_count >= max_sources:
