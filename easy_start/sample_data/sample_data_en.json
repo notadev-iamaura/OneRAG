@@ -12,7 +12,7 @@
     {
       "id": "faq-002",
       "title": "Advantages of Hybrid Search",
-      "content": "Hybrid search combines Dense search (semantic-based) and Sparse search (keyword-based, BM25). Dense search excels at finding semantically similar documents, while Sparse search excels at exact keyword matching. By combining both methods, hybrid search effectively handles both keyword-critical queries like 'Samsung stock price' and meaning-critical queries like 'trending IT companies' equally well.",
+      "content": "Hybrid search combines Dense search (semantic-based) and Sparse search (keyword-based, BM25). Dense search excels at finding semantically similar documents, while Sparse search excels at exact keyword matching. By combining both methods, hybrid search effectively handles both keyword-critical queries like 'a specific product price' and meaning-critical queries like 'trending IT companies' equally well.",
       "metadata": {
         "category": "Technology Overview",
         "tags": ["hybrid", "Dense", "Sparse", "BM25"]
@@ -39,7 +39,7 @@
     {
       "id": "faq-005",
       "title": "GraphRAG Features",
-      "content": "GraphRAG is a technique that represents relationships between documents as a graph to improve search quality. OneRAG's GraphRAG integrates vector search with a NetworkX-based graph store, enabling you to find a 'Samsung Electronics' node using the English query 'SAMSUNG'. This allows searching for related entities and their relationships, providing richer context.",
+      "content": "GraphRAG is a technique that represents relationships between documents as a graph to improve search quality. OneRAG's GraphRAG integrates vector search with a NetworkX-based graph store, enabling you to find a node registered under its full name using an abbreviated or alternate-script query. This allows searching for related entities and their relationships, providing richer context.",
       "metadata": {
         "category": "Technology Overview",
         "tags": ["GraphRAG", "knowledge graph", "entity"]
