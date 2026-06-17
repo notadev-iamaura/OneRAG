@@ -21,6 +21,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 
 interface PageHeaderProps {
   pageName?: string;
@@ -46,11 +47,12 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   navigationItems,
 }) => {
   const isDark = useIsDarkMode();
+  const { messages } = useMenuMessages();
 
   const defaultNavigationItems = [
-    { label: '챗봇', path: '/bot', icon: MessageSquare },
-    { label: '업로드', path: '/upload', icon: UploadCloud },
-    { label: '프롬프트', path: '/prompts', icon: BrainCircuit },
+    { label: messages.nav.chatbot, path: '/bot', icon: MessageSquare },
+    { label: messages.nav.upload, path: '/upload', icon: UploadCloud },
+    { label: messages.nav.prompts, path: '/prompts', icon: BrainCircuit },
   ];
 
   const items = navigationItems || defaultNavigationItems;
@@ -61,21 +63,21 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
         return (
           <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 gap-1.5 font-bold py-1 px-3 rounded-full transition-all hover:bg-emerald-500/20">
             <CheckCircle className="w-3.5 h-3.5" />
-            정상
+            {messages.nav.statusHealthy}
           </Badge>
         );
       case 'checking':
         return (
           <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 gap-1.5 font-bold py-1 px-3 rounded-full transition-all hover:bg-amber-500/20">
             <HelpCircle className="w-3.5 h-3.5 animate-pulse" />
-            확인중
+            {messages.nav.statusChecking}
           </Badge>
         );
       case 'unhealthy':
         return (
           <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 gap-1.5 font-bold py-1 px-3 rounded-full transition-all hover:bg-destructive/20">
             <AlertTriangle className="w-3.5 h-3.5" />
-            오류
+            {messages.nav.statusError}
           </Badge>
         );
       default:
@@ -140,7 +142,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
                 </Button>
               </TooltipTrigger>
               <TooltipContent className="glass-morphism border-border/40 text-foreground font-bold text-xs rounded-xl px-3 py-1.5">
-                로그아웃
+                {messages.nav.logout}
               </TooltipContent>
             </Tooltip>
 
@@ -163,7 +165,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
                 </Button>
               </TooltipTrigger>
               <TooltipContent className="glass-morphism border-border/40 text-foreground font-bold text-xs rounded-xl px-3 py-1.5">
-                {isDark ? "라이트 모드" : "다크 모드"}
+                {isDark ? messages.nav.lightMode : messages.nav.darkMode}
               </TooltipContent>
             </Tooltip>
           </div>

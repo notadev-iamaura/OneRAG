@@ -22,6 +22,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { BrandLogo } from './icons/BrandLogo';
 import { BRAND_CONFIG } from '../config/brand';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 
 interface SidebarProps {
   open: boolean;
@@ -30,6 +31,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
   const { config } = useConfig();
+  const { messages } = useMenuMessages();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -43,31 +45,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
 
   const menuItems = [
     {
-      label: '챗봇',
+      label: messages.nav.chatbot,
       path: '/bot',
       icon: MessageSquare,
       enabled: isChatbotEnabled
     },
     {
-      label: '문서 관리',
+      label: messages.nav.documents,
       path: '/upload',
       icon: UploadCloud,
       enabled: isDocumentsEnabled
     },
     {
-      label: '프롬프트',
+      label: messages.nav.prompts,
       path: '/prompts',
       icon: BrainCircuit,
       enabled: isPromptsEnabled
     },
     {
-      label: '관리자',
+      label: messages.nav.admin,
       path: '/admin',
       icon: Settings,
       enabled: isAdminEnabled
     },
     {
-      label: '운영 설정',
+      label: messages.nav.operationSettings,
       path: '/admin/settings',
       icon: SlidersHorizontal,
       enabled: isAdminEnabled
@@ -129,7 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
               size="icon"
               className="h-7 w-7 rounded-md hover:bg-muted shrink-0 text-muted-foreground transition-all"
               onClick={onToggle}
-              aria-label="사이드바 축소"
+              aria-label={messages.nav.collapseSidebar}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -194,7 +196,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
               size="icon"
               className="h-8 w-8 rounded-full border border-border/60 bg-background/50 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all shadow-sm"
               onClick={onToggle}
-              aria-label="사이드바 확장"
+              aria-label={messages.nav.expandSidebar}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -210,7 +212,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, onToggle }) => {
             size="icon"
             className="h-8 w-8 rounded-full shadow-lg border border-border"
             onClick={onToggle}
-            aria-label="사이드바 플로팅 확장"
+            aria-label={messages.nav.floatingExpandSidebar}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>

@@ -11,6 +11,7 @@ import { useChatMessages } from '../hooks/chat/useChatMessages';
 import { useChatInteraction } from '../hooks/chat/useChatInteraction';
 import { useOfflineDetection } from '../hooks/useOfflineDetection';
 import { useEmbedBridge } from '../embed/useEmbedBridge';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 
 // Components
 import { ChatDevTools } from './chat/ChatDevTools';
@@ -33,6 +34,7 @@ interface ChatTabProps {
 }
 
 export const ChatTab: React.FC<ChatTabProps> = ({ showToast, embedMode = false }) => {
+  const { messages: t } = useMenuMessages();
   // API Logs State
   const [apiLogs, setApiLogs] = React.useState<ApiLog[]>([]);
   const { isOnline } = useOfflineDetection();
@@ -113,13 +115,13 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast, embedMode = false }
 
     const meta = (selectedChunk.additional_metadata ?? {}) as SourceAdditionalMetadata;
     const formatPrimitive = (value: unknown): string => {
-      if (value === undefined || value === null) return 'N/A';
-      if (typeof value === 'boolean') return value ? '예' : '아니오';
+      if (value === undefined || value === null) return t.common.notAvailable;
+      if (typeof value === 'boolean') return value ? t.ragTrace.booleanTrue : t.ragTrace.booleanFalse;
       if (typeof value === 'number') return Number.isFinite(value) ? value.toLocaleString() : String(value);
       if (value instanceof Date) return value.toISOString();
-      if (Array.isArray(value)) return value.length === 0 ? 'N/A' : value.map(v => typeof v === 'object' ? JSON.stringify(v) : v).join(', ');
+      if (Array.isArray(value)) return value.length === 0 ? t.common.notAvailable : value.map(v => typeof v === 'object' ? JSON.stringify(v) : v).join(', ');
       const s = String(value);
-      return s.trim().length > 0 ? s : 'N/A';
+      return s.trim().length > 0 ? s : t.common.notAvailable;
     };
 
     const similarity = typeof selectedChunk.relevance === 'number'
@@ -127,19 +129,19 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast, embedMode = false }
       : undefined;
 
     return [
-      { label: '문서 ID', value: formatPrimitive(selectedChunk.id) },
-      { label: '문서 파일명', value: formatPrimitive(selectedChunk.document) },
-      { label: '표시 제목', value: formatPrimitive(meta.display_title ?? meta.law_name) },
-      { label: '우선순위', value: formatPrimitive(meta.priority_level) },
-      { label: '청크 번호', value: formatPrimitive(selectedChunk.chunk !== null && selectedChunk.chunk !== undefined ? `#${selectedChunk.chunk}` : null) },
-      { label: '페이지', value: formatPrimitive(selectedChunk.page) },
-      { label: '유사도', value: formatPrimitive(similarity) },
-      { label: '총 청크 수', value: formatPrimitive(selectedChunk.total_chunks) },
-      { label: '원본 점수', value: formatPrimitive(selectedChunk.original_score) },
-      { label: '재순위 방법', value: formatPrimitive(selectedChunk.rerank_method) },
-      { label: '업로드 일시', value: formatPrimitive(meta.uploaded_at) },
+      { label: t.chatTab.documentId, value: formatPrimitive(selectedChunk.id) },
+      { label: t.chatTab.documentFilename, value: formatPrimitive(selectedChunk.document) },
+      { label: t.chatTab.displayTitle, value: formatPrimitive(meta.display_title ?? meta.law_name) },
+      { label: t.chatTab.priority, value: formatPrimitive(meta.priority_level) },
+      { label: t.chatTab.chunkNumber, value: formatPrimitive(selectedChunk.chunk !== null && selectedChunk.chunk !== undefined ? `#${selectedChunk.chunk}` : null) },
+      { label: t.chatTab.page, value: formatPrimitive(selectedChunk.page) },
+      { label: t.chatTab.similarity, value: formatPrimitive(similarity) },
+      { label: t.chatTab.totalChunks, value: formatPrimitive(selectedChunk.total_chunks) },
+      { label: t.chatTab.originalScore, value: formatPrimitive(selectedChunk.original_score) },
+      { label: t.chatTab.rerankMethod, value: formatPrimitive(selectedChunk.rerank_method) },
+      { label: t.chatTab.uploadedAt, value: formatPrimitive(meta.uploaded_at) },
     ];
-  }, [selectedChunk]);
+  }, [selectedChunk, t]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {

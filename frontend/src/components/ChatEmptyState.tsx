@@ -41,7 +41,7 @@ interface ChatEmptyStateProps {
 
 export const ChatEmptyState: React.FC<ChatEmptyStateProps> = ({ onSuggestionClick }) => {
   // 현재 UI 로케일(ko/en). 언어 토글 시 자동으로 해당 로케일 설정을 다시 계산한다.
-  const { locale } = useMenuMessages();
+  const { locale, messages } = useMenuMessages();
 
   // 설정 상태: 캐시/기본값으로 즉시 렌더한 뒤, 서버 최신값을 fetch 하여 갱신한다.
   // 서버가 source of truth이며 localStorage는 오프라인/즉시 렌더용 캐시다.
@@ -160,7 +160,7 @@ export const ChatEmptyState: React.FC<ChatEmptyStateProps> = ({ onSuggestionClic
         <div className="flex items-center gap-2 md:gap-4 mb-6 px-2">
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border/50 to-transparent" />
           <span className="text-[10px] md:text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] md:tracking-[0.3em] whitespace-normal md:whitespace-nowrap text-center">
-            맞춤형 추천 질문 (Personalized Suggestions)
+            {messages.emptyState.suggestionsHeading}
           </span>
           <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border/50 to-transparent" />
         </div>

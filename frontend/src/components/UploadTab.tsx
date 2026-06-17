@@ -32,6 +32,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { readOperatorSettings } from '../config/operatorSettings';
+import { useMenuMessages } from '../i18n/useMenuLocale';
+import type { MenuMessages } from '../i18n/menuMessages';
+import { format } from '../i18n/format';
 
 // 지원 업로드 확장자 (accept / validation / 안내문구의 단일 출처 — 드리프트 방지)
 const SUPPORTED_UPLOAD_EXTENSIONS = [
@@ -127,6 +130,7 @@ const isActiveUpload = (file: UploadFile): boolean =>
   file.status === 'uploading' || file.status === 'processing';
 
 export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
+  const { messages } = useMenuMessages();
   const [files, setFiles] = useState<UploadFile[]>([]);
 
   // 업로드 상태 폴링 interval 추적: 언마운트 시 모두 정리해
@@ -177,16 +181,16 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
     const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
 
     if (!allowedExtensions.includes(fileExtension)) {
-      return '지원되지 않는 형식입니다. PDF, TXT, Markdown, DOCX, PPTX, Excel, HTML, JSON만 가능합니다.';
+      return messages.uploadTab.unsupportedFormat;
     }
 
     // 분할 업로드로 대용량을 처리하되, 합리적 상한(MAX_UPLOAD_SIZE_BYTES)을 넘는 파일은 거부한다.
     if (file.size > MAX_UPLOAD_SIZE_BYTES) {
-      return `파일 크기는 ${MAX_UPLOAD_SIZE_LABEL}를 초과할 수 없습니다.`;
+      return format(messages.uploadTab.fileSizeExceeded, { limit: MAX_UPLOAD_SIZE_LABEL });
     }
 
     return null;
-  }, []);
+  }, [messages]);
 
   // 파일 추가
   const addFiles = useCallback((newFiles: FileList | null) => {
@@ -276,14 +280,14 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
               storageLocation: 'Vector Database'
             }
           } : f));
-          showToast({ type: 'success', message: `업로드 완료: ${status.chunk_count || 0}개 청크` });
+          showToast({ type: 'success', message: format(messages.uploadTab.uploadCompleted, { count: status.chunk_count || 0 }) });
         } else if (status.status === 'failed') {
           clearInterval(checkInterval); activeIntervalsRef.current.delete(checkInterval);
-          setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', progress: backendProgress ?? f.progress, error: status.error_message || '처리 오류' } : f));
-          showToast({ type: 'error', message: '문서 처리에 실패했습니다.' });
+          setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', progress: backendProgress ?? f.progress, error: status.error_message || messages.uploadTab.processingError } : f));
+          showToast({ type: 'error', message: messages.uploadTab.processingFailed });
         } else if (checkCount >= maxChecks) {
           clearInterval(checkInterval); activeIntervalsRef.current.delete(checkInterval);
-          setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', error: '시간 초과' } : f));
+          setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', error: messages.uploadTab.timeout } : f));
         } else if (backendProgress !== undefined) {
           // 처리 중 단계: 백엔드 진행률(10→30→50→70→90)을 진행바에 실시간 반영한다.
           setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'processing', progress: backendProgress } : f));
@@ -293,12 +297,12 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
         failureCount++;
         if (failureCount >= maxFailures) {
           clearInterval(checkInterval); activeIntervalsRef.current.delete(checkInterval);
-          setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', error: '네트워크 상의 문제로 상태 확인 중단' } : f));
+          setFiles((prev) => prev.map((f) => f.id === fileId ? { ...f, status: 'failed', error: messages.uploadTab.networkError } : f));
         }
       }
     }, 5000);
     activeIntervalsRef.current.add(checkInterval);
-  }, [globalSettings.splitterType, showToast]);
+  }, [globalSettings.splitterType, showToast, messages]);
 
   const uploadSingleFile = useCallback(async (uploadFile: UploadFile) => {
     // 중복-시작 가드: 동일 파일이 이미 시작 중이면 무시한다.
@@ -326,17 +330,17 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
         setFiles((prev) => prev.map((f) => f.id === uploadFile.id ? { ...f, status: 'processing', progress: 0 } : f));
         checkUploadStatus(uploadFile.id, jobId);
       } else {
-        throw new Error(responseData.message || responseData.error || '작업 ID 생성 실패');
+        throw new Error(responseData.message || responseData.error || messages.uploadTab.jobIdFailed);
       }
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : '업로드 중 오류가 발생했습니다.';
+      const errorMessage = error instanceof Error ? error.message : messages.uploadTab.uploadError;
       setFiles((prev) => prev.map((f) => f.id === uploadFile.id ? { ...f, status: 'failed', error: errorMessage } : f));
-      showToast({ type: 'error', message: `${uploadFile.file.name} 실패: ${errorMessage}` });
+      showToast({ type: 'error', message: format(messages.uploadTab.uploadFailed, { name: uploadFile.file.name, message: errorMessage }) });
     } finally {
       // 가드 해제: 처리(processing) 전환 후에도 슬롯 드레인이 다음 ready 파일을 시작할 수 있게 한다.
       startingFileIdsRef.current.delete(uploadFile.id);
     }
-  }, [checkUploadStatus, showToast]);
+  }, [checkUploadStatus, showToast, messages]);
 
   const startSingleFileUpload = useCallback((fileId: string) => {
     // 동시성 한도 초과 시 단일 시작을 막는다.
@@ -420,12 +424,12 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
 
   const getStatusBadge = (status: UploadFile['status']) => {
     switch (status) {
-      case 'completed': return <Badge variant="default" className="bg-emerald-500 hover:bg-emerald-600 font-bold">완료</Badge>;
-      case 'failed': return <Badge variant="destructive" className="font-bold">실패</Badge>;
-      case 'ready': return <Badge variant="secondary" className="font-bold">준비됨</Badge>;
-      case 'uploading': return <Badge variant="outline" className="border-primary text-primary animate-pulse font-bold">업로드 중</Badge>;
-      case 'processing': return <Badge variant="outline" className="border-amber-500 text-amber-500 animate-pulse font-bold">처리 중</Badge>;
-      case 'selected': return <Badge variant="secondary" className="opacity-70 font-bold">선택됨</Badge>;
+      case 'completed': return <Badge variant="default" className="bg-emerald-500 hover:bg-emerald-600 font-bold">{messages.uploadTab.statusCompleted}</Badge>;
+      case 'failed': return <Badge variant="destructive" className="font-bold">{messages.uploadTab.statusFailed}</Badge>;
+      case 'ready': return <Badge variant="secondary" className="font-bold">{messages.uploadTab.statusReady}</Badge>;
+      case 'uploading': return <Badge variant="outline" className="border-primary text-primary animate-pulse font-bold">{messages.uploadTab.statusUploading}</Badge>;
+      case 'processing': return <Badge variant="outline" className="border-amber-500 text-amber-500 animate-pulse font-bold">{messages.uploadTab.statusProcessing}</Badge>;
+      case 'selected': return <Badge variant="secondary" className="opacity-70 font-bold">{messages.uploadTab.statusSelected}</Badge>;
       default: return null;
     }
   };
@@ -444,19 +448,19 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-bold flex items-center gap-2">
               <Settings className="w-4 h-4 text-primary" />
-              업로드 설정
+              {messages.uploadTab.settingsTitle}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4 items-end">
               <div className="space-y-1.5 flex-1 min-w-[150px]">
-                <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">스플리터</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">{messages.uploadTab.splitterLabel}</Label>
                 <Select
                   value={globalSettings.splitterType}
                   onValueChange={(value: string) => setGlobalSettings(prev => ({ ...prev, splitterType: value as UploadSettings['splitterType'] }))}
                 >
                   <SelectTrigger className="h-9 rounded-xl border-border/60">
-                    <SelectValue placeholder="스플리터 선택" />
+                    <SelectValue placeholder={messages.uploadTab.splitterPlaceholder} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="recursive">Recursive</SelectItem>
@@ -466,7 +470,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                 </Select>
               </div>
               <div className="space-y-1.5 w-24">
-                <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">청크 크기</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">{messages.uploadTab.chunkSizeLabel}</Label>
                 <Input
                   type="number"
                   value={globalSettings.chunkSize}
@@ -475,7 +479,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                 />
               </div>
               <div className="space-y-1.5 w-24">
-                <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">청크 겹침</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground ml-1">{messages.uploadTab.chunkOverlapLabel}</Label>
                 <Input
                   type="number"
                   value={globalSettings.chunkOverlap}
@@ -491,7 +495,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                   className="rounded-xl h-9 font-bold px-6 shadow-lg shadow-primary/20"
                 >
                   <Play className="w-3.5 h-3.5 mr-2" />
-                  {isBulkProcessing ? '일괄 처리 중...' : `일괄 처리 시작 (${selectedFilesCount + readyFilesCount})`}
+                  {isBulkProcessing ? messages.uploadTab.bulkProcessing : format(messages.uploadTab.bulkStart, { count: selectedFilesCount + readyFilesCount })}
                 </Button>
                 <Button
                   data-testid="upload-bulk-ready-button"
@@ -500,7 +504,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                   disabled={isBulkProcessing}
                   className="rounded-xl h-9 font-bold border-border/60"
                 >
-                  준비만
+                  {messages.uploadTab.readyOnly}
                 </Button>
               </div>
             </div>
@@ -512,7 +516,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
       <div
         role="button"
         tabIndex={0}
-        aria-label="업로드할 파일 선택"
+        aria-label={messages.uploadTab.selectFilesAria}
         className={cn(
           "relative group cursor-pointer transition-all duration-300",
           "border-2 border-dashed rounded-[32px] p-12 text-center",
@@ -532,22 +536,22 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
           </div>
           <div className="space-y-2">
             <p className="text-xl font-black text-foreground">
-              파일을 여기에 드래그하거나 클릭하세요
+              {messages.uploadTab.dropOrClick}
             </p>
             <p className="text-sm text-center text-muted-foreground font-medium max-w-sm mx-auto">
-              PDF, TXT, Markdown, DOCX, PPTX, Excel, HTML, JSON<br />
-              <span className="text-xs opacity-60">(파일당 최대 {MAX_UPLOAD_SIZE_LABEL} 지원, 대용량은 분할 업로드)</span>
+              {messages.uploadTab.supportedFormats}<br />
+              <span className="text-xs opacity-60">{format(messages.uploadTab.maxSizeNotice, { limit: MAX_UPLOAD_SIZE_LABEL })}</span>
             </p>
           </div>
           <span className="inline-flex h-9 items-center justify-center rounded-full border border-border/60 bg-background px-8 mt-2 text-sm font-bold transition-all group-hover:border-primary group-hover:text-primary">
-            파일 선택하기
+            {messages.uploadTab.selectFiles}
           </span>
         </div>
       </div>
       <input
         ref={fileInputRef}
         type="file"
-        aria-label="업로드 파일"
+        aria-label={messages.uploadTab.uploadFileAria}
         multiple
         accept={UPLOAD_ACCEPT}
         className="hidden"
@@ -561,7 +565,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
         <Card className="border-border/60 overflow-hidden rounded-[24px]">
           <CardHeader className="bg-muted/30 pb-4">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-bold">업로드 목록</CardTitle>
+              <CardTitle className="text-base font-bold">{messages.uploadTab.uploadListTitle}</CardTitle>
               <Badge variant="outline" className="font-bold border-primary/20 text-primary">
                 {files.length} Files
               </Badge>
@@ -601,7 +605,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                             className="h-8 w-8 rounded-lg text-muted-foreground/40 hover:text-destructive transition-all"
                             onClick={() => removeFile(file.id)}
                             disabled={['uploading', 'processing'].includes(file.status)}
-                            aria-label={`${file.file.name} 제거`}
+                            aria-label={format(messages.uploadTab.removeFileAria, { name: file.file.name })}
                           >
                             <X className="w-4 h-4" />
                           </Button>
@@ -627,7 +631,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                       {(file.status === 'uploading' || file.status === 'processing') && (
                         <div className="mt-3 space-y-1.5">
                           <div className="flex justify-between text-[10px] font-bold uppercase tracking-tighter">
-                            <span className="text-primary">{file.status === 'uploading' ? 'Uploading...' : 'Processing...'}</span>
+                            <span className="text-primary">{file.status === 'uploading' ? messages.uploadTab.badgeUploading : messages.uploadTab.badgeProcessing}</span>
                             <span>{file.progress}%</span>
                           </div>
                           <Progress value={file.progress} className="h-1" />
@@ -635,23 +639,23 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
                       )}
 
                       {file.status === 'completed' && file.processingDetails && (
-                        <ProcessingDetails details={file.processingDetails} />
+                        <ProcessingDetails details={file.processingDetails} messages={messages} />
                       )}
 
                       <div className="flex gap-2 mt-3">
                         {file.status === 'selected' && (
                           <Button data-testid="upload-ready-button" size="sm" variant="outline" className="h-7 text-[11px] font-bold rounded-lg" onClick={() => markFileReady(file.id)}>
-                            준비
+                            {messages.uploadTab.actionReady}
                           </Button>
                         )}
                         {file.status === 'ready' && (
                           <Button data-testid="upload-start-button" size="sm" className="h-7 text-[11px] font-bold rounded-lg shadow-sm" onClick={() => startSingleFileUpload(file.id)} disabled={bulkDisabled}>
-                            <Play className="w-3 h-3 mr-1" /> 시작
+                            <Play className="w-3 h-3 mr-1" /> {messages.uploadTab.actionStart}
                           </Button>
                         )}
                         {file.status === 'failed' && (
                           <Button size="sm" variant="outline" className="h-7 text-[11px] font-bold rounded-lg border-destructive/30 text-destructive hover:bg-destructive/10" onClick={() => retryFailedFile(file.id)} disabled={bulkDisabled}>
-                            <RefreshCw className="w-3 h-3 mr-1" /> 재시도
+                            <RefreshCw className="w-3 h-3 mr-1" /> {messages.uploadTab.actionRetry}
                           </Button>
                         )}
                       </div>
@@ -667,7 +671,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({ showToast }) => {
   );
 };
 
-const ProcessingDetails = ({ details }: { details: UploadFile['processingDetails'] }) => {
+const ProcessingDetails = ({ details, messages }: { details: UploadFile['processingDetails']; messages: MenuMessages }) => {
   const [expanded, setExpanded] = useState(false);
   if (!details) return null;
 
@@ -677,15 +681,15 @@ const ProcessingDetails = ({ details }: { details: UploadFile['processingDetails
         onClick={() => setExpanded(!expanded)}
         className="text-[11px] font-bold text-primary flex items-center gap-1 hover:underline"
       >
-        처리 상세 정보 {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        {messages.uploadTab.processingDetailsToggle} {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
       </button>
       {expanded && (
         <div className="mt-2 p-3 rounded-xl bg-primary/5 border border-primary/10 grid grid-cols-2 gap-x-4 gap-y-2 animate-in slide-in-from-top-1">
           {/* 백엔드가 초 단위로 반환하므로 1000으로 나누지 않는다(기존 1000배 축소 버그 수정). */}
-          <DetailItem icon={Clock} label="처리 시간" value={`${details.processingTime.toFixed(2)}초`} />
-          <DetailItem icon={Layers} label="청크" value={`${details.chunksCount}개`} />
-          <DetailItem icon={Cpu} label="로더/스플리터" value={`${details.loaderType} / ${details.splitterType}`} />
-          <DetailItem icon={Database} label="저장 위치" value={details.storageLocation} />
+          <DetailItem icon={Clock} label={messages.uploadTab.detailProcessingTime} value={format(messages.uploadTab.detailProcessingTimeValue, { value: details.processingTime.toFixed(2) })} />
+          <DetailItem icon={Layers} label={messages.uploadTab.detailChunks} value={format(messages.uploadTab.detailChunksValue, { count: details.chunksCount })} />
+          <DetailItem icon={Cpu} label={messages.uploadTab.detailLoaderSplitter} value={`${details.loaderType} / ${details.splitterType}`} />
+          <DetailItem icon={Database} label={messages.uploadTab.detailStorageLocation} value={details.storageLocation} />
         </div>
       )}
     </div>
