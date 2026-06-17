@@ -72,7 +72,7 @@ export const getAdminWSBaseURL = (): string => {
     return import.meta.env.VITE_DEV_WS_BASE_URL || 'ws://localhost:8000';
   }
 
-  // 프로덕션 기본값은 same-origin (특정 Railway 인스턴스 하드코딩 폴백 제거)
+  // 프로덕션 기본값은 same-origin (특정 외부 인스턴스 하드코딩 폴백 제거)
   return getSameOriginWSBaseURL();
 };
 

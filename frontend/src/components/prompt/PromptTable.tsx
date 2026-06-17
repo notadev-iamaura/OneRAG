@@ -47,9 +47,8 @@ import {
 } from '@/components/ui/tooltip';
 
 import type { Prompt } from '../../types/prompt';
-import { PROMPT_CATEGORIES } from '../../types/prompt';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
-import { format } from '../../i18n/format';
+import { format, formatDate } from '../../i18n/format';
 
 export interface PromptTableProps {
   /** 표시할 프롬프트 목록 */
@@ -77,7 +76,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
   onToggleActive,
   loading = false,
 }) => {
-  const { messages } = useMenuMessages();
+  const { messages, locale } = useMenuMessages();
   // 토글 애니메이션 상태
   const [isAnimating, setIsAnimating] = useState<string | null>(null);
 
@@ -169,7 +168,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                     prompt.category === 'style' ? 'bg-purple-500/5 text-purple-500 border-purple-500/20' :
                       'bg-muted/50 text-muted-foreground border-border/50'
                 )}>
-                  {PROMPT_CATEGORIES.find(c => c.value === prompt.category)?.label || prompt.category}
+                  {messages.promptCategories[prompt.category]?.label || prompt.category}
                 </Badge>
               </TableCell>
 
@@ -185,7 +184,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
 
               {/* 수정일 */}
               <TableCell className="py-4 text-right text-xs font-medium text-muted-foreground">
-                {new Date(prompt.updated_at).toLocaleDateString('ko-KR', {
+                {formatDate(prompt.updated_at, locale, {
                   year: '2-digit', month: '2-digit', day: '2-digit'
                 })}
               </TableCell>

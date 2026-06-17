@@ -16,6 +16,7 @@ import { defaultChatAPIConfig } from './types/chatAPI';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Toaster } from '@/components/ui/toaster';
+import { useMenuMessages } from './i18n/useMenuLocale';
 
 // Code Splitting: 라우트별 지연 로딩
 const ChatPage = lazy(() => import('./pages/ChatPage'));
@@ -26,13 +27,14 @@ const GlobalSettingsPage = lazy(() => import('./pages/Admin/GlobalSettingsPage')
 
 // 로딩 폴백 컴포넌트
 function LoadingFallback() {
+  const { messages } = useMenuMessages();
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-background animate-in fade-in duration-500">
       <div className="relative flex items-center justify-center">
         <div className="h-12 w-12 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
         <Loader2 className="absolute h-5 w-5 text-primary animate-pulse" />
       </div>
-      <p className="mt-4 text-sm font-medium text-muted-foreground animate-pulse">로딩 중...</p>
+      <p className="mt-4 text-sm font-medium text-muted-foreground animate-pulse">{messages.common.loading}</p>
     </div>
   );
 }
@@ -40,6 +42,7 @@ function LoadingFallback() {
 // 랜딩 페이지 컴포넌트
 function LandingPageContent() {
   const navigate = useNavigate();
+  const { messages } = useMenuMessages();
   const isChatbotEnabled = useIsModuleEnabled('chatbot');
   const isDocumentsEnabled = useIsModuleEnabled('documentManagement');
   const isPromptsEnabled = useIsModuleEnabled('prompts');
@@ -59,10 +62,10 @@ function LandingPageContent() {
   }, [isChatbotEnabled, isDocumentsEnabled, isPromptsEnabled, isAdminEnabled, navigate]);
 
   const enabledModules = [
-    { id: 'bot', enabled: isChatbotEnabled, label: '챗봇 사용하기', icon: MessageSquare, description: 'AI 어시스턴트와 대화하세요', path: '/bot', color: 'bg-blue-500/10 text-blue-500' },
-    { id: 'upload', enabled: isDocumentsEnabled, label: '문서 관리', icon: UploadCloud, description: '지식 베이스 문서를 관리합니다', path: '/upload', color: 'bg-emerald-500/10 text-emerald-500' },
-    { id: 'prompts', enabled: isPromptsEnabled, label: '프롬프트 관리', icon: BrainCircuit, description: 'AI 모델의 페르소나를 설정합니다', path: '/prompts', color: 'bg-amber-500/10 text-amber-500' },
-    { id: 'admin', enabled: isAdminEnabled, label: '관리자', icon: Settings, description: '시스템 설정을 관리합니다', path: '/admin', color: 'bg-slate-500/10 text-slate-500' },
+    { id: 'bot', enabled: isChatbotEnabled, label: messages.landing.chatbotLabel, icon: MessageSquare, description: messages.landing.chatbotDescription, path: '/bot', color: 'bg-blue-500/10 text-blue-500' },
+    { id: 'upload', enabled: isDocumentsEnabled, label: messages.landing.documentsLabel, icon: UploadCloud, description: messages.landing.documentsDescription, path: '/upload', color: 'bg-emerald-500/10 text-emerald-500' },
+    { id: 'prompts', enabled: isPromptsEnabled, label: messages.landing.promptsLabel, icon: BrainCircuit, description: messages.landing.promptsDescription, path: '/prompts', color: 'bg-amber-500/10 text-amber-500' },
+    { id: 'admin', enabled: isAdminEnabled, label: messages.landing.adminLabel, icon: Settings, description: messages.landing.adminDescription, path: '/admin', color: 'bg-slate-500/10 text-slate-500' },
   ].filter(m => m.enabled);
 
   if (enabledModules.length === 0) {
@@ -71,8 +74,8 @@ function LandingPageContent() {
         <div className="p-4 rounded-full bg-destructive/10 animate-pulse">
           <AlertCircle className="h-10 w-10 text-destructive" />
         </div>
-        <h2 className="text-2xl font-bold tracking-tight text-foreground">활성화된 기능이 없습니다</h2>
-        <p className="text-muted-foreground font-medium">시스템 관리자에게 문의하세요</p>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">{messages.landing.emptyTitle}</h2>
+        <p className="text-muted-foreground font-medium">{messages.landing.emptyDescription}</p>
       </div>
     );
   }
@@ -92,7 +95,7 @@ function LandingPageContent() {
           {BRAND_CONFIG.appName}
         </h1>
         <p className="text-xl text-muted-foreground font-medium tracking-tight">
-          어떤 서비스를 이용하시겠습니까?
+          {messages.landing.prompt}
         </p>
       </div>
 

@@ -1,3 +1,5 @@
+import { formatDate } from '../../i18n/format';
+import { type MenuLocale } from '../../i18n/menuMessages';
 import { parseHtmlContent } from './htmlParser';
 
 export const formatSourcePreview = (text?: string, limit = 220): string => {
@@ -71,9 +73,10 @@ export const formatModelConfigValue = (value: unknown): string => {
     return String(value);
 };
 
-export const formatTimestamp = (timestamp: string): string => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString('ko-KR', {
+// 타임스탬프를 현재 로케일 규칙으로 시:분 포맷한다.
+// locale 기본값 'ko' → INTL_LOCALES['ko']==='ko-KR'이므로 기존 호출 회귀 0.
+export const formatTimestamp = (timestamp: string, locale: MenuLocale = 'ko'): string => {
+    return formatDate(timestamp, locale, {
         hour: '2-digit',
         minute: '2-digit',
     });

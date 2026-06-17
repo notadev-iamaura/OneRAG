@@ -221,6 +221,39 @@ export interface MenuMessages {
     toastSuccess: string;
     toastInfo: string;
     imageLoadFailed: string;
+    // 라우트 지연 로딩 폴백 등 공용 로딩 문구
+    loading: string;
+  };
+  // 랜딩 페이지(App.tsx) — 모듈 진입 카드 라벨/설명, 빈 상태, 안내 문구
+  landing: {
+    prompt: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    chatbotLabel: string;
+    chatbotDescription: string;
+    documentsLabel: string;
+    documentsDescription: string;
+    promptsLabel: string;
+    promptsDescription: string;
+    adminLabel: string;
+    adminDescription: string;
+  };
+  // 프롬프트 카테고리(PROMPT_CATEGORIES) — value별 라벨/설명(상수 value는 보존, 표시 문자열만 카탈로그화)
+  promptCategories: {
+    system: { label: string; description: string };
+    style: { label: string; description: string };
+    custom: { label: string; description: string };
+  };
+  // 테마 프리셋(THEME_PRESETS) — 색상 프리셋 카드 라벨/설명(프리셋 id는 보존, 표시 문자열만 카탈로그화)
+  themePresets: {
+    monotone: { name: string; description: string };
+    modernBlue: { name: string; description: string };
+    corporateGreen: { name: string; description: string };
+    elegantPurple: { name: string; description: string };
+    warmOrange: { name: string; description: string };
+    professionalGray: { name: string; description: string };
+    vibrantRed: { name: string; description: string };
+    tealCyan: { name: string; description: string };
   };
   // VirtualizedDocumentList — 가상화 문서 목록(상태 라벨/크기·업로드 메타)
   virtualDocList: {
@@ -897,6 +930,35 @@ const ko: MenuMessages = {
     toastSuccess: "성공",
     toastInfo: "알림",
     imageLoadFailed: "이미지 로드 실패",
+    loading: "로딩 중...",
+  },
+  landing: {
+    prompt: "어떤 서비스를 이용하시겠습니까?",
+    emptyTitle: "활성화된 기능이 없습니다",
+    emptyDescription: "시스템 관리자에게 문의하세요",
+    chatbotLabel: "챗봇 사용하기",
+    chatbotDescription: "AI 어시스턴트와 대화하세요",
+    documentsLabel: "문서 관리",
+    documentsDescription: "지식 베이스 문서를 관리합니다",
+    promptsLabel: "프롬프트 관리",
+    promptsDescription: "AI 모델의 페르소나를 설정합니다",
+    adminLabel: "관리자",
+    adminDescription: "시스템 설정을 관리합니다",
+  },
+  promptCategories: {
+    system: { label: "시스템", description: "기본 시스템 프롬프트" },
+    style: { label: "스타일", description: "답변 스타일 프롬프트" },
+    custom: { label: "커스텀", description: "사용자 정의 프롬프트" },
+  },
+  themePresets: {
+    monotone: { name: "모노톤", description: "깔끔한 흑백 디자인으로 전문적인 느낌" },
+    modernBlue: { name: "모던 블루", description: "신뢰감 있는 블루 톤으로 기업 이미지에 적합" },
+    corporateGreen: { name: "코퍼레이트 그린", description: "친환경적이고 안정적인 그린 톤" },
+    elegantPurple: { name: "엘레강트 퍼플", description: "고급스럽고 창의적인 퍼플 톤" },
+    warmOrange: { name: "웜 오렌지", description: "따뜻하고 활기찬 오렌지 톤" },
+    professionalGray: { name: "프로페셔널 그레이", description: "차분하고 전문적인 그레이 톤" },
+    vibrantRed: { name: "바이브런트 레드", description: "강렬하고 열정적인 레드 톤" },
+    tealCyan: { name: "틸 시안", description: "시원하고 현대적인 틸 톤" },
   },
   virtualDocList: {
     sizeLabel: "크기: {size}",
@@ -1516,6 +1578,35 @@ const en: MenuMessages = {
     toastSuccess: "Success",
     toastInfo: "Notice",
     imageLoadFailed: "Failed to load image",
+    loading: "Loading...",
+  },
+  landing: {
+    prompt: "Which service would you like to use?",
+    emptyTitle: "No features are enabled",
+    emptyDescription: "Please contact your system administrator",
+    chatbotLabel: "Start chatting",
+    chatbotDescription: "Talk with the AI assistant",
+    documentsLabel: "Document management",
+    documentsDescription: "Manage your knowledge base documents",
+    promptsLabel: "Prompt management",
+    promptsDescription: "Configure the AI model's persona",
+    adminLabel: "Admin",
+    adminDescription: "Manage system settings",
+  },
+  promptCategories: {
+    system: { label: "System", description: "Default system prompt" },
+    style: { label: "Style", description: "Answer style prompt" },
+    custom: { label: "Custom", description: "User-defined prompt" },
+  },
+  themePresets: {
+    monotone: { name: "Monotone", description: "A clean black-and-white design with a professional feel" },
+    modernBlue: { name: "Modern Blue", description: "A trustworthy blue tone suited to a corporate image" },
+    corporateGreen: { name: "Corporate Green", description: "An eco-friendly and stable green tone" },
+    elegantPurple: { name: "Elegant Purple", description: "A luxurious and creative purple tone" },
+    warmOrange: { name: "Warm Orange", description: "A warm and vibrant orange tone" },
+    professionalGray: { name: "Professional Gray", description: "A calm and professional gray tone" },
+    vibrantRed: { name: "Vibrant Red", description: "An intense and passionate red tone" },
+    tealCyan: { name: "Teal Cyan", description: "A cool and modern teal tone" },
   },
   virtualDocList: {
     sizeLabel: "Size: {size}",

@@ -18,7 +18,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatFileSize } from '../../utils/documentUtils';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
-import { format } from '../../i18n/format';
+import { format, formatDate } from '../../i18n/format';
 import type { Document } from '../../types';
 
 /** DocumentDetailDialog 컴포넌트의 Props */
@@ -67,8 +67,13 @@ export const DocumentDetailDialog: React.FC<DocumentDetailDialogProps> = ({
   document: doc,
   onClose,
 }) => {
-  // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
-  const { messages } = useMenuMessages();
+  // i18n: 현재 로케일에 해당하는 번역 사전과 로케일 코드를 가져온다.
+  const { messages, locale } = useMenuMessages();
+  // 기존 toLocaleString() 기본 출력(날짜 + 시:분:초)을 바이트 동일하게 보존하기 위한 옵션
+  const uploadedAtOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  };
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
       <DialogContent className="max-w-md rounded-[28px] border-border/40 p-0 overflow-hidden">
@@ -84,7 +89,7 @@ export const DocumentDetailDialog: React.FC<DocumentDetailDialogProps> = ({
                 <DetailRow label={messages.docDetail.documentId} value={doc.id} copyable />
                 <DetailRow label={messages.docDetail.fileSize} value={formatFileSize(doc.size)} />
                 <DetailRow label={messages.docDetail.mimeType} value={doc.mimeType} />
-                <DetailRow label={messages.docDetail.uploadedAt} value={new Date(doc.uploadedAt).toLocaleString()} />
+                <DetailRow label={messages.docDetail.uploadedAt} value={formatDate(doc.uploadedAt, locale, uploadedAtOptions)} />
                 <DetailRow label={messages.docDetail.status} value={doc.status} />
                 {hasPositiveCount(doc.chunks) && <DetailRow label={messages.docDetail.chunkCount} value={format(messages.docDetail.chunkCountValue, { count: doc.chunks })} />}
                 {hasPositiveCount(doc.metadata?.pageCount) && <DetailRow label={messages.docDetail.pageCount} value={format(messages.docDetail.pageCountValue, { count: doc.metadata?.pageCount ?? 0 })} />}

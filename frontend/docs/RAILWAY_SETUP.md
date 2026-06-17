@@ -12,7 +12,7 @@
 
 1. Railway 대시보드에서 **Simple-RAG** 서비스 선택
 2. **Settings** → **Networking** → **Public Domain** 확인
-3. 도메인 복사 (예: `simple-rag-production.up.railway.app`)
+3. 도메인 복사 (예: `your-backend.up.railway.app`)
 
 ### 2. 프론트엔드 환경 변수 설정
 
@@ -27,8 +27,8 @@ VITE_API_BASE_URL=https://[백엔드-도메인]
 VITE_WS_BASE_URL=wss://[백엔드-도메인]
 
 # 예시 (실제 백엔드 도메인으로 교체 필요)
-VITE_API_BASE_URL=https://simple-rag-production.up.railway.app
-VITE_WS_BASE_URL=wss://simple-rag-production.up.railway.app
+VITE_API_BASE_URL=https://your-backend.up.railway.app
+VITE_WS_BASE_URL=wss://your-backend.up.railway.app
 ```
 
 **중요**: 
@@ -44,7 +44,7 @@ VITE_WS_BASE_URL=wss://simple-rag-production.up.railway.app
 2. 다음 환경 변수 추가:
 
 ```bash
-CORS_ORIGINS=https://simple-rag-frontend-production.up.railway.app
+CORS_ORIGINS=https://your-frontend.up.railway.app
 ```
 
 ### 4. 재배포
@@ -58,7 +58,7 @@ CORS_ORIGINS=https://simple-rag-frontend-production.up.railway.app
 ## 연결 확인
 
 ### 프론트엔드에서 확인
-1. https://simple-rag-frontend-production.up.railway.app 접속
+1. https://your-frontend.up.railway.app 접속
 2. 브라우저 개발자 도구 (F12) 열기
 3. Console 탭에서 에러 확인
 4. Network 탭에서 API 호출 확인

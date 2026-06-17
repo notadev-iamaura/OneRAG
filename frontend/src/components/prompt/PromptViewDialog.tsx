@@ -28,8 +28,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Label } from '@/components/ui/label';
 
 import type { Prompt } from '../../types/prompt';
-import { PROMPT_CATEGORIES } from '../../types/prompt';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { formatDate } from '../../i18n/format';
 
 export interface PromptViewDialogProps {
   /** 다이얼로그 열림 상태 */
@@ -48,7 +48,12 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
   selectedPrompt,
   onEdit,
 }) => {
-  const { messages } = useMenuMessages();
+  const { messages, locale } = useMenuMessages();
+  // 기존 toLocaleString('ko-KR') 기본 출력(날짜 + 시:분:초)을 바이트 동일하게 보존하기 위한 옵션
+  const dateTimeOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,7 +83,7 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
                   <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.categoryLabel}</Label>
                   <div>
                     <Badge variant="outline" className="rounded-md border-primary/20 text-primary bg-primary/5 font-bold">
-                      {PROMPT_CATEGORIES.find(c => c.value === selectedPrompt.category)?.label || selectedPrompt.category}
+                      {messages.promptCategories[selectedPrompt.category]?.label || selectedPrompt.category}
                     </Badge>
                   </div>
                 </div>
@@ -94,11 +99,11 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
               <div className="grid grid-cols-2 gap-4 pt-2">
                 <div className="space-y-1">
                   <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.createdAtLabel}</Label>
-                  <p className="text-xs font-medium text-muted-foreground italic">{new Date(selectedPrompt.created_at).toLocaleString('ko-KR')}</p>
+                  <p className="text-xs font-medium text-muted-foreground italic">{formatDate(selectedPrompt.created_at, locale, dateTimeOptions)}</p>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.updatedAtLabel}</Label>
-                  <p className="text-xs font-medium text-muted-foreground italic">{new Date(selectedPrompt.updated_at).toLocaleString('ko-KR')}</p>
+                  <p className="text-xs font-medium text-muted-foreground italic">{formatDate(selectedPrompt.updated_at, locale, dateTimeOptions)}</p>
                 </div>
               </div>
 

@@ -37,7 +37,7 @@ import { adminService } from '../../services/adminService';
 import PromptManager from '../../components/PromptManager';
 import { useToast } from '@/hooks/use-toast';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
-import { format } from '../../i18n/format';
+import { format, formatDate } from '../../i18n/format';
 import {
   Card,
   CardContent,
@@ -201,7 +201,15 @@ const AdminDashboard: React.FC = () => {
   const documentsPerPage = 10;
 
   const { toast } = useToast();
-  const { messages } = useMenuMessages();
+  const { messages, locale } = useMenuMessages();
+  // 기존 무인자 toLocale* 기본 출력을 바이트 동일하게 보존하기 위한 옵션
+  // - dateTimeOptions: toLocaleString() 기본(날짜 + 시:분:초)
+  // - timeOptions: toLocaleTimeString() 기본(시:분:초)
+  const dateTimeOptions: Intl.DateTimeFormatOptions = {
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric',
+  };
+  const timeOptions: Intl.DateTimeFormatOptions = { timeStyle: 'medium' };
 
   // 기능 수정 중 팝업 상태
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false);
@@ -504,7 +512,7 @@ const AdminDashboard: React.FC = () => {
                     <div key={chat.id} className="p-4 rounded-2xl bg-muted/20 border border-border/40 hover:bg-muted/40 transition-colors">
                       <p className="font-bold text-sm mb-2 opacity-90">"{chat.message}"</p>
                       <div className="flex flex-wrap items-center gap-3 text-[10px] font-black uppercase text-muted-foreground">
-                        <span>{new Date(chat.timestamp).toLocaleTimeString()}</span>
+                        <span>{formatDate(chat.timestamp, locale, timeOptions)}</span>
                         <Separator orientation="vertical" className="h-3" />
                         <span>{chat.responseTime}ms</span>
                         <Separator orientation="vertical" className="h-3" />
@@ -602,8 +610,8 @@ const AdminDashboard: React.FC = () => {
                         </Badge>
                       </TableCell>
                       <TableCell className="px-6 font-black text-sm">{session.messageCount}</TableCell>
-                      <TableCell className="px-6 text-xs font-medium text-muted-foreground">{new Date(session.created).toLocaleString()}</TableCell>
-                      <TableCell className="px-6 text-xs font-medium text-muted-foreground">{new Date(session.lastActivity).toLocaleString()}</TableCell>
+                      <TableCell className="px-6 text-xs font-medium text-muted-foreground">{formatDate(session.created, locale, dateTimeOptions)}</TableCell>
+                      <TableCell className="px-6 text-xs font-medium text-muted-foreground">{formatDate(session.lastActivity, locale, dateTimeOptions)}</TableCell>
                       <TableCell className="px-6 text-right space-x-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => handleSessionView(session.id)}>
                           <Eye className="w-4 h-4" />
@@ -819,8 +827,8 @@ const AdminDashboard: React.FC = () => {
                 <InfoItem label="SESSION ID" value={selectedSession.id} fullWidth />
                 <InfoItem label="STATUS" value={selectedSession.status.toUpperCase()} />
                 <InfoItem label="TOTAL MESSAGES" value={selectedSession.messageCount} />
-                <InfoItem label="CREATED AT" value={new Date(selectedSession.created).toLocaleString()} />
-                <InfoItem label="LAST ACTIVITY" value={new Date(selectedSession.lastActivity).toLocaleString()} />
+                <InfoItem label="CREATED AT" value={formatDate(selectedSession.created, locale, dateTimeOptions)} />
+                <InfoItem label="LAST ACTIVITY" value={formatDate(selectedSession.lastActivity, locale, dateTimeOptions)} />
                 <InfoItem label="IP ADDRESS" value={selectedSession.ipAddress || 'UNKNOWN'} />
                 <InfoItem label="USER AGENT" value={selectedSession.userAgent || 'N/A'} fullWidth className="text-[10px] items-start" />
               </div>

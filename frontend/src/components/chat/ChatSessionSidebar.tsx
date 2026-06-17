@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { ChatMessage } from '../../types';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
-import { format } from '../../i18n/format';
+import { format, formatDate } from '../../i18n/format';
 
 interface StoredChatSession {
   id: string;
@@ -47,7 +47,7 @@ function createDefaultTitle(messages: ChatMessage[], defaultTitle: string) {
 
 export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelectSession }: ChatSessionSidebarProps) {
   // i18n: prop의 messages(채팅 메시지 배열)와 이름 충돌을 피하기 위해 별칭(i18n)으로 받는다.
-  const { messages: i18n } = useMenuMessages();
+  const { messages: i18n, locale } = useMenuMessages();
   const [sessions, setSessions] = useState<StoredChatSession[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -193,7 +193,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
                       <p className="truncate text-sm font-semibold text-foreground">{session.title}</p>
                     )}
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {format(i18n.chatSidebar.messageCount, { count: session.messageCount })} · {new Date(session.updatedAt).toLocaleDateString()}
+                      {format(i18n.chatSidebar.messageCount, { count: session.messageCount })} · {formatDate(session.updatedAt, locale)}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

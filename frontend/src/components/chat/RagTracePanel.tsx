@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import type { ApiLog, ChatMessage, Source as SourceType } from '../../types';
 import { formatModelDisplayName } from './formatModelDisplayName';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { formatDate } from '../../i18n/format';
 import type { MenuMessages } from '../../i18n/menuMessages';
 
 interface RagTracePanelProps {
@@ -45,7 +46,7 @@ function latestUserMessage(messages: ChatMessage[]) {
 
 export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }: RagTracePanelProps) {
   // i18n: prop의 messages(채팅 메시지 배열)와 이름 충돌을 피하기 위해 별칭(i18n)으로 받는다.
-  const { messages: i18n } = useMenuMessages();
+  const { messages: i18n, locale } = useMenuMessages();
   const assistantMessage = useMemo(() => latestAssistantMessage(messages), [messages]);
   const userMessage = useMemo(() => latestUserMessage(messages), [messages]);
   const sources = assistantMessage?.sources ?? [];
@@ -155,7 +156,7 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
               <div key={log.id} className="flex items-center justify-between gap-2 rounded-xl bg-background/60 border border-border/40 px-3 py-2 text-xs">
                 <div className="min-w-0">
                   <p className="font-semibold truncate">{log.method} {log.endpoint}</p>
-                  <p className="text-muted-foreground">{new Date(log.timestamp).toLocaleTimeString()}</p>
+                  <p className="text-muted-foreground">{formatDate(log.timestamp, locale, { timeStyle: 'medium' })}</p>
                 </div>
                 <Badge variant={log.type === 'request' ? 'outline' : 'secondary'} className="rounded-full">
                   {log.status ?? log.type}

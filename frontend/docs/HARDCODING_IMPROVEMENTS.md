@@ -57,8 +57,8 @@ const getAPIBaseURL = (): string => {
 #### `public/config.js` (런타임 동적 생성)
 ```javascript
 window.RUNTIME_CONFIG = {
-  API_BASE_URL: "https://simple-rag-production.up.railway.app",
-  WS_BASE_URL: "wss://simple-rag-production.up.railway.app",
+  API_BASE_URL: "https://your-backend.up.railway.app",
+  WS_BASE_URL: "wss://your-backend.up.railway.app",
   NODE_ENV: "production",
   TIMESTAMP: "2025-09-01T13:25:32.639Z"
 };
@@ -133,7 +133,7 @@ npm run build:railway
 
 ### 환경변수 시뮬레이션 테스트
 ```bash
-VITE_API_BASE_URL=https://simple-rag-production.up.railway.app npm run generate-config
+VITE_API_BASE_URL=https://your-backend.up.railway.app npm run generate-config
 ✅ 환경변수가 런타임 설정에 올바르게 반영됨
 ```
 
@@ -157,18 +157,18 @@ grep -c "localhost:8000" dist/assets/*.js
 
 ### 1. 환경변수 설정 (Railway 대시보드)
 ```bash
-VITE_API_BASE_URL=https://simple-rag-production.up.railway.app
-VITE_WS_BASE_URL=wss://simple-rag-production.up.railway.app
+VITE_API_BASE_URL=https://your-backend.up.railway.app
+VITE_WS_BASE_URL=wss://your-backend.up.railway.app
 ```
 
 ### 2. 배포 후 확인 사항
 
 #### 브라우저 콘솔에서 확인:
 ```javascript
-🚀 API Base URL: https://simple-rag-production.up.railway.app
+🚀 API Base URL: https://your-backend.up.railway.app
 🚀 Railway Runtime Config Loaded: {
-  API_BASE_URL: "https://simple-rag-production.up.railway.app",
-  WS_BASE_URL: "wss://simple-rag-production.up.railway.app"
+  API_BASE_URL: "https://your-backend.up.railway.app",
+  WS_BASE_URL: "wss://your-backend.up.railway.app"
 }
 ```
 
