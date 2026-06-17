@@ -48,6 +48,8 @@ import {
 
 import type { Prompt } from '../../types/prompt';
 import { PROMPT_CATEGORIES } from '../../types/prompt';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 
 export interface PromptTableProps {
   /** 표시할 프롬프트 목록 */
@@ -75,6 +77,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
   onToggleActive,
   loading = false,
 }) => {
+  const { messages } = useMenuMessages();
   // 토글 애니메이션 상태
   const [isAnimating, setIsAnimating] = useState<string | null>(null);
 
@@ -93,7 +96,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
       <Card className="border-border/40 rounded-2xl">
         <CardContent className="p-12 text-center space-y-4">
           <RefreshCcw className="w-8 h-8 mx-auto text-primary animate-spin opacity-40" />
-          <p className="text-sm font-bold text-muted-foreground animate-pulse">프롬프트 데이터를 불러오는 중...</p>
+          <p className="text-sm font-bold text-muted-foreground animate-pulse">{messages.promptTable.loading}</p>
         </CardContent>
       </Card>
     );
@@ -105,7 +108,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
       <Card className="border-border/40 rounded-2xl border-dashed bg-muted/20">
         <CardContent className="p-12 text-center">
           <Info className="w-8 h-8 mx-auto mb-3 text-muted-foreground opacity-30" />
-          <p className="text-sm font-bold text-muted-foreground">해당하는 프롬프트가 없습니다.</p>
+          <p className="text-sm font-bold text-muted-foreground">{messages.promptTable.empty}</p>
         </CardContent>
       </Card>
     );
@@ -116,12 +119,12 @@ export const PromptTable: React.FC<PromptTableProps> = ({
       <Table>
         <TableHeader className="bg-muted/30">
           <TableRow className="hover:bg-transparent border-border/60">
-            <TableHead className="w-[200px] font-bold py-4">프롬프트명</TableHead>
-            <TableHead className="font-bold py-4">설명</TableHead>
-            <TableHead className="w-[120px] font-bold py-4">카테고리</TableHead>
-            <TableHead className="w-[100px] font-bold py-4">상태</TableHead>
-            <TableHead className="w-[120px] font-bold py-4 text-right">수정일</TableHead>
-            <TableHead className="w-[160px] font-bold py-4 text-right">작업</TableHead>
+            <TableHead className="w-[200px] font-bold py-4">{messages.promptTable.columnName}</TableHead>
+            <TableHead className="font-bold py-4">{messages.promptTable.columnDescription}</TableHead>
+            <TableHead className="w-[120px] font-bold py-4">{messages.promptTable.columnCategory}</TableHead>
+            <TableHead className="w-[100px] font-bold py-4">{messages.promptTable.columnStatus}</TableHead>
+            <TableHead className="w-[120px] font-bold py-4 text-right">{messages.promptTable.columnUpdatedAt}</TableHead>
+            <TableHead className="w-[160px] font-bold py-4 text-right">{messages.promptTable.columnAction}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -175,7 +178,7 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                 <Switch
                   checked={prompt.is_active}
                   onCheckedChange={() => handleToggleWithAnimation(prompt)}
-                  aria-label={`${prompt.name} 활성 상태 전환`}
+                  aria-label={format(messages.promptTable.ariaToggle, { name: prompt.name })}
                   className="data-[state=checked]:bg-primary h-5 w-9 scale-90"
                 />
               </TableCell>
@@ -197,12 +200,12 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                         size="icon"
                         className="h-8 w-8 rounded-lg"
                         onClick={() => onView(prompt)}
-                        aria-label={`${prompt.name} 상세 보기`}
+                        aria-label={format(messages.promptTable.ariaView, { name: prompt.name })}
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>상세 보기</TooltipContent>
+                    <TooltipContent>{messages.promptTable.tooltipView}</TooltipContent>
                   </Tooltip>
 
                   <Tooltip>
@@ -212,12 +215,12 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                         size="icon"
                         className="h-8 w-8 rounded-lg"
                         onClick={() => onEdit(prompt)}
-                        aria-label={`${prompt.name} 수정`}
+                        aria-label={format(messages.promptTable.ariaEdit, { name: prompt.name })}
                       >
                         <Edit2 className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>수정</TooltipContent>
+                    <TooltipContent>{messages.promptTable.tooltipEdit}</TooltipContent>
                   </Tooltip>
 
                   <Tooltip>
@@ -227,12 +230,12 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                         size="icon"
                         className="h-8 w-8 rounded-lg"
                         onClick={() => onDuplicate(prompt)}
-                        aria-label={`${prompt.name} 복제`}
+                        aria-label={format(messages.promptTable.ariaDuplicate, { name: prompt.name })}
                       >
                         <Copy className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>복제</TooltipContent>
+                    <TooltipContent>{messages.promptTable.tooltipDuplicate}</TooltipContent>
                   </Tooltip>
 
                   <Tooltip>
@@ -243,12 +246,12 @@ export const PromptTable: React.FC<PromptTableProps> = ({
                         className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10"
                         onClick={() => onDelete(prompt)}
                         disabled={prompt.category === 'system' && prompt.name === 'system'}
-                        aria-label={`${prompt.name} 삭제`}
+                        aria-label={format(messages.promptTable.ariaDelete, { name: prompt.name })}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>삭제</TooltipContent>
+                    <TooltipContent>{messages.promptTable.tooltipDelete}</TooltipContent>
                   </Tooltip>
                 </div>
               </TableCell>

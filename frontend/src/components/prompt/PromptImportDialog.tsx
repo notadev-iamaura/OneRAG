@@ -29,6 +29,7 @@ import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 export interface PromptImportDialogProps {
   /** 다이얼로그 열림 상태 */
@@ -56,13 +57,15 @@ export const PromptImportDialog: React.FC<PromptImportDialogProps> = ({
   onImportOverwriteChange,
   onImport,
 }) => {
+  const { messages } = useMenuMessages();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl overflow-hidden p-0 rounded-3xl border-none">
         <DialogHeader className="p-6 pb-0">
-          <DialogTitle className="text-xl font-bold">프롬프트 데이터 가져오기</DialogTitle>
+          <DialogTitle className="text-xl font-bold">{messages.promptImport.title}</DialogTitle>
           <DialogDescription>
-            JSON 형식으로 내보낸 프롬프트 데이터를 복사하여 아래에 붙여넣어 주세요.
+            {messages.promptImport.description}
           </DialogDescription>
         </DialogHeader>
 
@@ -71,13 +74,13 @@ export const PromptImportDialog: React.FC<PromptImportDialogProps> = ({
           <Alert className="bg-primary/5 border-none text-primary/80 rounded-2xl p-4">
             <Info className="h-4 w-4" />
             <AlertDescription className="text-xs font-medium">
-              내보내기 기능을 통해 저장된 파일의 JSON 본문 전체를 입력해 주세요.
+              {messages.promptImport.infoNotice}
             </AlertDescription>
           </Alert>
 
           {/* JSON 입력 영역 */}
           <div className="space-y-2">
-            <Label className="text-sm font-bold">JSON 데이터</Label>
+            <Label className="text-sm font-bold">{messages.promptImport.jsonLabel}</Label>
             <Textarea
               placeholder='{"prompts": [...], "exported_at": "...", "total": 0}'
               value={importData}
@@ -89,8 +92,8 @@ export const PromptImportDialog: React.FC<PromptImportDialogProps> = ({
           {/* 덮어쓰기 옵션 */}
           <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl border border-border/40">
             <div className="space-y-0.5">
-              <Label className="text-sm font-bold">중복 시 덮어쓰기</Label>
-              <p className="text-xs text-muted-foreground font-medium italic">이미 동일한 이름의 프롬프트가 존재하는 경우 새로운 데이터로 교체합니다.</p>
+              <Label className="text-sm font-bold">{messages.promptImport.overwriteLabel}</Label>
+              <p className="text-xs text-muted-foreground font-medium italic">{messages.promptImport.overwriteHelp}</p>
             </div>
             <Switch
               checked={importOverwrite}
@@ -102,14 +105,14 @@ export const PromptImportDialog: React.FC<PromptImportDialogProps> = ({
         {/* 하단 버튼 */}
         <DialogFooter className="p-6 border-t border-border/40 bg-muted/10">
           <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl font-bold">
-            취소
+            {messages.common.cancel}
           </Button>
           <Button
             onClick={onImport}
             disabled={!importData.trim()}
             className="rounded-xl font-bold px-10 shadow-lg shadow-primary/20"
           >
-            데이터 가져오기
+            {messages.promptImport.importButton}
           </Button>
         </DialogFooter>
       </DialogContent>

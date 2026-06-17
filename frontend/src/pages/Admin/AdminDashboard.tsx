@@ -36,6 +36,8 @@ import {
 import { adminService } from '../../services/adminService';
 import PromptManager from '../../components/PromptManager';
 import { useToast } from '@/hooks/use-toast';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 import {
   Card,
   CardContent,
@@ -199,6 +201,7 @@ const AdminDashboard: React.FC = () => {
   const documentsPerPage = 10;
 
   const { toast } = useToast();
+  const { messages } = useMenuMessages();
 
   // 기능 수정 중 팝업 상태
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false);
@@ -242,13 +245,13 @@ const AdminDashboard: React.FC = () => {
       logger.error('Failed to load dashboard data:', error);
       toast({
         variant: "destructive",
-        title: "데이터 로딩 실패",
-        description: "대시보드 데이터를 불러오지 못했습니다.",
+        title: messages.adminDashboard.loadFailedToastTitle,
+        description: messages.adminDashboard.loadFailedToastDesc,
       });
     } finally {
       setLoading(false);
     }
-  }, [period, toast]);
+  }, [period, toast, messages]);
 
   // WebSocket 초기화 및 이벤트 리스너
   useEffect(() => {
@@ -260,15 +263,15 @@ const AdminDashboard: React.FC = () => {
 
     adminService.on('connection', (data: { connected: boolean }) => {
       if (data.connected) {
-        toast({ title: "연결 성공", description: "실시간 모니터링 연결됨", variant: "default" });
+        toast({ title: messages.adminDashboard.connectedToastTitle, description: messages.adminDashboard.connectedToastDesc, variant: "default" });
       } else {
-        toast({ title: "연결 끊김", description: "실시간 모니터링 연결 끊김", variant: "destructive" });
+        toast({ title: messages.adminDashboard.disconnectedToastTitle, description: messages.adminDashboard.disconnectedToastDesc, variant: "destructive" });
       }
     });
 
     adminService.on('new-session', (session: Session) => {
       setSessions(prev => [session, ...prev]);
-      toast({ title: "새 세션", description: `세션 생성: ${session.id}` });
+      toast({ title: messages.adminDashboard.newSessionToastTitle, description: format(messages.adminDashboard.newSessionToastDesc, { id: session.id }) });
     });
 
     adminService.on('session-updated', (session: Session) => {
@@ -278,7 +281,7 @@ const AdminDashboard: React.FC = () => {
     return () => {
       adminService.disconnectWebSocket();
     };
-  }, [toast]);
+  }, [toast, messages]);
 
   useEffect(() => {
     loadDashboardData();
@@ -304,12 +307,12 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleRebuildIndex = async () => {
-    if (window.confirm('전체 인덱스를 재구축하시겠습니까? 이 작업은 시간이 오래 걸릴 수 있습니다.')) {
+    if (window.confirm(messages.adminDashboard.rebuildIndexConfirm)) {
       try {
         await adminService.rebuildIndex();
-        toast({ title: "인덱스 재구축", description: "인덱스 재구축이 시작되었습니다." });
+        toast({ title: messages.adminDashboard.rebuildIndexToastTitle, description: messages.adminDashboard.rebuildIndexToastDesc });
       } catch {
-        toast({ variant: "destructive", title: "인덱스 재구축 실패", description: "작업을 시작할 수 없습니다." });
+        toast({ variant: "destructive", title: messages.adminDashboard.rebuildIndexFailToastTitle, description: messages.adminDashboard.rebuildIndexFailToastDesc });
       }
     }
   };
@@ -325,9 +328,9 @@ const AdminDashboard: React.FC = () => {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      toast({ title: "로그 다운로드 완료", description: "로그 파일이 생성되었습니다." });
+      toast({ title: messages.adminDashboard.logDownloadToastTitle, description: messages.adminDashboard.logDownloadToastDesc });
     } catch {
-      toast({ variant: "destructive", title: "다운로드 실패", description: "로그를 다운로드할 수 없습니다." });
+      toast({ variant: "destructive", title: messages.adminDashboard.downloadFailToastTitle, description: messages.adminDashboard.downloadFailToastDesc });
     }
   };
 
@@ -337,18 +340,18 @@ const AdminDashboard: React.FC = () => {
       setSelectedSession(sessionDetails);
       setSessionDetailOpen(true);
     } catch {
-      toast({ variant: "destructive", title: "로딩 실패", description: "세션 정보를 불러올 수 없습니다." });
+      toast({ variant: "destructive", title: messages.adminDashboard.sessionLoadFailToastTitle, description: messages.adminDashboard.sessionLoadFailToastDesc });
     }
   };
 
   const handleSessionDelete = async (sessionId: string) => {
-    if (window.confirm('이 세션을 삭제하시겠습니까?')) {
+    if (window.confirm(messages.adminDashboard.sessionDeleteConfirm)) {
       try {
         await adminService.deleteSession(sessionId);
         setSessions(prev => prev.filter(s => s.id !== sessionId));
-        toast({ title: "세션 삭제", description: "세션이 삭제되었습니다." });
+        toast({ title: messages.adminDashboard.sessionDeleteToastTitle, description: messages.adminDashboard.sessionDeleteToastDesc });
       } catch {
-        toast({ variant: "destructive", title: "삭제 실패", description: "세션을 삭제할 수 없습니다." });
+        toast({ variant: "destructive", title: messages.adminDashboard.deleteFailToastTitle, description: messages.adminDashboard.sessionDeleteFailToastDesc });
       }
     }
   };
@@ -359,13 +362,13 @@ const AdminDashboard: React.FC = () => {
   };
 
   const handleDocumentDelete = async (documentName: string) => {
-    if (window.confirm('이 문서를 삭제하시겠습니까?')) {
+    if (window.confirm(messages.adminDashboard.documentDeleteConfirm)) {
       try {
         await adminService.deleteDocument(documentName);
         setDocuments(prev => prev.filter(d => d.name !== documentName));
-        toast({ title: "문서 삭제", description: "문서가 삭제되었습니다." });
+        toast({ title: messages.adminDashboard.documentDeleteToastTitle, description: messages.adminDashboard.documentDeleteToastDesc });
       } catch {
-        toast({ variant: "destructive", title: "삭제 실패", description: "문서를 삭제할 수 없습니다." });
+        toast({ variant: "destructive", title: messages.adminDashboard.deleteFailToastTitle, description: messages.adminDashboard.documentDeleteFailToastDesc });
       }
     }
   };
@@ -373,9 +376,9 @@ const AdminDashboard: React.FC = () => {
   const handleDocumentReprocess = async (documentName: string) => {
     try {
       await adminService.reprocessDocument(documentName);
-      toast({ title: "재처리 시작", description: "문서 재처리가 시작되었습니다." });
+      toast({ title: messages.adminDashboard.reprocessToastTitle, description: messages.adminDashboard.reprocessToastDesc });
     } catch {
-      toast({ variant: "destructive", title: "재처리 실패", description: "작업을 시작할 수 없습니다." });
+      toast({ variant: "destructive", title: messages.adminDashboard.reprocessFailToastTitle, description: messages.adminDashboard.reprocessFailToastDesc });
     }
   };
 
@@ -395,22 +398,22 @@ const AdminDashboard: React.FC = () => {
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div className="space-y-1">
               <h1 className="text-2xl font-black flex items-center gap-2">
-                <Home className="w-6 h-6 text-primary" /> 관리자 관제 시스템
+                <Home className="w-6 h-6 text-primary" /> {messages.adminDashboard.headerTitle}
               </h1>
-              <p className="text-sm font-medium text-muted-foreground uppercase tracking-widest text-[10px]">Production Operations Center</p>
+              <p className="text-sm font-medium text-muted-foreground uppercase tracking-widest text-[10px]">{messages.adminDashboard.headerSubtitle}</p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
               {realtimeMetrics && (
                 <>
                   <Badge variant="outline" className="rounded-full px-3 py-1 font-bold bg-primary/5 text-primary border-primary/20">
-                    활성 연결: {realtimeMetrics.activeConnections}
+                    {format(messages.adminDashboard.activeConnections, { count: realtimeMetrics.activeConnections })}
                   </Badge>
                   <Badge variant="outline" className={cn(
                     "rounded-full px-3 py-1 font-bold",
                     realtimeMetrics.averageResponseTime > 1000 ? "bg-amber-500/10 text-amber-600 border-amber-200" : "bg-emerald-500/10 text-emerald-600 border-emerald-200"
                   )}>
-                    응답: {realtimeMetrics.averageResponseTime}ms
+                    {format(messages.adminDashboard.responseTime, { ms: realtimeMetrics.averageResponseTime })}
                   </Badge>
                 </>
               )}
@@ -425,22 +428,22 @@ const AdminDashboard: React.FC = () => {
       <Tabs value={currentTab} onValueChange={setCurrentTab} className="space-y-6">
         <TabsList className="bg-muted/50 p-1 rounded-[20px] h-12 flex items-stretch gap-1">
           <TabsTrigger value="overview" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
-            <Home className="w-4 h-4" /> <span className="hidden sm:inline">개요</span>
+            <Home className="w-4 h-4" /> <span className="hidden sm:inline">{messages.adminDashboard.tabOverview}</span>
           </TabsTrigger>
           <TabsTrigger value="sessions" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
-            <Users className="w-4 h-4" /> <span className="hidden sm:inline">세션</span>
+            <Users className="w-4 h-4" /> <span className="hidden sm:inline">{messages.adminDashboard.tabSessions}</span>
           </TabsTrigger>
           <TabsTrigger value="documents" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
-            <FileText className="w-4 h-4" /> <span className="hidden sm:inline">문서</span>
+            <FileText className="w-4 h-4" /> <span className="hidden sm:inline">{messages.adminDashboard.tabDocuments}</span>
           </TabsTrigger>
           <TabsTrigger value="performance" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
-            <BarChart3 className="w-4 h-4" /> <span className="hidden sm:inline">성능</span>
+            <BarChart3 className="w-4 h-4" /> <span className="hidden sm:inline">{messages.adminDashboard.tabPerformance}</span>
           </TabsTrigger>
           <TabsTrigger value="prompts" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
-            <Brain className="w-4 h-4" /> <span className="hidden sm:inline">프롬프트</span>
+            <Brain className="w-4 h-4" /> <span className="hidden sm:inline">{messages.adminDashboard.tabPrompts}</span>
           </TabsTrigger>
           <TabsTrigger value="settings" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
-            <Settings className="w-4 h-4" /> <span className="hidden sm:inline">설정</span>
+            <Settings className="w-4 h-4" /> <span className="hidden sm:inline">{messages.adminDashboard.tabSettings}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -449,28 +452,28 @@ const AdminDashboard: React.FC = () => {
           {/* 요약 메트릭 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
-              label="누적 활성 세션"
+              label={messages.adminDashboard.metricTotalSessions}
               value={metrics?.totalSessions || 0}
               chartData={metrics?.timeSeries || []}
               dataKey="sessions"
               color={COLORS.chart.blue}
             />
             <MetricCard
-              label="처리된 총 쿼리"
+              label={messages.adminDashboard.metricTotalQueries}
               value={metrics?.totalQueries || 0}
               chartData={metrics?.timeSeries || []}
               dataKey="queries"
               color={COLORS.chart.green}
             />
             <MetricCard
-              label="평균 응답 지연"
+              label={messages.adminDashboard.metricAvgResponseTime}
               value={`${metrics?.avgResponseTime?.toFixed(1) || 0}s`}
               chartData={metrics?.timeSeries || []}
               dataKey="avgResponseTime"
               color={COLORS.chart.orange}
             />
             <MetricCard
-              label="실시간 연결"
+              label={messages.adminDashboard.metricRealtimeConnections}
               value={realtimeMetrics?.activeConnections || 0}
               isStatic
             />
@@ -479,12 +482,12 @@ const AdminDashboard: React.FC = () => {
           {/* 인사이트 분석 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <InsightList
-              title="주요 문의 키워드 TOP 5"
-              items={keywords?.keywords.map(k => ({ label: k.keyword, value: `${k.count}회`, rank: k.rank })) || []}
+              title={messages.adminDashboard.insightKeywordsTitle}
+              items={keywords?.keywords.map(k => ({ label: k.keyword, value: format(messages.adminDashboard.insightCountUnit, { count: k.count }), rank: k.rank })) || []}
             />
             <InsightList
-              title="자주 인용된 청크 TOP 5"
-              items={chunks?.chunks.map(c => ({ label: c.chunkName, value: `${c.count}회`, rank: c.rank })) || []}
+              title={messages.adminDashboard.insightChunksTitle}
+              items={chunks?.chunks.map(c => ({ label: c.chunkName, value: format(messages.adminDashboard.insightCountUnit, { count: c.count }), rank: c.rank })) || []}
             />
           </div>
 
@@ -493,8 +496,8 @@ const AdminDashboard: React.FC = () => {
             <div className="lg:col-span-8 space-y-4">
               <Card className="rounded-[28px] border-border/60">
                 <CardHeader className="flex flex-row items-center justify-between">
-                  <CardTitle className="text-lg font-black">실시간 쿼리 피드</CardTitle>
-                  <Button variant="ghost" size="sm" className="font-bold text-xs">전체보기</Button>
+                  <CardTitle className="text-lg font-black">{messages.adminDashboard.recentChatsTitle}</CardTitle>
+                  <Button variant="ghost" size="sm" className="font-bold text-xs">{messages.adminDashboard.viewAll}</Button>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {recentChats.slice(0, 5).map((chat) => (
@@ -521,22 +524,22 @@ const AdminDashboard: React.FC = () => {
             {/* 시스템 도구 */}
             <div className="lg:col-span-4 space-y-4">
               <Card className="rounded-[28px] border-border/60">
-                <CardHeader><CardTitle className="text-lg font-black">시스템 작업</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-lg font-black">{messages.adminDashboard.systemToolsTitle}</CardTitle></CardHeader>
                 <CardContent className="space-y-2">
                   <Button variant="outline" className="w-full justify-start rounded-xl font-bold h-11" onClick={() => setTestDialogOpen(true)}>
-                    <Play className="w-4 h-4 mr-3 text-primary" /> RAG 엔진 빠른 테스트
+                    <Play className="w-4 h-4 mr-3 text-primary" /> {messages.adminDashboard.quickTestRag}
                   </Button>
                   <Button variant="outline" className="w-full justify-start rounded-xl font-bold h-11" onClick={handleRebuildIndex}>
-                    <Wrench className="w-4 h-4 mr-3 text-primary" /> 벡터 인덱스 전체 재구축
+                    <Wrench className="w-4 h-4 mr-3 text-primary" /> {messages.adminDashboard.rebuildIndexAction}
                   </Button>
                   <Button variant="outline" className="w-full justify-start rounded-xl font-bold h-11" onClick={handleDownloadLogs}>
-                    <Download className="w-4 h-4 mr-3 text-primary" /> 시스템 실행 로그 내보내기
+                    <Download className="w-4 h-4 mr-3 text-primary" /> {messages.adminDashboard.exportLogs}
                   </Button>
                 </CardContent>
               </Card>
 
               <Card className="rounded-[28px] border-border/60 bg-primary/5 border-primary/20">
-                <CardHeader><CardTitle className="text-lg font-black">글로벌 지표</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-lg font-black">{messages.adminDashboard.globalMetricsTitle}</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
                   {countries?.countries.slice(0, 5).map((c, idx) => (
                     <div key={idx} className="flex justify-between items-center text-sm font-bold">
@@ -555,19 +558,19 @@ const AdminDashboard: React.FC = () => {
           <Card className="rounded-[28px] border-border/60 overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-xl font-black">활성 세션 관리</CardTitle>
-                <CardDescription className="text-xs font-medium">실시간 사용자 세션 및 하이재킹 모니터링</CardDescription>
+                <CardTitle className="text-xl font-black">{messages.adminDashboard.sessionsTitle}</CardTitle>
+                <CardDescription className="text-xs font-medium">{messages.adminDashboard.sessionsDescription}</CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 <Select defaultValue="all">
                   <SelectTrigger className="w-32 rounded-xl h-9 text-xs font-bold">
-                    <SelectValue placeholder="상태 필터" />
+                    <SelectValue placeholder={messages.adminDashboard.statusFilterPlaceholder} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">전체 상태</SelectItem>
-                    <SelectItem value="active">활성</SelectItem>
-                    <SelectItem value="idle">대기</SelectItem>
-                    <SelectItem value="expired">만료</SelectItem>
+                    <SelectItem value="all">{messages.adminDashboard.statusAll}</SelectItem>
+                    <SelectItem value="active">{messages.adminDashboard.statusActive}</SelectItem>
+                    <SelectItem value="idle">{messages.adminDashboard.statusIdle}</SelectItem>
+                    <SelectItem value="expired">{messages.adminDashboard.statusExpired}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -576,12 +579,12 @@ const AdminDashboard: React.FC = () => {
               <Table>
                 <TableHeader className="bg-muted/30">
                   <TableRow>
-                    <TableHead className="font-black text-xs uppercase px-6">세션 식별자</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6">상태</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6">메시지</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6">생성 일시</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6">마지막 활동</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6 text-right">관리</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnSessionId}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnStatus}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnMessages}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnCreatedAt}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnLastActivity}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6 text-right">{messages.adminDashboard.columnManage}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -633,23 +636,23 @@ const AdminDashboard: React.FC = () => {
           <Card className="rounded-[28px] border-border/60 overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle className="text-xl font-black">시맨틱 데이터 자산</CardTitle>
-                <CardDescription className="text-xs font-medium">벡터 데이터베이스에 등록된 청크화된 문서 목록</CardDescription>
+                <CardTitle className="text-xl font-black">{messages.adminDashboard.documentsTitle}</CardTitle>
+                <CardDescription className="text-xs font-medium">{messages.adminDashboard.documentsDescription}</CardDescription>
               </div>
               <Button size="sm" className="rounded-xl font-black shadow-lg shadow-primary/20">
-                <FileText className="w-4 h-4 mr-2" /> 새 문서 등록
+                <FileText className="w-4 h-4 mr-2" /> {messages.adminDashboard.registerDocument}
               </Button>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader className="bg-muted/30">
                   <TableRow>
-                    <TableHead className="font-black text-xs uppercase px-6">문서명</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6">청크</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6">용량</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6">상태</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6">최종 갱신</TableHead>
-                    <TableHead className="font-black text-xs uppercase px-6 text-right">작업</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnDocumentName}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnChunks}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnSize}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnDocStatus}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6">{messages.adminDashboard.columnLastUpdate}</TableHead>
+                    <TableHead className="font-black text-xs uppercase px-6 text-right">{messages.adminDashboard.columnAction}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -672,7 +675,7 @@ const AdminDashboard: React.FC = () => {
                           <Eye className="w-4 h-4" />
                         </Button>
                         <Button variant="outline" size="sm" className="h-8 px-3 rounded-lg text-xs font-black" onClick={() => handleDocumentReprocess(doc.name)}>
-                          재처리
+                          {messages.adminDashboard.reprocessButton}
                         </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-destructive hover:bg-destructive/10" onClick={() => handleDocumentDelete(doc.name)}>
                           <Trash2 className="w-4 h-4" />
@@ -702,7 +705,7 @@ const AdminDashboard: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-5 space-y-6">
               <Card className="rounded-[28px] border-border/60 overflow-hidden">
-                <CardHeader><CardTitle className="text-lg font-black">장치 리소스 실시간 부하</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-lg font-black">{messages.adminDashboard.deviceLoadTitle}</CardTitle></CardHeader>
                 <CardContent className="pt-0 space-y-8">
                   {realtimeMetrics && (
                     <div className="grid grid-cols-2 gap-8">
@@ -717,7 +720,7 @@ const AdminDashboard: React.FC = () => {
             </div>
             <div className="lg:col-span-7">
               <Card className="rounded-[28px] border-border/60 h-full">
-                <CardHeader><CardTitle className="text-lg font-black">시계열 서비스 지연 시간 (Latency)</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="text-lg font-black">{messages.adminDashboard.latencyTitle}</CardTitle></CardHeader>
                 <CardContent className="h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={metrics?.timeSeries || []}>
@@ -749,18 +752,18 @@ const AdminDashboard: React.FC = () => {
       <Dialog open={testDialogOpen} onOpenChange={setTestDialogOpen}>
         <DialogContent className="max-w-2xl rounded-[32px] p-8 border-none shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-black">RAG 시맨틱 엔진 테스트</DialogTitle>
-            <DialogDescription className="font-medium text-muted-foreground">현재 활성화된 프롬프트와 문서 데이터를 기반으로 추론 성능을 검증합니다.</DialogDescription>
+            <DialogTitle className="text-2xl font-black">{messages.adminDashboard.testDialogTitle}</DialogTitle>
+            <DialogDescription className="font-medium text-muted-foreground">{messages.adminDashboard.testDialogDescription}</DialogDescription>
           </DialogHeader>
           <div className="space-y-6 my-4">
             <div className="space-y-2">
-              <Label className="text-xs font-black uppercase text-primary ml-1">테스트 쿼리 입력</Label>
+              <Label className="text-xs font-black uppercase text-primary ml-1">{messages.adminDashboard.testQueryLabel}</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   value={testQuery}
                   onChange={(e) => setTestQuery(e.target.value)}
-                  placeholder="검색할 질문을 입력하세요..."
+                  placeholder={messages.adminDashboard.testQueryPlaceholder}
                   className="pl-10 h-12 rounded-2xl border-border/60 focus:ring-primary/20 transition-all font-bold"
                 />
               </div>
@@ -771,7 +774,7 @@ const AdminDashboard: React.FC = () => {
                 <Separator />
                 <div className="space-y-4">
                   <div className="space-y-2 font-bold">
-                    <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">인용된 소스 (Retrieved Chunks)</Label>
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">{messages.adminDashboard.retrievedChunksLabel}</Label>
                     <ScrollArea className="h-32 rounded-2xl bg-muted/30 border border-border/40 p-4">
                       {testResult.retrievedChunks?.map((chunk: Record<string, unknown>, i: number) => (
                         <div key={i} className="text-sm mb-3 last:mb-0 pb-3 border-b border-border/20 last:border-0">
@@ -782,7 +785,7 @@ const AdminDashboard: React.FC = () => {
                     </ScrollArea>
                   </div>
                   <div className="space-y-2 font-bold">
-                    <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">생성된 응답 (LLM Answer)</Label>
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">{messages.adminDashboard.llmAnswerLabel}</Label>
                     <div className="p-4 rounded-2xl bg-primary/5 border border-primary/10 text-sm leading-relaxed whitespace-pre-wrap font-medium">
                       {testResult.generatedAnswer}
                       {testResult.error && <p className="text-destructive font-black">{testResult.error}</p>}
@@ -796,9 +799,9 @@ const AdminDashboard: React.FC = () => {
             )}
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="ghost" onClick={() => setTestDialogOpen(false)} className="rounded-xl font-bold">닫기</Button>
+            <Button variant="ghost" onClick={() => setTestDialogOpen(false)} className="rounded-xl font-bold">{messages.adminDashboard.closeButton}</Button>
             <Button onClick={handleTest} disabled={testLoading || !testQuery.trim()} className="rounded-xl font-black bg-primary px-8">
-              {testLoading ? <RotateCw className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />} 테스트 시작
+              {testLoading ? <RotateCw className="w-4 h-4 animate-spin mr-2" /> : <Play className="w-4 h-4 mr-2" />} {messages.adminDashboard.testStartButton}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -808,7 +811,7 @@ const AdminDashboard: React.FC = () => {
       <Dialog open={sessionDetailOpen} onOpenChange={setSessionDetailOpen}>
         <DialogContent className="max-w-xl rounded-[32px] p-8">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-black">세션 포렌식 정보</DialogTitle>
+            <DialogTitle className="text-2xl font-black">{messages.adminDashboard.sessionDetailTitle}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 my-2">
             {selectedSession && (
@@ -824,9 +827,9 @@ const AdminDashboard: React.FC = () => {
             )}
           </div>
           <DialogFooter className="mt-6 gap-2">
-            <Button variant="ghost" onClick={() => setSessionDetailOpen(false)} className="rounded-xl font-bold">닫기</Button>
+            <Button variant="ghost" onClick={() => setSessionDetailOpen(false)} className="rounded-xl font-bold">{messages.adminDashboard.closeButton}</Button>
             <Button variant="destructive" onClick={() => selectedSession && handleSessionDelete(selectedSession.id)} className="rounded-xl font-bold bg-destructive/90">
-              세션 강제 종료
+              {messages.adminDashboard.sessionForceClose}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -836,7 +839,7 @@ const AdminDashboard: React.FC = () => {
       <Dialog open={documentDetailOpen} onOpenChange={setDocumentDetailOpen}>
         <DialogContent className="max-w-xl rounded-[32px] p-8">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-black">데이터 자산 명세</DialogTitle>
+            <DialogTitle className="text-2xl font-black">{messages.adminDashboard.documentDetailTitle}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 my-2">
             {selectedDocument && (
@@ -862,12 +865,12 @@ const AdminDashboard: React.FC = () => {
             )}
           </div>
           <DialogFooter className="mt-6 gap-2">
-            <Button variant="ghost" onClick={() => setDocumentDetailOpen(false)} className="rounded-xl font-bold">닫기</Button>
+            <Button variant="ghost" onClick={() => setDocumentDetailOpen(false)} className="rounded-xl font-bold">{messages.adminDashboard.closeButton}</Button>
             <Button variant="outline" onClick={() => selectedDocument && handleDocumentReprocess(selectedDocument.name)} className="rounded-xl font-bold">
-              재처리
+              {messages.adminDashboard.reprocessButton}
             </Button>
             <Button variant="destructive" onClick={() => selectedDocument && handleDocumentDelete(selectedDocument.name)} className="rounded-xl font-bold bg-destructive/90">
-              영구 삭제
+              {messages.adminDashboard.documentPermanentDelete}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -880,14 +883,14 @@ const AdminDashboard: React.FC = () => {
             <Wrench className="w-10 h-10 text-primary animate-pulse" />
           </div>
           <DialogHeader>
-            <DialogTitle className="text-2xl font-black text-center">🔧 시스템 업그레이드 중</DialogTitle>
+            <DialogTitle className="text-2xl font-black text-center">{messages.adminDashboard.maintenanceTitle}</DialogTitle>
             <DialogDescription className="text-center font-medium leading-relaxed">
-              관리자 모니터링 모듈을 더 강력하고 안전하게 개선하고 있습니다.<br />잠시 후 다시 시도해 주세요.
+              {messages.adminDashboard.maintenanceDescriptionLine1}<br />{messages.adminDashboard.maintenanceDescriptionLine2}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="justify-center mt-6">
             <Button onClick={handleBackToDeveloperTools} className="rounded-2xl font-black px-8 py-6 h-auto text-lg bg-primary shadow-xl shadow-primary/20">
-              대시보드로 돌아가기
+              {messages.adminDashboard.maintenanceBack}
             </Button>
           </DialogFooter>
         </DialogContent>

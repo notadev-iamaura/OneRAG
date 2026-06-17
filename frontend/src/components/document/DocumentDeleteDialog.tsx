@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 /** DocumentDeleteDialog 컴포넌트의 Props */
 export interface DocumentDeleteDialogProps {
@@ -39,6 +40,8 @@ export const DocumentDeleteDialog: React.FC<DocumentDeleteDialogProps> = ({
   onConfirm,
   onCancel,
 }) => {
+  // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
+  const { messages } = useMenuMessages();
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}>
       <DialogContent className="rounded-[28px] max-w-sm">
@@ -46,16 +49,16 @@ export const DocumentDeleteDialog: React.FC<DocumentDeleteDialogProps> = ({
           <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mb-4">
             <Trash2 className="w-6 h-6" />
           </div>
-          <DialogTitle className="text-xl font-black">문서 삭제</DialogTitle>
+          <DialogTitle className="text-xl font-black">{messages.docDelete.singleTitle}</DialogTitle>
           <DialogDescription className="font-medium text-sm">
-            이 문서를 삭제하시겠습니까? <br />이 작업은 되돌릴 수 없습니다.
+            {messages.docDelete.singleDescriptionLine1}<br />{messages.docDelete.singleDescriptionLine2}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 mt-4">
-          <Button variant="ghost" onClick={onCancel} disabled={loading} className="rounded-xl font-bold">취소</Button>
+          <Button variant="ghost" onClick={onCancel} disabled={loading} className="rounded-xl font-bold">{messages.common.cancel}</Button>
           <Button variant="destructive" onClick={onConfirm} disabled={loading} className="rounded-xl font-bold shadow-lg shadow-destructive/20">
             {loading ? <RotateCw className="w-4 h-4 mr-2 animate-spin" /> : null}
-            {loading ? '삭제 중...' : '삭제하기'}
+            {loading ? messages.docDelete.deleting : messages.docDelete.delete}
           </Button>
         </DialogFooter>
       </DialogContent>

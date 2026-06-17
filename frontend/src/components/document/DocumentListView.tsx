@@ -28,6 +28,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '../../utils/documentUtils';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 import type { Document } from '../../types';
 
 /** DocumentListView 컴포넌트의 Props */
@@ -76,6 +77,8 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
   onDownload,
   onDeleteSingle,
 }) => {
+  // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
+  const { messages } = useMenuMessages();
   return (
     <Card className="border-border/60 overflow-hidden rounded-[24px]">
       <Table>
@@ -88,11 +91,11 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
                 className="rounded-md border-border/60"
               />
             </TableHead>
-            <TableHead className="font-bold py-4">파일명</TableHead>
-            <TableHead className="font-bold">크기</TableHead>
-            <TableHead className="font-bold">업로드 일시</TableHead>
-            <TableHead className="font-bold">상태</TableHead>
-            <TableHead className="text-right font-bold pr-6">액션</TableHead>
+            <TableHead className="font-bold py-4">{messages.docList.columnFilename}</TableHead>
+            <TableHead className="font-bold">{messages.docList.columnSize}</TableHead>
+            <TableHead className="font-bold">{messages.docList.columnUploadedAt}</TableHead>
+            <TableHead className="font-bold">{messages.docList.columnStatus}</TableHead>
+            <TableHead className="text-right font-bold pr-6">{messages.docList.columnAction}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

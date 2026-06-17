@@ -15,6 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 
 /** DocumentBulkDeleteDialog 컴포넌트의 Props */
 export interface DocumentBulkDeleteDialogProps {
@@ -42,6 +44,8 @@ export const DocumentBulkDeleteDialog: React.FC<DocumentBulkDeleteDialogProps> =
   onConfirm,
   onCancel,
 }) => {
+  // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
+  const { messages } = useMenuMessages();
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}>
       <DialogContent className="rounded-[28px] max-w-sm">
@@ -49,16 +53,16 @@ export const DocumentBulkDeleteDialog: React.FC<DocumentBulkDeleteDialogProps> =
           <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mb-4">
             <ShieldAlert className="w-6 h-6" />
           </div>
-          <DialogTitle className="text-xl font-black">{selectedCount}개 문서 삭제</DialogTitle>
+          <DialogTitle className="text-xl font-black">{format(messages.docDelete.bulkTitle, { count: selectedCount })}</DialogTitle>
           <DialogDescription className="font-medium text-sm">
-            선택한 모든 문서를 영구적으로 삭제합니다.<br />정말 진행하시겠습니까?
+            {messages.docDelete.bulkDescriptionLine1}<br />{messages.docDelete.bulkDescriptionLine2}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="gap-2 mt-4">
-          <Button variant="ghost" onClick={onCancel} disabled={loading} className="rounded-xl font-bold">취소</Button>
+          <Button variant="ghost" onClick={onCancel} disabled={loading} className="rounded-xl font-bold">{messages.common.cancel}</Button>
           <Button variant="destructive" onClick={onConfirm} disabled={loading} className="rounded-xl font-bold shadow-lg shadow-destructive/20">
             {loading ? <RotateCw className="w-4 h-4 mr-2 animate-spin" /> : null}
-            삭제 승인
+            {messages.docDelete.bulkConfirm}
           </Button>
         </DialogFooter>
       </DialogContent>

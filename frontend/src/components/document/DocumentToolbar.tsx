@@ -27,6 +27,8 @@ import {
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 import type { SortField, SortDirection } from '../../utils/documentUtils';
 
 /** DocumentToolbar 컴포넌트의 Props */
@@ -79,6 +81,8 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
   onBulkDelete,
   onDeleteAll,
 }) => {
+  // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
+  const { messages } = useMenuMessages();
   return (
     <Card className="border-border/60 shadow-sm overflow-visible">
       <CardContent className="p-4">
@@ -88,8 +92,8 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                aria-label="문서 검색"
-                placeholder="문서 검색..."
+                aria-label={messages.docToolbar.searchAria}
+                placeholder={messages.docToolbar.searchPlaceholder}
                 value={searchQuery}
                 onChange={(e) => onSearchChange(e.target.value)}
                 className="pl-10 rounded-xl border-border/60 focus-visible:ring-primary/20"
@@ -97,14 +101,14 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
             </div>
             <div className="w-40 shrink-0">
               <Select value={sortField} onValueChange={(v: string) => onSortFieldChange(v as SortField)}>
-                <SelectTrigger aria-label="정렬 기준" className="rounded-xl border-border/60 font-bold">
-                  <SelectValue placeholder="정렬 기준" />
+                <SelectTrigger aria-label={messages.docToolbar.sortFieldAria} className="rounded-xl border-border/60 font-bold">
+                  <SelectValue placeholder={messages.docToolbar.sortFieldPlaceholder} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="uploadedAt">업로드 일시</SelectItem>
-                  <SelectItem value="filename">파일명</SelectItem>
-                  <SelectItem value="size">파일 크기</SelectItem>
-                  <SelectItem value="type">파일 타입</SelectItem>
+                  <SelectItem value="uploadedAt">{messages.docToolbar.sortUploadedAt}</SelectItem>
+                  <SelectItem value="filename">{messages.docToolbar.sortFilename}</SelectItem>
+                  <SelectItem value="size">{messages.docToolbar.sortSize}</SelectItem>
+                  <SelectItem value="type">{messages.docToolbar.sortType}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -112,7 +116,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
               variant="ghost"
               size="icon"
               onClick={onSortDirectionToggle}
-              aria-label={sortDirection === 'asc' ? '오름차순 정렬' : '내림차순 정렬'}
+              aria-label={sortDirection === 'asc' ? messages.docToolbar.sortAsc : messages.docToolbar.sortDesc}
               className="rounded-xl border border-border/60 shrink-0 hover:bg-muted"
               data-testid="sort-direction-button"
             >
@@ -127,7 +131,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
                 variant={viewMode === 'list' ? 'secondary' : 'ghost'}
                 size="icon"
                 onClick={() => onViewModeChange('list')}
-                aria-label="목록 보기"
+                aria-label={messages.docToolbar.viewList}
                 aria-pressed={viewMode === 'list'}
                 className={cn("h-8 w-8 rounded-lg", viewMode === 'list' && "shadow-sm bg-background")}
                 data-testid="view-mode-list"
@@ -138,7 +142,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
                 variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
                 size="icon"
                 onClick={() => onViewModeChange('grid')}
-                aria-label="격자 보기"
+                aria-label={messages.docToolbar.viewGrid}
                 aria-pressed={viewMode === 'grid'}
                 className={cn("h-8 w-8 rounded-lg", viewMode === 'grid' && "shadow-sm bg-background")}
                 data-testid="view-mode-grid"
@@ -158,7 +162,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
                   className="rounded-xl h-9 font-bold px-4 animate-in zoom-in duration-200"
                 >
                   <Trash className="w-4 h-4 mr-2" />
-                  선택 삭제 ({selectedCount})
+                  {format(messages.docToolbar.bulkDelete, { count: selectedCount })}
                 </Button>
               )}
               <Button
@@ -168,13 +172,13 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
                 className="rounded-xl h-9 font-bold border-destructive/30 text-destructive hover:bg-destructive/10"
               >
                 <AlertTriangle className="w-4 h-4 mr-2" />
-                전체 삭제
+                {messages.docToolbar.deleteAll}
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onRefresh}
-                aria-label={loading ? '문서 새로고침 중' : '문서 새로고침'}
+                aria-label={loading ? messages.docToolbar.refreshing : messages.docToolbar.refresh}
                 className="rounded-xl h-9 w-9 text-primary hover:bg-primary/10"
                 data-testid="refresh-button"
               >

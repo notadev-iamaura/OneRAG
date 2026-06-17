@@ -30,6 +30,8 @@ import {
 } from '@/components/ui/select';
 
 import { PROMPT_CATEGORIES } from '../../types/prompt';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 
 export interface PromptFilterBarProps {
   /** 현재 검색어 */
@@ -57,6 +59,8 @@ export const PromptFilterBar: React.FC<PromptFilterBarProps> = ({
   onCategoryFilterChange,
   onActiveFilterChange,
 }) => {
+  const { messages } = useMenuMessages();
+
   return (
     <Card className="border-border/60 shadow-sm rounded-2xl overflow-hidden bg-background/50 backdrop-blur-sm">
       <CardContent className="p-6">
@@ -65,7 +69,7 @@ export const PromptFilterBar: React.FC<PromptFilterBarProps> = ({
           <div className="md:col-span-5 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="이름 또는 설명으로 검색..."
+              placeholder={messages.promptFilter.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => onSearchQueryChange(e.target.value)}
               className="pl-10 h-10 rounded-xl border-border/40 focus-visible:ring-primary/20 transition-all"
@@ -76,10 +80,10 @@ export const PromptFilterBar: React.FC<PromptFilterBarProps> = ({
           <div className="md:col-span-3">
             <Select value={categoryFilter} onValueChange={onCategoryFilterChange}>
               <SelectTrigger className="h-10 rounded-xl border-border/40">
-                <SelectValue placeholder="카테고리 선택" />
+                <SelectValue placeholder={messages.promptFilter.categoryPlaceholder} />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
-                <SelectItem value="all">전체 카테고리</SelectItem>
+                <SelectItem value="all">{messages.promptFilter.allCategories}</SelectItem>
                 {PROMPT_CATEGORIES.map((category) => (
                   <SelectItem key={category.value} value={category.value}>
                     {category.label}
@@ -93,12 +97,12 @@ export const PromptFilterBar: React.FC<PromptFilterBarProps> = ({
           <div className="md:col-span-3">
             <Select value={activeFilter} onValueChange={onActiveFilterChange}>
               <SelectTrigger className="h-10 rounded-xl border-border/40">
-                <SelectValue placeholder="상태 선택" />
+                <SelectValue placeholder={messages.promptFilter.statusPlaceholder} />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
-                <SelectItem value="all">전체 상태</SelectItem>
-                <SelectItem value="active">활성 프롬프트</SelectItem>
-                <SelectItem value="inactive">비활성 프롬프트</SelectItem>
+                <SelectItem value="all">{messages.promptFilter.allStatus}</SelectItem>
+                <SelectItem value="active">{messages.promptFilter.activeOnly}</SelectItem>
+                <SelectItem value="inactive">{messages.promptFilter.inactiveOnly}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -106,7 +110,7 @@ export const PromptFilterBar: React.FC<PromptFilterBarProps> = ({
           {/* 총 개수 표시 */}
           <div className="md:col-span-1 text-right">
             <span className="text-xs font-bold text-muted-foreground bg-muted/50 px-2 py-1 rounded-lg">
-              총 {filteredCount}개
+              {format(messages.promptFilter.totalCount, { count: filteredCount })}
             </span>
           </div>
         </div>

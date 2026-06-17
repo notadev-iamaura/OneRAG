@@ -24,6 +24,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import type { Prompt } from '../../types/prompt';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 export interface PromptDeleteDialogProps {
   /** 다이얼로그 열림 상태 */
@@ -42,6 +43,8 @@ export const PromptDeleteDialog: React.FC<PromptDeleteDialogProps> = ({
   selectedPrompt,
   onConfirm,
 }) => {
+  const { messages } = useMenuMessages();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md p-0 overflow-hidden rounded-3xl border-none shadow-2xl">
@@ -53,9 +56,9 @@ export const PromptDeleteDialog: React.FC<PromptDeleteDialogProps> = ({
 
           {/* 삭제 확인 메시지 */}
           <div className="space-y-1">
-            <DialogTitle className="text-xl font-bold text-foreground">프롬프트 삭제</DialogTitle>
+            <DialogTitle className="text-xl font-bold text-foreground">{messages.promptDelete.title}</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
-              &apos;<span className="font-bold text-foreground">{selectedPrompt?.name}</span>&apos; 프롬프트를 정말 삭제하시겠습니까?<br />이 작업은 되돌릴 수 없습니다.
+              &apos;<span className="font-bold text-foreground">{selectedPrompt?.name}</span>&apos;{messages.promptDelete.descriptionLine1}<br />{messages.promptDelete.descriptionLine2}
             </DialogDescription>
           </div>
 
@@ -64,7 +67,7 @@ export const PromptDeleteDialog: React.FC<PromptDeleteDialogProps> = ({
             <Alert variant="destructive" className="bg-destructive/10 text-destructive border-none rounded-2xl text-left mt-4 p-3">
               <Info className="h-4 w-4" />
               <AlertDescription className="text-xs font-bold leading-tight uppercase tracking-tight">
-                시스템 핵심 프롬프트입니다. 삭제 시 시스템 동작이 불안정해질 수 있습니다.
+                {messages.promptDelete.systemWarning}
               </AlertDescription>
             </Alert>
           )}
@@ -73,10 +76,10 @@ export const PromptDeleteDialog: React.FC<PromptDeleteDialogProps> = ({
         {/* 하단 버튼 */}
         <DialogFooter className="p-6 pt-2 grid grid-cols-2 gap-3">
           <Button variant="outline" onClick={() => onOpenChange(false)} className="rounded-xl font-bold h-12">
-            취소
+            {messages.common.cancel}
           </Button>
           <Button variant="destructive" onClick={onConfirm} className="rounded-xl font-bold h-12 shadow-lg shadow-destructive/20">
-            확인 및 삭제
+            {messages.promptDelete.confirmDelete}
           </Button>
         </DialogFooter>
       </DialogContent>

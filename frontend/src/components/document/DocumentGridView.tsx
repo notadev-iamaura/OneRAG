@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '../../utils/documentUtils';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 import type { Document } from '../../types';
 
 /** DocumentGridView 컴포넌트의 Props */
@@ -51,6 +52,8 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
   onDownload,
   onDeleteSingle,
 }) => {
+  // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
+  const { messages } = useMenuMessages();
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {documents.map((doc) => (
@@ -95,8 +98,8 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
             </div>
           </CardContent>
           <CardFooter className="p-2 pt-0 bg-muted/10 rounded-b-[28px] mt-2 group-hover:bg-muted/30 transition-colors gap-1">
-            <Button variant="ghost" size="sm" className="flex-1 h-8 text-[11px] font-bold rounded-xl" onClick={() => onViewDetails(doc)}>상세</Button>
-            <Button variant="ghost" size="sm" className="flex-1 h-8 text-[11px] font-bold rounded-xl" onClick={() => onDownload(doc)}>받기</Button>
+            <Button variant="ghost" size="sm" className="flex-1 h-8 text-[11px] font-bold rounded-xl" onClick={() => onViewDetails(doc)}>{messages.docList.cardDetail}</Button>
+            <Button variant="ghost" size="sm" className="flex-1 h-8 text-[11px] font-bold rounded-xl" onClick={() => onDownload(doc)}>{messages.docList.cardDownload}</Button>
             <Button
               variant="ghost"
               size="sm"
@@ -104,7 +107,7 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
               onClick={() => onDeleteSingle(doc.id)}
               disabled={!isValidDocumentId(doc.id)}
             >
-              삭제
+              {messages.docList.cardDelete}
             </Button>
           </CardFooter>
         </Card>
