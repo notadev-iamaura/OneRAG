@@ -10,13 +10,14 @@ Weaviate 중복 청크 검사 및 분석 스크립트
 """
 
 import hashlib
+import os
 from collections import defaultdict
 from urllib.parse import urljoin
 
 import requests
 
-# Weaviate 설정
-WEAVIATE_URL = "https://weaviate-production-70aa.up.railway.app"
+# Weaviate 설정 (미설정 시 중립 로컬 기본값)
+WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 CLASS_NAME = "Documents"
 BATCH_SIZE = 100  # 페이징 크기
 
