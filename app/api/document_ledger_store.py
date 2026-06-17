@@ -13,7 +13,7 @@
     - mark_status: 처리 상태 전이 + 감사 이벤트 기록
 
 설계 노트:
-    - JapanRAG 원장의 멀티테넌트(company_id) 결합을 OneRAG 단일 테넌트에 맞춰
+    - 원장의 멀티테넌트(company_id) 결합을 단일 테넌트 구조에 맞춰
       전면 제거했다(companies 테이블 삭제, documents PK = document_id 단독).
     - BEGIN IMMEDIATE + ON CONFLICT upsert로 동시 재처리에 안전하다.
 
