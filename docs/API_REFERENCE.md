@@ -28,7 +28,7 @@ RAG 기반 채팅 요청. 질문에 대해 문서 검색 및 AI 답변을 생성
 **Request:**
 ```json
 {
-  "message": "삼성전자 주가 전망은?",
+  "message": "2026년 실적 전망은?",
   "session_id": "optional-session-id",
   "stream": false,
   "use_agent": false,
@@ -47,7 +47,7 @@ RAG 기반 채팅 요청. 질문에 대해 문서 검색 및 AI 답변을 생성
 **Response:**
 ```json
 {
-  "answer": "삼성전자의 주가 전망에 대해...",
+  "answer": "2026년 실적 전망에 대해...",
   "sources": [
     {
       "id": 1,
@@ -60,7 +60,7 @@ RAG 기반 채팅 요청. 질문에 대해 문서 검색 및 AI 답변을 생성
       "section": "2026 Outlook",
       "relevance": 0.95,
       "score": 0.95,
-      "content_preview": "삼성전자 2026년 실적 전망...",
+      "content_preview": "문서 기반 2026년 실적 전망 요약...",
       "source_type": "rag",
       "source_uri": "s3://reports/investment_report.pdf",
       "metadata": {

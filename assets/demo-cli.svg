@@ -147,7 +147,7 @@
     <text class="white" x="40" y="478">Sparse search excels at exact keyword matching</text>
     <text class="warn" x="20" y="498">  •</text>
     <text class="white" x="40" y="498">Combined, it handles both keyword-critical queries (e.g.,</text>
-    <text class="white" x="40" y="516">'Samsung stock price') and meaning-critical queries</text>
+    <text class="white" x="40" y="516">'a specific product price') and meaning-critical queries</text>
   </g>
   <g class="step16">
     <text class="white" x="40" y="541">(e.g., 'trending IT companies') effectively.</text>
