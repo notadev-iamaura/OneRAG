@@ -39,17 +39,17 @@ railway up
 ### 2. Console 탭에서 확인
 배포 성공 시 다음과 같은 로그가 표시됩니다:
 ```
-🚀 API Base URL: https://simple-rag-production.up.railway.app
+🚀 API Base URL: https://your-backend.up.railway.app
 📍 Current Environment: {
   DEV: false,
   NODE_ENV: "production", 
-  VITE_API_BASE_URL: "https://simple-rag-production.up.railway.app",
+  VITE_API_BASE_URL: "https://your-backend.up.railway.app",
   currentHost: "your-frontend.up.railway.app"
 }
 ```
 
 ### 3. Network 탭에서 API 호출 확인
-- API 요청이 `https://simple-rag-production.up.railway.app`으로 가는지 확인
+- API 요청이 `https://your-backend.up.railway.app`으로 가는지 확인
 - `localhost:8000`으로 요청이 없는지 확인
 
 ## 예상 결과
@@ -62,8 +62,8 @@ railway up
 
 ### After (재배포 후)
 ```
-✅ POST https://simple-rag-production.up.railway.app/api/chat/session 200 OK
-✅ GET https://simple-rag-production.up.railway.app/health 200 OK
+✅ POST https://your-backend.up.railway.app/api/chat/session 200 OK
+✅ GET https://your-backend.up.railway.app/health 200 OK
 ```
 
 ---

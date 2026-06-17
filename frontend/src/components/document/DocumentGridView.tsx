@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '../../utils/documentUtils';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { formatDate } from '../../i18n/format';
 import type { Document } from '../../types';
 
 /** DocumentGridView 컴포넌트의 Props */
@@ -53,7 +54,7 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
   onDeleteSingle,
 }) => {
   // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
-  const { messages } = useMenuMessages();
+  const { messages, locale } = useMenuMessages();
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {documents.map((doc) => (
@@ -93,7 +94,7 @@ export const DocumentGridView: React.FC<DocumentGridViewProps> = ({
                 {doc.status}
               </Badge>
               <span className="text-[10px] text-muted-foreground font-medium">
-                {new Date(doc.uploadedAt).toLocaleDateString()}
+                {formatDate(doc.uploadedAt, locale)}
               </span>
             </div>
           </CardContent>

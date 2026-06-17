@@ -42,8 +42,8 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
     copyToClipboard,
     onChunkClick,
 }) => {
-    // i18n: 복사 버튼 등 메시지 액션 라벨
-    const { messages } = useMenuMessages();
+    // i18n: 복사 버튼 등 메시지 액션 라벨 + 타임스탬프 로케일
+    const { messages, locale } = useMenuMessages();
     const isUser = message.role === 'user';
 
     return (
@@ -120,7 +120,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                         "text-[10px] mt-1.5 block font-medium",
                         isUser ? "text-primary-foreground/70 text-right" : "text-muted-foreground/50"
                     )}>
-                        {formatTimestamp(message.timestamp)}
+                        {formatTimestamp(message.timestamp, locale)}
                     </span>
                 </div>
 

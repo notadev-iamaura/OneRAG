@@ -10,9 +10,10 @@
  * 3. localhost:8000 (개발 폴백)
  */
 window.RUNTIME_CONFIG = {
-  // Railway 백엔드 서비스 URL을 여기에 설정하세요
-  // 예: 'https://simple-rag-backend-production.up.railway.app'
-  API_BASE_URL: 'https://simple-rag-back-junggu-production-23c1.up.railway.app',
+  // 백엔드 서비스 URL을 여기에 설정하세요(배포 시 generate-config.js가 환경변수로 덮어씀).
+  // 예: 'https://your-backend.example.com'
+  // 빈 문자열이면 우선순위에 따라 localhost:8000(개발 폴백)으로 동작한다.
+  API_BASE_URL: '',
   
   // 환경 설정 (production, development, staging)
   NODE_ENV: 'production',

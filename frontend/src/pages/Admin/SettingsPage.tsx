@@ -100,11 +100,18 @@ export const SettingsPage: React.FC = () => {
     }
   }, [runtimeConfig]);
 
+  // 프리셋 id별 카탈로그 라벨/설명을 조회한다(미등록 id는 상수의 한국어 값으로 폴백 → 회귀 0).
+  const presetMessages = (presetId: string) =>
+    messages.themePresets[presetId as keyof typeof messages.themePresets];
+
   const handlePresetSelect = (presetId: string) => {
     setSelectedPreset(presetId);
+    const localized = presetMessages(presetId);
     toast({
       title: messages.adminSettings.presetChangeToastTitle,
-      description: format(messages.adminSettings.presetChangeToastDesc, { name: THEME_PRESETS[presetId].name }),
+      description: format(messages.adminSettings.presetChangeToastDesc, {
+        name: localized?.name ?? THEME_PRESETS[presetId].name,
+      }),
     });
   };
 
@@ -287,14 +294,14 @@ export const SettingsPage: React.FC = () => {
               >
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg font-black">{preset.name}</CardTitle>
+                    <CardTitle className="text-lg font-black">{presetMessages(preset.id)?.name ?? preset.name}</CardTitle>
                     {selectedPreset === preset.id && (
                       <Badge className="bg-primary text-white font-bold h-5 px-1.5 flex items-center rounded-lg">
                         <CheckCircle2 className="w-3 h-3 mr-1" /> {messages.adminSettings.presetSelected}
                       </Badge>
                     )}
                   </div>
-                  <CardDescription className="text-xs font-medium leading-relaxed mt-1">{preset.description}</CardDescription>
+                  <CardDescription className="text-xs font-medium leading-relaxed mt-1">{presetMessages(preset.id)?.description ?? preset.description}</CardDescription>
                 </CardHeader>
                 <CardContent className="pt-2">
                   <div className="flex gap-2 p-1.5 bg-muted/20 rounded-2xl border border-border/40">

@@ -37,6 +37,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from '@/lib/utils';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { formatDate } from '../../i18n/format';
 
 interface ChatDevToolsProps {
     showDevTools: boolean;
@@ -70,7 +71,7 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
     copyToClipboard
 }) => {
     // i18n: 개발자 도구 패널의 사용자 노출 라벨
-    const { messages } = useMenuMessages();
+    const { messages, locale } = useMenuMessages();
     if (!showDevTools) return null;
 
     const modelConfigEntries = sessionInfo?.modelInfo?.model_config
@@ -299,7 +300,7 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                                                 </div>
                                             </div>
                                             <div className="text-[9px] text-muted-foreground flex items-center gap-2 px-0.5">
-                                                <span>{new Date(log.timestamp).toLocaleTimeString('ko-KR')}</span>
+                                                <span>{formatDate(log.timestamp, locale, { timeStyle: 'medium' })}</span>
                                                 {log.duration && <span className="text-primary/60 font-bold">{log.duration}ms</span>}
                                             </div>
                                         </div>

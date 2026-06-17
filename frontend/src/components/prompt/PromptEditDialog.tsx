@@ -144,7 +144,7 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
                   <SelectContent className="rounded-xl">
                     {PROMPT_CATEGORIES.map((category) => (
                       <SelectItem key={category.value} value={category.value}>
-                        {category.label} - {category.description}
+                        {messages.promptCategories[category.value].label} - {messages.promptCategories[category.value].description}
                       </SelectItem>
                     ))}
                   </SelectContent>

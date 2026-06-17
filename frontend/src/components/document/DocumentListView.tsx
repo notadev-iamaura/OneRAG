@@ -29,6 +29,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { formatFileSize } from '../../utils/documentUtils';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { formatDate } from '../../i18n/format';
 import type { Document } from '../../types';
 
 /** DocumentListView 컴포넌트의 Props */
@@ -78,7 +79,7 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
   onDeleteSingle,
 }) => {
   // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
-  const { messages } = useMenuMessages();
+  const { messages, locale } = useMenuMessages();
   return (
     <Card className="border-border/60 overflow-hidden rounded-[24px]">
       <Table>
@@ -124,7 +125,7 @@ export const DocumentListView: React.FC<DocumentListViewProps> = ({
                 {formatFileSize(doc.size)}
               </TableCell>
               <TableCell className="text-xs font-medium text-muted-foreground">
-                {new Date(doc.uploadedAt).toLocaleString('ko-KR', {
+                {formatDate(doc.uploadedAt, locale, {
                   year: 'numeric', month: '2-digit', day: '2-digit',
                   hour: '2-digit', minute: '2-digit'
                 })}

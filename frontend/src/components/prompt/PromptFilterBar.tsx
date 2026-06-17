@@ -86,7 +86,7 @@ export const PromptFilterBar: React.FC<PromptFilterBarProps> = ({
                 <SelectItem value="all">{messages.promptFilter.allCategories}</SelectItem>
                 {PROMPT_CATEGORIES.map((category) => (
                   <SelectItem key={category.value} value={category.value}>
-                    {category.label}
+                    {messages.promptCategories[category.value].label}
                   </SelectItem>
                 ))}
               </SelectContent>
