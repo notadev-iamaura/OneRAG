@@ -9,7 +9,7 @@
 반환될 수 있다. 이때 AttributeError로 상위 fallback을 무의미하게 유발하는 대신,
 graceful하게 빈 문자열을 반환해야 한다.
 
-또한 JapanRAG 대비 개선점인 토큰 갱신 race lock(threading.Lock) 직렬화도 검증한다.
+또한 원본 대비 개선점인 토큰 갱신 race lock(threading.Lock) 직렬화도 검증한다.
 """
 
 import threading
@@ -128,7 +128,7 @@ class TestVertexLLMClientModelNormalization:
 
 
 class TestVertexLLMClientTokenLock:
-    """JapanRAG 대비 개선: 토큰 갱신을 lock으로 직렬화(동시 갱신 race 차단)."""
+    """원본 대비 개선: 토큰 갱신을 lock으로 직렬화(동시 갱신 race 차단)."""
 
     def test_refresh_token_serializes_concurrent_refresh(self) -> None:
         client = _make_vertex_client(_response_with_content("ok"))

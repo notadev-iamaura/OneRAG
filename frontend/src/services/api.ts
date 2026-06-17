@@ -633,7 +633,7 @@ export const documentAPI = {
 //
 // EventSource는 POST body를 지원하지 않으므로 fetch + ReadableStream으로 구현한다.
 // OneRAG 백엔드 SSE 라인 포맷: `event: {type}\ndata: {json}\n\n`
-// (JapanRAG의 data-envelope 포맷과 달리, event 라인으로 타입을, data 라인으로 payload를 추출)
+// (단일 data-envelope 포맷과 달리, event 라인으로 타입을, data 라인으로 payload를 추출)
 // ============================================
 
 /** SSE 스트리밍 채팅 엔드포인트 절대 URL을 만든다(런타임 base URL 반영). */
