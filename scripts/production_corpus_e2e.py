@@ -33,9 +33,9 @@
     결과 요약을 JSON으로 출력. run-production은 QA 케이스가 모두 통과하면 0,
     아니면 1을 반환한다(서버 미가용 시에도 사유와 함께 1).
 
-JapanRAG 원본 대비 일반화:
+원본 대비 일반화:
     - MANUAL_FACTS_BY_FILENAME 하드코딩 삭제(필요 시 --manual-facts-json 주입).
-    - score_fact_line의 일본어 정규식(円/￥/株式会社 등) 제거 -> 언어 중립 휴리스틱.
+    - score_fact_line의 특정 언어 전용 정규식 제거 -> 언어 중립 휴리스틱.
     - 한국어 질문 템플릿 -> --question-template 외부화(영어 기본).
     - DEFAULT_FRONTEND_CONFIG(config.js 자동탐지) 제거 -> --backend-url 필수.
     - chunked 업로드 / X-OneRAG-Upload-Token / 멀티테넌트 company_id 제거.

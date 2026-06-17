@@ -84,4 +84,4 @@ batch:
   # 스케줄링 (Railway 자동 실행)
   schedule:
     run_on_startup: ${RUN_BATCH_ON_STARTUP:-false}
-    cron: "0 3 * * *"  # 매일 새벽 3시 (KST)
+    cron: "0 3 * * *"  # 매일 새벽 3시 (서버 로컬 타임존 기준)

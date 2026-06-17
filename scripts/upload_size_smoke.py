@@ -20,7 +20,7 @@ HTTP 413(Request Entity Too Large)은 'upload size limit exceeded'로 명확히 
 출력/종료 코드:
     결과를 JSON으로 stdout에 출력하고, 성공 시 0 / 실패 시 1을 반환한다.
 
-JapanRAG 원본 대비 일반화:
+원본 대비 일반화:
     - chunked 업로드 경로 전부 제거(OneRAG에 /api/upload/chunked/* 부재).
     - 멀티테넌트 세션(create_session/upload_token/company_id) 제거.
     - Cloud Run 프론트 URL 하드코딩 제거 → --base-url/E2E_BASE_URL로 외부화.
