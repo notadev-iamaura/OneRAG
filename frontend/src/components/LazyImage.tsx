@@ -5,6 +5,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Loader2, ImageOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 
 interface LazyImageProps {
   src: string;
@@ -31,6 +32,8 @@ export const LazyImage: React.FC<LazyImageProps> = ({
   const [isInView, setIsInView] = useState(false);
   const [hasError, setHasError] = useState(false);
   const imgRef = useRef<HTMLDivElement>(null);
+  // i18n: 이미지 로드 실패 메시지
+  const { messages } = useMenuMessages();
 
   useEffect(() => {
     if (!imgRef.current) return;
@@ -84,7 +87,7 @@ export const LazyImage: React.FC<LazyImageProps> = ({
       {hasError && (
         <div className="flex flex-col items-center justify-center gap-2 p-4 text-muted-foreground/60 text-xs font-medium bg-muted/20 w-full h-full">
           <ImageOff className="h-8 w-8 opacity-20" />
-          <span>이미지 로드 실패</span>
+          <span>{messages.common.imageLoadFailed}</span>
         </div>
       )}
 

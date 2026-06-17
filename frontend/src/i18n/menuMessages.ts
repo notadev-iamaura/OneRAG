@@ -220,6 +220,16 @@ export interface MenuMessages {
     toastError: string;
     toastSuccess: string;
     toastInfo: string;
+    imageLoadFailed: string;
+  };
+  // VirtualizedDocumentList — 가상화 문서 목록(상태 라벨/크기·업로드 메타)
+  virtualDocList: {
+    sizeLabel: string;
+    uploadLabel: string;
+    statusCompleted: string;
+    statusProcessing: string;
+    statusFailed: string;
+    statusUnknown: string;
   };
   // ChatTab — 청크(인용 출처) 상세 정보 라벨
   chatTab: {
@@ -886,6 +896,15 @@ const ko: MenuMessages = {
     toastError: "오류",
     toastSuccess: "성공",
     toastInfo: "알림",
+    imageLoadFailed: "이미지 로드 실패",
+  },
+  virtualDocList: {
+    sizeLabel: "크기: {size}",
+    uploadLabel: "업로드: {date}",
+    statusCompleted: "완료",
+    statusProcessing: "처리중",
+    statusFailed: "실패",
+    statusUnknown: "알 수 없음",
   },
   chatTab: {
     documentId: "문서 ID",
@@ -1496,6 +1515,15 @@ const en: MenuMessages = {
     toastError: "Error",
     toastSuccess: "Success",
     toastInfo: "Notice",
+    imageLoadFailed: "Failed to load image",
+  },
+  virtualDocList: {
+    sizeLabel: "Size: {size}",
+    uploadLabel: "Uploaded: {date}",
+    statusCompleted: "Completed",
+    statusProcessing: "Processing",
+    statusFailed: "Failed",
+    statusUnknown: "Unknown",
   },
   chatTab: {
     documentId: "Document ID",
