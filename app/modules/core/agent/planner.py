@@ -54,12 +54,12 @@ PLANNER_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 도구 선택 에
 ### 벡터 검색 도구
 - **search_weaviate**: 문서 내용 기반 시맨틱 검색
   - 사용 시점: 일반적인 정보 검색, 유사 문서 찾기
-  - 예시: "강남 맛집 찾아줘", "최신 노트북 추천"
+  - 예시: "<주제> 관련 문서 찾아줘", "<항목> 추천"
 
 ### 메타데이터/SQL 도구
 - **query_sql**: 자연어를 SQL로 변환하여 구조화된 데이터 검색
   - 사용 시점: 날짜, 숫자, 필터 조건이 포함된 질문
-  - 예시: "2024년 매출", "가격이 100만원 이하인 상품"
+  - 예시: "<연도> <지표> 집계", "<수치> 조건으로 필터링된 항목"
 
 ### 문서 조회 도구
 - **get_document_by_id**: UUID로 특정 문서 직접 조회
@@ -73,7 +73,7 @@ PLANNER_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 도구 선택 에
     - query (필수): 검색어
     - entity_types (선택): 엔티티 타입 필터 ["company", "person", "location"]
     - top_k (선택): 최대 결과 수 (기본값: 10)
-  - 예시: "A회사와 B회사의 제휴 관계", "강남 지역 맛집들 간의 연결"
+  - 예시: "<엔티티 A>와 <엔티티 B>의 관계", "<지역> 내 <카테고리> 항목 간의 연결"
 
 - **get_neighbors**: 특정 엔티티의 이웃 노드 탐색
   - 사용 시점: 특정 엔티티와 연결된 다른 엔티티들을 탐색할 때
@@ -81,7 +81,7 @@ PLANNER_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 도구 선택 에
     - entity_id (필수): 탐색 시작점 엔티티 ID
     - relation_types (선택): 관계 타입 필터 ["partnership", "located_in"]
     - max_depth (선택): 탐색 깊이 (기본값: 1)
-  - 예시: "X사와 연결된 모든 파트너사", "A의 협력사들"
+  - 예시: "<엔티티>와 연결된 모든 항목", "<엔티티>의 인접 노드들"
 
 ## 도구 선택 의사결정 트리:
 
@@ -89,7 +89,7 @@ PLANNER_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 도구 선택 에
 |----------|----------|------|
 | 단순 정보 검색 | search_weaviate | 시맨틱 유사도 기반 검색 |
 | 관계/연결 질문 | search_graph | 그래프 구조로 관계 탐색 |
-| 이웃/파트너 탐색 | get_neighbors | 특정 노드 중심 탐색 |
+| 이웃/인접 탐색 | get_neighbors | 특정 노드 중심 탐색 |
 | 숫자/날짜 조건 | query_sql | SQL로 정확한 필터링 |
 | 상세 정보 조회 | get_document_by_id | 이미 알고 있는 ID 사용 |
 | 복합 질문 | 도구 조합 | 여러 도구 순차 사용 |
@@ -111,7 +111,10 @@ PLANNER_SYSTEM_PROMPT_TEMPLATE = """당신은 RAG 시스템의 도구 선택 에
 """
 
 
-def build_planner_system_prompt(output_language: str = "한국어") -> str:
+def build_planner_system_prompt(
+    output_language: str = "한국어",
+    template: str | None = None,
+) -> str:
     """도구 선택 시스템 프롬프트 템플릿을 출력 언어로 조립한다.
 
     {output_language}만 선치환하고, {tool_schemas}와 JSON 이스케이프({{ }})는
@@ -119,13 +122,14 @@ def build_planner_system_prompt(output_language: str = "한국어") -> str:
 
     Args:
         output_language: reasoning 출력 언어 이름 (기본값: "한국어")
+        template: config로 외부화된 시스템 프롬프트 템플릿. None이면 코드 내장
+            기본값(PLANNER_SYSTEM_PROMPT_TEMPLATE, 한국어)을 사용한다 → 회귀 0.
 
     Returns:
         언어가 반영된, 아직 {tool_schemas}가 남아 있는 프롬프트 템플릿
     """
-    return PLANNER_SYSTEM_PROMPT_TEMPLATE.replace(
-        "{output_language}", output_language
-    )
+    base_template = template if template is not None else PLANNER_SYSTEM_PROMPT_TEMPLATE
+    return base_template.replace("{output_language}", output_language)
 
 
 PLANNER_USER_PROMPT = """## 사용자 질문:
@@ -179,8 +183,15 @@ class AgentPlanner:
         self._config = config
         # 출력 언어를 반영한 시스템 프롬프트 템플릿을 미리 빌드.
         # {tool_schemas}는 plan()에서 .format()으로 런타임 치환된다.
+        # config.planner_system_prompt가 설정되면 그 외부 템플릿을, 없으면 코드
+        # 내장 기본값(한국어)을 사용한다 → 미설정 시 회귀 0.
         self._system_prompt_template = build_planner_system_prompt(
-            getattr(config, "output_language", "한국어")
+            getattr(config, "output_language", "한국어"),
+            getattr(config, "planner_system_prompt", None),
+        )
+        # 사용자 프롬프트도 동일하게 오버라이드 가능하되, 미설정 시 코드 내장 기본값.
+        self._user_prompt_template = (
+            getattr(config, "planner_user_prompt", None) or PLANNER_USER_PROMPT
         )
 
         logger.info(
@@ -222,7 +233,7 @@ class AgentPlanner:
             system_prompt = self._system_prompt_template.format(
                 tool_schemas=tool_schemas_str
             )
-            user_prompt = PLANNER_USER_PROMPT.format(
+            user_prompt = self._user_prompt_template.format(
                 query=state.original_query,
                 context=context,
             )

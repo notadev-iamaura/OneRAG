@@ -214,6 +214,51 @@ class ErrorCode(str, Enum):
     DEMO_007 = "DEMO-007"  # 요청 속도 제한 초과
     DEMO_008 = "DEMO-008"  # 일일 API 호출 상한 초과
 
+    # EVAL (평가 시스템 API) - 13개
+    # 기존 evaluations.py의 raw 한국어 HTTPException detail을 양언어 카탈로그로
+    # 전환하기 위한 코드. ko 메시지는 기존 문자열과 동일하게 유지한다(회귀 0).
+    EVAL_001 = "EVAL-001"  # 평가 모듈 미초기화 (500)
+    EVAL_002 = "EVAL-002"  # 동일 message_id 평가 중복 (409)
+    EVAL_003 = "EVAL-003"  # 평가 생성 중 오류 (500)
+    EVAL_004 = "EVAL-004"  # 메시지 평가 없음 (404)
+    EVAL_005 = "EVAL-005"  # 평가 조회 중 오류 (500)
+    EVAL_006 = "EVAL-006"  # 통계 조회 중 오류 (500)
+    EVAL_007 = "EVAL-007"  # 미지원 내보내기 형식 (400)
+    EVAL_008 = "EVAL-008"  # 데이터 내보내기 중 오류 (500)
+    EVAL_009 = "EVAL-009"  # 배치 평가 개수 초과 (400)
+    EVAL_010 = "EVAL-010"  # 배치 평가 생성 중 오류 (500)
+    EVAL_011 = "EVAL-011"  # 평가 목록 조회 중 오류 (500)
+    EVAL_012 = "EVAL-012"  # 최근 평가 조회 중 오류 (500)
+    EVAL_013 = "EVAL-013"  # 평가 없음 (404)
+    EVAL_014 = "EVAL-014"  # 평가 업데이트 중 오류 (500)
+
+    # RATE (속도 제한 미들웨어) - 2개
+    # 미들웨어 429 응답의 raw 한국어 message를 양언어 카탈로그로 전환(17차).
+    RATE_001 = "RATE-001"  # IP 요청 한도 초과 (429)
+    RATE_002 = "RATE-002"  # 채팅 요청 한도 초과 (429)
+
+    # TOOL (도구 실행 API) - 5개
+    TOOL_001 = "TOOL-001"  # ToolExecutor 미초기화 (500)
+    TOOL_002 = "TOOL-002"  # 도구 목록 조회 실패 (500)
+    TOOL_003 = "TOOL-003"  # 도구를 찾을 수 없음 (404)
+    TOOL_004 = "TOOL-004"  # 도구 정보 조회 실패 (500)
+    TOOL_005 = "TOOL-005"  # 도구 실행 중 예외 (200 본문)
+
+    # EMPTY (빈 상태/챗 설정 API) - 3개
+    EMPTY_001 = "EMPTY-001"  # 미지원 로케일 (400)
+    EMPTY_002 = "EMPTY-002"  # DB 연결 불가로 설정 저장 실패 (503)
+    EMPTY_003 = "EMPTY-003"  # DB 연결 불가로 설정 리셋 실패 (503)
+
+    # FEEDBACK (피드백 API) - 1개
+    FEEDBACK_001 = "FEEDBACK-001"  # 피드백 저장 실패 (200 본문)
+
+    # ADMIN (관리 API) - 2개
+    ADMIN_001 = "ADMIN-001"  # 평가 실행 중 오류 (500)
+    ADMIN_002 = "ADMIN-002"  # 세션 모듈 미초기화 (500)
+
+    # OPENAI 호환 API 추가 - 1개
+    OPENAI_004 = "OPENAI-004"  # user 메시지 누락 (400)
+
     # API (API 응답) - 1개
     API_001 = "API-001"  # 내부 오류
 

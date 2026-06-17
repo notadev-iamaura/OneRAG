@@ -4,16 +4,16 @@ Weaviate Retriever - 하이브리드 검색 (Dense + Sparse BM25)
 주요 기능:
 - 내장 하이브리드 검색 (alpha 파라미터로 가중치 조절)
 - Vector Search (Dense, 3072 dimensions, cosine)
-- BM25 Search (Sparse, 한국어 토크나이저 kagome_kr)
+- BM25 Search (Sparse, 토크나이저는 weaviate.schema.bm25_tokenization 설정, 기본 word)
 - IRetriever 인터페이스 구현
 - Phase 2: BM25 고도화 (동의어 확장, 불용어 제거, 사용자 사전)
 
 데이터 구조:
 - vector: 3072차원 float 배열 (Gemini embedding-001)
-- content: 텍스트 내용 (tokenization: kagome_kr)
+- content: 텍스트 내용 (tokenization: config 설정값, 기본 word)
 - source_file: 출처 파일명
 - file_type: 파일 타입
-- keywords: LLM 추출 키워드 배열 (tokenization: kagome_kr)
+- keywords: LLM 추출 키워드 배열
 
 의존성:
 - weaviate-client: Weaviate Python 클라이언트 (v4+)
@@ -39,6 +39,12 @@ from weaviate.exceptions import WeaviateQueryError
 
 from .....lib.logger import get_logger
 from .....lib.weaviate_client import WeaviateClient
+
+# 필터 타입맵은 weaviate_setup의 스키마 정의(단일 진실원천)에서 파생한다(#도메인범용화).
+# 스키마에 도메인 필드(domain.yaml의 schema_fields)가 추가되면 코드 변경 없이
+# 필터 타입맵에도 자동 반영되어 스키마-검색 간 중복 하드코딩을 제거한다.
+# weaviate_setup은 app.lib 계층이므로 app.modules에서의 하향 임포트는 허용된다.
+from .....lib.weaviate_setup import document_property_types
 from ..interfaces import SearchResult
 
 # Phase 2: BM25 고도화 모듈 (Optional Import - Graceful Degradation)
@@ -54,46 +60,26 @@ except ImportError:
 
 logger = get_logger(__name__)
 
-_TEXT_PROPERTIES = {
-    "content",
-    "created_at",
-    "document_id",
-    "entity_name",
-    "capacity",
-    "content_key",
-    "file_hash",
-    "file_name",
-    "file_path",
-    "file_type",
-    "filename",
-    "format",
-    "json_loader",
-    "json_type",
-    "jq_schema",
-    "location",
-    "metadata_json",
-    "numeric_value",
-    "price",
-    "rating",
-    "sheet_name",
-    "source",
-    "source_file",
-    "splitter_type",
-}
-_INT_PROPERTIES = {
-    "char_count",
-    "chunk_index",
-    "file_size",
-    "item_index",
-    "original_file_size",
-    "page",
-    "page_number",
-    "total_chunks",
-    "total_items",
-    "word_count",
-}
-_NUMBER_PROPERTIES = {"load_timestamp"}
-_TEXT_ARRAY_PROPERTIES = {"keys"}
+def _property_names_by_type(
+    property_types: dict[str, str], type_category: str
+) -> set[str]:
+    """단일 진실원천(document_property_types)에서 특정 타입 프로퍼티명 집합을 추출한다."""
+    return {
+        name for name, category in property_types.items() if category == type_category
+    }
+
+
+# 스키마 정의를 1회만 로드해 타입별 필터 프로퍼티 집합을 파생한다.
+_PROPERTY_TYPES = document_property_types()
+_TEXT_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "text")
+_INT_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "int")
+_NUMBER_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "number")
+_TEXT_ARRAY_PROPERTIES = _property_names_by_type(_PROPERTY_TYPES, "text_array")
+
+# 메타데이터 기반 검색결과의 source_file 표시 접미사. 코드 인라인 하드코딩 대신
+# 단일 상수로 분리하고 생성자로 주입 가능하게 한다(미설정 시 한국어 기본=회귀 0).
+# 비한국어 운영자는 metadata_source_suffix 인자로 자국어/영어 라벨을 주입한다.
+_DEFAULT_METADATA_SOURCE_SUFFIX = " (메타데이터)"
 # 저장 시 소문자로 정규화되는 텍스트 프로퍼티(예: 확장자 기반 file_type).
 # 필터 값도 동일 규칙으로 소문자화해야 .equal() 매칭이 성립한다(#12).
 # 주의: document_id/file_hash/source_file 등 정확매칭 키는 절대 포함하면 안 된다.
@@ -121,7 +107,7 @@ class WeaviateRetriever:
     특징:
     - Weaviate 내장 하이브리드 검색 (alpha 파라미터)
     - Gemini 3072d embedding 지원
-    - BM25 Full-Text Search (한국어 토크나이저 kagome_kr)
+    - BM25 Full-Text Search (토크나이저 설정 가능, 기본 word)
     - Client-side RRF 불필요 (Weaviate 내장)
 
     아키텍처:
@@ -131,10 +117,10 @@ class WeaviateRetriever:
 
     데이터 스키마:
     - vector: float[] (3072 dimensions)
-    - content: string (tokenization: kagome_kr)
+    - content: string (tokenization: config 설정값, 기본 word)
     - source_file: string
     - file_type: string
-    - keywords: string[] (tokenization: kagome_kr)
+    - keywords: string[]
     """
 
     def __init__(
@@ -151,6 +137,8 @@ class WeaviateRetriever:
         # Phase 3: 다중 컬렉션 검색 (Optional)
         additional_collections: list[str] | None = None,
         collection_properties: dict[str, list[str]] | None = None,
+        # 메타데이터 source_file 표시 접미사(미설정 시 한국어 기본)
+        metadata_source_suffix: str | None = None,
     ):
         """
         Weaviate Retriever 초기화 (DI Container)
@@ -186,6 +174,11 @@ class WeaviateRetriever:
         self.fusion_type = self._resolve_hybrid_fusion_type(fusion_type)
         self.additional_collections = additional_collections or []
         self.collection_properties = collection_properties or {}
+        self._metadata_source_suffix = (
+            metadata_source_suffix
+            if metadata_source_suffix is not None
+            else _DEFAULT_METADATA_SOURCE_SUFFIX
+        )
 
         # Weaviate 클라이언트 및 컬렉션 (DI)
         self.weaviate_client = weaviate_client
@@ -537,7 +530,7 @@ class WeaviateRetriever:
             # entity_name 또는 name 필드가 있으면 이를 source_file로 사용
             entity_name = metadata.get("entity_name") or metadata.get("name")
             if entity_name:
-                metadata["source_file"] = f"{entity_name} (메타데이터)"
+                metadata["source_file"] = f"{entity_name}{self._metadata_source_suffix}"
                 metadata["file_type"] = "METADATA"
 
             results.append(

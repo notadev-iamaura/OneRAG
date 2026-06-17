@@ -7,13 +7,14 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from ..infrastructure.persistence.evaluation_manager import (
     DuplicateEvaluationError,
     EvaluationDataManager,
 )
 from ..lib.auth import get_api_key
+from ..lib.errors import ErrorCode, get_error_message
 from ..lib.logger import get_logger
 from ..models.evaluation import (
     EvaluationCreate,
@@ -28,10 +29,53 @@ router = APIRouter(dependencies=[Depends(get_api_key)])
 _evaluation_module: EvaluationDataManager | None = None
 
 
+def _resolve_request_language(request: Request | None) -> str:
+    """요청 Accept-Language 헤더에서 에러 메시지 언어를 결정한다(ko|en, 기본 ko).
+
+    양언어 에러 카탈로그(app.lib.errors)는 "ko"/"en"만 지원한다. 헤더가 영어를
+    우선하면 "en"을, 그 외(미지정/요청 없음 포함)는 "ko"를 반환한다 → 한국어
+    기본(회귀 0). chat_router/websocket_router와 동일한 패턴을 따른다.
+
+    Args:
+        request: FastAPI 요청 객체 (의존성 주입 실패 등으로 None일 수 있음)
+
+    Returns:
+        에러 메시지 언어 코드 ("ko" 또는 "en")
+    """
+    if request is None:
+        return "ko"
+    accept_language = (request.headers.get("accept-language") or "").lower()
+    en_idx = accept_language.find("en")
+    ko_idx = accept_language.find("ko")
+    if en_idx != -1 and (ko_idx == -1 or en_idx < ko_idx):
+        return "en"
+    return "ko"
+
+
+def _eval_detail(error_code: ErrorCode, lang: str = "ko", **context: Any) -> str:
+    """평가 API HTTPException detail용 양언어 메시지를 생성한다.
+
+    ErrorCode를 키로 ko/en 메시지를 카탈로그에서 조회한다(Accept-Language 기반
+    자동 전환). 기본 lang은 "ko"라 기존 한국어 detail과 동일하다(회귀 0).
+
+    Args:
+        error_code: 평가 에러 코드 (EVAL-xxx)
+        lang: 메시지 언어 ("ko"|"en", 기본 ko)
+        **context: 메시지 템플릿 포맷팅 인자 (현 EVAL 메시지는 미사용)
+
+    Returns:
+        포맷팅된 에러 메시지 문자열
+    """
+    return get_error_message(error_code.value, lang=lang, **context)
+
+
 def get_evaluation_module() -> EvaluationDataManager:
     """평가 데이터 관리자 의존성 주입"""
     if _evaluation_module is None:
-        raise HTTPException(status_code=500, detail="평가 모듈이 초기화되지 않았습니다")
+        # 모듈 미초기화는 요청 컨텍스트 이전이라 기본 ko로 렌더(기존 동작 동일).
+        raise HTTPException(
+            status_code=500, detail=_eval_detail(ErrorCode.EVAL_001)
+        )
     return _evaluation_module
 
 
@@ -87,6 +131,7 @@ async def evaluation_health(
 @router.post("", response_model=EvaluationResponse, status_code=201)
 async def create_evaluation(
     evaluation_data: EvaluationCreate,
+    request: Request,
     evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
 ):
     """
@@ -99,6 +144,7 @@ async def create_evaluation(
     - 4점: 좋음
     - 5점: 매우 좋음
     """
+    lang = _resolve_request_language(request)
     try:
         logger.info(
             f"평가 생성 요청: 세션={evaluation_data.session_id}, 메시지={evaluation_data.message_id}"
@@ -108,36 +154,44 @@ async def create_evaluation(
         return evaluation
     except DuplicateEvaluationError as e:
         logger.warning("평가 생성 실패 - 중복 message_id: %s", e.message_id)
+        # 구조화 detail(dict)은 유지하되 message만 양언어 카탈로그로 렌더한다.
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "동일한 message_id에 대한 평가가 이미 존재합니다",
+                "message": _eval_detail(ErrorCode.EVAL_002, lang),
                 "existing_evaluation_id": e.evaluation_id,
                 "message_id": e.message_id,
             },
         ) from e
     except ValueError as e:
+        # 유효성 검증 원본 메시지는 그대로 노출한다(Pydantic/도메인 메시지 보존).
         logger.error(f"평가 생성 실패 - 유효성 검증 오류: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"평가 생성 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="평가 생성 중 오류가 발생했습니다") from e
+        raise HTTPException(
+            status_code=500, detail=_eval_detail(ErrorCode.EVAL_003, lang)
+        ) from e
 
 
 @router.get("/message/{message_id}", response_model=EvaluationResponse)
 async def get_evaluation_by_message(
-    message_id: str, evaluation_module: EvaluationDataManager = Depends(get_evaluation_module)
+    message_id: str,
+    request: Request,
+    evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
 ):
     """메시지 ID로 평가 조회"""
     evaluation = await evaluation_module.get_evaluation_by_message(message_id)
     if not evaluation:
-        raise HTTPException(status_code=404, detail="해당 메시지에 대한 평가를 찾을 수 없습니다")
+        lang = _resolve_request_language(request)
+        raise HTTPException(status_code=404, detail=_eval_detail(ErrorCode.EVAL_004, lang))
     return evaluation
 
 
 @router.get("/session/{session_id}", response_model=list[EvaluationResponse])
 async def get_session_evaluations(
     session_id: str,
+    request: Request,
     skip: int = Query(0, ge=0, description="건너뛸 개수"),
     limit: int = Query(20, ge=1, le=100, description="조회할 최대 개수"),
     evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
@@ -151,11 +205,13 @@ async def get_session_evaluations(
         return evaluations
     except Exception as e:
         logger.error(f"세션 평가 조회 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="평가 조회 중 오류가 발생했습니다") from e
+        lang = _resolve_request_language(request)
+        raise HTTPException(status_code=500, detail=_eval_detail(ErrorCode.EVAL_005, lang)) from e
 
 
 @router.get("/stats/summary", response_model=EvaluationStatistics)
 async def get_evaluation_statistics(
+    request: Request,
     session_id: str | None = Query(None, description="특정 세션 필터링"),
     evaluator_id: str | None = Query(None, description="특정 평가자 필터링"),
     min_score: int | None = Query(None, ge=1, le=5, description="최소 점수"),
@@ -201,11 +257,13 @@ async def get_evaluation_statistics(
         return stats
     except Exception as e:
         logger.error(f"통계 조회 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="통계 조회 중 오류가 발생했습니다") from e
+        lang = _resolve_request_language(request)
+        raise HTTPException(status_code=500, detail=_eval_detail(ErrorCode.EVAL_006, lang)) from e
 
 
 @router.get("/export/{format}")
 async def export_evaluations(
+    request: Request,
     format: str = "json",
     session_id: str | None = Query(None, description="특정 세션 필터링"),
     start_date: datetime | None = Query(None, description="시작 날짜"),
@@ -219,10 +277,9 @@ async def export_evaluations(
     - json: JSON 형식
     - csv: CSV 형식
     """
+    lang = _resolve_request_language(request)
     if format not in ["json", "csv"]:
-        raise HTTPException(
-            status_code=400, detail="지원하지 않는 형식입니다. json 또는 csv를 사용하세요."
-        )
+        raise HTTPException(status_code=400, detail=_eval_detail(ErrorCode.EVAL_007, lang))
     try:
         filter_params = None
         if any([session_id, start_date, end_date]):
@@ -248,15 +305,17 @@ async def export_evaluations(
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
     except ValueError as e:
+        # 내보내기 형식/필터 검증 원본 메시지는 그대로 노출한다.
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"데이터 내보내기 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="데이터 내보내기 중 오류가 발생했습니다") from e
+        raise HTTPException(status_code=500, detail=_eval_detail(ErrorCode.EVAL_008, lang)) from e
 
 
 @router.post("/batch", response_model=list[EvaluationResponse])
 async def create_batch_evaluations(
     evaluations: list[EvaluationCreate],
+    request: Request,
     evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
 ):
     """
@@ -264,8 +323,9 @@ async def create_batch_evaluations(
 
     최대 100개까지 한 번에 생성 가능합니다.
     """
+    lang = _resolve_request_language(request)
     if len(evaluations) > 100:
-        raise HTTPException(status_code=400, detail="한 번에 최대 100개까지만 생성할 수 있습니다")
+        raise HTTPException(status_code=400, detail=_eval_detail(ErrorCode.EVAL_009, lang))
     try:
         created_evaluations = []
         failed_count = 0
@@ -284,11 +344,12 @@ async def create_batch_evaluations(
         return created_evaluations
     except Exception as e:
         logger.error(f"배치 평가 생성 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="배치 평가 생성 중 오류가 발생했습니다") from e
+        raise HTTPException(status_code=500, detail=_eval_detail(ErrorCode.EVAL_010, lang)) from e
 
 
 @router.get("", response_model=dict[str, Any])
 async def get_all_evaluations(
+    request: Request,
     session_id: str | None = Query(None, description="특정 세션 필터링"),
     evaluator_id: str | None = Query(None, description="특정 평가자 필터링"),
     min_score: int | None = Query(None, ge=1, le=5, description="최소 점수"),
@@ -367,11 +428,13 @@ async def get_all_evaluations(
             }
     except Exception as e:
         logger.error(f"평가 목록 조회 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="평가 목록 조회 중 오류가 발생했습니다") from e
+        lang = _resolve_request_language(request)
+        raise HTTPException(status_code=500, detail=_eval_detail(ErrorCode.EVAL_011, lang)) from e
 
 
 @router.get("/recent/list", response_model=list[EvaluationResponse])
 async def get_recent_evaluations(
+    request: Request,
     limit: int = Query(10, ge=1, le=50, description="조회할 최대 개수"),
     evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
 ):
@@ -393,17 +456,21 @@ async def get_recent_evaluations(
             return recent_evaluations
     except Exception as e:
         logger.error(f"최근 평가 조회 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="최근 평가 조회 중 오류가 발생했습니다") from e
+        lang = _resolve_request_language(request)
+        raise HTTPException(status_code=500, detail=_eval_detail(ErrorCode.EVAL_012, lang)) from e
 
 
 @router.get("/{evaluation_id}", response_model=EvaluationResponse)
 async def get_evaluation(
-    evaluation_id: str, evaluation_module: EvaluationDataManager = Depends(get_evaluation_module)
+    evaluation_id: str,
+    request: Request,
+    evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
 ):
     """특정 평가 조회"""
     evaluation = await evaluation_module.get_evaluation(evaluation_id)
     if not evaluation:
-        raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
+        lang = _resolve_request_language(request)
+        raise HTTPException(status_code=404, detail=_eval_detail(ErrorCode.EVAL_013, lang))
     return evaluation
 
 
@@ -411,32 +478,38 @@ async def get_evaluation(
 async def update_evaluation(
     evaluation_id: str,
     update_data: EvaluationUpdate,
+    request: Request,
     evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
 ):
     """평가 정보 업데이트"""
+    lang = _resolve_request_language(request)
     try:
         evaluation = await evaluation_module.update_evaluation(evaluation_id, update_data)
         if not evaluation:
-            raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
+            raise HTTPException(status_code=404, detail=_eval_detail(ErrorCode.EVAL_013, lang))
         logger.info(f"평가 업데이트 완료: {evaluation_id}")
         return evaluation
     except ValueError as e:
+        # 업데이트 검증 원본 메시지는 그대로 노출한다.
         logger.error(f"평가 업데이트 실패 - 유효성 검증 오류: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e)) from e
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"평가 업데이트 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail="평가 업데이트 중 오류가 발생했습니다") from e
+        raise HTTPException(status_code=500, detail=_eval_detail(ErrorCode.EVAL_014, lang)) from e
 
 
 @router.delete("/{evaluation_id}", status_code=204)
 async def delete_evaluation(
-    evaluation_id: str, evaluation_module: EvaluationDataManager = Depends(get_evaluation_module)
+    evaluation_id: str,
+    request: Request,
+    evaluation_module: EvaluationDataManager = Depends(get_evaluation_module),
 ):
     """평가 삭제"""
     success = await evaluation_module.delete_evaluation(evaluation_id)
     if not success:
-        raise HTTPException(status_code=404, detail="평가를 찾을 수 없습니다")
+        lang = _resolve_request_language(request)
+        raise HTTPException(status_code=404, detail=_eval_detail(ErrorCode.EVAL_013, lang))
     logger.info(f"평가 삭제 완료: {evaluation_id}")
     return Response(status_code=204)

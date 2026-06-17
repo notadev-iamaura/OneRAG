@@ -32,6 +32,48 @@ logger = logging.getLogger(__name__)
 DEFAULT_WHITELIST: frozenset[str] = frozenset([])
 
 
+# ========================================
+# 기본 PII 정규식 패턴 (대한민국 식별자 형식)
+# ========================================
+# 보안 정책: 이 값들은 config 미설정 시 사용되는 "국가 default"입니다.
+# 운영자는 privacy.yaml의 patterns 섹션으로 타 국가 패턴을 추가/교체할 수 있으나,
+# config가 없으면 아래 한국 기본 패턴이 byte-identical 하게 적용됩니다(회귀 0).
+# 키를 추가/변경할 때는 보안 회귀가 없도록 반드시 기존 동작을 보존해야 합니다.
+DEFAULT_PII_PATTERNS: dict[str, str] = {
+    # 개인 전화번호 패턴 (010 시작): 010-1234-5678, 01012345678, 010 1234 5678
+    "phone_personal": r"010[-\s]?\d{4}[-\s]?\d{4}",
+    # 사업자 전화번호 패턴 (지역번호 시작 - 마스킹 제외용): 02-XXX-XXXX, 031-XXX-XXXX 등
+    "phone_business": r"(02|0[3-6][1-5])[-\s]?\d{3,4}[-\s]?\d{4}",
+    # 주민등록번호 패턴 (6자리 생년월일-성별코드+6자리)
+    "ssn": r"\d{6}[-\s]?[1-4]\d{6}",
+    # 여권번호 패턴 (대문자 1자리 + 숫자 8자리): M12345678, S87654321 등
+    "passport": r"(?<![a-zA-Z])[A-Z]\d{8}(?!\d)",
+    # 운전면허번호 패턴 (XX-XX-XXXXXX-XX): 지역코드(2)-년도(2)-일련번호(6)-검증(2)
+    "driver_license": r"\d{2}-\d{2}-\d{6}-\d{2}",
+    # 이메일 패턴 (선택적 마스킹)
+    "email": r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
+}
+
+# 이름 글자 클래스 기본값 (한글 음절 범위)
+# 타 언어 이름 마스킹이 필요하면 config(name_char_class)로 교체합니다.
+DEFAULT_NAME_CHAR_CLASS: str = "[가-힣]"
+
+# 파일명 마스킹 치환 라벨 기본값 (한국어 "고객")
+# 운영자는 config(filename_mask_label)로 라벨을 교체할 수 있습니다.
+DEFAULT_FILENAME_MASK_LABEL: str = "고객"
+
+# 이름 마스킹용 호칭(suffix) 기본값 (mask_text/contains_pii 경로)
+# di_container에서는 domain.yaml의 name_suffixes를 주입하지만,
+# name_suffixes 미주입 시 아래 한국어 기본 호칭으로 패턴을 구성합니다(회귀 0).
+DEFAULT_NAME_SUFFIXES: list[str] = ["고객님", "관리자님?", "담당자님?"]
+
+# 파일명 마스킹용 호칭(suffix) 기본값 (mask_filename 경로)
+# 기존 코드의 파일명 기본 패턴은 "고객님?"(님 선택적)만 매칭했다.
+# 즉 "고객님"과 "고객" 모두 매칭하므로 회귀 0을 위해 그대로 보존한다.
+# name_suffixes가 주입되면 그 목록을 파일명 패턴에도 동일 적용한다.
+DEFAULT_FILENAME_NAME_SUFFIXES: list[str] = ["고객님?"]
+
+
 @dataclass
 class MaskingResult:
     """마스킹 결과"""
@@ -60,41 +102,11 @@ class PrivacyMasker:
     개인정보 마스킹 모듈
 
     RAG 답변에서 민감한 개인정보를 자동으로 탐지하고 마스킹합니다.
+
+    정규식 패턴은 인스턴스 초기화 시 결정됩니다. config(``patterns`` 인자)를
+    주입하지 않으면 ``DEFAULT_PII_PATTERNS`` 등 한국 기본 패턴이 그대로
+    적용되어 기존 동작과 byte-identical 합니다(보안 회귀 0).
     """
-
-    # ========================================
-    # 정규식 패턴
-    # ========================================
-
-    # 개인 전화번호 패턴 (010 시작)
-    # 형식: 010-1234-5678, 01012345678, 010 1234 5678
-    PERSONAL_PHONE_PATTERN = re.compile(r"010[-\s]?\d{4}[-\s]?\d{4}")
-
-    # 사업자 전화번호 패턴 (지역번호 시작 - 마스킹 제외용)
-    # 형식: 02-XXX-XXXX, 031-XXX-XXXX 등
-    BUSINESS_PHONE_PATTERN = re.compile(r"(02|0[3-6][1-5])[-\s]?\d{3,4}[-\s]?\d{4}")
-
-    # 한글 이름 패턴 (2~4글자 + 호칭)
-    # 초기화 시 name_suffixes를 기반으로 동적 생성됨
-    KOREAN_NAME_PATTERN = re.compile(r"([가-힣]{2,4})(?=\s*(고객님|관리자님?|담당자님?))")
-
-    # 주민등록번호 패턴 (6자리 생년월일-성별코드+6자리)
-    SSN_PATTERN = re.compile(r"\d{6}[-\s]?[1-4]\d{6}")
-
-    # 여권번호 패턴 (대문자 1자리 + 숫자 8자리)
-    # 한국 여권: M12345678, S87654321 등
-    PASSPORT_PATTERN = re.compile(r"(?<![a-zA-Z])[A-Z]\d{8}(?!\d)")
-
-    # 운전면허번호 패턴 (XX-XX-XXXXXX-XX)
-    # 한국 운전면허: 지역코드(2)-년도(2)-일련번호(6)-검증(2)
-    DRIVER_LICENSE_PATTERN = re.compile(r"\d{2}-\d{2}-\d{6}-\d{2}")
-
-    # 이메일 패턴 (선택적 마스킹)
-    EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-
-    # 파일명에서 개인정보 패턴 (고객명 등)
-    # 초기화 시 name_suffixes를 기반으로 동적 생성됨
-    FILENAME_PII_PATTERN = re.compile(r"([가-힣]{2,4})\s*(고객님?|관리자님?|담당자님?)")
 
     def __init__(
         self,
@@ -108,6 +120,9 @@ class PrivacyMasker:
         name_mask_char: str = "*",
         whitelist: Sequence[str] | None = None,
         name_suffixes: list[str] | None = None,
+        patterns: dict[str, str] | None = None,
+        name_char_class: str | None = None,
+        filename_mask_label: str | None = None,
     ):
         """
         Args:
@@ -121,6 +136,14 @@ class PrivacyMasker:
             name_mask_char: 이름 마스킹 문자
             whitelist: 마스킹 예외 단어 목록 (None이면 기본값 사용)
             name_suffixes: 이름 뒤에 붙는 호칭 패턴 목록 (예: ["고객님", "담당자님"])
+                None이면 ``DEFAULT_NAME_SUFFIXES``(한국어 기본 호칭) 사용.
+            patterns: PII 정규식 패턴 오버라이드. 키는 ``DEFAULT_PII_PATTERNS``와
+                동일(phone_personal/phone_business/ssn/passport/driver_license/email).
+                None이거나 일부 키만 주면 누락 키는 한국 기본 패턴으로 폴백합니다.
+                보안 정책상 미설정 시 기본 마스킹 동작이 약화되지 않습니다.
+            name_char_class: 이름 글자 클래스 정규식 (기본 ``[가-힣]``).
+                타 언어 이름 마스킹이 필요할 때 config로 교체합니다.
+            filename_mask_label: 파일명 마스킹 치환 라벨 (기본 "고객").
         """
         # None 방어: 설정 누락(yaml import 누락 등)으로 None이 주입돼도
         # 안전한 기본값으로 보정한다. 특히 phone_mask_char가 None이면
@@ -142,21 +165,69 @@ class PrivacyMasker:
         else:
             self._whitelist = DEFAULT_WHITELIST
 
-        # 이름 패턴 동적 생성
+        # ----------------------------------------
+        # PII 정규식 패턴 결정 (config 오버라이드 + 한국 기본 폴백)
+        # ----------------------------------------
+        # 누락 키는 DEFAULT_PII_PATTERNS로 폴백하여 보안 회귀를 차단한다.
+        resolved_patterns = dict(DEFAULT_PII_PATTERNS)
+        if patterns:
+            for key, value in patterns.items():
+                # 빈 문자열/None 값은 무시(기본 패턴 유지)하여 마스킹 약화 방지
+                if value:
+                    resolved_patterns[key] = value
+
+        # 컴파일된 정규식 패턴 (인스턴스 속성)
+        self.PERSONAL_PHONE_PATTERN = re.compile(resolved_patterns["phone_personal"])
+        self.BUSINESS_PHONE_PATTERN = re.compile(resolved_patterns["phone_business"])
+        self.SSN_PATTERN = re.compile(resolved_patterns["ssn"])
+        self.PASSPORT_PATTERN = re.compile(resolved_patterns["passport"])
+        self.DRIVER_LICENSE_PATTERN = re.compile(resolved_patterns["driver_license"])
+        self.EMAIL_PATTERN = re.compile(resolved_patterns["email"])
+
+        # ----------------------------------------
+        # 이름/파일명 패턴 결정 (글자 클래스 + 호칭 config 외부화)
+        # ----------------------------------------
+        # 이름 글자 클래스 (기본 한글 음절 [가-힣], config로 교체 가능)
+        char_class = name_char_class if name_char_class else DEFAULT_NAME_CHAR_CLASS
+
+        # 파일명 마스킹 치환 라벨 (기본 "고객", config로 교체 가능)
+        self._filename_mask_label = (
+            filename_mask_label if filename_mask_label else DEFAULT_FILENAME_MASK_LABEL
+        )
+
+        # 이름 뒤 호칭(suffix) 결정 (config 미주입 시 한국어 기본 호칭)
+        # 회귀 0: name_suffixes 미주입 시 기존처럼
+        #   - mask_text 경로는 3종 호칭(고객님/관리자님?/담당자님?)
+        #   - mask_filename 경로는 "고객님" 단일 호칭
+        # 의 비대칭 기본값을 그대로 유지한다.
+        # name_suffixes 주입 시에는 두 경로 모두 동일 목록을 적용한다.
         if name_suffixes:
-            suffixes_pattern = "|".join(name_suffixes)
-            self.KOREAN_NAME_PATTERN = re.compile(
-                rf"([가-힣]{2,4})(?=\s*({suffixes_pattern}))"
-            )
-            self.FILENAME_PII_PATTERN = re.compile(
-                rf"([가-힣]{2,4})\s*({suffixes_pattern})"
-            )
+            name_suffixes_list = name_suffixes
+            filename_suffixes_list = name_suffixes
+        else:
+            name_suffixes_list = DEFAULT_NAME_SUFFIXES
+            filename_suffixes_list = DEFAULT_FILENAME_NAME_SUFFIXES
+
+        name_suffixes_pattern = "|".join(name_suffixes_list)
+        filename_suffixes_pattern = "|".join(filename_suffixes_list)
+
+        # 이름/파일명 정규식 동적 생성
+        # 주의: f-string 안에서 정규식 수량자 {2,4}를 그대로 쓰면 format 치환으로
+        # 해석되어 패턴이 깨진다(기존 버그). 문자열 연결로 안전하게 구성한다.
+        self.KOREAN_NAME_PATTERN = re.compile(
+            "(" + char_class + r"{2,4})(?=\s*(" + name_suffixes_pattern + "))"
+        )
+        self.FILENAME_PII_PATTERN = re.compile(
+            "(" + char_class + r"{2,4})\s*(" + filename_suffixes_pattern + ")"
+        )
 
         logger.info(
             f"PrivacyMasker 초기화: phone={mask_phone}, name={mask_name}, "
             f"email={mask_email}, ssn={mask_ssn}, passport={mask_passport}, "
             f"driver_license={mask_driver_license}, "
-            f"whitelist_size={len(self._whitelist)}, suffixes={name_suffixes}"
+            f"whitelist_size={len(self._whitelist)}, suffixes={name_suffixes_list}, "
+            f"patterns_overridden={bool(patterns)}, "
+            f"name_char_class={'custom' if name_char_class else 'default'}"
         )
 
     @property
@@ -415,25 +486,22 @@ class PrivacyMasker:
 
     def _is_business_phone(self, phone: str) -> bool:
         """
-        사업자 전화번호인지 확인
+        사업자(지역번호) 전화번호인지 확인 — 개인전화 마스킹에서 제외용.
 
-        사업자 전화번호는 지역번호로 시작:
-        - 02: 서울
-        - 031~039: 경기 등
-        - 041~049: 충청 등
+        판별 기준은 config(privacy.yaml의 phone_business)에서 컴파일한
+        ``self.BUSINESS_PHONE_PATTERN``을 단일 진실원천으로 사용한다.
+        기본값은 한국 지역번호 규칙(02, 03X~06X)이며, 다른 국가 운영자가
+        phone_business를 자국 형식으로 오버라이드하면 개인/사업자 판별까지
+        일관되게 따라간다.
+
+        주: 이전에는 ``self.BUSINESS_PHONE_PATTERN``이 config에서 컴파일만 되고
+        미사용 데드 키였고, '010 시작=개인, 02/0XX=사업자' 한국 규칙이 코드에
+        하드코딩돼 있었다. 그 하드코딩은 phone_personal 오버라이드로 011/016
+        등 비-010 모바일이 들어오면 사업자로 오판해 마스킹을 건너뛰는(PII 유출)
+        잠재 결함이 있었다. 이제 config 패턴으로 단일화해 그 결함을 제거한다.
+        한국 기본 패턴에서는 010 입력에 대해 항상 False(=개인)로 동치 — 회귀 0.
         """
-        # 숫자만 추출
-        digits = re.sub(r"[-\s]", "", phone)
-
-        # 010으로 시작하면 개인 전화번호
-        if digits.startswith("010"):
-            return False
-
-        # 02 또는 0XX로 시작하면 사업자 전화번호
-        if digits.startswith("02") or (digits.startswith("0") and len(digits) >= 10):
-            return True
-
-        return False
+        return bool(self.BUSINESS_PHONE_PATTERN.fullmatch(phone.strip()))
 
     def contains_pii(self, text: str) -> bool:
         """
@@ -470,10 +538,8 @@ class PrivacyMasker:
     # ========================================
     # 파일명 마스킹 (API 응답용)
     # ========================================
-
-    # 파일명에서 개인정보 패턴 (고객명 등)
-    # 초기화 시 name_suffixes를 기반으로 동적 생성됨
-    FILENAME_PII_PATTERN = re.compile(r"([가-힣]{2,4})\s*(고객님?)")
+    # 주: FILENAME_PII_PATTERN과 치환 라벨(_filename_mask_label)은
+    # __init__에서 config 기반으로 인스턴스 속성으로 설정된다.
 
     def mask_filename(self, filename: str) -> str:
         """
@@ -502,7 +568,8 @@ class PrivacyMasker:
             suffix = match.group(2)  # 고객님, 담당자님 등
 
             # "고객_고객님", "고객_담당자님" 형태로 변환
-            return f"고객_{suffix}"
+            # 라벨은 config(filename_mask_label)로 외부화, 기본값 "고객"
+            return f"{self._filename_mask_label}_{suffix}"
 
         masked = self.FILENAME_PII_PATTERN.sub(replace, filename)
 

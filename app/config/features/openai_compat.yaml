@@ -5,3 +5,32 @@ openai_compat:
   default_rag_mode: true
   # 검색 결과 최대 개수
   max_search_results: 5
+
+  # ---------------------------------------------------------------------------
+  # RAG 프롬프트 래퍼 외부화 (다국어/타도메인 전환용)
+  # ---------------------------------------------------------------------------
+  # /v1/chat/completions RAG 모드의 래퍼 문구를 코드 포크 없이 교체하기 위한 키.
+  # 우선순위: 이 config 값 > 환경 변수 > 코드 내장 한국어 기본값.
+  # 미설정(아래 주석 유지) 시 기존 한국어 프롬프트와 byte-identical을 유지한다(회귀 0).
+  #
+  # 자리표시자(필수):
+  #   rag_prompt_template:   {context}, {query}
+  #   rag_doc_item_template: {index}, {content}
+  #
+  # config 주입은 main.py가 set_openai_modules로 _modules["config"]를 넘겨야 동작하며,
+  # 그 배선이 없는 환경에서는 아래와 동일한 키를 환경 변수로 오버라이드할 수 있다:
+  #   OPENAI_COMPAT_RAG_PROMPT_TEMPLATE
+  #   OPENAI_COMPAT_RAG_DOC_ITEM_TEMPLATE
+  #
+  # 영어 전환 예시(주석 해제 후 사용):
+  # rag_prompt_template: |-
+  #   Answer the question based on the following reference documents.
+  #
+  #   ## Reference Documents
+  #   {context}
+  #
+  #   ## Question
+  #   {query}
+  # rag_doc_item_template: |-
+  #   [Document {index}]
+  #   {content}

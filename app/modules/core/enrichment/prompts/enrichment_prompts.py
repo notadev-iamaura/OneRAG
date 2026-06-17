@@ -74,71 +74,13 @@ USER_PROMPT_TEMPLATE = """다음 텍스트를 분석하여 JSON 형식으로 메
 
 주의: JSON만 출력하고 다른 설명은 추가하지 마세요."""
 
-
-def build_enrichment_prompt(content: str, include_examples: bool = True) -> tuple[str, str]:
-    """
-    보강 프롬프트 생성
-
-    Args:
-        content: 분석할 문서 내용
-        include_examples: Few-shot 예시 포함 여부 (기본: True)
-
-    Returns:
-        tuple[str, str]: (system_prompt, user_prompt)
-
-    사용 예시:
-        >>> system_prompt, user_prompt = build_enrichment_prompt(
-        ...     "Python 리스트 컴프리헨션 사용법에 대한 설명입니다."
-        ... )
-        >>> # LLM에 전달
-        >>> response = llm.chat([
-        ...     {"role": "system", "content": system_prompt},
-        ...     {"role": "user", "content": user_prompt}
-        ... ])
-    """
-    # 시스템 프롬프트 구성
-    system_prompt = SYSTEM_PROMPT
-    if include_examples:
-        system_prompt += "\n\n" + FEW_SHOT_EXAMPLES
-
-    # 사용자 프롬프트 구성
-    user_prompt = USER_PROMPT_TEMPLATE.format(content=content)
-
-    return system_prompt, user_prompt
-
-
-def build_batch_enrichment_prompt(
-    documents: list[dict], include_examples: bool = True
-) -> tuple[str, str]:
-    """
-    배치 보강 프롬프트 생성 (최대 10개 문서)
-
-    Args:
-        documents: 분석할 문서 리스트 (각 문서는 content 필드 포함)
-        include_examples: Few-shot 예시 포함 여부 (기본: True)
-
-    Returns:
-        tuple[str, str]: (system_prompt, user_prompt)
-
-    사용 예시:
-        >>> documents = [
-        ...     {"content": "Python 리스트 컴프리헨션 설명..."},
-        ...     {"content": "2024년 하반기 매출 보고서..."}
-        ... ]
-        >>> system_prompt, user_prompt = build_batch_enrichment_prompt(documents)
-    """
-    # 시스템 프롬프트 (동일)
-    system_prompt = SYSTEM_PROMPT
-    if include_examples:
-        system_prompt += "\n\n" + FEW_SHOT_EXAMPLES
-
-    # 배치 사용자 프롬프트 구성
-    batch_content = ""
-    for i, doc in enumerate(documents[:10], 1):  # 최대 10개
-        content = doc.get("content", "")
-        batch_content += f"\n\n--- 문서 {i} ---\n{content}"
-
-    user_prompt = f"""다음 {len(documents[:10])}개의 텍스트를 각각 분석하여 JSON 배열로 응답해주세요:
+# 배치 사용자 프롬프트 템플릿 — 여러 문서를 한 번에 분석 (JSON 배열 응답)
+# 플레이스홀더(.format으로 치환):
+#   {doc_count}     : 배치에 포함된 문서 개수 (최대 10)
+#   {batch_content} : "--- 문서 N ---" 헤더로 구분된 문서 본문 블록
+# JSON 예시의 중괄호는 .format 충돌을 피하기 위해 {{ }}로 이스케이프한다.
+# 단건 USER_PROMPT_TEMPLATE와 출력 형식이 다르므로(배열 vs 단일 객체) 별도 상수로 둔다.
+BATCH_USER_PROMPT_TEMPLATE = """다음 {doc_count}개의 텍스트를 각각 분석하여 JSON 배열로 응답해주세요:
 {batch_content}
 
 각 문서에 대해 다음 JSON 형식으로 응답해주세요 (배열 형태):
@@ -158,4 +100,111 @@ def build_batch_enrichment_prompt(
 
 주의: JSON 배열만 출력하고 다른 설명은 추가하지 마세요."""
 
-    return system_prompt, user_prompt
+
+def build_enrichment_prompt(
+    content: str,
+    include_examples: bool = True,
+    system_prompt: str | None = None,
+    few_shot_examples: str | None = None,
+    user_prompt_template: str | None = None,
+) -> tuple[str, str]:
+    """
+    보강 프롬프트 생성
+
+    Args:
+        content: 분석할 문서 내용
+        include_examples: Few-shot 예시 포함 여부 (기본: True)
+        system_prompt: config로 외부화된 시스템 프롬프트. None이면 코드 내장
+            SYSTEM_PROMPT(한국어 기본값)를 사용한다 → 회귀 0.
+        few_shot_examples: config로 외부화된 Few-shot 예시. None이면 코드 내장
+            FEW_SHOT_EXAMPLES를 사용한다.
+        user_prompt_template: config로 외부화된 사용자 프롬프트 템플릿
+            ({content} 보존 필수). None이면 코드 내장 USER_PROMPT_TEMPLATE를 사용한다.
+
+    Returns:
+        tuple[str, str]: (system_prompt, user_prompt)
+
+    사용 예시:
+        >>> system_prompt, user_prompt = build_enrichment_prompt(
+        ...     "Python 리스트 컴프리헨션 사용법에 대한 설명입니다."
+        ... )
+        >>> # LLM에 전달
+        >>> response = llm.chat([
+        ...     {"role": "system", "content": system_prompt},
+        ...     {"role": "user", "content": user_prompt}
+        ... ])
+    """
+    # 시스템 프롬프트 구성 (오버라이드 없으면 코드 내장 기본값)
+    base_system = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+    examples_block = (
+        few_shot_examples if few_shot_examples is not None else FEW_SHOT_EXAMPLES
+    )
+    full_system_prompt = base_system
+    if include_examples:
+        full_system_prompt += "\n\n" + examples_block
+
+    # 사용자 프롬프트 구성 (오버라이드 없으면 코드 내장 기본값)
+    user_template = (
+        user_prompt_template if user_prompt_template is not None else USER_PROMPT_TEMPLATE
+    )
+    user_prompt = user_template.format(content=content)
+
+    return full_system_prompt, user_prompt
+
+
+def build_batch_enrichment_prompt(
+    documents: list[dict],
+    include_examples: bool = True,
+    system_prompt: str | None = None,
+    few_shot_examples: str | None = None,
+    user_prompt_template: str | None = None,
+) -> tuple[str, str]:
+    """
+    배치 보강 프롬프트 생성 (최대 10개 문서)
+
+    Args:
+        documents: 분석할 문서 리스트 (각 문서는 content 필드 포함)
+        include_examples: Few-shot 예시 포함 여부 (기본: True)
+        system_prompt: config로 외부화된 시스템 프롬프트. None이면 코드 내장
+            SYSTEM_PROMPT(한국어 기본값)를 사용한다 → 회귀 0.
+        few_shot_examples: config로 외부화된 Few-shot 예시. None이면 코드 내장
+            FEW_SHOT_EXAMPLES를 사용한다.
+        user_prompt_template: config로 외부화된 배치 사용자 프롬프트 템플릿.
+            None이면 코드 내장 BATCH_USER_PROMPT_TEMPLATE(한국어 기본값)를 사용한다 → 회귀 0.
+            플레이스홀더 {doc_count}(문서 개수)와 {batch_content}(문서 본문 블록)를
+            반드시 보존해야 한다. (단건과 달리 출력이 JSON 배열이므로 별도 템플릿.)
+
+    Returns:
+        tuple[str, str]: (system_prompt, user_prompt)
+
+    사용 예시:
+        >>> documents = [
+        ...     {"content": "Python 리스트 컴프리헨션 설명..."},
+        ...     {"content": "2024년 하반기 매출 보고서..."}
+        ... ]
+        >>> system_prompt, user_prompt = build_batch_enrichment_prompt(documents)
+    """
+    # 시스템 프롬프트 (단건과 동일, 오버라이드 없으면 코드 내장 기본값)
+    base_system = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+    examples_block = (
+        few_shot_examples if few_shot_examples is not None else FEW_SHOT_EXAMPLES
+    )
+    full_system_prompt = base_system
+    if include_examples:
+        full_system_prompt += "\n\n" + examples_block
+
+    # 배치 사용자 프롬프트 본문 구성 (문서 헤더로 구분)
+    batch_content = ""
+    for i, doc in enumerate(documents[:10], 1):  # 최대 10개
+        content = doc.get("content", "")
+        batch_content += f"\n\n--- 문서 {i} ---\n{content}"
+
+    # 배치 사용자 프롬프트 구성 (오버라이드 없으면 코드 내장 한국어 기본 템플릿 → 회귀 0)
+    batch_template = (
+        user_prompt_template if user_prompt_template is not None else BATCH_USER_PROMPT_TEMPLATE
+    )
+    user_prompt = batch_template.format(
+        doc_count=len(documents[:10]), batch_content=batch_content
+    )
+
+    return full_system_prompt, user_prompt

@@ -31,3 +31,31 @@ uploads:
   # type을 disabled/none/off로 두면 감사 기록을 비활성화한다.
   audit_event_store:
     type: "${ONERAG_AUDIT_EVENT_STORE:-sqlite}"
+
+  # FAQ 파싱 시 인식하는 질문/답변/섹션/카테고리 컬럼 별칭.
+  # 미설정 키는 코드 내장 ko+en 기본 별칭으로 보강된다(회귀 0).
+  #   - question 기본: ["질문", "question", "Question", "Q", "query"]
+  #   - answer   기본: ["답변", "answer", "Answer", "A", "response"]
+  #   - section  기본: ["section", "섹션명"]      (청크 메타데이터)
+  #   - category 기본: ["category", "카테고리"]   (청크 메타데이터)
+  # 그 외 언어 컬럼명(예: 일본어 質問/回答)을 추가하려면 아래에 작성한다. 예:
+  #   faq:
+  #     column_aliases:
+  #       question: ["질문", "question", "質問", "Pregunta"]
+  #       answer: ["답변", "answer", "回答", "Respuesta"]
+  #       section: ["section", "섹션명", "セクション"]
+  #       category: ["category", "카테고리", "カテゴリ"]
+  faq:
+    column_aliases: {}
+
+  # 문서 로더 본문 라벨 (CSV/XLSX/PPTX의 인덱싱 본문에 prepend되는 구조 라벨).
+  # 이 라벨들은 검색 대상 텍스트에 그대로 들어가므로, 비한국어 배포는 자국어/영어로
+  # 오버라이드하거나 빈 문자열로 둘 수 있다. 미설정(빈 맵) 시 코드 내장 한국어
+  # 기본값으로 폴백한다(회귀 0).
+  #   - column 기본: "컬럼"  (CSV/XLSX 컬럼 라벨)
+  #   - sheet  기본: "시트"  (XLSX 시트 라벨)
+  #   - slide  기본: "슬라이드" (PPTX 슬라이드 라벨)
+  #   - notes  기본: "노트"  (PPTX 발표자 노트 라벨)
+  # 예시(영어): loaders: {labels: {column: "Columns", sheet: "Sheet", slide: "Slide", notes: "Notes"}}
+  loaders:
+    labels: {}

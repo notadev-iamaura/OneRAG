@@ -737,3 +737,100 @@ class TestWebSocketConnection:
         assert not ws_manager.is_connected("unique-session-123")
 
         set_chat_service(None)
+
+
+class TestWebSocketErrorBilingualRouting:
+    """WebSocket 에러 메시지의 양언어(ErrorCode 카탈로그) 라우팅 검증.
+
+    하드코딩 한국어 대신 app.lib.errors 카탈로그를 error_code로 조회한다.
+    (a) lang 기본(ko) → 기존 하드코딩 문자열과 동일 (회귀 0)
+    (b) lang=en → 영어 메시지로 자동 전환
+    (c) Accept-Language 헤더 → ko/en 해소
+    """
+
+    def test_resolve_language_defaults_ko(self) -> None:
+        """(c) Accept-Language 미지정/한국어 우선 → ko"""
+        from app.api.routers.websocket_router import _resolve_websocket_language
+
+        ws_none = MagicMock()
+        ws_none.headers = {}
+        assert _resolve_websocket_language(ws_none) == "ko"
+
+        ws_ko = MagicMock()
+        ws_ko.headers = {"accept-language": "ko-KR,ko;q=0.9,en;q=0.8"}
+        assert _resolve_websocket_language(ws_ko) == "ko"
+
+    def test_resolve_language_english(self) -> None:
+        """(c) 영어 우선 Accept-Language → en"""
+        from app.api.routers.websocket_router import _resolve_websocket_language
+
+        ws_en = MagicMock()
+        ws_en.headers = {"accept-language": "en-US,en;q=0.9"}
+        assert _resolve_websocket_language(ws_en) == "en"
+
+    @pytest.mark.asyncio
+    async def test_send_error_resolves_catalog_ko(self) -> None:
+        """(a) lang=ko → 카탈로그 ko 값 = 기존 하드코딩 문자열 (회귀 0)"""
+        from app.api.routers.websocket_router import _send_error
+
+        ws = MagicMock()
+        sent: dict = {}
+
+        async def _capture(payload):
+            sent.update(payload)
+
+        ws.send_json = _capture
+        await _send_error(
+            websocket=ws,
+            message_id="m1",
+            error_code="WS-999-INTERNAL_ERROR",
+            lang="ko",
+        )
+        assert sent["error_code"] == "WS-999-INTERNAL_ERROR"
+        assert sent["message"] == "스트리밍 처리 중 오류가 발생했습니다."
+        assert sent["solutions"] == [
+            "잠시 후 다시 시도해주세요.",
+            "문제가 지속되면 관리자에게 문의해주세요.",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_send_error_resolves_catalog_en(self) -> None:
+        """(b) lang=en → 카탈로그 en 값으로 자동 전환"""
+        from app.api.routers.websocket_router import _send_error
+
+        ws = MagicMock()
+        sent: dict = {}
+
+        async def _capture(payload):
+            sent.update(payload)
+
+        ws.send_json = _capture
+        await _send_error(
+            websocket=ws,
+            message_id="m1",
+            error_code="WS-999-INTERNAL_ERROR",
+            lang="en",
+        )
+        assert sent["message"] == "An error occurred while processing the stream."
+
+    @pytest.mark.asyncio
+    async def test_send_error_unknown_code_falls_back(self) -> None:
+        """카탈로그에 없는 코드(포워딩) → 명시 message 또는 한국어 폴백 유지"""
+        from app.api.routers.websocket_router import _send_error
+
+        ws = MagicMock()
+        sent: dict = {}
+
+        async def _capture(payload):
+            sent.update(payload)
+
+        ws.send_json = _capture
+        # 명시 message가 있으면 그대로 사용(포워딩 경로)
+        await _send_error(
+            websocket=ws,
+            message_id="m1",
+            error_code="GEN-999",
+            message="forwarded message",
+            lang="en",
+        )
+        assert sent["message"] == "forwarded message"

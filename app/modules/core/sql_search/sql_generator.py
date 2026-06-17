@@ -128,7 +128,19 @@ class SQLGenerator:
         self.max_tokens = config.get("max_tokens", 1024)
         self.temperature = config.get("temperature", 0.1)  # SQL 생성은 일관성이 중요
 
-        logger.info(f"SQLGenerator 초기화: model={self.model}")
+        # 프롬프트 외부화 (sql_search.generator.prompts.*)
+        # 미설정 시 모듈 기본 프롬프트로 폴백한다(회귀 0).
+        prompts_cfg = config.get("prompts") or {}
+        self._system_prompt: str = (
+            prompts_cfg.get("system") or SQL_GENERATION_SYSTEM_PROMPT
+        )
+        # 유저 프롬프트 템플릿은 {user_query} 자리표시자를 포함해야 한다.
+        self._user_template: str | None = prompts_cfg.get("user_template") or None
+
+        logger.info(
+            f"SQLGenerator 초기화: model={self.model}, "
+            f"prompts_overridden={bool(prompts_cfg)}"
+        )
 
     @property
     def client(self) -> OpenAI:
@@ -170,7 +182,7 @@ class SQLGenerator:
             # LLM 호출
             logger.info(f"SQL 생성 요청: query={user_query[:50]}...")
 
-            system_prompt = SQL_GENERATION_SYSTEM_PROMPT
+            system_prompt = self._system_prompt
             if schema_summary:
                 system_prompt = system_prompt.replace("{DB_SCHEMA_SUMMARY}", schema_summary)
             if templates:
@@ -180,7 +192,12 @@ class SQLGenerator:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": get_sql_generation_prompt(user_query)},
+                    {
+                        "role": "user",
+                        "content": get_sql_generation_prompt(
+                            user_query, template=self._user_template
+                        ),
+                    },
                 ],
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,

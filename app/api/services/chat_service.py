@@ -22,6 +22,7 @@ from typing import Any
 from ...lib.errors import ErrorCode, SessionError
 from ...lib.logger import get_logger
 from ...lib.metrics import CostTracker, PerformanceMetrics
+from ...lib.topic_extractor import extract_topic
 from ...lib.types import RAGResultDict, SessionInfoDict, SessionResult, StatsDict
 from .rag_pipeline import RAGPipeline
 
@@ -41,6 +42,35 @@ except ImportError:
 
 
 logger = get_logger(__name__)
+
+
+# 스트리밍(SSE/WS)에서 검색 결과가 0건일 때 사용자에게 chunk로 안내하는 informational
+# 메시지의 코드 내장 기본값(한국어). 에러가 아닌 안내성 문자열이라 ErrorCode 카탈로그를
+# 적용하지 않는다. 운영자는 rag.yaml generation_fallback.no_documents_message로 코드 포크
+# 없이 다른 언어/도메인 문구로 오버라이드할 수 있다 → 미설정 시 아래 기본값으로 회귀 0.
+STREAM_NO_DOCUMENTS_MESSAGE = (
+    "관련 문서를 찾을 수 없습니다. 문서를 업로드했는지 확인하거나 "
+    "질문을 바꿔 다시 시도해주세요."
+)
+
+
+def _resolve_user_message(configured: Any, default: str) -> str:
+    """사용자 노출 메시지를 config 우선으로 해소한다(미설정/공백이면 기본값).
+
+    rag_pipeline._resolve_generation_fallback_message와 동일한 정책을 따른다:
+    문자열이면서 앞뒤 공백 제거 후 비어있지 않을 때만 유효 오버라이드로 인정하고,
+    그 외(None/공백/비문자열)는 코드 내장 기본값을 사용한다(회귀 0 보장).
+
+    Args:
+        configured: rag.yaml에서 읽은 원시 값(문자열/None/기타).
+        default: 코드 내장 기본 문자열(회귀 0 보장용).
+
+    Returns:
+        유효한 문자열(앞뒤 공백만 있는 값은 무효로 보아 default 사용).
+    """
+    if isinstance(configured, str) and configured.strip():
+        return configured
+    return default
 
 
 class ChatService:
@@ -108,6 +138,18 @@ class ChatService:
         self.stream_chunk_min_interval_seconds = self._coerce_non_negative_float(
             streaming_config.get("chunk_min_interval_seconds"),
             default=0.0,
+        )
+
+        # 검색 0건 안내 메시지 외부화: rag.generation_fallback.no_documents_message로
+        # 코드 포크 없이 다른 언어/도메인 문구로 교체할 수 있다. null/공백/미설정이면
+        # 코드 내장 한국어 기본값(STREAM_NO_DOCUMENTS_MESSAGE)을 사용한다 → 회귀 0.
+        rag_config = config.get("rag", {})
+        generation_fallback_config = rag_config.get("generation_fallback", {})
+        if not isinstance(generation_fallback_config, dict):
+            generation_fallback_config = {}
+        self.stream_no_documents_message: str = _resolve_user_message(
+            generation_fallback_config.get("no_documents_message"),
+            STREAM_NO_DOCUMENTS_MESSAGE,
         )
 
         logger.info("ChatService 초기화 완료 (RAGPipeline + Self-RAG + SQL Search 포함)")
@@ -221,56 +263,35 @@ class ChatService:
 
         except KeyError as e:
             # 세션 모듈 초기화 안 됨 또는 필수 키 누락
+            # RAGException 시그니처는 (error_code, **context)이므로 message=/
+            # original_error= 키워드는 데드 인자(context dict에 흡수, 렌더 안 됨)였다.
+            # 사용자 노출 메시지는 양언어 카탈로그(SESSION-002)가 렌더하고,
+            # 디버깅 정보는 context로 전달한다(데드 한국어 문자열 제거).
             logger.error(f"Session handling error - missing key: {e}", exc_info=True)
             raise SessionError(
-                message="세션 모듈이 초기화되지 않았습니다. 서버 관리자에게 문의하세요.",
-                error_code=ErrorCode.SESSION_MODULE_NOT_AVAILABLE,
-                context={"missing_key": str(e)},
-                original_error=e,
+                ErrorCode.SESSION_MODULE_NOT_AVAILABLE,
+                missing_key=str(e),
             ) from e
         except Exception as e:
             # 예상치 못한 세션 처리 에러
+            # 위와 동일: 데드 message=/original_error= 제거, context는 키워드로 전달.
             logger.error(f"Session handling error: {e}", exc_info=True)
             raise SessionError(
-                message="세션 처리 중 오류가 발생했습니다.",
-                error_code=ErrorCode.SESSION_CREATE_FAILED,
-                context={"session_id": session_id, "context": context},
-                original_error=e,
+                ErrorCode.SESSION_CREATE_FAILED,
+                session_id=session_id,
+                context=context,
             ) from e
 
     def extract_topic(self, message: str) -> str:
+        """토픽 추출 (키워드 기반).
+
+        lib의 단일 소스 함수(topic_extractor.extract_topic)에 위임한다(DRY).
+        토픽 키워드는 config(routing.topic_keywords)로 외부화되며, 미설정 시
+        코드 내장 한국어 기본 맵을 사용한다(회귀 0). 토픽은 세션 메타(cosmetic)
+        라벨이라 검색/라우팅 동작에는 영향을 주지 않는다.
         """
-        토픽 추출 (간단한 키워드 기반)
-
-        기존 코드: chat.py의 extract_topic() 함수 (L301-329)
-        """
-        # 안전한 메시지 처리
-        if isinstance(message, list):
-            message = " ".join(str(item) for item in message)
-        elif not isinstance(message, str):
-            message = str(message)
-
-        if not message:
-            return "general"
-
-        keywords = {
-            "search": ["검색", "찾기", "찾아", "검색해"],
-            "document": ["문서", "파일", "자료", "데이터"],
-            "help": ["도움", "도와", "설명", "알려"],
-            "technical": ["기술", "개발", "코드", "프로그래밍"],
-            "general": ["일반", "기본", "소개", "개요"],
-        }
-
-        try:
-            lower_message = message.lower()
-
-            for topic, words in keywords.items():
-                if any(word in lower_message for word in words):
-                    return topic
-
-            return "general"
-        except Exception:
-            return "general"
+        topic_keywords = self.config.get("routing", {}).get("topic_keywords")
+        return extract_topic(message, topic_keywords)
 
     @traceable(
         name="RAGPipeline",
@@ -663,10 +684,9 @@ class ChatService:
 
             if not reranked_documents:
                 canned_no_answer = True
-                no_context_answer = (
-                    "관련 문서를 찾을 수 없습니다. 문서를 업로드했는지 확인하거나 "
-                    "질문을 바꿔 다시 시도해주세요."
-                )
+                # 검색 0건 안내 메시지(informational). config로 외부화되어 운영자가
+                # 다른 언어/도메인으로 교체 가능하며, 미설정 시 한국어 기본값 → 회귀 0.
+                no_context_answer = self.stream_no_documents_message
                 # answer_chunks에 추가하지 않아 answer_text를 비워둔다 → tokens_used=0,
                 # 영속화/성공 집계 스킵(안내 UX는 chunk+done으로 유지).
                 yield {

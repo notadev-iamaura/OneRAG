@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from dependency_injector import containers, providers
@@ -28,6 +29,7 @@ from app.lib.config_validator import get_env_int, get_env_url
 from app.lib.logger import get_logger
 from app.lib.metrics import CostTracker, PerformanceMetrics
 from app.lib.startup_policy import is_retrieval_required
+from app.lib.topic_extractor import extract_topic
 
 # Phase 5: Agent 모듈 (Agentic RAG Orchestrator)
 from app.modules.core.agent import AgentFactory
@@ -56,7 +58,6 @@ from app.modules.core.privacy import (
 from app.modules.core.privacy.review import (
     HybridPIIDetector,
     PIIAuditLogger,
-    PIIPolicyEngine,
     PIIReviewProcessor,
 )
 
@@ -129,6 +130,73 @@ def _create_memory_service(*args: Any, **kwargs: Any) -> Any:
     from app.modules.core.session.services.memory_service import MemoryService
 
     return MemoryService(*args, **kwargs)
+
+
+def _create_pii_policy_engine(policy_config: Any = None) -> Any:
+    """config.privacy.review.policy에서 PIIPolicy를 구성해 PIIPolicyEngine을 만든다.
+
+    config의 entity_actions는 문자열 키/값(예: {"phone": "mask"})이므로 PIIType/
+    PolicyAction enum으로 정규화한다(value 단축 별칭 'review'→REVIEW_ONLY 등 허용).
+    기본 정책(PIIPolicy.default()) 위에 config를 오버라이드하므로 미설정 키는
+    기본 동작을 유지하고, 누락/오류 시 기본 정책으로 안전 폴백한다(회귀 0).
+
+    주: 이전에는 provider가 PIIPolicyEngine에 policy_name/entity_actions/...를
+    직접 넘겼으나 PIIPolicyEngine.__init__은 policy: PIIPolicy|None만 받아
+    인스턴스화 시 TypeError였다(PII 리뷰 활성화 시 크래시). 이 팩토리로 교정한다.
+    """
+    from app.modules.core.privacy.review.models import (
+        PIIPolicy,
+        PIIType,
+        PolicyAction,
+    )
+    from app.modules.core.privacy.review.policy import PIIPolicyEngine
+
+    # config 단축 표기 → PolicyAction 별칭 맵
+    action_aliases = {
+        "review": PolicyAction.REVIEW_ONLY,
+        "review_only": PolicyAction.REVIEW_ONLY,
+        "mask": PolicyAction.MASK_AND_PROCEED,
+        "mask_and_proceed": PolicyAction.MASK_AND_PROCEED,
+        "block": PolicyAction.BLOCK_ON_VIOLATION,
+        "block_on_violation": PolicyAction.BLOCK_ON_VIOLATION,
+        "quarantine": PolicyAction.QUARANTINE,
+    }
+
+    default_policy = PIIPolicy.default()
+    cfg = policy_config if isinstance(policy_config, dict) else {}
+    raw_actions = cfg.get("entity_actions")
+
+    # 기본 정책의 entity_actions 위에 config를 오버라이드(미설정 키는 기본 유지)
+    entity_actions = dict(default_policy.entity_actions)
+    if isinstance(raw_actions, dict):
+        for key, value in raw_actions.items():
+            try:
+                pii_type = PIIType(str(key).strip().lower())
+            except ValueError:
+                continue  # 알 수 없는 엔티티 타입은 건너뜀(graceful)
+            action = action_aliases.get(str(value).strip().lower())
+            if action is not None:
+                entity_actions[pii_type] = action
+
+    try:
+        policy = PIIPolicy(
+            name=str(cfg.get("name", default_policy.name)),
+            entity_actions=entity_actions,
+            quarantine_threshold=int(
+                cfg.get("quarantine_threshold", default_policy.quarantine_threshold)
+            ),
+            min_confidence=float(cfg.get("min_confidence", default_policy.min_confidence)),
+            # whitelist_patterns도 형제 키처럼 config에서 읽는다(미설정 시 한국어
+            # 기본 PII 오탐방지 목록 → 회귀 0). 비한국어 운영자가 코드 포크 없이
+            # 리뷰 화이트리스트를 교체할 수 있게 한다.
+            whitelist_patterns=(
+                cfg.get("whitelist_patterns") or default_policy.whitelist_patterns
+            ),
+        )
+    except (TypeError, ValueError):
+        policy = default_policy  # 설정 파싱 실패 시 기본 정책으로 안전 폴백
+
+    return PIIPolicyEngine(policy)
 
 
 def _create_chat_store(config: dict[str, Any] | None, db_manager: Any) -> Any | None:
@@ -228,34 +296,28 @@ def initialize_llm_factory_wrapper(config: dict) -> LLMClientFactory:
     return get_llm_factory()
 
 
-def extract_topic_default(message: str) -> str:
+def extract_topic_default(message: object) -> str:
+    """RAGPipeline 주입용 기본 토픽 추출 함수(lib.extract_topic 위임).
+
+    config 미주입 경로이므로 코드 내장 한국어 기본 키워드를 사용한다.
+    토픽 추출 로직의 단일 소스는 app.lib.topic_extractor이다.
     """
-    기본 토픽 추출 함수
+    return extract_topic(message)
+
+
+def build_extract_topic_func(config: dict) -> Callable[[object], str]:
+    """config의 routing.topic_keywords를 바인딩한 토픽 추출 함수를 생성한다.
+
+    RAGPipeline에 주입되는 extract_topic_func은 (message) 단일 인자만
+    받으므로, config에서 읽은 키워드 맵을 클로저로 바인딩해 단일 소스
+    함수(lib.extract_topic)에 위임한다. 미설정 시 한국어 기본 맵을 쓴다(회귀 0).
     """
-    if isinstance(message, list):
-        message = " ".join(str(item) for item in message)
-    elif not isinstance(message, str):
-        message = str(message)
+    topic_keywords = config.get("routing", {}).get("topic_keywords")
 
-    if not message:
-        return "general"
+    def _extract(message: object) -> str:
+        return extract_topic(message, topic_keywords)
 
-    # 범용 키워드 매핑 (검색, 도움말, 일반 대화 등)
-    keywords = {
-        "search": ["검색", "찾기", "찾아", "조회", "정보", "어디", "알려"],
-        "help": ["도움", "어떻게", "방법", "안내", "사용법", "매뉴얼"],
-        "greeting": ["안녕", "반가워", "하이", "헬로"],
-        "thanks": ["고마워", "감사", "땡큐"],
-    }
-
-    try:
-        lower_message = message.lower()
-        for topic, words in keywords.items():
-            if any(word in lower_message for word in words):
-                return topic
-        return "general"
-    except Exception:
-        return "general"
+    return _extract
 
 
 async def create_reranker_instance_v2(
@@ -817,6 +879,10 @@ async def create_entity_extractor_instance(
             config={
                 "max_entities": llm_config.get("max_entities_per_chunk", 20),
                 "model": model,
+                # 프롬프트 외부화: graph_rag.extraction.llm.prompt_template.
+                # 미설정 시 None → LLMEntityExtractor가 코드 내장 한국어 기본
+                # 프롬프트를 사용한다 (회귀 0).
+                "prompt_template": llm_config.get("prompt_template"),
             },
         )
         logger.info(
@@ -889,6 +955,11 @@ async def create_relation_extractor_instance(
             config={
                 "max_relations": llm_config.get("max_relations_per_chunk", 30),
                 "model": model,
+                # 프롬프트 외부화: graph_rag.extraction.llm.relation_prompt_template.
+                # 엔티티 추출기의 prompt_template와 키를 분리해 관계 프롬프트만 교체 가능.
+                # 미설정 시 None → LLMRelationExtractor가 코드 내장 한국어 기본
+                # 프롬프트를 사용한다 (회귀 0).
+                "prompt_template": llm_config.get("relation_prompt_template"),
             },
         )
         logger.info(
@@ -1484,6 +1555,10 @@ class AppContainer(containers.DeclarativeContainer):
         repository=prompt_repository,
         use_database=config.prompts.use_database,
         cache_ttl=config.prompts.cache_ttl,
+        # 시드 프롬프트 오버라이드 외부화: prompts.seed_prompts(미설정 시 None →
+        # 코드 내장 DEFAULT_SEED_PROMPTS 한국어 기본, 회귀 0). 생성자에 노출만 돼
+        # 있고 라이브 배선이 없던 데드 주입 경로를 해소한다.
+        default_prompts=config.prompts.seed_prompts,
     )
 
     cost_tracker = providers.Singleton(CostTracker)
@@ -1520,13 +1595,15 @@ class AppContainer(containers.DeclarativeContainer):
     connector_factory = providers.Singleton(IngestionConnectorFactory)
 
     # Ingestion Service
+    # chunker를 주입하지 않으면 IngestionService가 config의
+    # domain.batch.section_keywords/target_fields를 읽어 MetadataChunker를 생성한다
+    # (데드 config 키 해소). 미설정 시 도메인 중립 기본값 사용.
     ingestion_service = providers.Factory(
         IngestionService,
         vector_store=vector_store,
         metadata_store=metadata_store,
         config=config,
         notion_client=notion_client,
-        # chunker는 내부 기본값 사용
     )
 
     # ========================================
@@ -1571,6 +1648,8 @@ class AppContainer(containers.DeclarativeContainer):
     whitelist_manager = providers.Singleton(WhitelistManager)
 
     # 개인정보 마스킹 (전화번호, 이름) - 화이트리스트 연동
+    # PII 정규식 패턴/이름 글자클래스/파일명 라벨은 privacy.yaml에서 외부화한다.
+    # 미설정 시 PrivacyMasker 내부의 한국 기본 패턴으로 폴백한다(보안 회귀 0).
     privacy_masker = providers.Singleton(
         PrivacyMasker,
         mask_phone=config.privacy.masking.phone,
@@ -1580,6 +1659,9 @@ class AppContainer(containers.DeclarativeContainer):
         name_mask_char=config.privacy.characters.name,
         whitelist=config.domain.privacy.whitelist,  # 도메인 특화 화이트리스트 (domain.yaml)
         name_suffixes=config.domain.privacy.name_suffixes,  # 도메인 특화 이름 호칭 (domain.yaml)
+        patterns=config.privacy.patterns,  # PII 정규식 패턴 오버라이드 (privacy.yaml)
+        name_char_class=config.privacy.name_char_class,  # 이름 글자클래스 (privacy.yaml)
+        filename_mask_label=config.privacy.filename_mask_label,  # 파일명 라벨 (privacy.yaml)
     )
 
     # ----------------------------------------
@@ -1592,15 +1674,18 @@ class AppContainer(containers.DeclarativeContainer):
         enable_ner=config.privacy.review.enable_ner,
         context_window=config.privacy.review.context_window,
         whitelist=config.domain.privacy.whitelist,  # 도메인 특화 화이트리스트 (domain.yaml)
+        patterns=config.privacy.review.patterns,  # PII 정규식 오버라이드 (privacy.yaml)
+        # spaCy NER 라벨→PIIType 매핑 오버라이드 (privacy.yaml). 비우면 코드 기본
+        # 한국/KLUE 라벨 매핑으로 폴백한다(회귀 0). 타 언어 모델 교체 시 주입.
+        ner_label_mapping=config.privacy.review.ner_label_mapping,
     )
 
     # 정책 기반 PII 처리 결정 엔진
+    # PIIPolicyEngine은 policy: PIIPolicy만 받으므로, config의 정책 값을 팩토리에서
+    # PIIPolicy로 구성해 주입한다(이전 직접 kwargs 전달은 TypeError였음).
     pii_policy_engine = providers.Singleton(
-        PIIPolicyEngine,
-        policy_name=config.privacy.review.policy.name,
-        entity_actions=config.privacy.review.policy.entity_actions,
-        quarantine_threshold=config.privacy.review.policy.quarantine_threshold,
-        min_confidence=config.privacy.review.policy.min_confidence,
+        _create_pii_policy_engine,
+        policy_config=config.privacy.review.policy,
     )
 
     # MongoDB 감사 로거 (collection은 런타임에 주입)
@@ -1617,6 +1702,10 @@ class AppContainer(containers.DeclarativeContainer):
         policy_engine=pii_policy_engine,
         audit_logger=pii_audit_logger,
         enabled=config.privacy.review.enabled,
+        # PII 마스킹 치환 라벨 오버라이드 (privacy.yaml). 비우면 코드 기본
+        # 한국어 라벨(DEFAULT_MASK_TEMPLATES)로 폴백한다(회귀 0). 비한국어
+        # 운영자는 review.mask_templates로 자국어 라벨을 코드 포크 없이 주입.
+        mask_templates=config.privacy.review.mask_templates,
     )
 
     # 통합 PII 처리 Facade (권장 진입점)
@@ -1920,6 +2009,13 @@ class AppContainer(containers.DeclarativeContainer):
         length_weight=0.3,
         depth_weight=0.4,
         multi_intent_weight=0.3,
+        # 복잡도 마커 외부화: routing.complexity.{depth_indicators,multi_intent_indicators}.
+        # 미설정 시 None → ComplexityCalculator가 코드 내장 한국어 기본 마커를
+        # 사용한다(회귀 0). 비한국어 운영자는 routing.yaml로 자국어 마커를 주입한다.
+        depth_indicators=config.routing.complexity.depth_indicators,
+        multi_intent_indicators=config.routing.complexity.multi_intent_indicators,
+        # 언어 중립 신호 보강 토글(기본 False — 기존 동작 동치).
+        use_language_neutral_signals=config.routing.complexity.use_language_neutral_signals,
     )
 
     answer_evaluator = providers.Singleton(
@@ -1930,6 +2026,12 @@ class AppContainer(containers.DeclarativeContainer):
         grounding_weight=0.30,
         completeness_weight=0.25,
         confidence_weight=0.10,
+        # 평가 프롬프트 외부화: self_rag.evaluation.prompt_template.
+        # 미설정 시 None → LLMQualityEvaluator가 코드 내장 한국어 기본 프롬프트를
+        # 사용한다 (회귀 0).
+        evaluation_prompt_template=config.self_rag.evaluation.prompt_template,
+        # 컨텍스트 문서 라벨 외부화: self_rag.evaluation.document_label_template.
+        document_label_template=config.self_rag.evaluation.document_label_template,
     )
 
     self_rag = providers.Singleton(
@@ -1985,7 +2087,11 @@ class AppContainer(containers.DeclarativeContainer):
         generation_module=generation,
         session_module=session,
         self_rag_module=self_rag,  # ✅ Self-RAG 모듈 주입
-        extract_topic_func=extract_topic_default,  # 함수 직접 전달
+        # 토픽 추출 함수: config(routing.topic_keywords) 바인딩.
+        # 미설정 시 한국어 기본 키워드로 동작한다(회귀 0).
+        extract_topic_func=providers.Callable(
+            build_extract_topic_func, config=config
+        ),
         circuit_breaker_factory=circuit_breaker_factory,  # ✅ Circuit Breaker Factory 주입
         cost_tracker=cost_tracker,  # ✅ 비용 추적기 주입
         performance_metrics=performance_metrics,  # ✅ 성능 메트릭 주입

@@ -133,20 +133,31 @@ SQL_GENERATION_SYSTEM_PROMPT = """당신은 메타데이터를 조회하는 SQL 
 """
 
 
-def get_sql_generation_prompt(user_query: str) -> str:
-    """
-    유저 쿼리를 포함한 SQL 생성 프롬프트를 반환합니다.
-
-    Args:
-        user_query: 유저의 원본 질문
-
-    Returns:
-        LLM에 전달할 완전한 프롬프트 문자열
-    """
-    return f"""아래 유저 질문을 분석하여 적절한 SQL 쿼리를 생성하세요.
+# 유저 프롬프트 템플릿 (기본값)
+# {user_query} 자리표시자를 포함해야 한다. config로 오버라이드 가능.
+SQL_GENERATION_USER_TEMPLATE = """아래 유저 질문을 분석하여 적절한 SQL 쿼리를 생성하세요.
 
 ## 유저 질문
 "{user_query}"
 
 ## 응답
 JSON 형식으로만 응답하세요:"""
+
+
+def get_sql_generation_prompt(
+    user_query: str, template: str | None = None
+) -> str:
+    """
+    유저 쿼리를 포함한 SQL 생성 프롬프트를 반환합니다.
+
+    Args:
+        user_query: 유저의 원본 질문
+        template: 유저 프롬프트 템플릿 오버라이드. None이면 기본 한국어 템플릿 사용.
+            템플릿에는 ``{user_query}`` 자리표시자가 포함되어야 합니다.
+            (config 미설정 시 기본 템플릿과 byte-identical — 회귀 0)
+
+    Returns:
+        LLM에 전달할 완전한 프롬프트 문자열
+    """
+    resolved_template = template if template else SQL_GENERATION_USER_TEMPLATE
+    return resolved_template.format(user_query=user_query)

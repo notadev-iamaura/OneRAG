@@ -72,7 +72,7 @@ class IHybridSearchStrategy(Protocol):
     - VectorOnlySearch: 벡터 검색만 사용 (그래프 비활성화)
 
     Examples:
-        >>> result = await hybrid_search.search("강남 맛집", top_k=10)
+        >>> result = await hybrid_search.search("RAG란 무엇인가요?", top_k=10)
     """
 
     async def search(

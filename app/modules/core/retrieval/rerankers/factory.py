@@ -236,6 +236,10 @@ class RerankerFactoryV2:
         provider_config = config.get(provider, {})
         defaults = provider_info["default_config"]
 
+        # 랭킹 프롬프트 오버라이드(범용화): config에 prompt_template이 있으면 전달,
+        # 없으면(None) 각 리랭커가 코드 내장 기본 프롬프트로 폴백한다(회귀 0).
+        prompt_template = provider_config.get("prompt_template")
+
         reranker: IReranker
         if provider == "google":
             from .gemini_reranker import GeminiFlashReranker
@@ -247,6 +251,7 @@ class RerankerFactoryV2:
                     "max_documents", defaults["max_documents"]
                 ),
                 timeout=provider_config.get("timeout", defaults["timeout"]),
+                prompt_template=prompt_template,
             )
         elif provider == "openai":
             from .openai_llm_reranker import OpenAILLMReranker
@@ -262,6 +267,7 @@ class RerankerFactoryV2:
                 reasoning_effort=provider_config.get(
                     "reasoning_effort", defaults["reasoning_effort"]
                 ),
+                prompt_template=prompt_template,
             )
         elif provider == "openrouter":
             from .openrouter_reranker import OpenRouterReranker
@@ -273,6 +279,7 @@ class RerankerFactoryV2:
                     "max_documents", defaults["max_documents"]
                 ),
                 timeout=provider_config.get("timeout", defaults["timeout"]),
+                prompt_template=prompt_template,
             )
         else:
             raise ValueError(

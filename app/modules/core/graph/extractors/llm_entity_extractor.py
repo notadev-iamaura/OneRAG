@@ -19,7 +19,9 @@ from ..models import Entity
 logger = logging.getLogger(__name__)
 
 
-# 엔티티 추출 프롬프트 템플릿
+# 엔티티 추출 프롬프트 템플릿 (코드 내장 기본값=한국어)
+# 운영자는 graph_rag.yaml의 extraction.llm.prompt_template로 코드 포크 없이
+# 오버라이드한다. {text}/{max_entities} 플레이스홀더 보존 필수.
 ENTITY_EXTRACTION_PROMPT = '''다음 텍스트에서 엔티티(개체명)를 추출하세요.
 
 텍스트:
@@ -65,9 +67,11 @@ class LLMEntityExtractor:
     """
 
     # 기본 설정
+    # prompt_template=None이면 코드 내장 ENTITY_EXTRACTION_PROMPT(한국어)를 사용한다 → 회귀 0.
     DEFAULT_CONFIG: dict[str, Any] = {
         "max_entities": 20,
         "model": "google/gemini-2.5-flash-lite",
+        "prompt_template": None,
     }
 
     def __init__(
@@ -78,7 +82,9 @@ class LLMEntityExtractor:
         """
         Args:
             llm_client: LLM 클라이언트 (덕 타이핑 - generate(prompt: str) -> str 메서드 필요)
-            config: 추출 설정 (max_entities, model 등)
+            config: 추출 설정 (max_entities, model, prompt_template 등)
+                - prompt_template: config 외부화된 엔티티 추출 프롬프트.
+                  None이면 코드 내장 한국어 기본 프롬프트 사용 ({text}/{max_entities} 보존).
 
         Note:
             llm_client는 다음 인터페이스를 구현해야 합니다:
@@ -86,6 +92,10 @@ class LLMEntityExtractor:
         """
         self._llm_client = llm_client
         self._config = {**self.DEFAULT_CONFIG, **(config or {})}
+        # 프롬프트 템플릿: config 오버라이드 없으면 코드 내장 한국어 기본값.
+        self._prompt_template: str = (
+            self._config.get("prompt_template") or ENTITY_EXTRACTION_PROMPT
+        )
 
     async def extract(self, text: str) -> list[Entity]:
         """
@@ -102,8 +112,8 @@ class LLMEntityExtractor:
             return []
 
         try:
-            # 프롬프트 생성
-            prompt = ENTITY_EXTRACTION_PROMPT.format(
+            # 프롬프트 생성 (config 외부화 템플릿 또는 코드 내장 기본값)
+            prompt = self._prompt_template.format(
                 text=text,
                 max_entities=self._config["max_entities"],
             )

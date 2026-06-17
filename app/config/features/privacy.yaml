@@ -69,6 +69,36 @@ privacy:
     name: "*"   # 김**
 
   # ========================================
+  # PII 정규식 패턴 (국가별 식별자 형식)
+  # ========================================
+  # 보안 정책: 아래 값은 "오버라이드"입니다. 키를 비우거나 섹션을 지우면
+  # 코드의 한국(default) 패턴이 byte-identical 하게 적용됩니다(회귀 0).
+  # 타 국가 운영자는 필요한 키만 자국 형식으로 교체하세요.
+  # (예: 미국 SSN "\\d{3}-\\d{2}-\\d{4}", 미국 전화 "\\d{3}-\\d{3}-\\d{4}")
+  # 미설정 키는 자동으로 한국 기본 패턴으로 폴백하므로 마스킹이 약화되지 않습니다.
+  patterns:
+    # 개인 전화번호 (010 시작): 010-1234-5678 / 01012345678 / 010 1234 5678
+    phone_personal: "010[-\\s]?\\d{4}[-\\s]?\\d{4}"
+    # 사업자 전화번호 (지역번호 시작 - 마스킹 제외용)
+    phone_business: "(02|0[3-6][1-5])[-\\s]?\\d{3,4}[-\\s]?\\d{4}"
+    # 주민등록번호 (6자리 생년월일-성별코드+6자리)
+    ssn: "\\d{6}[-\\s]?[1-4]\\d{6}"
+    # 여권번호 (대문자 1자리 + 숫자 8자리)
+    passport: "(?<![a-zA-Z])[A-Z]\\d{8}(?!\\d)"
+    # 운전면허번호 (XX-XX-XXXXXX-XX)
+    driver_license: "\\d{2}-\\d{2}-\\d{6}-\\d{2}"
+    # 이메일
+    email: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+
+  # 이름 글자 클래스 (기본 한글 음절 [가-힣])
+  # 타 언어 이름 마스킹이 필요하면 교체하세요. 예: "[A-Za-z]" (라틴 알파벳)
+  name_char_class: "[가-힣]"
+
+  # 파일명 마스킹 치환 라벨 (기본 "고객")
+  # 예: "홍길동 고객님.txt" → "고객_고객님.txt"
+  filename_mask_label: "고객"
+
+  # ========================================
   # 예외 처리
   # ========================================
   exceptions:
@@ -93,49 +123,142 @@ privacy:
       - "064"    # 제주
 
 # ========================================
-# PII Review System (문서 전처리용)
+# 프롬프트 인젝션/출력 누출 방어 패턴 (app/lib/prompt_sanitizer.py)
 # ========================================
-# 배치 크롤링 시 문서에서 PII 탐지 및 처리
-# 참고: whitelist는 상위 privacy.whitelist 사용
-review:
-  # PII 검토 시스템 활성화
-  enabled: false
+# 보안 정책(매우 중요): 아래 값은 코드 기본 패턴에 "추가"만 됩니다.
+#   - 기본 패턴(보안 기준선)은 prompt_sanitizer.py의 _DEFAULT_* 상수이며
+#     이 섹션으로 삭제/대체할 수 없습니다(보안 약화 불가).
+#   - 섹션을 비우거나 지우면 코드 기본 패턴만 적용됩니다(회귀 0).
+#   - 운영자는 자국어/도메인 특화 공격 패턴을 아래에 추가할 수 있습니다.
+# 예시(기본 비활성: 주석 처리 → 기본 패턴만 사용):
+# sanitizer:
+#   # 인젝션 탐지에 추가할 정규식 (re.IGNORECASE로 컴파일됨)
+#   injection_patterns:
+#     - "disregard\\s+(all|previous)\\s+(rules?|instructions?)"
+#   # 출력 누출 탐지에 추가할 키워드 (소문자 부분 일치)
+#   leak_patterns:
+#     - "confidential system note"
 
-  # spaCy 모델 설정
-  # sm: 15MB (빠름), md: 45MB (균형), lg: 550MB (정확)
-  spacy_model: "ko_core_news_sm"
+  # ========================================
+  # PII Review System (문서 전처리용)
+  # ========================================
+  # 배치 크롤링 시 문서에서 PII 탐지 및 처리
+  # 참고: whitelist는 상위 privacy.whitelist 사용
+  # 구조 수정: di_container는 config.privacy.review.*를 읽으므로 이 블록은
+  #   반드시 privacy 하위(2-space 들여쓰기)여야 한다. (이전: 최상위 review → 데드)
+  review:
+    # PII 검토 시스템 활성화
+    enabled: false
 
-  # NER 탐지 활성화 (false면 Regex만 사용)
-  enable_ner: true
+    # spaCy 모델 설정
+    # sm: 15MB (빠름), md: 45MB (균형), lg: 550MB (정확)
+    spacy_model: "ko_core_news_sm"
 
-  # 문맥 추출 윈도우 크기 (감사용)
-  context_window: 30
+    # NER 탐지 활성화 (false면 Regex만 사용)
+    enable_ner: true
 
-  # 정책 설정
-  policy:
-    name: "default"
-    quarantine_threshold: 20    # PII 20개 이상 → 격리
-    min_confidence: 0.7         # 신뢰도 임계값
+    # 문맥 추출 윈도우 크기 (감사용)
+    context_window: 30
 
-    # 엔티티별 처리 방식
-    # review: 로그만 기록
-    # mask: 마스킹 후 진행
-    # block: 처리 중단
-    entity_actions:
-      phone: "mask"
-      email: "mask"
-      ssn: "block"              # 주민번호 → 차단
-      account: "mask"
-      card: "block"             # 카드번호 → 차단
-      person_name: "review"     # 이름 → 로그만
-      address: "mask"
-      organization: "review"
+    # ========================================
+    # PII 탐지 정규식 (review 서브시스템 전용 — HybridPIIDetector)
+    # ========================================
+    # 보안 정책: 아래 값은 "키별 오버라이드"다. 키를 비우거나 섹션 전체를 지우면
+    # 코드의 한국(default) 패턴이 그대로 적용된다(회귀 0, 보안 약화 없음).
+    # 상위 privacy.patterns(마스킹용)와는 별도다 — 탐지기는 더 넓은 형식을 쓴다.
+    # 타 국가 운영자는 필요한 키만 자국 형식으로 교체하면 된다.
+    #   - phone:          개인 전화번호 (탐지 대상)
+    #   - email:          이메일
+    #   - ssn:            국가 식별번호 (한국=주민등록번호)
+    #   - account:        계좌번호
+    #   - card:           신용카드 번호
+    #   - business_phone: 사업자/기관 전화번호 (개인전화 탐지에서 제외용)
+    # 예시(미국): phone "\\d{3}-\\d{3}-\\d{4}", ssn "\\d{3}-\\d{2}-\\d{4}"
+    patterns:
+      # 개인 전화번호 (010/011/016/017/018/019)
+      phone: "(?:010|011|016|017|018|019)[-.\\s]?\\d{3,4}[-.\\s]?\\d{4}"
+      # 이메일
+      email: "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"
+      # 주민등록번호 (YYMMDD-GXXXXXX)
+      ssn: "\\d{6}[-\\s]?[1-4]\\d{6}"
+      # 계좌번호 (다양한 형식)
+      account: "\\d{3,6}[-\\s]?\\d{2,6}[-\\s]?\\d{4,6}(?:[-\\s]?\\d{1,4})?"
+      # 신용카드 번호 (4-4-4-4)
+      card: "\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}[-\\s]?\\d{4}"
+      # 사업자/기관 전화번호 (지역번호 시작 — 개인전화 탐지 제외용)
+      business_phone: "(?:02|0[3-6][1-5])[-\\s]?\\d{3,4}[-\\s]?\\d{4}"
 
-  # 감사 로그 설정
-  audit:
-    enabled: true
-    collection: "pii_audit_logs"
-    retention_days: 365         # 1년 보관
+    # ========================================
+    # spaCy NER 라벨 → PIIType 매핑 (review 전용 — HybridPIIDetector)
+    # ========================================
+    # 범용화 정책: 비우면(`{}`) 코드 기본 매핑(DEFAULT_NER_LABEL_MAPPING, 한국
+    # spaCy/KLUE 라벨 체계)이 그대로 적용된다(회귀 0). spacy_model을 다른 언어
+    # 모델로 교체하면 그 모델의 라벨 체계도 함께 주입해야 NER 탐지가 동작한다.
+    # 값은 PIIType 문자열을 쓴다:
+    #   person_name | address | organization | phone | email | ssn | account | card
+    # 예시(영어 en_core_web_sm 라벨 체계):
+    #   ner_label_mapping:
+    #     PERSON: person_name
+    #     GPE: address
+    #     LOC: address
+    #     FAC: address
+    #     ORG: organization
+    ner_label_mapping: {}
+
+    # ========================================
+    # PII 마스킹 치환 라벨 (review 전용 — PIIReviewProcessor)
+    # ========================================
+    # 범용화 정책: 비우면(`{}`) 코드 기본 라벨(DEFAULT_MASK_TEMPLATES, 한국어
+    # "[전화번호]"/"[이메일]"/"[주민등록번호]" 등)이 그대로 적용된다(회귀 0).
+    # 이 라벨은 마스킹된 문서 본문에 남아 출력에 노출되므로, 비한국어 운영자는
+    # 필요한 키만 자국어로 교체하면 된다(미설정 키는 한국어 기본값 폴백).
+    # 키는 PIIType 문자열을 쓴다:
+    #   phone | email | ssn | account | card | person_name | address
+    #   | organization | unknown
+    # 예시(영어):
+    #   mask_templates:
+    #     phone: "[Phone]"
+    #     email: "[Email]"
+    #     ssn: "[SSN]"
+    #     account: "[Account]"
+    #     card: "[Card]"
+    #     person_name: "[Name]"
+    #     address: "[Address]"
+    #     organization: "[Organization]"
+    #     unknown: "[PII]"
+    mask_templates: {}
+
+    # 정책 설정
+    policy:
+      name: "default"
+      quarantine_threshold: 20    # PII 20개 이상 → 격리
+      min_confidence: 0.7         # 신뢰도 임계값
+
+      # 엔티티별 처리 방식
+      # review: 로그만 기록
+      # mask: 마스킹 후 진행
+      # block: 처리 중단
+      entity_actions:
+        phone: "mask"
+        email: "mask"
+        ssn: "block"              # 주민번호 → 차단
+        account: "mask"
+        card: "block"             # 카드번호 → 차단
+        person_name: "review"     # 이름 → 로그만
+        address: "mask"
+        organization: "review"
+
+      # PII 오탐 방지 화이트리스트(이름 등으로 오인되기 쉬운 호칭/직책 명사).
+      # 미설정(null/빈 목록)이면 코드 내장 한국어 기본 목록(담당/관리자/직원/고객
+      # 등)을 사용한다(회귀 0). 비한국어 운영자는 자국어 목록으로 교체한다.
+      # 예(영어): whitelist_patterns: ["manager", "staff", "customer", "support"]
+      whitelist_patterns: null
+
+    # 감사 로그 설정
+    audit:
+      enabled: true
+      collection: "pii_audit_logs"
+      retention_days: 365         # 1년 보관
 
 # ========================================
 # 설정 설명

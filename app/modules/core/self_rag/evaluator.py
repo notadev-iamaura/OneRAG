@@ -20,6 +20,63 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 logger = structlog.get_logger(__name__)
 
 
+# Self-RAG 품질 평가 프롬프트 템플릿 (코드 내장 기본값=한국어)
+# 운영자는 self_rag.yaml의 evaluation.prompt_template로 코드 포크 없이 오버라이드한다.
+# {query}/{context_text}/{answer} 플레이스홀더 보존 필수.
+# JSON 응답 형식의 중괄호는 {{ }}로 이스케이프되어 있다(.format() 호환).
+DEFAULT_EVALUATION_PROMPT_TEMPLATE = """당신은 AI 답변의 품질을 객관적으로 평가하는 전문가입니다.
+
+다음 기준으로 답변을 JSON 형식으로 평가하세요:
+
+📋 평가 기준:
+1. relevance (관련성): 질문과 답변이 얼마나 관련이 있는가?
+   - 1.0: 질문에 직접적으로 답변함
+   - 0.5: 부분적으로 관련 있음
+   - 0.0: 질문과 무관함
+
+2. grounding (근거성): 답변이 제공된 컨텍스트에 근거하고 있는가?
+   - 1.0: 모든 정보가 컨텍스트에서 나옴
+   - 0.5: 일부 추측이 포함됨
+   - 0.0: 컨텍스트와 무관한 답변
+
+3. completeness (완전성): 질문에 완전히 답변했는가?
+   - 1.0: 질문의 모든 부분에 답변함
+   - 0.5: 일부만 답변함
+   - 0.0: 답변이 불완전함
+
+4. confidence (확신도): 답변의 확실성 수준은?
+   - 1.0: 매우 확실한 답변
+   - 0.5: 불확실성 포함
+   - 0.0: 매우 불확실함
+
+---
+
+질문:
+{query}
+
+제공된 컨텍스트:
+{context_text}
+
+생성된 답변:
+{answer}
+
+---
+
+다음 JSON 형식으로 응답하세요:
+{{
+    "relevance": 0.0-1.0,
+    "grounding": 0.0-1.0,
+    "completeness": 0.0-1.0,
+    "confidence": 0.0-1.0,
+    "reasoning": "각 점수에 대한 간단한 근거"
+}}"""
+
+# 평가 컨텍스트의 문서 구분 라벨(LLM 입력). 평가 프롬프트를 다른 언어로 교체해도
+# 이 라벨이 한국어로 남던 비대칭을 해소하기 위해 외부화한다. {index} 플레이스홀더
+# 필수. 미설정 시 한국어 기본값 유지(회귀 0).
+DEFAULT_DOCUMENT_LABEL_TEMPLATE = "문서 {index}:"
+
+
 @dataclass
 class QualityScore:
     """품질 평가 점수"""
@@ -51,12 +108,30 @@ class LLMQualityEvaluator:
         grounding_weight: float = 0.30,
         completeness_weight: float = 0.25,
         confidence_weight: float = 0.10,
+        evaluation_prompt_template: str | None = None,
+        document_label_template: str | None = None,
     ):
+        """
+        Args:
+            evaluation_prompt_template: config 외부화된 평가 프롬프트 템플릿.
+                None이면 코드 내장 DEFAULT_EVALUATION_PROMPT_TEMPLATE(한국어)를
+                사용한다 → 미설정 시 평가 동작 변화 없음(회귀 0).
+                {query}/{context_text}/{answer} 플레이스홀더 보존 필수.
+            document_label_template: 컨텍스트 문서 구분 라벨({index} 플레이스홀더).
+                None이면 한국어 기본("문서 {index}:") 사용(회귀 0).
+        """
         self.quality_threshold = quality_threshold
         self.relevance_weight = relevance_weight
         self.grounding_weight = grounding_weight
         self.completeness_weight = completeness_weight
         self.confidence_weight = confidence_weight
+        # 평가 프롬프트 템플릿: config 오버라이드 없으면 코드 내장 한국어 기본값.
+        self.evaluation_prompt_template: str = (
+            evaluation_prompt_template or DEFAULT_EVALUATION_PROMPT_TEMPLATE
+        )
+        self._document_label_template: str = (
+            document_label_template or DEFAULT_DOCUMENT_LABEL_TEMPLATE
+        )
         self.llm = None  # Graceful degradation: LLM 초기화 실패 시 None
 
         # LLM 초기화 (Graceful Degradation - MVP Phase 1)
@@ -182,55 +257,19 @@ class LLMQualityEvaluator:
         return quality.overall < self.quality_threshold
 
     def _build_evaluation_prompt(self, query: str, answer: str, context: list[str]) -> str:
-        """평가 프롬프트 생성"""
-        context_text = "\n\n".join([f"문서 {i+1}:\n{doc}" for i, doc in enumerate(context)])
+        """평가 프롬프트 생성 (config 외부화 템플릿 또는 코드 내장 기본값 사용)"""
+        context_text = "\n\n".join(
+            [
+                f"{self._document_label_template.format(index=i + 1)}\n{doc}"
+                for i, doc in enumerate(context)
+            ]
+        )
 
-        return f"""당신은 AI 답변의 품질을 객관적으로 평가하는 전문가입니다.
-
-다음 기준으로 답변을 JSON 형식으로 평가하세요:
-
-📋 평가 기준:
-1. relevance (관련성): 질문과 답변이 얼마나 관련이 있는가?
-   - 1.0: 질문에 직접적으로 답변함
-   - 0.5: 부분적으로 관련 있음
-   - 0.0: 질문과 무관함
-
-2. grounding (근거성): 답변이 제공된 컨텍스트에 근거하고 있는가?
-   - 1.0: 모든 정보가 컨텍스트에서 나옴
-   - 0.5: 일부 추측이 포함됨
-   - 0.0: 컨텍스트와 무관한 답변
-
-3. completeness (완전성): 질문에 완전히 답변했는가?
-   - 1.0: 질문의 모든 부분에 답변함
-   - 0.5: 일부만 답변함
-   - 0.0: 답변이 불완전함
-
-4. confidence (확신도): 답변의 확실성 수준은?
-   - 1.0: 매우 확실한 답변
-   - 0.5: 불확실성 포함
-   - 0.0: 매우 불확실함
-
----
-
-질문:
-{query}
-
-제공된 컨텍스트:
-{context_text}
-
-생성된 답변:
-{answer}
-
----
-
-다음 JSON 형식으로 응답하세요:
-{{
-    "relevance": 0.0-1.0,
-    "grounding": 0.0-1.0,
-    "completeness": 0.0-1.0,
-    "confidence": 0.0-1.0,
-    "reasoning": "각 점수에 대한 간단한 근거"
-}}"""
+        return self.evaluation_prompt_template.format(
+            query=query,
+            context_text=context_text,
+            answer=answer,
+        )
 
     def _parse_llm_response(self, content: str) -> dict:
         """LLM 응답 파싱"""

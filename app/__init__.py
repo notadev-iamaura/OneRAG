@@ -3,4 +3,4 @@ OneRAG Application Package
 """
 
 __version__ = "2.0.0"
-__description__ = "경량 모듈형 한국어 RAG 챗봇 시스템"
+__description__ = "모듈형 오픈소스 RAG 시스템 / Modular open-source RAG system"

@@ -16,9 +16,31 @@ from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.lib.errors import ErrorCode, get_error_message
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _resolve_request_language(request: Request) -> str:
+    """요청 Accept-Language 헤더에서 에러 메시지 언어를 결정한다(ko|en, 기본 ko).
+
+    양언어 에러 카탈로그(app.lib.errors)는 "ko"/"en"만 지원한다. 헤더가 영어를
+    우선하면 "en"을, 그 외(미지정/요청 없음 포함)는 "ko"를 반환한다 → 한국어
+    기본(회귀 0). evaluations.py/chat_router와 동일한 패턴을 따른다.
+
+    Args:
+        request: FastAPI 요청 객체 (미들웨어 dispatch에서 항상 주입됨)
+
+    Returns:
+        에러 메시지 언어 코드 ("ko" 또는 "en")
+    """
+    accept_language = (request.headers.get("accept-language") or "").lower()
+    en_idx = accept_language.find("en")
+    ko_idx = accept_language.find("ko")
+    if en_idx != -1 and (ko_idx == -1 or en_idx < ko_idx):
+        return "en"
+    return "ko"
 
 
 class RateLimiter:
@@ -477,11 +499,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 f"ip={client_ip}, session_id={session_id}, type={limit_type}"
             )
 
+            # 사용자 노출 message를 양언어 카탈로그로 라우팅(ko 기본 → 회귀 0).
+            lang = _resolve_request_language(request)
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={
                     "error": "Too Many Requests",
-                    "message": "요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+                    "message": get_error_message(ErrorCode.RATE_001.value, lang),
                     "limit_type": limit_type,
                     "retry_after": 60,  # 60초 후 재시도
                 },
@@ -598,11 +622,13 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
                 f"ip={client_ip}, session_id={session_id}, type={limit_type}"
             )
 
+            # 사용자 노출 message를 양언어 카탈로그로 라우팅(ko 기본 → 회귀 0).
+            lang = _resolve_request_language(request)
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={
                     "error": "Too Many Requests",
-                    "message": "채팅 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+                    "message": get_error_message(ErrorCode.RATE_002.value, lang),
                     "limit_type": limit_type,
                     "retry_after": 60,
                 },

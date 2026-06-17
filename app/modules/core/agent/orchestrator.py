@@ -60,6 +60,17 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+# 최상위 예외 시 사용자에게 노출되는 폴백 답변 (코드 내장 기본값=한국어).
+# 운영자는 config.orchestrator_error_message(tools.yaml mcp.agent.prompts.
+# orchestrator_error_message)로 코드 포크 없이 오버라이드한다 → 미설정 시 회귀 0.
+ORCHESTRATOR_ERROR_MESSAGE = "죄송합니다. 처리 중 오류가 발생했습니다."
+
+# Reflection 컨텍스트 추출 시 수집된 도구 결과가 없을 때의 대체 문자열
+# (사용자 직접 노출이 아니라 LLM 프롬프트 내부 신호). 코드 내장 기본값=한국어.
+# config.orchestrator_empty_context로 오버라이드 가능 → 미설정 시 회귀 0.
+ORCHESTRATOR_EMPTY_CONTEXT = "검색 결과 없음"
+
+
 class AgentOrchestrator:
     """
     에이전트 오케스트레이터
@@ -118,6 +129,16 @@ class AgentOrchestrator:
         self._synthesizer = synthesizer
         self._config = config
         self._reflector = reflector
+        # 사용자 노출 폴백 메시지/내부 컨텍스트 대체어를 config 우선으로 해소.
+        # 미설정(None)이면 코드 내장 한국어 기본값을 사용한다 → 회귀 0.
+        self._error_message = (
+            getattr(config, "orchestrator_error_message", None)
+            or ORCHESTRATOR_ERROR_MESSAGE
+        )
+        self._empty_context = (
+            getattr(config, "orchestrator_empty_context", None)
+            or ORCHESTRATOR_EMPTY_CONTEXT
+        )
 
         logger.info(
             f"AgentOrchestrator 초기화: "
@@ -250,7 +271,7 @@ class AgentOrchestrator:
 
             return AgentResult(
                 success=False,
-                answer="죄송합니다. 처리 중 오류가 발생했습니다.",
+                answer=self._error_message,
                 error=str(e),
                 steps_taken=state.current_iteration,
                 total_time=time.time() - start_time,
@@ -390,6 +411,6 @@ class AgentOrchestrator:
                     )
 
         if not context_parts:
-            return "검색 결과 없음"
+            return self._empty_context
 
         return "\n".join(context_parts)

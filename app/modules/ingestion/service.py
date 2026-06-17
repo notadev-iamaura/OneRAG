@@ -46,7 +46,80 @@ class IngestionService:
         self.metadata_store = metadata_store
         self.config = config or {}
         self.notion_client = notion_client
-        self.chunker = chunker or MetadataChunker()
+        # 청커를 명시적으로 주입받지 않으면 config의 도메인 배치 설정으로 생성한다.
+        # domain.yaml의 `domain.batch.section_keywords`/`target_fields`를 읽어 주입하므로
+        # 더 이상 데드 config 키가 아니다(미설정 시 도메인 중립 기본값 사용).
+        self.chunker = chunker if chunker is not None else self._build_chunker_from_config()
+
+    def _build_chunker_from_config(self) -> MetadataChunker:
+        """
+        config의 도메인 배치 설정으로 MetadataChunker를 생성
+
+        domain.yaml의 `domain.batch.section_keywords`/`target_fields`와 미분류
+        폴백 라벨(`default_section_label`/`default_section_header`)을 읽어 청커에
+        주입한다. 설정이 없으면 MetadataChunker 내부의 도메인 중립/한국어 기본값을
+        사용한다(OSS 기본 배포 = 도메인 중립, 회귀 0).
+
+        Returns:
+            도메인 설정이 반영된 MetadataChunker 인스턴스
+        """
+        batch_config = self.config.get("domain", {}).get("batch", {})
+
+        # 미설정(None)이면 청커 기본값을 쓰도록 None을 그대로 전달한다.
+        section_keywords = batch_config.get("section_keywords")
+        target_fields = batch_config.get("target_fields")
+
+        # 섹션 폴백 라벨은 문자열 기본값이라 None이면 청커 기본을 쓰도록 분기 주입한다.
+        chunker_kwargs: dict[str, Any] = {
+            "section_keywords": section_keywords,
+            "target_fields": target_fields,
+        }
+        default_section_label = batch_config.get("default_section_label")
+        if isinstance(default_section_label, str) and default_section_label.strip():
+            chunker_kwargs["default_section_label"] = default_section_label
+        default_section_header = batch_config.get("default_section_header")
+        if isinstance(default_section_header, str) and default_section_header.strip():
+            chunker_kwargs["default_section_header"] = default_section_header
+
+        return MetadataChunker(**chunker_kwargs)
+
+    def _get_title_strip_chars(self) -> list[str]:
+        """
+        제목 정제 문자 목록 로드 (domain.batch.title_strip_chars)
+
+        Notion 페이지 제목에서 제거할 접두/마커 문자를 config에서 읽는다.
+        특정 워크스페이스의 명명 규칙(예: '★' 접두)에 종속되지 않도록 외부화한다.
+        미설정/빈 목록이면 정제를 수행하지 않아 notion_extractor.py와 동작이 일치한다(회귀 0).
+
+        Returns:
+            제거할 문자 목록. 미설정 시 빈 목록.
+        """
+        batch_config = self.config.get("domain", {}).get("batch", {})
+        strip_chars = batch_config.get("title_strip_chars")
+
+        if isinstance(strip_chars, list) and strip_chars:
+            return [str(c) for c in strip_chars]
+
+        return []
+
+    @staticmethod
+    def _clean_title(title: str, strip_chars: list[str]) -> str:
+        """
+        페이지 제목 정제 (옵트인 문자 제거 + 양끝 공백 제거)
+
+        strip_chars가 비어 있으면 양끝 공백만 제거한다(★ 등 마커 미제거 → 회귀 0).
+
+        Args:
+            title: 원본 페이지 제목
+            strip_chars: 제거할 문자 목록 (config 주입)
+
+        Returns:
+            정제된 제목
+        """
+        cleaned = title
+        for ch in strip_chars:
+            cleaned = cleaned.replace(ch, "")
+        return cleaned.strip()
 
     async def ingest_from_connector(self, connector: IIngestionConnector, category_name: str) -> IngestionResult:
         """
@@ -160,9 +233,14 @@ class IngestionService:
             # 컬렉션 이름 설정 로드 (기본값: Documents)
             vector_collection = self.config.get("weaviate", {}).get("collection_name", "Documents")
 
+            # 제목 정제 문자 외부화: domain.batch.title_strip_chars
+            # 기본 빈 목록 = 정제 안 함(notion_extractor.py와 동작 통일, 회귀 0).
+            # 특정 워크스페이스 명명 규칙(예: ★ 접두)을 쓰면 yaml로 옵트인한다.
+            title_strip_chars = self._get_title_strip_chars()
+
             for page in pages:
                 # Metadata Extraction
-                entity_name = page.title.replace("★", "").strip()
+                entity_name = self._clean_title(page.title, title_strip_chars)
                 metadata = {
                     "id": page.id, # Common ID
                     "notion_page_id": page.id,

@@ -298,6 +298,20 @@ class TestExtractTopic:
         topic = service.extract_topic("Python 코드 개발 방법")
         assert topic == "technical"
 
+    def test_greeting_topic(self, service: ChatService) -> None:
+        """
+        인사 키워드 포함 시 'greeting' 토픽 반환
+
+        토픽 추출 단일 소스 통합으로 인사 키워드가 'greeting'으로 분류된다
+        (과거 ChatService 전용 맵에는 인사 토픽이 없어 'general'로 떨어졌음).
+
+        Given: 인사 키워드가 포함된 메시지
+        When: extract_topic 호출
+        Then: 'greeting' 반환
+        """
+        topic = service.extract_topic("안녕하세요")
+        assert topic == "greeting"
+
     def test_general_topic_fallback(self, service: ChatService) -> None:
         """
         키워드 매칭 없을 때 'general' 토픽 반환
@@ -306,7 +320,7 @@ class TestExtractTopic:
         When: extract_topic 호출
         Then: 'general' 반환
         """
-        topic = service.extract_topic("안녕하세요")
+        topic = service.extract_topic("오늘 점심은 뭐였지")
         assert topic == "general"
 
     def test_empty_message_returns_general(self, service: ChatService) -> None:

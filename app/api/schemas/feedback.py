@@ -38,12 +38,14 @@ class FeedbackRequest(BaseModel):
     query: str | None = Field(
         default=None,
         description="원본 질문 (Golden Dataset 후보 등록용)",
-        examples=["서울 맛집 추천해줘"],
+        examples=["What is RAG?"],
     )
     response: str | None = Field(
         default=None,
         description="원본 답변 (Golden Dataset 후보 등록용)",
-        examples=["서울에 위치한 맛집 3곳을 추천드립니다..."],
+        examples=[
+            "RAG combines retrieval and generation to ground LLM answers in documents."
+        ],
     )
 
     model_config = {

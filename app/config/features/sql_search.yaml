@@ -12,6 +12,16 @@ sql_search:
     max_tokens: 1024
     temperature: 0.1  # SQL 생성은 일관성 중요
 
+    # 프롬프트 외부화 (선택)
+    # 미설정/빈 값이면 코드의 한국어 기본 프롬프트(sql_generation.py)를 그대로 쓴다(회귀 0).
+    # 운영자는 자국어/도메인에 맞게 system/user_template을 오버라이드할 수 있다.
+    # - system: 시스템 프롬프트 전체 문자열
+    #   (선택적으로 {SQL_TEMPLATES}, {DB_SCHEMA_SUMMARY} 자리표시자 포함 가능)
+    # - user_template: 유저 프롬프트 템플릿 ({user_query} 자리표시자 필수)
+    prompts:
+      system: ""        # 빈 값 → 기본 시스템 프롬프트 사용
+      user_template: "" # 빈 값 → 기본 유저 템플릿 사용
+
   # Query Executor 설정 (PostgreSQL 실행)
   executor:
     timeout: 10  # 초 단위 쿼리 타임아웃
@@ -31,6 +41,35 @@ sql_search:
       - "amount"
       - "value"
       - "count"
+    # LLM 컨텍스트에 주입되는 라벨/안내 문구(출력 언어 일관성용). 미설정 시 코드
+    # 한국어 기본값 유지(회귀 0). 비한국어 운영자는 자국어/영어로 오버라이드한다.
+    #   unknown_entity_label: 엔티티명 누락 시 폴백(기본 "알 수 없음")
+    #   no_results_message: 결과 없음 안내(기본 "검색 결과가 없습니다.")
+    #   error_message_template: SQL 오류 안내({error} 자리표시자, 기본 "[SQL 검색 결과 없음: {error}]")
+    #   no_match_message: 조건 불일치 안내(기본 "[SQL 검색 결과: 조건에 맞는 항목이 없습니다]")
+    #   result_header: 결과 컨텍스트 헤더(기본 "[SQL 검색 결과]")
+    #   truncation_notice_template: 일부 표시 안내({total}/{shown} 플레이스홀더,
+    #     기본 "\n(총 {total}개 중 상위 {shown}개 표시)")
+    unknown_entity_label: null
+    no_results_message: null
+    error_message_template: null
+    no_match_message: null
+    result_header: null
+    truncation_notice_template: null
+
+  # 멀티쿼리 결과를 LLM 컨텍스트로 합칠 때의 라벨(출력 언어 일관성용).
+  # 미설정(null) 시 한국어 기본값 유지(회귀 0). 비한국어 운영자는 자국어/영어로 지정.
+  #   category_section_header_template: 카테고리 섹션 헤더({category} 플레이스홀더,
+  #     기본 "=== {category} 검색 결과 ===")
+  #   all_category_label: 카테고리 미지정 폴백 라벨(기본 "전체")
+  #   entity_name_fallback_template: SQL Source의 엔티티명 폴백({index} 플레이스홀더,
+  #     기본 "결과 {index}") — rag_pipeline _format_sql_row에서 사용
+  #   preview_fallback: SQL Source 미리보기 폴백(기본 "SQL 쿼리 결과")
+  multi_query:
+    category_section_header_template: null
+    all_category_label: null
+    entity_name_fallback_template: null
+    preview_fallback: null
 
   # RAG 파이프라인 통합 설정
   pipeline:

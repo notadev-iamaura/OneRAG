@@ -117,5 +117,40 @@ mcp: &mcp_section
     # 비한국어 외주는 이 값을 해당 언어로 바꿔 답변/추론 출력 언어를 전환한다.
     output_language: "한국어"
 
+    # ----------------------------------------
+    # 프롬프트 오버라이드 (코드 포크 없이 언어/도메인별 프롬프트 교체)
+    # ----------------------------------------
+    # 소비자: app/modules/core/agent/factory.py:create_config → mcp.agent.prompts.*
+    #   → AgentConfig.{planner,synthesizer,reflector}_* 필드로 전달.
+    # 각 키는 null(기본)이면 해당 컴포넌트의 코드 내장 한국어 기본 프롬프트를
+    # 그대로 사용한다 → 미설정 시 LLM 동작 변화 없음(회귀 0).
+    #
+    # ⚠️ 플레이스홀더 보존 필수(오버라이드 시 누락하면 .format()에서 KeyError):
+    #   - planner_system:  {output_language}, {tool_schemas}
+    #   - planner_user:    {query}, {context}
+    #   - synthesizer_system: {output_language}
+    #   - synthesizer_user:   {query}, {tool_results}
+    #   - reflector_system:   {output_language}
+    #   - reflector_user:     {query}, {answer}, {context}
+    #
+    # 사용 예시(영어 도메인 중립 프롬프트로 교체):
+    #   prompts:
+    #     planner_system: |
+    #       You are a tool-selection agent. Available tools:
+    #       {tool_schemas}
+    #       Respond in JSON with reasoning in {output_language}.
+    #     synthesizer_error_message: "Sorry, an error occurred. Please try again."
+    prompts:
+      planner_system: null            # 도구선택 시스템 프롬프트 ({output_language}/{tool_schemas} 보존)
+      planner_user: null              # 도구선택 사용자 프롬프트 ({query}/{context} 보존)
+      synthesizer_system: null        # 답변생성 시스템 프롬프트 ({output_language} 보존)
+      synthesizer_user: null          # 답변생성 사용자 프롬프트 ({query}/{tool_results} 보존)
+      synthesizer_error_message: null # 답변생성 실패 폴백 메시지
+      reflector_system: null          # 품질평가 시스템 프롬프트 ({output_language} 보존)
+      reflector_user: null            # 품질평가 사용자 프롬프트 ({query}/{answer}/{context} 보존)
+      reflector_empty_context: null   # 컨텍스트 누락 시 대체 문자열
+      orchestrator_error_message: null # 최상위 예외 시 사용자 노출 답변 메시지
+      orchestrator_empty_context: null # Reflection 컨텍스트 추출 시 도구 결과 부재 대체어(내부 신호)
+
 # 레거시 호환 별칭 — mcp 섹션과 항상 동일 내용을 유지해야 한다 (위 주석 참고)
 tools: *mcp_section

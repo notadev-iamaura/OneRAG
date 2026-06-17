@@ -55,8 +55,36 @@ _StageT = TypeVar("_StageT")
 RuleBasedRouter: Any | None = None
 
 
-def _extract_fallback_document_preview(document: Any, max_chars: int = 300) -> str:
-    """Return user-safe document text for LLM outage fallback responses."""
+# 문서 미리보기 추출 실패 시 대체 문구의 코드 기본값(한국어). 함수 기본 인자에서
+# 참조하므로 함수 정의보다 먼저 선언한다. rag.yaml generation_fallback로 외부화된다.
+DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE = "문서 내용 요약을 표시할 수 없습니다"
+
+
+def _resolve_generation_fallback_message(configured: Any, default: str) -> str:
+    """generation_fallback 메시지를 config 우선으로 해소한다(미설정/공백이면 기본값).
+
+    Args:
+        configured: rag.yaml에서 읽은 원시 값(문자열/None/기타).
+        default: 코드 내장 기본 문자열(회귀 0 보장용).
+
+    Returns:
+        유효한 문자열(앞뒤 공백만 있는 값은 무효로 보아 default 사용).
+    """
+    if isinstance(configured, str) and configured.strip():
+        return configured
+    return default
+
+
+def _extract_fallback_document_preview(
+    document: Any,
+    max_chars: int = 300,
+    unavailable_message: str = DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
+) -> str:
+    """Return user-safe document text for LLM outage fallback responses.
+
+    추출 실패 시 반환하는 대체 문구는 unavailable_message로 주입할 수 있다.
+    기본값은 코드 내장 한국어 상수로 기존 동작과 동치다(회귀 0).
+    """
     for attr in ("page_content", "content", "text"):
         value = getattr(document, attr, None)
         if isinstance(value, str) and value.strip():
@@ -68,19 +96,65 @@ def _extract_fallback_document_preview(document: Any, max_chars: int = 300) -> s
             if isinstance(value, str) and value.strip():
                 return value.strip()[:max_chars]
 
-    return "문서 내용 요약을 표시할 수 없습니다"
+    return unavailable_message
 
 
 _RERANK_METADATA_KEYS = {"rerank_score", "rerank_method", "original_score"}
 _CONTEXT_EXPANSION_MAX_WINDOW = 3
 
 # 환각 방지 게이트(GAP C): 질문 기간과 문서 기간이 완전 불일치할 때 사용하는 보류 메시지.
-# JP의 전체 i18n(RESPONSE_LANGUAGE_PROFILES)은 차용하지 않고 한국어 기본 문자열만 둔다.
+# 코드 내장 기본값=한국어. 운영자는 rag.yaml hallucination_gate.no_answer_message로
+# 코드 포크 없이 오버라이드한다 → 미설정 시 회귀 0(아래 기본 문자열 그대로 사용).
 HALLUCINATION_GATE_NO_ANSWER_MESSAGE = (
     "질문하신 기간에 해당하는 내용을 제공된 문서에서 확인하지 못했습니다. "
     "다른 기간의 데이터로 추정하지 않았습니다. 정확한 기간을 확인하시거나 "
     "관련 문서를 추가해 주세요."
 )
+
+# 생성 모듈 부재 시 사용자에게 반환되는 답변 폴백 (코드 내장 기본값=한국어).
+# 운영자는 rag.yaml generation_fallback.module_missing_message로 오버라이드한다 → 회귀 0.
+GENERATION_MODULE_MISSING_MESSAGE = "죄송합니다. 답변을 생성할 수 없습니다."
+
+# LLM 생성 서킷브레이커 폴백 답변 (코드 내장 기본값=한국어).
+# 형제 메시지(hallucination_gate/generation_fallback.module_missing_message)와 동일하게
+# rag.yaml generation_fallback.* 로 외부화한다 → 미설정 시 회귀 0(아래 기본 문자열 사용).
+# (document_preview_unavailable 메시지는 함수 기본 인자 참조를 위해 상단에 선언됨)
+# - with_docs: 문서는 찾았으나 LLM 장애로 상세 답변이 어려운 경우. {content} 자리에
+#   안전 추출된 문서 미리보기가 치환된다(.replace 사용, 플레이스홀더 보존 필수).
+# - no_docs: 문서도 못 찾고 LLM도 장애인 경우.
+GENERATION_FALLBACK_WITH_DOCS_MESSAGE = (
+    "관련 정보를 찾았습니다:\n\n{content}...\n\n"
+    "(현재 AI 서비스 일시 장애로 상세 답변이 어렵습니다. 잠시 후 다시 시도해주세요.)"
+)
+GENERATION_FALLBACK_NO_DOCS_MESSAGE = (
+    "죄송합니다. 관련 정보를 찾을 수 없으며, 현재 AI 서비스도 일시적으로 "
+    "이용할 수 없습니다. 다른 방식으로 질문해 주시겠어요?"
+)
+
+# 프롬프트 누출(output leakage) 감지 시 답변을 교체하는 보안 메시지 (코드 내장 기본=한국어).
+# 통짜 경로와 Self-RAG 경로 두 곳에서 동일하게 사용되던 중복 문자열을 단일 진실원천으로
+# 통합한다. 형제 메시지와 동일하게 rag.yaml generation_fallback.prompt_leakage_blocked_message
+# 로 외부화한다 → 미설정 시 회귀 0(아래 기본 문자열 사용). 비한국어 운영자는 코드 포크
+# 없이 이 값으로 해당 언어의 보안 메시지로 교체할 수 있다.
+PROMPT_LEAKAGE_BLOCKED_MESSAGE = (
+    "보안 정책에 따라 내부 지시사항은 공개되지 않습니다. "
+    "문서 기반 답변이 필요한 내용을 다시 질문해주세요."
+)
+
+# 생성 결과 타입 가드 실패(예상치 못한 타입) 시 사용자에게 노출되는 안전 메시지
+# (코드 내장 기본=한국어). rag.yaml generation_fallback.type_error_message로 외부화한다
+# → 미설정 시 회귀 0. 운영자는 코드 포크 없이 해당 언어로 교체 가능.
+GENERATION_TYPE_ERROR_MESSAGE = "답변 생성 중 오류가 발생했습니다."
+
+# Self-RAG 품질 게이트에서 최종 품질 점수가 임계값 미만일 때 답변을 거부하며
+# 반환하는 메시지 (코드 내장 기본=한국어). answer(상세)와 text(축약) 2종으로 구성된다.
+# self_rag.yaml self_rag.low_quality_reject_message / low_quality_reject_text로 외부화한다
+# → 미설정 시 회귀 0(아래 기본 문자열 사용). 비한국어 운영자는 코드 포크 없이 교체 가능.
+SELF_RAG_LOW_QUALITY_REJECT_MESSAGE = (
+    "죄송합니다. 확실한 정보를 찾지 못했습니다. "
+    "질문을 구체적으로 다시 작성해주시겠어요?"
+)
+SELF_RAG_LOW_QUALITY_REJECT_TEXT = "죄송합니다. 확실한 정보를 찾지 못했습니다."
 
 # ============================================================================
 # 정확 식별자(exact-identifier) 검색 보강 패턴 (GAP A) - 언어무관/도메인무관
@@ -117,9 +191,11 @@ _DOCUMENT_FILENAME_PATTERN = re.compile(
 # 따옴표 인용구(3자 이상). 파일명으로 이미 잡힌 것은 소비자가 제외한다.
 _QUOTED_TEXT_PATTERN = re.compile(r"""['"“”‘’「」『』]([^'"“”‘’「」『』]{3,})['"“”‘’「」『』]""")
 # 본문 라인에서 고가치 신호(연락처/URL/숫자+단위/날짜)를 식별하는 범용 패턴.
-# JP의 일본어 전용 토큰(会社名/円/株式会社 등)은 제거하고 언어무관 신호만 둔다.
+# 통화 단위는 특정 언어에 치우치지 않도록 국제 기본셋(원/₩/¥/元/円/$/€/£/usd)을
+# 포함한다(한국어 기본 '원'을 유지하면서 타 통화도 동등 인식 — 회귀 0).
 _NAMED_DOCUMENT_HIGH_VALUE_PATTERN = re.compile(
-    r"(?:https?://|www\.|tel|fax|e-?mail|[0-9]+(?:\.[0-9]+)?\s*(?:%|kg|g|mm|cm|km|m|usd|원|\$|€|£)"
+    r"(?:https?://|www\.|tel|fax|e-?mail"
+    r"|[0-9]+(?:\.[0-9]+)?\s*(?:%|kg|g|mm|cm|km|m|usd|원|₩|¥|元|円|\$|€|£)"
     r"|\b20\d{2}[-/.]?\d{0,2}[-/.]?\d{0,2}\b)",
     re.IGNORECASE,
 )
@@ -589,11 +665,11 @@ class PreparedContext:
         Examples:
             # Multi-Query RRF
             PreparedContext(
-                session_context="사용자: 안녕하세요
-    봇: 안녕하세요! 무엇을 도와드릴까요?",
-                expanded_query="부산시 주민등록 발급 방법 및 필요 서류",
-                original_query="주민등록 발급",
-                expanded_queries=["부산시 주민등록 발급 방법", "주민등록등본 신청", ...],
+                session_context="User: Hello
+    Bot: Hello! How can I help you?",
+                expanded_query="expanded query with synonyms and related terms",
+                original_query="original user query",
+                expanded_queries=["query variant A", "query variant B", ...],
                 query_weights=[1.0, 0.8, 0.6, 0.4, 0.2]
             )
     """
@@ -870,6 +946,19 @@ class RAGPipeline:
             grok_answer_provider: Grok이 검색과 답변을 모두 맡는 provider (선택적)
         """
         self.config = config
+        # SQL Source(_format_sql_row) 라벨: 출력 언어 일관성을 위해 외부화.
+        # sql_search.multi_query에서 읽어 service.py의 all_category_label과 단일
+        # 진실원천을 공유한다. 미설정 시 한국어 기본값(회귀 0).
+        _sql_multi_query = config.get("sql_search", {}).get("multi_query", {})
+        self._sql_all_category_label: str = (
+            _sql_multi_query.get("all_category_label") or "전체"
+        )
+        self._sql_entity_name_fallback_template: str = (
+            _sql_multi_query.get("entity_name_fallback_template") or "결과 {index}"
+        )
+        self._sql_preview_fallback: str = (
+            _sql_multi_query.get("preview_fallback") or "SQL 쿼리 결과"
+        )
         self.query_router = query_router
         self.query_expansion = query_expansion
         self.retrieval_module = retrieval_module
@@ -944,6 +1033,85 @@ class RAGPipeline:
             hallucination_config.get("require_period_match", True)
             if isinstance(hallucination_config, dict)
             else True
+        )
+        # 보류 메시지 외부화: config 우선, 미설정/공백이면 코드 내장 한국어 기본값(회귀 0).
+        configured_gate_message = (
+            hallucination_config.get("no_answer_message")
+            if isinstance(hallucination_config, dict)
+            else None
+        )
+        self.hallucination_gate_no_answer_message: str = (
+            configured_gate_message
+            if isinstance(configured_gate_message, str) and configured_gate_message.strip()
+            else HALLUCINATION_GATE_NO_ANSWER_MESSAGE
+        )
+
+        # 생성 모듈 부재 시 답변 폴백 메시지 외부화 (config 우선, 미설정 시 코드 기본).
+        generation_fallback_config = rag_config.get("generation_fallback", {})
+        if not isinstance(generation_fallback_config, dict):
+            generation_fallback_config = {}
+        configured_missing_message = generation_fallback_config.get(
+            "module_missing_message"
+        )
+        self.generation_module_missing_message: str = (
+            configured_missing_message
+            if isinstance(configured_missing_message, str)
+            and configured_missing_message.strip()
+            else GENERATION_MODULE_MISSING_MESSAGE
+        )
+
+        # LLM 서킷브레이커 폴백 답변 3종 외부화 (config 우선, 미설정 시 코드 기본 → 회귀 0).
+        # _resolve_generation_fallback_message로 null/공백 처리를 일원화한다.
+        self.generation_fallback_with_docs_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("with_docs_message"),
+                GENERATION_FALLBACK_WITH_DOCS_MESSAGE,
+            )
+        )
+        self.generation_fallback_no_docs_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("no_docs_message"),
+                GENERATION_FALLBACK_NO_DOCS_MESSAGE,
+            )
+        )
+        self.document_preview_unavailable_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("document_preview_unavailable"),
+                DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
+            )
+        )
+        # 프롬프트 누출 차단 메시지(통짜·Self-RAG 공용, 중복 단일화)와 타입 가드 실패
+        # 메시지도 동일하게 generation_fallback로 외부화한다(미설정 시 코드 기본 → 회귀 0).
+        self.prompt_leakage_blocked_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("prompt_leakage_blocked_message"),
+                PROMPT_LEAKAGE_BLOCKED_MESSAGE,
+            )
+        )
+        self.generation_type_error_message: str = (
+            _resolve_generation_fallback_message(
+                generation_fallback_config.get("type_error_message"),
+                GENERATION_TYPE_ERROR_MESSAGE,
+            )
+        )
+
+        # Self-RAG 저품질 거부 메시지 외부화 (self_rag.yaml self_rag 섹션).
+        # min_quality_to_answer와 동일 섹션(self_rag_config)에서 읽어 응집도를 맞춘다.
+        # answer(상세)/text(축약) 2종 모두 미설정/공백이면 코드 내장 한국어 기본값 → 회귀 0.
+        self_rag_section = self.config.get("self_rag", {})
+        if not isinstance(self_rag_section, dict):
+            self_rag_section = {}
+        self.self_rag_low_quality_reject_message: str = (
+            _resolve_generation_fallback_message(
+                self_rag_section.get("low_quality_reject_message"),
+                SELF_RAG_LOW_QUALITY_REJECT_MESSAGE,
+            )
+        )
+        self.self_rag_low_quality_reject_text: str = (
+            _resolve_generation_fallback_message(
+                self_rag_section.get("low_quality_reject_text"),
+                SELF_RAG_LOW_QUALITY_REJECT_TEXT,
+            )
         )
 
         # 멀티턴 anchor soft boost 설정 (GAP B, 기본 OFF, 보수적)
@@ -1546,8 +1714,8 @@ class RAGPipeline:
         logger.info("환각 게이트: 질문 기간과 문서 기간 불일치 → '확인 불가' 응답으로 교체")
         return replace(
             generation_result,
-            answer=HALLUCINATION_GATE_NO_ANSWER_MESSAGE,
-            text=HALLUCINATION_GATE_NO_ANSWER_MESSAGE,
+            answer=self.hallucination_gate_no_answer_message,
+            text=self.hallucination_gate_no_answer_message,
         )
 
     @staticmethod
@@ -3722,8 +3890,8 @@ class RAGPipeline:
         if not self.generation_module:
             logger.error("생성 모듈 없음")
             return GenerationResult(
-                answer="죄송합니다. 답변을 생성할 수 없습니다.",
-                text="죄송합니다. 답변을 생성할 수 없습니다.",
+                answer=self.generation_module_missing_message,
+                text=self.generation_module_missing_message,
                 tokens_used=0,
                 model_used="none",
                 provider="none",
@@ -3760,18 +3928,27 @@ class RAGPipeline:
             )
 
         def _fallback() -> dict[str, Any]:
-            """LLM 실패 시 Fallback 답변"""
+            """LLM 실패 시 Fallback 답변 (메시지는 rag.yaml generation_fallback 외부화)"""
             if context_documents:
                 top_doc = context_documents[0]
-                content = _extract_fallback_document_preview(top_doc)
+                # 문서 미리보기 추출 실패 시 대체 문구도 config 값을 따른다.
+                content = _extract_fallback_document_preview(
+                    top_doc,
+                    unavailable_message=self.document_preview_unavailable_message,
+                )
+                # {content} 자리에 미리보기를 치환한다. 미리보기 텍스트에 중괄호가
+                # 섞여도 안전하도록 .format이 아닌 .replace를 사용한다.
+                answer = self.generation_fallback_with_docs_message.replace(
+                    "{content}", content
+                )
                 return {
-                    "answer": f"관련 정보를 찾았습니다:\n\n{content}...\n\n(현재 AI 서비스 일시 장애로 상세 답변이 어렵습니다. 잠시 후 다시 시도해주세요.)",
+                    "answer": answer,
                     "tokens_used": 0,
                     "model_info": {"provider": "fallback", "model": "document_summary"},
                 }
             else:
                 return {
-                    "answer": "죄송합니다. 관련 정보를 찾을 수 없으며, 현재 AI 서비스도 일시적으로 이용할 수 없습니다. 다른 방식으로 질문해 주시겠어요?",
+                    "answer": self.generation_fallback_no_docs_message,
                     "tokens_used": 0,
                     "model_info": {"provider": "fallback", "model": "none"},
                 }
@@ -3802,7 +3979,7 @@ class RAGPipeline:
                 logger.error(f"⚠️ 예상치 못한 generation_result 타입: {type(generation_result)}")
                 tokens = 0
                 provider = "unknown"
-                answer = "답변 생성 중 오류가 발생했습니다."
+                answer = self.generation_type_error_message
                 model_info = {"provider": "error", "model": "unknown"}
 
             if tokens > 0 and provider in ["google", "openai", "anthropic"]:
@@ -3813,7 +3990,7 @@ class RAGPipeline:
                     "프롬프트 누출 감지 - 답변 차단",
                     extra={"preview": answer[:100]}
                 )
-                answer = "보안 정책에 따라 내부 지시사항은 공개되지 않습니다. 문서 기반 답변이 필요한 내용을 다시 질문해주세요."
+                answer = self.prompt_leakage_blocked_message
                 self.performance_metrics.record_error("prompt_leakage_blocked")
 
             logger.info(
@@ -3995,8 +4172,8 @@ class RAGPipeline:
 
                     # 거부 메시지 반환
                     return GenerationResult(
-                        answer="죄송합니다. 확실한 정보를 찾지 못했습니다. 질문을 구체적으로 다시 작성해주시겠어요?",
-                        text="죄송합니다. 확실한 정보를 찾지 못했습니다.",
+                        answer=self.self_rag_low_quality_reject_message,
+                        text=self.self_rag_low_quality_reject_text,
                         tokens_used=generation_result.tokens_used,
                         model_used=generation_result.model_used,
                         provider=generation_result.provider,
@@ -4054,7 +4231,7 @@ class RAGPipeline:
                         "프롬프트 누출 감지 (Self-RAG) - 답변 차단",
                         extra={"preview": answer[:100]}
                     )
-                    answer = "보안 정책에 따라 내부 지시사항은 공개되지 않습니다. 문서 기반 답변이 필요한 내용을 다시 질문해주세요."
+                    answer = self.prompt_leakage_blocked_message
                     self.performance_metrics.record_error("prompt_leakage_blocked")
 
                 # Self-RAG 답변으로 교체 (재생성됐든 안 됐든)
@@ -4177,7 +4354,11 @@ class RAGPipeline:
         category: str | None = None,
     ) -> dict[str, Any]:
         """SQL 검색 결과의 한 행을 Source 객체로 변환"""
-        entity_name = row.get("entity_name") or row.get("name") or f"결과 {row_idx + 1}"
+        entity_name = (
+            row.get("entity_name")
+            or row.get("name")
+            or self._sql_entity_name_fallback_template.format(index=row_idx + 1)
+        )
         row_preview = ", ".join(f"{k}: {v}" for k, v in row.items() if v is not None)
 
         if row_preview and self.privacy_masker:
@@ -4201,7 +4382,7 @@ class RAGPipeline:
             source_type="sql",
             document_name=document_name,
             relevance=100.0,
-            content_preview=row_preview[:200] if row_preview else "SQL 쿼리 결과",
+            content_preview=row_preview[:200] if row_preview else self._sql_preview_fallback,
             metadata={key: value for key, value in metadata.items() if value is not None},
             additional_metadata={"row_keys": sorted(str(key) for key in row.keys())},
         )
@@ -4224,7 +4405,7 @@ class RAGPipeline:
 
             sql_result = query_result.result
             sql_query = query_result.query.sql_query
-            category = query_result.query.target_category or "전체"
+            category = query_result.query.target_category or self._sql_all_category_label
 
             for row_idx, row in enumerate(sql_result.data):
                 if added_count >= max_sources:

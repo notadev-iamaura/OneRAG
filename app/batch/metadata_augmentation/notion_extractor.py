@@ -31,6 +31,20 @@ logger = get_logger(__name__)
 
 
 # =============================================================================
+# 기본 프롬프트 상수
+# =============================================================================
+# 카테고리별 외부 프롬프트(extraction_prompts.json)가 모두 없을 때 사용하는
+# 최후 폴백 프롬프트. system 메시지가 영어(JSON 추출 전문가)이므로 user 폴백도
+# 언어 중립(영어)으로 유지해 비일관을 제거한다(도메인 범용 OSS RAG 정체성).
+# 운영자는 extraction_prompts.json에 카테고리별/default 프롬프트를 추가해
+# 이 상수를 오버라이드할 수 있다(회귀 0: 외부 프롬프트가 있으면 그대로 우선).
+_DEFAULT_EXTRACTION_PROMPT: str = (
+    "Analyze the information below and extract metadata as JSON.\n\n"
+    "Information:\n{content}\n\nJSON:"
+)
+
+
+# =============================================================================
 # 데이터 클래스
 # =============================================================================
 
@@ -134,7 +148,12 @@ class NotionMetadataExtractor:
         )
 
     def _setup_schema_validation(self, metadata_config: dict[str, Any]):
-        """범용 스키마에 검증 규칙 설정"""
+        """범용 스키마에 검증 규칙 및 파싱 규칙 설정.
+
+        검증 규칙(required/numeric/boolean 필드)에 더해, 파싱 규칙
+        (domain.metadata.schema.parsing — 통화/날짜/불리언/null 토큰)도 주입한다.
+        parsing 키가 없으면 코드 기본값(한국어 + 언어 중립)을 유지한다(회귀 0).
+        """
         required = metadata_config.get("required_fields", ["name"])
         numeric = metadata_config.get("numeric_fields", [])
         boolean = metadata_config.get("boolean_fields", [])
@@ -144,7 +163,12 @@ class NotionMetadataExtractor:
             numeric=numeric,
             boolean=boolean
         )
-        logger.info("🔧 범용 스키마 검증 규칙 설정 완료")
+
+        # 파싱 규칙 외부화: config 미설정 시 코드 기본값 유지(회귀 0).
+        parsing_config = metadata_config.get("parsing")
+        GenericMetadataSchema.set_parsing_config(parsing_config)
+
+        logger.info("🔧 범용 스키마 검증/파싱 규칙 설정 완료")
 
     def _load_prompts(self) -> dict[str, str]:
         """프롬프트 파일 로드"""
@@ -343,12 +367,10 @@ class NotionMetadataExtractor:
         # 카테고리별 템플릿 가져오기 (기본값 제공)
         prompt_template = self.prompts.get(category, self.prompts.get("default", ""))
 
-        # 템플릿이 없으면 매우 기본적 프롬프트 사용
+        # 템플릿이 없으면 언어 중립(영어) 기본 프롬프트 사용
+        # system 메시지가 영어이므로 user 폴백도 영어로 통일한다(비일관 제거).
         if not prompt_template:
-            prompt_template = (
-                "아래 정보를 분석하여 JSON으로 메타데이터를 추출하세요.\n\n"
-                "정보:\n{content}\n\nJSON:"
-            )
+            prompt_template = _DEFAULT_EXTRACTION_PROMPT
 
         # 템플릿 포맷팅 (category_name 등 주입)
         category_name = self.categories_config.get(category, {}).get("category_name", category)

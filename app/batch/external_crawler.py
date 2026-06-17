@@ -111,9 +111,9 @@ class ExternalCrawler:
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.weaviate_url = weaviate_url or os.getenv(
-            "WEAVIATE_URL", "https://weaviate-production-70aa.up.railway.app"
-        )
+        # WEAVIATE_URL 미설정 시 코드베이스 정규 패턴(weaviate_client.py)과 동일한
+        # 중립 로컬 기본값으로 폴백한다(특정 배포 인스턴스 식별자 미사용).
+        self.weaviate_url = weaviate_url or os.getenv("WEAVIATE_URL", "http://localhost:8080")
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,

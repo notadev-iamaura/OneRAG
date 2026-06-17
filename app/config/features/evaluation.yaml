@@ -25,6 +25,20 @@ evaluation:
       faithfulness: 0.5  # 충실도 (컨텍스트 근거)
       relevance: 0.5     # 관련성 (질문 의도 부합)
 
+    # 평가 프롬프트 오버라이드 (코드 포크 없이 언어/도메인별 루브릭 교체)
+    # 소비자: app/modules/core/evaluation/factory.py:_create_internal_evaluator
+    #   → evaluation.internal.prompt_template → InternalEvaluator(prompt_template=...)
+    # null(기본)이면 internal_evaluator.py의 코드 내장 한국어 기본 평가 프롬프트를
+    # 그대로 사용한다 → 미설정 시 평가 동작 변화 없음(회귀 0).
+    # ⚠️ 오버라이드 시 {query}/{context_text}/{answer} 플레이스홀더 보존 필수.
+    #   (JSON 응답 형식의 중괄호는 {{ }}로 이스케이프해야 .format()이 동작한다)
+    prompt_template: null
+
+    # 평가 컨텍스트의 문서 구분 라벨({index} 플레이스홀더). prompt_template를
+    # 다른 언어로 바꿔도 이 라벨이 한국어로 남던 비대칭을 해소한다. 미설정(null)
+    # 시 한국어 기본("문서 {index}:") 유지(회귀 0). 예(영어): "[Doc {index}]"
+    document_label_template: null
+
   # 4. Ragas 평가기 설정 (배치, Phase 2)
   ragas:
     # 사용할 Ragas 메트릭

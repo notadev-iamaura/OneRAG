@@ -120,6 +120,37 @@ def test_put_unsupported_locale_returns_400() -> None:
     assert resp.status_code == 400
 
 
+def _put_bad_locale(client: TestClient, accept_language: str | None) -> Any:
+    headers = {"X-API-Key": "test-admin-key"}
+    if accept_language is not None:
+        headers["Accept-Language"] = accept_language
+    return client.put(
+        "/api/admin/chat-empty-state/zz",
+        json={"mainMessage": "m", "subMessage": "s", "suggestions": ["q"]},
+        headers=headers,
+    )
+
+
+def test_unsupported_locale_error_is_bilingual() -> None:
+    """17차 범용화: Accept-Language로 미지원 로케일 에러가 ko/en 전환된다.
+
+    한국어 기본(회귀 0) + 영어 헤더 시 영어 detail → 비한국어 운영자 지원.
+    """
+    app = _make_app(_make_store(upsert_return={"mainMessage": "m", "subMessage": "s", "suggestions": ["q"]}))
+    client = TestClient(app, raise_server_exceptions=False)
+
+    # 기본/한국어: 한국어 detail (회귀 0)
+    ko = _put_bad_locale(client, None)
+    assert ko.status_code == 400
+    assert "지원하지 않는 로케일입니다" in ko.json()["detail"]
+
+    # 영어 헤더: 영어 detail
+    en = _put_bad_locale(client, "en-US,en;q=0.9")
+    assert en.status_code == 400
+    assert "Unsupported locale" in en.json()["detail"]
+    assert "지원하지" not in en.json()["detail"]
+
+
 def test_put_validation_rejects_empty_main() -> None:
     app = _make_app(_make_store())
     client = TestClient(app, raise_server_exceptions=False)

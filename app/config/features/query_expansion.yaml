@@ -14,9 +14,49 @@ query_expansion:
   # expansion_language_en: 영어 시스템 메시지에 삽입되는 언어 이름
   expansion_language: "한국어"
   expansion_language_en: "Korean"
-  # 단순 쿼리 판정용 질문 마커(생략 시 기존 한/일 마커 기본값 사용)
-  # 외국어 외주는 해당 언어의 의문사/어미로 교체하세요.
-  # question_markers: ["pourquoi", "comment", "où", ...]
+  # 단순 쿼리 판정용 질문 마커(생략 시 코드 기본값 = 한국어 최소셋 사용).
+  # 외국어/추가 언어 운영자는 해당 언어의 의문사·어미를 여기에 채우면
+  # 코드 포크 없이 질문 신호 판정이 확장된다.
+  #
+  # ⚠️ question_markers를 설정하면 코드 기본값(한국어 마커)을 '대체'한다(병합 아님).
+  #   한국어와 다른 언어를 함께 쓰려면 한국어 마커도 같이 나열해야 한다.
+  #
+  # 예시 — 프랑스어:
+  #   question_markers: ["pourquoi", "comment", "où", "quand", "qui", "quel"]
+  # 예시 — 일본어(기본 배포에서 제거됨, 필요 시 아래를 추가):
+  #   question_markers: ["なぜ", "どう", "何", "いつ", "どこ", "誰", "どれ", "ですか", "ますか"]
+  # 예시 — 한국어 + 일본어 동시 사용:
+  #   question_markers: ["어떻게", "왜", "무엇", "언제", "なぜ", "どう", "ですか"]
+
+  # 단순 쿼리 판정용 영어 의문사 마커(생략 시 코드 기본값 = how/why/what/... 사용).
+  # question_markers와 대칭으로, 영어 의문사도 코드 포크 없이 교체/비활성화할 수 있다.
+  # 단어 경계(\b) 매칭이라 'showdocs'의 'how'를 의문사로 오판하지 않는다.
+  #
+  # ⚠️ 설정하면 코드 기본 영어 마커를 '대체'한다(병합 아님).
+  #   - 빈 목록([])을 주면 영어 의문사 판정을 '비활성화'한다(운영자 옵트아웃).
+  #   - 비한국어 도메인 운영자는 question_markers/english_question_markers를 모두
+  #     자국어로 교체해 질문 신호 판정 전체를 언어 중립화할 수 있다.
+  # 예시 — 영어 비활성화:
+  #   english_question_markers: []
+  # 예시 — 마커 교체:
+  #   english_question_markers: ["explain", "describe", "how", "why", "what"]
+
+  # 쿼리 확장 프롬프트 본문 템플릿(언어 자체 오버라이드용).
+  # null(기본)이면 코드 내장 한국어 본문(_DEFAULT_EXPANSION_PROMPT_TEMPLATE)을
+  # 사용한다(회귀 0). 비한국어/도메인 운영자는 코드 포크 없이 자국어 지시문 본문을
+  # 여기에 직접 작성할 수 있다.
+  #
+  # ⚠️ 플레이스홀더 규약(반드시 보존):
+  #   - {language} : 생성 시 expansion_language 값으로 선치환됨
+  #   - {query}    : 런타임에 사용자 쿼리로 치환됨(보존 필수)
+  #   - JSON 리터럴 중괄호는 {{ }}로 이스케이프(보존 필수, .format 충돌 방지)
+  # 예시(영어 본문):
+  #   prompt_template: |
+  #     You are a {language} document-search query expansion expert.
+  #     Expand the user query to maximize retrieval. Return pure JSON only.
+  #     {{ "original_query": "...", "expanded_queries": [...] }}
+  #     User query: {query}
+  prompt_template: null
 
   # ========================================
   # OpenRouter 통합 LLM 설정

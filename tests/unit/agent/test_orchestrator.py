@@ -469,3 +469,116 @@ class TestAgentOrchestrator:
         assert result.success is True
         # Planner가 호출될 때 state에 컨텍스트가 포함되었는지는
         # AgentState의 get_context_for_llm에서 처리됨
+
+
+class TestOrchestratorMessageExternalization:
+    """Orchestrator 사용자노출 메시지/내부 컨텍스트 대체어 외부화 회귀/오버라이드 테스트.
+
+    (a) config 미설정 시 코드 내장 한국어 기본값 사용 (회귀 0)
+    (b) config 오버라이드 시 코드 변경 없이 메시지가 바뀜 (데드 키 아님)
+    """
+
+    @pytest.fixture
+    def mock_planner(self) -> AsyncMock:
+        planner = AsyncMock()
+        planner.plan = AsyncMock()
+        return planner
+
+    @pytest.fixture
+    def mock_executor(self) -> AsyncMock:
+        executor = AsyncMock()
+        executor.execute = AsyncMock()
+        return executor
+
+    @pytest.fixture
+    def mock_synthesizer(self) -> AsyncMock:
+        synthesizer = AsyncMock()
+        synthesizer.synthesize = AsyncMock()
+        return synthesizer
+
+    def _orchestrator(
+        self,
+        planner: AsyncMock,
+        executor: AsyncMock,
+        synthesizer: AsyncMock,
+        config: AgentConfig,
+    ) -> AgentOrchestrator:
+        return AgentOrchestrator(
+            planner=planner,
+            executor=executor,
+            synthesizer=synthesizer,
+            config=config,
+        )
+
+    @pytest.mark.asyncio
+    async def test_default_error_message_is_builtin_korean(
+        self,
+        mock_planner: AsyncMock,
+        mock_executor: AsyncMock,
+        mock_synthesizer: AsyncMock,
+    ) -> None:
+        """(a) 미설정 시 최상위 예외 답변 = 코드 내장 한국어 기본값"""
+        from app.modules.core.agent.orchestrator import ORCHESTRATOR_ERROR_MESSAGE
+
+        orch = self._orchestrator(
+            mock_planner, mock_executor, mock_synthesizer, AgentConfig()
+        )
+        # Planner가 예외를 던지게 해서 최상위 catch 경로를 탄다
+        mock_planner.plan.side_effect = RuntimeError("boom")
+
+        result = await orch.run("질문")
+        assert result.success is False
+        assert result.answer == ORCHESTRATOR_ERROR_MESSAGE
+        assert result.answer == "죄송합니다. 처리 중 오류가 발생했습니다."
+
+    @pytest.mark.asyncio
+    async def test_override_error_message(
+        self,
+        mock_planner: AsyncMock,
+        mock_executor: AsyncMock,
+        mock_synthesizer: AsyncMock,
+    ) -> None:
+        """(b) config 오버라이드 시 최상위 예외 답변이 교체됨"""
+        config = AgentConfig(orchestrator_error_message="Sorry, an error occurred.")
+        orch = self._orchestrator(
+            mock_planner, mock_executor, mock_synthesizer, config
+        )
+        mock_planner.plan.side_effect = RuntimeError("boom")
+
+        result = await orch.run("query")
+        assert result.success is False
+        assert result.answer == "Sorry, an error occurred."
+
+    def test_default_empty_context_is_builtin_korean(
+        self,
+        mock_planner: AsyncMock,
+        mock_executor: AsyncMock,
+        mock_synthesizer: AsyncMock,
+    ) -> None:
+        """(a) 미설정 시 빈 컨텍스트 대체어 = 코드 내장 한국어 기본값"""
+        from app.modules.core.agent.interfaces import AgentState
+        from app.modules.core.agent.orchestrator import ORCHESTRATOR_EMPTY_CONTEXT
+
+        orch = self._orchestrator(
+            mock_planner, mock_executor, mock_synthesizer, AgentConfig()
+        )
+        # 스텝 없음 → 도구 결과 없음 → 대체어 반환
+        ctx = orch._extract_context_for_reflection(AgentState(original_query="q"))
+        assert ctx == ORCHESTRATOR_EMPTY_CONTEXT
+        assert ctx == "검색 결과 없음"
+
+    def test_override_empty_context(
+        self,
+        mock_planner: AsyncMock,
+        mock_executor: AsyncMock,
+        mock_synthesizer: AsyncMock,
+    ) -> None:
+        """(b) config 오버라이드 시 빈 컨텍스트 대체어가 교체됨"""
+        from app.modules.core.agent.interfaces import AgentState
+
+        config = AgentConfig(orchestrator_empty_context="(no results)")
+        orch = self._orchestrator(
+            mock_planner, mock_executor, mock_synthesizer, config
+        )
+        ctx = orch._extract_context_for_reflection(AgentState(original_query="q"))
+        assert ctx == "(no results)"

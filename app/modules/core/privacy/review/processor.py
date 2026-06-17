@@ -83,8 +83,16 @@ class PIIReviewProcessor:
             ...
     """
 
-    # 마스크 템플릿
-    MASK_TEMPLATES: dict[PIIType, str] = {
+    # ========================================
+    # 기본 마스크 템플릿 (코드 기본값 = 한국어 라벨)
+    # ========================================
+    # 범용화 정책: 아래 상수는 "기본값"이며, __init__의 mask_templates 인자로
+    # 키별 오버라이드만 가능하다. 미설정 키는 이 기본값으로 폴백하므로
+    # 설정을 비우거나 일부만 채워도 마스킹 라벨이 누락되지 않는다(회귀 0).
+    # 치환 라벨은 처리된 문서 본문에 남아 출력에 노출되므로, 비한국어 운영자는
+    # privacy.yaml review.mask_templates로 자국어 라벨([Phone]/[SSN] 등)을 코드
+    # 포크 없이 주입한다. UNKNOWN 키 값은 미정의 PIIType의 폴백 라벨로도 쓰인다.
+    DEFAULT_MASK_TEMPLATES: dict[PIIType, str] = {
         PIIType.PHONE: "[전화번호]",
         PIIType.EMAIL: "[이메일]",
         PIIType.SSN: "[주민등록번호]",
@@ -102,6 +110,7 @@ class PIIReviewProcessor:
         policy_engine: PIIPolicyEngine,
         audit_logger: PIIAuditLogger,
         enabled: bool = True,
+        mask_templates: dict[str, str] | dict[PIIType, str] | None = None,
     ):
         """
         Args:
@@ -109,11 +118,26 @@ class PIIReviewProcessor:
             policy_engine: 정책 엔진
             audit_logger: 감사 로거
             enabled: PII 검토 활성화 여부
+            mask_templates: PII 유형별 마스킹 라벨 오버라이드(선택). 키별로
+                자국어/도메인 라벨을 주입한다. 키는 PIIType 또는 그 문자열값
+                ("phone"/"email"/"ssn"/"account"/"card"/"person_name"/"address"
+                /"organization"/"unknown")을 허용한다(yaml은 문자열).
+                미설정/빈 dict면 클래스 DEFAULT_MASK_TEMPLATES(한국어)로 폴백하고,
+                일부 키만 주면 나머지 키는 기본값으로 폴백한다(회귀 0).
         """
         self.detector = detector
         self.policy_engine = policy_engine
         self.audit_logger = audit_logger
         self._enabled = enabled
+
+        # 마스크 템플릿: 한국어 기본값 위에 config 오버라이드를 병합한다.
+        # yaml은 PIIType 값을 문자열로 전달하므로 PIIType 인스턴스로 정규화하고,
+        # 미설정 키는 DEFAULT_MASK_TEMPLATES로 폴백한다(회귀 0).
+        self.MASK_TEMPLATES: dict[PIIType, str] = dict(self.DEFAULT_MASK_TEMPLATES)
+        if mask_templates:
+            for key, label in mask_templates.items():
+                pii_type = key if isinstance(key, PIIType) else PIIType(key)
+                self.MASK_TEMPLATES[pii_type] = label
 
         logger.info(f"PIIReviewProcessor 초기화: enabled={enabled}")
 
@@ -317,8 +341,16 @@ class PIIReviewProcessor:
         return result
 
     def _get_mask(self, entity: PIIEntity) -> str:
-        """엔티티 유형별 마스크 문자열 반환"""
-        return self.MASK_TEMPLATES.get(entity.entity_type, "[개인정보]")
+        """엔티티 유형별 마스크 문자열 반환
+
+        미정의 PIIType은 UNKNOWN 라벨로 폴백한다. UNKNOWN 라벨 자체도
+        config 오버라이드 대상이므로(기본 "[개인정보]"), 비한국어 운영자는
+        폴백 라벨까지 자국어로 교체할 수 있다(회귀 0: 미설정 시 한국어 유지).
+        """
+        return self.MASK_TEMPLATES.get(
+            entity.entity_type,
+            self.MASK_TEMPLATES.get(PIIType.UNKNOWN, "[개인정보]"),
+        )
 
 
 class PIIReviewDecorator:

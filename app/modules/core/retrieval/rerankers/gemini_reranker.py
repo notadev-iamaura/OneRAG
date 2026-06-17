@@ -40,12 +40,32 @@ class GeminiFlashReranker(IReranker):
     - 에러 시 원본 결과 반환 (fail-safe)
     """
 
+    # 코드 내장 기본 랭킹 프롬프트 (config 미설정 시 사용)
+    # 플레이스홀더: {query}, {documents_text}, {top_k}
+    # str.format()으로 채워지므로 JSON 예시의 중괄호는 {{ }}로 이스케이프되어 있다.
+    # config(reranking.google.prompt_template) 주입 시에만 오버라이드된다(회귀 0).
+    DEFAULT_PROMPT_TEMPLATE = """You are a document ranking expert. Evaluate and rank documents based on their relevance to the query.
+
+Query: "{query}"
+
+Documents:
+{documents_text}
+
+Task: Score each document from 0.0 to 1.0 based on relevance to the query.
+Select only the top {top_k} most relevant documents.
+
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
+{{"results": [{{"index": 0, "score": 0.95}}, {{"index": 2, "score": 0.8}}, {{"index": 1, "score": 0.6}}]}}
+
+Do not include any other text, explanation, or formatting. Only the JSON object."""
+
     def __init__(
         self,
         api_key: str,
         max_documents: int = 20,
         timeout: int = 15,
         model: str = "gemini-flash-lite-latest",
+        prompt_template: str | None = None,
     ):
         """
         Args:
@@ -53,6 +73,9 @@ class GeminiFlashReranker(IReranker):
             max_documents: 처리할 최대 문서 개수
             timeout: 타임아웃 (초)
             model: Gemini 모델 이름 (기본: gemini-flash-lite-latest)
+            prompt_template: 랭킹 프롬프트 템플릿 오버라이드.
+                None이면 코드 내장 DEFAULT_PROMPT_TEMPLATE 사용(회귀 0).
+                {query}/{documents_text}/{top_k} 플레이스홀더를 지원한다.
         """
         if not api_key:
             raise ValueError("Google API key is required")
@@ -61,6 +84,8 @@ class GeminiFlashReranker(IReranker):
         self.max_documents = max_documents
         self.timeout = timeout
         self.model = model
+        # 미설정(None)이면 코드 기본값으로 폴백 — 기존 동작과 byte-identical
+        self.prompt_template = prompt_template or self.DEFAULT_PROMPT_TEMPLATE
 
         # ✅ httpx AsyncClient 생성 (네이티브 async)
         self.http_client = httpx.AsyncClient(
@@ -127,21 +152,12 @@ class GeminiFlashReranker(IReranker):
                 top_k=top_k,
             )
 
-            # Gemini Flash 프롬프트
-            prompt_text = f"""You are a document ranking expert. Evaluate and rank documents based on their relevance to the query.
-
-Query: "{query}"
-
-Documents:
-{documents_text}
-
-Task: Score each document from 0.0 to 1.0 based on relevance to the query.
-Select only the top {top_k} most relevant documents.
-
-IMPORTANT: Respond ONLY with valid JSON in this exact format:
-{{"results": [{{"index": 0, "score": 0.95}}, {{"index": 2, "score": 0.8}}, {{"index": 1, "score": 0.6}}]}}
-
-Do not include any other text, explanation, or formatting. Only the JSON object."""
+            # Gemini Flash 프롬프트 (config 오버라이드 가능, 기본값은 코드 내장)
+            prompt_text = self.prompt_template.format(
+                query=query,
+                documents_text=documents_text,
+                top_k=top_k,
+            )
 
             # ✅ 네이티브 async HTTP 호출
             request_body = {

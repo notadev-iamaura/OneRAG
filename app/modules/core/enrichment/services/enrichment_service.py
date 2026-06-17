@@ -91,6 +91,10 @@ class EnrichmentService:
         # 품질 설정 추출
         quality_section = enrichment_section.get("quality", {})
 
+        # 프롬프트 설정 추출 (config 외부화)
+        # 키가 없으면 None → 프롬프트 빌더가 코드 내장 한국어 기본값 사용 (회귀 0).
+        prompt_section = enrichment_section.get("prompt", {})
+
         return EnrichmentConfig(
             enabled=enrichment_section.get("enabled", False),
             llm_model=llm_section.get("model", "gpt-4o-mini"),
@@ -104,6 +108,13 @@ class EnrichmentService:
             cache_enabled=cache_section.get("enabled", False),
             min_confidence=quality_section.get("min_confidence", 0.0),
             fallback_to_original=quality_section.get("fallback_to_original", True),
+            # 프롬프트 오버라이드 (없으면 None → 코드 내장 한국어 기본 프롬프트)
+            system_prompt=prompt_section.get("system_prompt"),
+            few_shot_examples=prompt_section.get("few_shot_examples"),
+            user_prompt_template=prompt_section.get("user_prompt_template"),
+            # 배치 전용 사용자 프롬프트 오버라이드 (단건과 출력 형식이 달라 별도 키)
+            batch_user_prompt_template=prompt_section.get("batch_user_prompt_template"),
+            include_examples=prompt_section.get("include_examples", True),
         )
 
     async def initialize(self) -> None:

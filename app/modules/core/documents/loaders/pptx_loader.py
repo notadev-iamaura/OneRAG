@@ -10,6 +10,7 @@ from lxml import etree  # type: ignore[import-untyped]
 
 from .....lib.logger import get_logger
 from .base import DocumentLoaderStrategy
+from .labels import get_loader_labels
 
 logger = get_logger(__name__)
 
@@ -47,6 +48,7 @@ class PPTXLoader(DocumentLoaderStrategy):
     async def load(self, file_path: Path) -> list[Document]:
         """Load text from each non-empty slide in a PPTX file (visual order)."""
         try:
+            labels = get_loader_labels()
             documents: list[Document] = []
             with zipfile.ZipFile(file_path) as archive:
                 slide_names = self._ordered_slide_names(archive)
@@ -83,11 +85,11 @@ class PPTXLoader(DocumentLoaderStrategy):
                     if not slide_text and not notes_text:
                         continue
 
-                    content = f"슬라이드 {slide_number}\n{slide_text}".rstrip()
+                    content = f"{labels['slide']} {slide_number}\n{slide_text}".rstrip()
                     metadata: dict[str, Any] = {"slide_number": slide_number}
                     if notes_text:
                         # 화자 스크립트/상세 설명을 본문에 합쳐 검색 대상에 포함한다.
-                        content = f"{content}\n\n[노트]\n{notes_text}"
+                        content = f"{content}\n\n[{labels['notes']}]\n{notes_text}"
                         metadata["has_notes"] = True
 
                     documents.append(Document(page_content=content, metadata=metadata))

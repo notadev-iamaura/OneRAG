@@ -156,3 +156,68 @@ class TestBuildPromptScaffolding:
         assert "<source_signals>" in user
         # 영어 source_signals 안내가 포함되어야 한다.
         assert "must not be dropped" in user or "include the relevant" in user.lower()
+
+
+class TestSignalPatternExternalization:
+    """source_signals 라벨 패턴(연락처/규격/모델) 외부화 회귀/오버라이드 (#4).
+
+    언어/규격 의존 라벨을 generation.answer_completeness.signal_patterns로 외부화한다.
+    (a) 미설정 시 코드 기본(ko 최소셋 라벨 + 국제규격 ISO/IEC)으로 동작 (회귀 0)
+    (b) config 오버라이드 시 외국어 라벨/자국 규격기관으로 교체 (데드 키 아님, 대체 의미)
+
+    JP 잔재 청소: 기본 규격셋에서 JIS(일본공업규격)를 제거했다. 자국 규격기관은
+    signal_patterns.standard_orgs로 코드 포크 없이 추가/교체한다.
+    """
+
+    def test_default_keeps_korean_labels_and_iso(self) -> None:
+        """(a) 미설정 시 한국어 라벨·국제규격(ISO)이 기존대로 매칭됨 (회귀 0)"""
+        gen = _make_gen()
+        content = "전화: 02-123-4567 규격 ISO 9001 모델: GP-1200X"
+        signals = gen._format_content_signals(content)
+        assert "contact:" in signals  # 한국어 '전화' 라벨 매칭
+        assert "standard:" in signals  # 국제규격(ISO) 매칭 유지
+        assert "model_or_code:" in signals  # 한국어 '모델' 라벨 매칭
+
+    def test_jis_removed_from_default_standard_orgs(self) -> None:
+        """JP 잔재 제거: JIS는 더 이상 기본 규격셋에 없어 단독으로는 매칭되지 않는다."""
+        gen = _make_gen()
+        # 다른 신호(연락처/모델/URL 등)가 전혀 없는 JIS 단독 본문은 빈 신호여야 한다.
+        signals = gen._format_content_signals("규격 JIS B 7512 입니다")
+        assert "standard:" not in signals
+
+    def test_jis_can_be_re_added_via_config(self) -> None:
+        """JIS가 필요한 운영자는 standard_orgs config로 다시 추가할 수 있다(범용화)."""
+        gen = _make_gen(
+            {
+                "answer_completeness": {
+                    "signal_patterns": {"standard_orgs": ["ISO", "JIS"]}
+                }
+            }
+        )
+        signals = gen._format_content_signals("규격 JIS B 7512 입니다")
+        assert "standard:" in signals  # config로 추가하면 다시 매칭
+
+    def test_override_swaps_labels(self) -> None:
+        """(b) config 오버라이드 시 외국어 라벨/자국 규격기관으로 교체 (대체 의미)"""
+        gen = _make_gen(
+            {
+                "answer_completeness": {
+                    "signal_patterns": {
+                        "contact_labels": ["Tél"],
+                        "standard_orgs": ["KS"],
+                        "model_labels": ["Réf"],
+                    }
+                }
+            }
+        )
+        # 프랑스어 라벨/KS 규격이 매칭됨
+        fr_signals = gen._format_content_signals(
+            "Tél: 01-23-45-67 KS A 0001 Réf: ABC-123"
+        )
+        assert "contact:" in fr_signals
+        assert "standard:" in fr_signals
+        assert "model_or_code:" in fr_signals
+        # 오버라이드는 '대체'이므로 한국어 라벨은 더 이상 매칭되지 않는다(병합 아님)
+        ko_signals = gen._format_content_signals("전화: 02-1 모델: AB-12")
+        assert "contact:" not in ko_signals
+        assert "model_or_code:" not in ko_signals

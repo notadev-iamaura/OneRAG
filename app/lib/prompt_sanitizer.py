@@ -3,15 +3,33 @@
 
 이 모듈은 사용자 입력, 세션 컨텍스트, 검색된 문서를 프롬프트에 삽입하기 전에
 악의적인 명령어나 XML 태그 탈출을 방지합니다.
+
+탐지 패턴(인젝션/출력 누출)은 아래 ``_DEFAULT_*`` 상수가 보안 기준선이며,
+``privacy.yaml``의 선택적 ``sanitizer`` 섹션으로 추가 패턴을 외부화할 수 있습니다.
+
+보안 정책(매우 중요):
+    - 운영자 config는 기본 패턴에 "추가"만 가능하며 기본 패턴을 "대체/삭제"할 수
+      없습니다. config가 없거나 손상돼도 기본 패턴이 그대로 적용됩니다(회귀 0,
+      보안 약화 불가). 이는 PII 마스킹(masker.py)의 오버라이드 정책과 동일한
+      "코드 기본값 우선 + config 확장" 철학을 따릅니다.
 """
 
 import html
 import re
 import unicodedata
+from pathlib import Path
 from typing import Any
 
-# 프롬프트 인젝션 패턴 (한글/영문)
-INJECTION_PATTERNS = [
+import yaml
+
+from .logger import get_logger
+
+logger = get_logger(__name__)
+
+# 기본 프롬프트 인젝션 패턴 (한글/영문) - 보안 기준선
+# 이 목록은 config 미설정 시 사용되는 코드 기본값이며, 운영자는 privacy.yaml로
+# "추가" 패턴만 외부화할 수 있다(기본 패턴 삭제/대체 불가 → 보안 약화 방지).
+_DEFAULT_INJECTION_PATTERNS: list[str] = [
     # 지시사항 무시/우회
     r"ignore\s+(previous|all|the)\s+(instructions?|rules?|prompts?)",
     r"ignore\s+\S+\s+instructions?",  # "ignore 이전 instructions" 같은 혼합 패턴
@@ -39,6 +57,92 @@ INJECTION_PATTERNS = [
     r"developer\s+mode",
     r"act\s+as\s+(dan|developer|admin)",
     r"pretend\s+(you|to)\s+(are|be)",
+]
+
+# 기본 출력 누출(leak) 키워드 - 보안 기준선
+# config(sanitizer.leak_patterns)로 추가 키워드를 외부화할 수 있다(삭제 불가).
+_DEFAULT_LEAK_PATTERNS: list[str] = [
+    "system prompt",
+    "시스템 프롬프트",
+    "system_instructions",
+    "<system_instructions>",
+    "previous instructions",
+    "이전 지시",
+    "ignore instructions",
+    "지시 무시",
+    "내부 지시사항",
+    "internal instructions",
+    "jailbreak",
+    "탈옥",
+    "here is the prompt",
+    "프롬프트는 다음과 같습니다",
+    "my instructions are",
+    "제 지시사항은",
+    "dan mode activated",
+    "dan mode",
+    "developer mode activated",
+]
+
+# privacy.yaml 경로 (app/lib/prompt_sanitizer.py → app/config/features/privacy.yaml)
+_PRIVACY_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1] / "config" / "features" / "privacy.yaml"
+)
+
+
+def _load_sanitizer_config() -> dict[str, list[str]]:
+    """privacy.yaml의 선택적 ``sanitizer`` 섹션에서 추가 패턴을 로드한다.
+
+    보안 정책: 코드 기본값에 "추가"만 한다. 파일이 없거나 파싱 실패 시 빈 추가
+    패턴을 반환하여 기본 패턴만 사용한다(회귀 0, 보안 약화 불가). 어떤 경우에도
+    예외를 전파하지 않는다(모듈 import 시점에 호출되므로 안전성이 최우선).
+
+    기대 구조(privacy.yaml):
+        sanitizer:
+          injection_patterns:   # 인젝션 탐지에 추가할 정규식
+            - "..."
+          leak_patterns:        # 출력 누출 탐지에 추가할 키워드(부분 일치)
+            - "..."
+
+    Returns:
+        {"injection_patterns": [...], "leak_patterns": [...]} (없으면 빈 리스트)
+    """
+    empty: dict[str, list[str]] = {"injection_patterns": [], "leak_patterns": []}
+    try:
+        if not _PRIVACY_CONFIG_PATH.exists():
+            return empty
+        with open(_PRIVACY_CONFIG_PATH, encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        sanitizer_cfg = raw.get("sanitizer")
+        if not isinstance(sanitizer_cfg, dict):
+            return empty
+        result: dict[str, list[str]] = {}
+        for key in ("injection_patterns", "leak_patterns"):
+            value = sanitizer_cfg.get(key)
+            # 문자열 리스트만 채택. 형식이 어긋나면 무시(기본값 유지).
+            if isinstance(value, list):
+                result[key] = [str(item) for item in value if isinstance(item, str) and item]
+            else:
+                result[key] = []
+        return result
+    except Exception as e:  # noqa: BLE001 - import 안전성 최우선, 기본값으로 폴백
+        # 설정 로드 실패는 보안 약화로 이어지지 않도록 기본 패턴만 사용한다.
+        logger.warning(f"sanitizer 설정 로드 실패, 기본 패턴만 사용: {e}")
+        return empty
+
+
+# config 추가 패턴 로드 (기본값 + 추가 = 최종 패턴, 기본값은 항상 보존)
+_extra_config = _load_sanitizer_config()
+
+# 최종 인젝션 패턴 = 기본(보안 기준선) + config 추가
+# 하위 호환: 기존 공개 이름 INJECTION_PATTERNS를 그대로 유지한다.
+INJECTION_PATTERNS: list[str] = list(_DEFAULT_INJECTION_PATTERNS) + _extra_config.get(
+    "injection_patterns", []
+)
+
+# 최종 출력 누출 키워드 = 기본 + config 추가 (소문자 비교용으로 정규화)
+LEAK_PATTERNS: list[str] = [
+    keyword.lower()
+    for keyword in (list(_DEFAULT_LEAK_PATTERNS) + _extra_config.get("leak_patterns", []))
 ]
 
 # 컴파일된 패턴 (성능 향상)
@@ -262,31 +366,9 @@ def contains_output_leakage(text: str) -> bool:
 
     text_lower = text.lower()
 
-    # 누출 패턴 키워드
-    leakage_keywords = [
-        "system prompt",
-        "시스템 프롬프트",
-        "system_instructions",
-        "<system_instructions>",
-        "previous instructions",
-        "이전 지시",
-        "ignore instructions",
-        "지시 무시",
-        "내부 지시사항",
-        "internal instructions",
-        "jailbreak",
-        "탈옥",
-        "here is the prompt",
-        "프롬프트는 다음과 같습니다",
-        "my instructions are",
-        "제 지시사항은",
-        "dan mode activated",
-        "dan mode",
-        "developer mode activated",
-    ]
-
+    # 누출 패턴 키워드 (기본 + config 추가, 모듈 로드 시 소문자 정규화 완료)
     # 키워드 매칭
-    for keyword in leakage_keywords:
+    for keyword in LEAK_PATTERNS:
         if keyword in text_lower:
             return True
 

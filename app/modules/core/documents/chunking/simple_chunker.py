@@ -32,7 +32,22 @@ class SimpleChunker(BaseChunker):
         175
     """
 
-    def __init__(self, content_template: str = "{question}\n{answer}"):
+    # 코드 내장 ko+en 기본 컬럼 별칭(회귀 안전판).
+    # config 미설정 시 이 목록을 사용해 기존 동작과 동치를 유지한다.
+    # 그 외 언어(예: 일본어 質問/回答)는 column_aliases로 추가한다.
+    DEFAULT_QUESTION_KEYS: list[str] = ["질문", "question", "Question", "Q", "query"]
+    DEFAULT_ANSWER_KEYS: list[str] = ["답변", "answer", "Answer", "A", "response"]
+    # 섹션/카테고리 메타데이터 컬럼 별칭(ko+en 기본값).
+    # question/answer와 동일하게 column_aliases로 외부화한다(비대칭 제거).
+    # 인식 순서: 리스트 앞 항목 우선. 미설정 시 이 기본값으로 기존 동작 동치(회귀 0).
+    DEFAULT_SECTION_KEYS: list[str] = ["section", "섹션명"]
+    DEFAULT_CATEGORY_KEYS: list[str] = ["category", "카테고리"]
+
+    def __init__(
+        self,
+        content_template: str = "{question}\n{answer}",
+        column_aliases: dict[str, list[str]] | None = None,
+    ):
         """
         SimpleChunker 초기화
 
@@ -41,8 +56,36 @@ class SimpleChunker(BaseChunker):
                 - {question}: 질문 필드
                 - {answer}: 답변 필드
                 - 예: "Q: {question}\nA: {answer}"
+            column_aliases: 질문/답변/섹션/카테고리 컬럼 별칭 맵
+                ({"question": [...], "answer": [...], "section": [...], "category": [...]}).
+                미지정(None) 시 코드 내장 ko+en 기본 별칭을 사용한다(회귀 0).
+                uploads.yaml의 `uploads.faq.column_aliases`로 임의 언어 컬럼명을
+                추가할 수 있다. 키가 부분 지정되면 미지정 키는 기본값으로 보강한다.
         """
         self.content_template = content_template
+
+        # 컬럼 별칭: config 주입 우선, 미설정 키는 ko+en 기본값으로 보강(회귀 0)
+        aliases = column_aliases or {}
+        self.question_keys: list[str] = aliases.get(
+            "question", list(self.DEFAULT_QUESTION_KEYS)
+        )
+        self.answer_keys: list[str] = aliases.get(
+            "answer", list(self.DEFAULT_ANSWER_KEYS)
+        )
+        # 섹션/카테고리 메타 컬럼 별칭도 question/answer와 동일 방식으로 외부화(비대칭 제거)
+        self.section_keys: list[str] = aliases.get(
+            "section", list(self.DEFAULT_SECTION_KEYS)
+        )
+        self.category_keys: list[str] = aliases.get(
+            "category", list(self.DEFAULT_CATEGORY_KEYS)
+        )
+        # FAQProcessor 등이 동일 별칭을 재사용할 수 있도록 정규화된 맵을 노출한다.
+        self.column_aliases: dict[str, list[str]] = {
+            "question": self.question_keys,
+            "answer": self.answer_keys,
+            "section": self.section_keys,
+            "category": self.category_keys,
+        }
         logger.debug(f"SimpleChunker initialized with template: {content_template}")
 
     def chunk(self, document: Document) -> list[Chunk]:
@@ -95,21 +138,18 @@ class SimpleChunker(BaseChunker):
         Raises:
             KeyError: 필수 필드 누락
         """
-        # 필드명 유연성 (여러 형태 지원)
-        question_keys = ["질문", "question", "Question", "Q", "query"]
-        answer_keys = ["답변", "answer", "Answer", "A", "response"]
-
+        # 필드명 유연성 (config/기본 별칭 단일 소스 사용)
         question = None
         answer = None
 
         # 질문 필드 찾기
-        for key in question_keys:
+        for key in self.question_keys:
             if key in item:
                 question = item[key]
                 break
 
         # 답변 필드 찾기
-        for key in answer_keys:
+        for key in self.answer_keys:
             if key in item:
                 answer = item[key]
                 break
@@ -131,16 +171,45 @@ class SimpleChunker(BaseChunker):
         }
 
         # 원본 메타데이터 병합 (섹션, 카테고리 등)
-        if "section" in item or "섹션명" in item:
-            metadata["section"] = item.get("section", item.get("섹션명"))
+        # 별칭 리스트를 앞에서부터 순회해 첫 일치 컬럼값을 채택한다.
+        # 기본 별칭(["section","섹션명"] / ["category","카테고리"])은 기존
+        # `if "section" in item ...: item.get(en, item.get(ko))` 우선순위와 동치다(회귀 0).
+        section_value = self._first_present_value(item, self.section_keys)
+        if section_value is not self._MISSING:
+            metadata["section"] = section_value
 
-        if "category" in item or "카테고리" in item:
-            metadata["category"] = item.get("category", item.get("카테고리"))
+        category_value = self._first_present_value(item, self.category_keys)
+        if category_value is not self._MISSING:
+            metadata["category"] = category_value
 
         # 문서 메타데이터도 포함
         metadata.update(document.metadata)
 
         return Chunk(content=content, metadata=metadata, chunk_index=index)
+
+    # "키 미존재"와 "키 존재+값 None"을 구분하기 위한 센티넬.
+    # 기존 `if "section" in item ...` 가드는 값이 None이어도 메타데이터에
+    # section=None을 설정했으므로, 이 센티넬로 동일 동작을 보존한다(회귀 0).
+    _MISSING = object()
+
+    def _first_present_value(self, item: dict, keys: list[str]) -> object:
+        """별칭 리스트를 순회해 item에 처음 존재하는 키의 값을 반환한다.
+
+        어떤 키도 존재하지 않으면 센티넬(_MISSING)을 반환한다(메타데이터 미설정).
+        키가 존재하면 그 값(value가 None이어도)을 반환해 기존 가드와 동치를 유지한다.
+
+        Args:
+            item: FAQ 항목 딕셔너리
+            keys: 인식할 컬럼 별칭 리스트(앞 항목 우선)
+
+        Returns:
+            첫 일치 컬럼의 값. 일치 컬럼이 없으면 센티넬(_MISSING).
+        """
+        for key in keys:
+            value = item.get(key, self._MISSING)
+            if value is not self._MISSING:
+                return value
+        return self._MISSING
 
     def _format_content(self, question: str, answer: str) -> str:
         """
@@ -157,8 +226,9 @@ class SimpleChunker(BaseChunker):
         if "{question}" in self.content_template and "{answer}" in self.content_template:
             return self.content_template.format(question=question.strip(), answer=answer.strip())
 
-        # 템플릿이 없으면 기본 형식
-        return f"질문: {question.strip()}\n답변: {answer.strip()}"
+        # 템플릿에 placeholder가 없으면 언어중립으로 단순 결합한다(한국어 라벨 미주입).
+        # 라벨이 필요한 운영자는 content_template에 명시한다(예: "질문: {question}...").
+        return f"{question.strip()}\n{answer.strip()}"
 
     def validate_document(self, document: Document) -> None:
         """

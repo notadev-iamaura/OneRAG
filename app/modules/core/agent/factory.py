@@ -54,6 +54,18 @@ DEFAULT_AGENT_CONFIG = {
     "max_reflection_iterations": 2,
     # 출력 언어 (외주 언어 변경용, 기본값=한국어)
     "output_language": "한국어",
+    # 프롬프트 오버라이드 (config 외부화). 기본값 None = 각 컴포넌트의 코드 내장
+    # 한국어 기본 프롬프트 사용 → 미설정 시 회귀 0.
+    "planner_system_prompt": None,
+    "planner_user_prompt": None,
+    "synthesizer_system_prompt": None,
+    "synthesizer_user_prompt": None,
+    "synthesizer_error_message": None,
+    "reflector_system_prompt": None,
+    "reflector_user_prompt": None,
+    "reflector_empty_context": None,
+    "orchestrator_error_message": None,
+    "orchestrator_empty_context": None,
 }
 
 
@@ -174,6 +186,11 @@ class AgentFactory:
         agent_yaml = config.get("mcp", {}).get("agent", {})
         defaults = DEFAULT_AGENT_CONFIG
 
+        # 프롬프트 오버라이드는 mcp.agent.prompts 하위에서 읽는다.
+        # 섹션/키가 없으면 빈 dict → .get()이 None 기본값을 반환 →
+        # 각 컴포넌트가 코드 내장 한국어 기본 프롬프트를 사용한다 (회귀 0).
+        prompts_yaml = agent_yaml.get("prompts", {}) or {}
+
         return AgentConfig(
             tool_selection=agent_yaml.get(
                 "tool_selection",
@@ -244,6 +261,47 @@ class AgentFactory:
             output_language=agent_yaml.get(
                 "output_language",
                 defaults["output_language"],
+            ),
+            # 프롬프트 오버라이드 (없으면 None → 코드 내장 한국어 기본 프롬프트)
+            planner_system_prompt=prompts_yaml.get(
+                "planner_system",
+                defaults["planner_system_prompt"],
+            ),
+            planner_user_prompt=prompts_yaml.get(
+                "planner_user",
+                defaults["planner_user_prompt"],
+            ),
+            synthesizer_system_prompt=prompts_yaml.get(
+                "synthesizer_system",
+                defaults["synthesizer_system_prompt"],
+            ),
+            synthesizer_user_prompt=prompts_yaml.get(
+                "synthesizer_user",
+                defaults["synthesizer_user_prompt"],
+            ),
+            synthesizer_error_message=prompts_yaml.get(
+                "synthesizer_error_message",
+                defaults["synthesizer_error_message"],
+            ),
+            reflector_system_prompt=prompts_yaml.get(
+                "reflector_system",
+                defaults["reflector_system_prompt"],
+            ),
+            reflector_user_prompt=prompts_yaml.get(
+                "reflector_user",
+                defaults["reflector_user_prompt"],
+            ),
+            reflector_empty_context=prompts_yaml.get(
+                "reflector_empty_context",
+                defaults["reflector_empty_context"],
+            ),
+            orchestrator_error_message=prompts_yaml.get(
+                "orchestrator_error_message",
+                defaults["orchestrator_error_message"],
+            ),
+            orchestrator_empty_context=prompts_yaml.get(
+                "orchestrator_empty_context",
+                defaults["orchestrator_empty_context"],
             ),
         )
 

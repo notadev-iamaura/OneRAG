@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -47,18 +48,27 @@ class PIIAuditLogger:
     VERSION = "1.0.0"
     COLLECTION_NAME = "pii_audit_logs"
 
+    # 감사 메타데이터 정제용 기본 전화번호 패턴(한국 형식). detector와 동일하게
+    # 코드 인라인 하드코딩 대신 클래스 상수로 분리해 단일 진실원천화한다. 다른
+    # 형식이 필요하면 생성자 phone_pattern으로 오버라이드한다(미설정 시 회귀 0).
+    DEFAULT_AUDIT_PHONE_PATTERN = r"\d{2,3}-\d{3,4}-\d{4}"
+
     def __init__(
         self,
         collection: AsyncIOMotorCollection | None = None,
         enabled: bool = True,
+        phone_pattern: str | None = None,
     ):
         """
         Args:
             collection: MongoDB 컬렉션. None이면 로그만 기록.
             enabled: 감사 로깅 활성화 여부
+            phone_pattern: 메타데이터 정제용 전화번호 정규식. 미지정 시 한국
+                기본 패턴(DEFAULT_AUDIT_PHONE_PATTERN)을 사용한다(회귀 0).
         """
         self._collection = collection
         self._enabled = enabled
+        self._phone_pattern = re.compile(phone_pattern or self.DEFAULT_AUDIT_PHONE_PATTERN)
 
         if collection is None:
             logger.warning("PIIAuditLogger: MongoDB 컬렉션 미설정. 파일 로그만 기록됩니다.")
@@ -305,16 +315,11 @@ class PIIAuditLogger:
         Returns:
             정제된 메타데이터 (PII 마스킹)
         """
-        import re
-
-        # 전화번호 패턴
-        phone_pattern = re.compile(r"\d{2,3}-\d{3,4}-\d{4}")
-
         sanitized = {}
         for key, value in metadata.items():
             if isinstance(value, str):
-                # 전화번호 마스킹
-                sanitized[key] = phone_pattern.sub("***-****-****", value)
+                # 전화번호 마스킹 (패턴은 생성자/기본 상수 단일 소스)
+                sanitized[key] = self._phone_pattern.sub("***-****-****", value)
             else:
                 sanitized[key] = value
 

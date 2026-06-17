@@ -30,7 +30,16 @@ from ...lib.auth import (
     get_api_key_auth,
     get_upload_token_ttl_seconds,
 )
-from ...lib.errors import ErrorCode, GenerationError, RetrievalError, SessionError, wrap_exception
+from ...lib.errors import (
+    ErrorCode,
+    GenerationError,
+    RetrievalError,
+    SessionError,
+    format_user_facing_error,
+    get_error_message,
+    get_error_solutions,
+    wrap_exception,
+)
 from ...lib.logger import get_logger
 from ..schemas.chat_schemas import (
     ChatHistoryResponse,
@@ -83,6 +92,23 @@ def get_real_client_ip(request: Request) -> str:
     return fallback_ip
 
 
+def _resolve_request_language(request: Request | None) -> str:
+    """요청 Accept-Language 헤더에서 에러 메시지 언어를 결정한다(ko|en, 기본 ko).
+
+    양언어 에러 카탈로그(app.lib.errors)는 "ko"/"en"만 지원한다. 헤더가 영어를
+    우선하면 "en"을, 그 외(미지정/None 포함)는 "ko"를 반환한다 → 한국어 기본(회귀 0).
+    request가 None(FastAPI 주입 없이 직접 호출 등)이면 "ko"로 폴백한다.
+    """
+    if request is None:
+        return "ko"
+    accept_language = (request.headers.get("accept-language") or "").lower()
+    en_idx = accept_language.find("en")
+    ko_idx = accept_language.find("ko")
+    if en_idx != -1 and (ko_idx == -1 or en_idx < ko_idx):
+        return "en"
+    return "ko"
+
+
 def get_request_context(request: Request) -> dict[str, Any]:
     """
     요청 컨텍스트 추출
@@ -97,27 +123,33 @@ def get_request_context(request: Request) -> dict[str, Any]:
     }
 
 
-def _ensure_service_initialized() -> None:
+def _ensure_service_initialized(lang: str = "ko") -> None:
     """
     ChatService 초기화 확인 (Fail-Fast 원칙)
 
     서버 시작 직후 또는 초기화 오류 시 요청이 들어오면
     명확한 에러 메시지와 함께 즉시 실패합니다.
 
+    Args:
+        lang: 에러 메시지 언어("ko"|"en", 기본 ko). 호출부에서
+            _resolve_request_language(request)로 결정해 전달한다. 미전달 시
+            한국어(회귀 0).
+
     Raises:
         HTTPException: chat_service가 None인 경우 503 에러
     """
     if chat_service is None:
         logger.error("🚨 ChatService 초기화되지 않음 - 요청 거부")
+        # 사용자 노출 3-필드는 양언어 카탈로그(SERVICE-001)에서 lang별로 가져오고,
+        # retry_after/support_email 등 보존 필드는 preserve로 그대로 병합한다.
         raise HTTPException(
             status_code=503,
-            detail={
-                "error": "서비스 초기화 중",
-                "message": "서비스가 시작 중입니다. 잠시 후 다시 시도해주세요",
-                "suggestion": "30초 후 재시도하거나, 문제가 지속되면 관리자에게 문의하세요",
-                "retry_after": 30,
-                "support_email": "support@example.com",
-            },
+            detail=format_user_facing_error(
+                ErrorCode.SERVICE_001.value,
+                lang,
+                retry_after=30,
+                support_email="support@example.com",
+            ),
         )
 
 
@@ -155,22 +187,27 @@ async def chat(
 
     기존 코드: chat.py의 chat() 엔드포인트 (L1269-1408)
     """
-    _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
+    # 에러 메시지 언어를 요청 Accept-Language로 결정(기본 ko → 회귀 0)
+    lang = _resolve_request_language(request)
+    _ensure_service_initialized(lang)  # Fail-Fast: 서비스 초기화 확인
     start_time = time.time()
     session_id = None
     try:
         context = get_request_context(request)
         session_result = await chat_service.handle_session(chat_request.session_id, context)
         if not session_result["success"]:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "세션 처리 실패",
-                    "message": session_result.get("message", "세션 요청을 처리할 수 없습니다"),
-                    "suggestion": "세션 ID를 확인하거나 새로운 세션을 생성하세요",
-                    "session_id": chat_request.session_id,
-                },
+            # 카탈로그(SESSION-001) 기반 3-필드 + 세션 ID 보존. message는
+            # 동적 폴백(session_result["message"])이 있으면 그것으로 덮어쓰고,
+            # 없으면 카탈로그 ko 폴백("세션 요청을 처리할 수 없습니다")을 유지한다.
+            session_detail = format_user_facing_error(
+                ErrorCode.SESSION_001.value,
+                lang,
+                session_id=chat_request.session_id,
             )
+            dynamic_message = session_result.get("message")
+            if dynamic_message:
+                session_detail["message"] = dynamic_message
+            raise HTTPException(status_code=400, detail=session_detail)
         session_id = session_result["session_id"]
         # Self-RAG는 RAGPipeline 내부에서 자동으로 처리됨 (중복 실행 제거)
         # Agent 모드 옵션 병합 (use_agent 필드를 options에 포함)
@@ -330,7 +367,9 @@ async def create_session(
 
     기존 코드: chat.py의 create_session() 엔드포인트 (L1411-1432)
     """
-    _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
+    # 에러 메시지 언어를 요청 Accept-Language로 결정(기본 ko → 회귀 0)
+    lang = _resolve_request_language(request)
+    _ensure_service_initialized(lang)  # Fail-Fast: 서비스 초기화 확인
     start_time = time.time()  # ⏱️ 성능 측정 시작
     logger.info("🔵 세션 생성 요청 시작")
 
@@ -359,13 +398,12 @@ async def create_session(
             logger.error("❌ 세션 모듈 없음")
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "error": "세션 모듈 오류",
-                    "message": "세션 관리 기능을 사용할 수 없습니다",
-                    "suggestion": "서비스 관리자에게 문의하세요. 세션 모듈이 초기화되지 않았습니다",
-                    "technical_error": "Session module not initialized",
-                    "support_email": "support@example.com",
-                },
+                detail=format_user_facing_error(
+                    ErrorCode.SESSION_002.value,
+                    lang,
+                    technical_error="Session module not initialized",
+                    support_email="support@example.com",
+                ),
             )
 
         # Step 4: 세션 생성 (성능 측정)
@@ -425,39 +463,39 @@ async def create_session(
         )
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "세션 생성 실패",
-                "message": "새로운 세션을 생성할 수 없습니다",
-                "suggestion": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
-                "retry_after": 10,
-                "technical_error": f"{type(error).__name__}: {str(error)}",
-                "support_email": "support@example.com",
-            },
+            detail=format_user_facing_error(
+                ErrorCode.SESSION_003.value,
+                lang,
+                retry_after=10,
+                technical_error=f"{type(error).__name__}: {str(error)}",
+                support_email="support@example.com",
+            ),
         ) from error
 
 
 @router.get("/chat/history/{session_id}", response_model=ChatHistoryResponse)
 async def get_chat_history(
-    session_id: str, limit: int = 20, offset: int = 0
+    request: Request, session_id: str, limit: int = 20, offset: int = 0
 ) -> ChatHistoryResponse:
     """
     채팅 히스토리 조회
 
     기존 코드: chat.py의 get_chat_history() 엔드포인트 (L1435-1461)
     """
-    _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
+    # 에러 메시지 언어를 요청 Accept-Language로 결정(기본 ko → 회귀 0)
+    lang = _resolve_request_language(request)
+    _ensure_service_initialized(lang)  # Fail-Fast: 서비스 초기화 확인
     try:
         session_module = chat_service.modules.get("session")
         if not session_module:
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "error": "세션 모듈 오류",
-                    "message": "세션 관리 기능을 사용할 수 없습니다",
-                    "suggestion": "서비스 관리자에게 문의하세요. 세션 모듈이 초기화되지 않았습니다",
-                    "technical_error": "Session module not initialized",
-                    "support_email": "support@example.com",
-                },
+                detail=format_user_facing_error(
+                    ErrorCode.SESSION_004.value,
+                    lang,
+                    technical_error="Session module not initialized",
+                    support_email="support@example.com",
+                ),
             )
         history = await session_module.get_chat_history(session_id)
         start = offset
@@ -479,48 +517,47 @@ async def get_chat_history(
         if "not found" in str(error).lower():
             raise HTTPException(
                 status_code=404,
-                detail={
-                    "error": "세션을 찾을 수 없습니다",
-                    "message": "요청하신 세션이 존재하지 않거나 만료되었습니다",
-                    "suggestion": "새로운 세션을 시작하거나 세션 ID를 확인하세요",
-                    "session_id": session_id,
-                },
+                detail=format_user_facing_error(
+                    ErrorCode.SESSION_005.value,
+                    lang,
+                    session_id=session_id,
+                ),
             ) from error
         # 일반 서버 에러 (500)
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "히스토리 조회 실패",
-                "message": "채팅 히스토리를 불러올 수 없습니다",
-                "suggestion": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
-                "retry_after": 10,
-                "session_id": session_id,
-                "technical_error": f"{type(error).__name__}: {str(error)}",
-                "support_email": "support@example.com",
-            },
+            detail=format_user_facing_error(
+                ErrorCode.SESSION_006.value,
+                lang,
+                retry_after=10,
+                session_id=session_id,
+                technical_error=f"{type(error).__name__}: {str(error)}",
+                support_email="support@example.com",
+            ),
         ) from error
 
 
 @router.delete("/chat/session/{session_id}")
-async def delete_session(session_id: str) -> dict[str, str]:
+async def delete_session(request: Request, session_id: str) -> dict[str, str]:
     """
     세션 삭제
 
     기존 코드: chat.py의 delete_session() 엔드포인트 (L1464-1481)
     """
-    _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
+    # 에러 메시지 언어를 요청 Accept-Language로 결정(기본 ko → 회귀 0)
+    lang = _resolve_request_language(request)
+    _ensure_service_initialized(lang)  # Fail-Fast: 서비스 초기화 확인
     try:
         session_module = chat_service.modules.get("session")
         if not session_module:
             raise HTTPException(
                 status_code=500,
-                detail={
-                    "error": "세션 모듈 오류",
-                    "message": "세션 관리 기능을 사용할 수 없습니다",
-                    "suggestion": "서비스 관리자에게 문의하세요. 세션 모듈이 초기화되지 않았습니다",
-                    "technical_error": "Session module not initialized",
-                    "support_email": "support@example.com",
-                },
+                detail=format_user_facing_error(
+                    ErrorCode.SESSION_007.value,
+                    lang,
+                    technical_error="Session module not initialized",
+                    support_email="support@example.com",
+                ),
             )
         await session_module.delete_session(session_id)
         return {
@@ -536,36 +573,36 @@ async def delete_session(session_id: str) -> dict[str, str]:
         if "not found" in str(error).lower():
             raise HTTPException(
                 status_code=404,
-                detail={
-                    "error": "세션을 찾을 수 없습니다",
-                    "message": "삭제하려는 세션이 존재하지 않거나 이미 삭제되었습니다",
-                    "suggestion": "세션 ID를 확인하세요",
-                    "session_id": session_id,
-                },
+                detail=format_user_facing_error(
+                    ErrorCode.SESSION_008.value,
+                    lang,
+                    session_id=session_id,
+                ),
             ) from error
         # 일반 서버 에러 (500)
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "세션 삭제 실패",
-                "message": "세션을 삭제할 수 없습니다",
-                "suggestion": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
-                "retry_after": 10,
-                "session_id": session_id,
-                "technical_error": f"{type(error).__name__}: {str(error)}",
-                "support_email": "support@example.com",
-            },
+            detail=format_user_facing_error(
+                ErrorCode.SESSION_009.value,
+                lang,
+                retry_after=10,
+                session_id=session_id,
+                technical_error=f"{type(error).__name__}: {str(error)}",
+                support_email="support@example.com",
+            ),
         ) from error
 
 
 @router.get("/chat/stats", response_model=StatsResponse)
-async def get_stats() -> StatsResponse:
+async def get_stats(request: Request) -> StatsResponse:
     """
     통계 조회
 
     기존 코드: chat.py의 get_stats() 엔드포인트 (L1484-1494)
     """
-    _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
+    # 에러 메시지 언어를 요청 Accept-Language로 결정(기본 ko → 회귀 0)
+    lang = _resolve_request_language(request)
+    _ensure_service_initialized(lang)  # Fail-Fast: 서비스 초기화 확인
     try:
         session_module = chat_service.modules.get("session")
         session_stats = await session_module.get_stats() if session_module else {}
@@ -578,25 +615,26 @@ async def get_stats() -> StatsResponse:
         logger.error("Get stats error", error=str(error))
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "통계 조회 실패",
-                "message": "시스템 통계를 불러올 수 없습니다",
-                "suggestion": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
-                "retry_after": 10,
-                "technical_error": f"{type(error).__name__}: {str(error)}",
-                "support_email": "support@example.com",
-            },
+            detail=format_user_facing_error(
+                ErrorCode.SESSION_010.value,
+                lang,
+                retry_after=10,
+                technical_error=f"{type(error).__name__}: {str(error)}",
+                support_email="support@example.com",
+            ),
         ) from error
 
 
 @router.get("/chat/session/{session_id}/info", response_model=SessionInfoResponse)
-async def get_session_info(session_id: str) -> SessionInfoResponse:
+async def get_session_info(request: Request, session_id: str) -> SessionInfoResponse:
     """
     세션 상세 정보 조회
 
     기존 코드: chat.py의 get_session_info() 엔드포인트 (L1497-1551)
     """
-    _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
+    # 에러 메시지 언어를 요청 Accept-Language로 결정(기본 ko → 회귀 0)
+    lang = _resolve_request_language(request)
+    _ensure_service_initialized(lang)  # Fail-Fast: 서비스 초기화 확인
     try:
         info = await chat_service.get_session_info(session_id)
         return SessionInfoResponse(
@@ -614,31 +652,32 @@ async def get_session_info(session_id: str) -> SessionInfoResponse:
         if "not found" in str(error).lower():
             raise HTTPException(
                 status_code=404,
-                detail={
-                    "error": "세션을 찾을 수 없습니다",
-                    "message": "요청하신 세션이 존재하지 않거나 만료되었습니다",
-                    "suggestion": "새로운 세션을 시작하거나 세션 ID를 확인하세요",
-                    "session_id": session_id,
-                },
+                detail=format_user_facing_error(
+                    ErrorCode.SESSION_011.value,
+                    lang,
+                    session_id=session_id,
+                ),
             ) from error
         # 일반 서버 에러 (500)
         logger.error("Get session info error", error=str(error))
         raise HTTPException(
             status_code=500,
-            detail={
-                "error": "세션 정보 조회 실패",
-                "message": "세션 정보를 불러올 수 없습니다",
-                "suggestion": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
-                "retry_after": 10,
-                "session_id": session_id,
-                "technical_error": f"{type(error).__name__}: {str(error)}",
-                "support_email": "support@example.com",
-            },
+            detail=format_user_facing_error(
+                ErrorCode.SESSION_012.value,
+                lang,
+                retry_after=10,
+                session_id=session_id,
+                technical_error=f"{type(error).__name__}: {str(error)}",
+                support_email="support@example.com",
+            ),
         ) from error
 
 
 @router.post("/chat/feedback", response_model=FeedbackResponse)
-async def process_feedback(feedback_request: FeedbackRequest) -> FeedbackResponse:
+async def process_feedback(
+    feedback_request: FeedbackRequest,
+    http_request: Request = None,  # type: ignore[assignment]
+) -> FeedbackResponse:
     """
     사용자 피드백 처리
 
@@ -697,10 +736,13 @@ async def process_feedback(feedback_request: FeedbackRequest) -> FeedbackRespons
         )
     except Exception as error:
         logger.error("피드백 처리 오류", error=str(error), exc_info=True)
+        # 실패 메시지는 양언어 카탈로그(FEEDBACK-001)에서 Accept-Language별로 조회한다.
+        # 기본 ko 카탈로그 값은 기존 하드코딩 문자열과 동일하다 → 회귀 0.
+        lang = _resolve_request_language(http_request)
         return FeedbackResponse(
             success=False,
             feedback_id=None,
-            message="피드백 저장에 실패했습니다",
+            message=get_error_message(ErrorCode.FEEDBACK_001.value, lang),
             golden_candidate=False,
         )
 
@@ -730,7 +772,10 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest) -> Stre
     Returns:
         StreamingResponse: text/event-stream 형식의 SSE 응답
     """
-    _ensure_service_initialized()  # Fail-Fast: 서비스 초기화 확인
+    # 에러 메시지 언어를 요청 Accept-Language로 결정(기본 ko → 회귀 0)
+    error_lang = _resolve_request_language(request)
+
+    _ensure_service_initialized(error_lang)  # Fail-Fast: 서비스 초기화 확인
 
     async def event_generator():
         """
@@ -758,10 +803,16 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest) -> Stre
             # 스트리밍 중 에러 발생 시 에러 이벤트 전송
             logger.error("스트리밍 에러", exc_info=True, error=str(e))
 
+            # 사용자 노출 메시지/해결방법을 양언어 에러 카탈로그(ErrorCode.STREAM_001)
+            # 에서 lang별로 조회한다 → Accept-Language 기반 한/영 자동 전환. 기본 ko
+            # 카탈로그 값은 기존 하드코딩 문자열과 동일하다 → 회귀 0.
+            stream_solutions = get_error_solutions(
+                ErrorCode.STREAM_001.value, lang=error_lang
+            )
             error_event = StreamErrorEvent(
                 error_code=ErrorCode.STREAM_001.value,
-                message="스트리밍 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-                suggestion="문제가 지속되면 관리자에게 문의하세요.",
+                message=get_error_message(ErrorCode.STREAM_001.value, lang=error_lang),
+                suggestion=stream_solutions[0] if stream_solutions else None,
             )
 
             # 에러 이벤트를 SSE 형식으로 전송

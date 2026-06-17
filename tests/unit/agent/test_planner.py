@@ -23,7 +23,10 @@ from app.modules.core.agent.interfaces import (
     ToolCall,
     ToolResult,
 )
-from app.modules.core.agent.planner import AgentPlanner
+from app.modules.core.agent.planner import (
+    PLANNER_SYSTEM_PROMPT_TEMPLATE,
+    AgentPlanner,
+)
 
 
 class TestAgentPlanner:
@@ -477,3 +480,26 @@ class TestAgentPlannerEdgeCases:
         # 두 번째는 tool_name 없음, 세 번째는 arguments 없음 (빈 dict로 처리 가능)
         assert len(tool_calls) >= 1
         assert tool_calls[0].tool_name == "search_weaviate"
+
+
+class TestPlannerPromptDomainNeutrality:
+    """Planner 코드 기본 시스템 프롬프트의 도메인/로케일 중립성 검증.
+
+    few-shot 예시가 한국 특정 지명·도메인(강남/맛집/노트북/매출 등)을 누출하지 않고
+    도메인 중립 플레이스홀더(<주제>/<지역> 등)만 사용하는지 단언한다.
+    """
+
+    def test_no_specific_place_names_or_domains(self) -> None:
+        """특정 지명·도메인 예시 부재 단언"""
+        # 한국 특정 지명/도메인 누출 토큰이 코드 기본 템플릿에 없어야 한다.
+        leaking_tokens = ["강남", "맛집", "노트북", "매출", "협력사", "파트너사"]
+        for token in leaking_tokens:
+            assert token not in PLANNER_SYSTEM_PROMPT_TEMPLATE, (
+                f"도메인/로케일 누출 토큰 발견: {token}"
+            )
+
+    def test_uses_neutral_placeholders(self) -> None:
+        """도메인 중립 플레이스홀더 사용 단언(예시가 일반화됨)"""
+        # 일반화된 예시는 꺾쇠 플레이스홀더(<주제>/<지역> 등)를 사용한다.
+        assert "<주제>" in PLANNER_SYSTEM_PROMPT_TEMPLATE
+        assert "<지역>" in PLANNER_SYSTEM_PROMPT_TEMPLATE

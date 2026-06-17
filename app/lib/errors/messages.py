@@ -514,6 +514,313 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "ko": "응답 생성 시작이 제한 시간({timeout}초)을 초과했습니다",
         "en": "Response generation did not start within the time limit ({timeout}s)",
     },
+    # STREAM (SSE 스트리밍) - 1개
+    # ko 값은 기존 chat_router 하드코딩 문자열과 동일(회귀 0).
+    "STREAM-001": {
+        "ko": "스트리밍 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        "en": "An error occurred during streaming. Please try again later.",
+    },
+    # WEBSOCKET (양방향 스트리밍) - 4개
+    # 와이어 error_code(접미사 포함)를 카탈로그 키로 그대로 사용한다(테스트 계약 보존).
+    # ko 값은 기존 websocket_router 하드코딩 문자열과 동일(회귀 0).
+    "WS-001-INVALID_JSON": {
+        "ko": "잘못된 JSON 형식입니다.",
+        "en": "Invalid JSON format.",
+    },
+    "WS-002-VALIDATION_ERROR": {
+        "ko": "메시지 형식이 올바르지 않습니다.",
+        "en": "The message format is invalid.",
+    },
+    "WS-003-SERVICE_NOT_INITIALIZED": {
+        "ko": "채팅 서비스가 초기화되지 않았습니다.",
+        "en": "The chat service is not initialized.",
+    },
+    "WS-999-INTERNAL_ERROR": {
+        "ko": "스트리밍 처리 중 오류가 발생했습니다.",
+        "en": "An error occurred while processing the stream.",
+    },
+    # EVAL (평가 시스템 API) - 14개
+    # ko 값은 기존 evaluations.py 하드코딩 detail 문자열과 동일(회귀 0).
+    "EVAL-001": {
+        "ko": "평가 모듈이 초기화되지 않았습니다",
+        "en": "The evaluation module is not initialized",
+    },
+    "EVAL-002": {
+        "ko": "동일한 message_id에 대한 평가가 이미 존재합니다",
+        "en": "An evaluation for the same message_id already exists",
+    },
+    "EVAL-003": {
+        "ko": "평가 생성 중 오류가 발생했습니다",
+        "en": "An error occurred while creating the evaluation",
+    },
+    "EVAL-004": {
+        "ko": "해당 메시지에 대한 평가를 찾을 수 없습니다",
+        "en": "No evaluation found for the given message",
+    },
+    "EVAL-005": {
+        "ko": "평가 조회 중 오류가 발생했습니다",
+        "en": "An error occurred while retrieving evaluations",
+    },
+    "EVAL-006": {
+        "ko": "통계 조회 중 오류가 발생했습니다",
+        "en": "An error occurred while retrieving statistics",
+    },
+    "EVAL-007": {
+        "ko": "지원하지 않는 형식입니다. json 또는 csv를 사용하세요.",
+        "en": "Unsupported format. Please use json or csv.",
+    },
+    "EVAL-008": {
+        "ko": "데이터 내보내기 중 오류가 발생했습니다",
+        "en": "An error occurred while exporting data",
+    },
+    "EVAL-009": {
+        "ko": "한 번에 최대 100개까지만 생성할 수 있습니다",
+        "en": "Only up to 100 items can be created at once",
+    },
+    "EVAL-010": {
+        "ko": "배치 평가 생성 중 오류가 발생했습니다",
+        "en": "An error occurred while creating batch evaluations",
+    },
+    "EVAL-011": {
+        "ko": "평가 목록 조회 중 오류가 발생했습니다",
+        "en": "An error occurred while retrieving the evaluation list",
+    },
+    "EVAL-012": {
+        "ko": "최근 평가 조회 중 오류가 발생했습니다",
+        "en": "An error occurred while retrieving recent evaluations",
+    },
+    "EVAL-013": {
+        "ko": "평가를 찾을 수 없습니다",
+        "en": "Evaluation not found",
+    },
+    "EVAL-014": {
+        "ko": "평가 업데이트 중 오류가 발생했습니다",
+        "en": "An error occurred while updating the evaluation",
+    },
+    # RATE (속도 제한 미들웨어) - 2개 (17차: 미들웨어 raw 한국어 → 양언어)
+    "RATE-001": {
+        "ko": "요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+        "en": "Request rate limit exceeded. Please try again later.",
+    },
+    "RATE-002": {
+        "ko": "채팅 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+        "en": "Chat request rate limit exceeded. Please try again later.",
+    },
+    # TOOL (도구 실행 API) - 5개
+    "TOOL-001": {
+        "ko": "ToolExecutor가 초기화되지 않았습니다",
+        "en": "ToolExecutor is not initialized",
+    },
+    "TOOL-002": {
+        "ko": "Tool 목록을 가져오는데 실패했습니다. 다시 시도하거나 관리자에게 문의하세요.",
+        "en": "Failed to retrieve the tool list. Please try again or contact the administrator.",
+    },
+    "TOOL-003": {
+        "ko": "Tool '{tool_name}'을 찾을 수 없습니다",
+        "en": "Tool '{tool_name}' not found",
+    },
+    "TOOL-004": {
+        "ko": "Tool 정보를 가져오는데 실패했습니다. 다시 시도하거나 관리자에게 문의하세요.",
+        "en": "Failed to retrieve tool information. Please try again or contact the administrator.",
+    },
+    "TOOL-005": {
+        "ko": "Tool 실행 중 예외 발생: {error}",
+        "en": "An exception occurred during tool execution: {error}",
+    },
+    # EMPTY (빈 상태/챗 설정 API) - 3개
+    "EMPTY-001": {
+        "ko": "지원하지 않는 로케일입니다: {locale} (지원: {supported})",
+        "en": "Unsupported locale: {locale} (supported: {supported})",
+    },
+    "EMPTY-002": {
+        "ko": "데이터베이스에 연결할 수 없어 설정을 저장하지 못했습니다",
+        "en": "Could not save settings because the database is unavailable",
+    },
+    "EMPTY-003": {
+        "ko": "데이터베이스에 연결할 수 없어 설정을 리셋하지 못했습니다",
+        "en": "Could not reset settings because the database is unavailable",
+    },
+    # FEEDBACK (피드백 API) - 1개
+    "FEEDBACK-001": {
+        "ko": "피드백 저장에 실패했습니다",
+        "en": "Failed to save feedback",
+    },
+    # ADMIN (관리 API) - 2개
+    "ADMIN-001": {
+        "ko": "평가 실행 중 오류가 발생했습니다: {error}",
+        "en": "An error occurred while running the evaluation: {error}",
+    },
+    "ADMIN-002": {
+        "ko": "세션 모듈이 초기화되지 않았습니다",
+        "en": "Session module is not initialized",
+    },
+    # OPENAI 호환 API - 4개 (enum엔 있었으나 메시지 카탈로그 누락분 보강 + OPENAI-004 신규)
+    "OPENAI-001": {
+        "ko": "지원하지 않는 모델 또는 provider입니다: {detail}",
+        "en": "Unsupported model or provider: {detail}",
+    },
+    "OPENAI-002": {
+        "ko": "LLM 서비스 사용 불가",
+        "en": "LLM service unavailable",
+    },
+    "OPENAI-003": {
+        "ko": "답변 생성 실패: {error}",
+        "en": "Answer generation failed: {error}",
+    },
+    "OPENAI-004": {
+        "ko": "user 메시지가 필요합니다",
+        "en": "A user message is required",
+    },
+}
+
+# 사용자 노출 라우터 에러(3-필드 error/message/suggestion)의 양언어 본문.
+# chat_router의 raw 한국어 detail dict(error/message/suggestion 구조)를 양언어로
+# 전환하기 위한 것으로, ko는 기존 문구와 byte 동일(회귀 0), en은 충실한 번역.
+# 단순 단일-메시지 에러는 ERROR_MESSAGES를 쓰고, 이 3-필드 구조만 여기서 관리한다.
+USER_FACING_ERRORS: dict[str, dict[str, dict[str, str]]] = {
+    "SERVICE-001": {
+        "error": {"ko": "서비스 초기화 중", "en": "Service is initializing"},
+        "message": {
+            "ko": "서비스가 시작 중입니다. 잠시 후 다시 시도해주세요",
+            "en": "The service is starting up. Please try again shortly",
+        },
+        "suggestion": {
+            "ko": "30초 후 재시도하거나, 문제가 지속되면 관리자에게 문의하세요",
+            "en": "Retry after 30 seconds, or contact the administrator if the problem persists",
+        },
+    },
+    "SESSION-001": {
+        "error": {"ko": "세션 처리 실패", "en": "Session processing failed"},
+        "message": {
+            "ko": "세션 요청을 처리할 수 없습니다",
+            "en": "Unable to process the session request",
+        },
+        "suggestion": {
+            "ko": "세션 ID를 확인하거나 새로운 세션을 생성하세요",
+            "en": "Verify the session ID or create a new session",
+        },
+    },
+    "SESSION-002": {
+        "error": {"ko": "세션 모듈 오류", "en": "Session module error"},
+        "message": {
+            "ko": "세션 관리 기능을 사용할 수 없습니다",
+            "en": "Session management is unavailable",
+        },
+        "suggestion": {
+            "ko": "서비스 관리자에게 문의하세요. 세션 모듈이 초기화되지 않았습니다",
+            "en": "Contact the service administrator. The session module is not initialized",
+        },
+    },
+    "SESSION-003": {
+        "error": {"ko": "세션 생성 실패", "en": "Failed to create session"},
+        "message": {
+            "ko": "새로운 세션을 생성할 수 없습니다",
+            "en": "Unable to create a new session",
+        },
+        "suggestion": {
+            "ko": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
+            "en": "Please try again later or contact the administrator",
+        },
+    },
+    "SESSION-004": {
+        "error": {"ko": "세션 모듈 오류", "en": "Session module error"},
+        "message": {
+            "ko": "세션 관리 기능을 사용할 수 없습니다",
+            "en": "Session management is unavailable",
+        },
+        "suggestion": {
+            "ko": "서비스 관리자에게 문의하세요. 세션 모듈이 초기화되지 않았습니다",
+            "en": "Contact the service administrator. The session module is not initialized",
+        },
+    },
+    "SESSION-005": {
+        "error": {"ko": "세션을 찾을 수 없습니다", "en": "Session not found"},
+        "message": {
+            "ko": "요청하신 세션이 존재하지 않거나 만료되었습니다",
+            "en": "The requested session does not exist or has expired",
+        },
+        "suggestion": {
+            "ko": "새로운 세션을 시작하거나 세션 ID를 확인하세요",
+            "en": "Start a new session or verify the session ID",
+        },
+    },
+    "SESSION-006": {
+        "error": {"ko": "히스토리 조회 실패", "en": "Failed to retrieve history"},
+        "message": {
+            "ko": "채팅 히스토리를 불러올 수 없습니다",
+            "en": "Unable to load chat history",
+        },
+        "suggestion": {
+            "ko": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
+            "en": "Please try again later or contact the administrator",
+        },
+    },
+    "SESSION-007": {
+        "error": {"ko": "세션 모듈 오류", "en": "Session module error"},
+        "message": {
+            "ko": "세션 관리 기능을 사용할 수 없습니다",
+            "en": "Session management is unavailable",
+        },
+        "suggestion": {
+            "ko": "서비스 관리자에게 문의하세요. 세션 모듈이 초기화되지 않았습니다",
+            "en": "Contact the service administrator. The session module is not initialized",
+        },
+    },
+    "SESSION-008": {
+        "error": {"ko": "세션을 찾을 수 없습니다", "en": "Session not found"},
+        "message": {
+            "ko": "삭제하려는 세션이 존재하지 않거나 이미 삭제되었습니다",
+            "en": "The session to delete does not exist or has already been deleted",
+        },
+        "suggestion": {
+            "ko": "세션 ID를 확인하세요",
+            "en": "Verify the session ID",
+        },
+    },
+    "SESSION-009": {
+        "error": {"ko": "세션 삭제 실패", "en": "Failed to delete session"},
+        "message": {
+            "ko": "세션을 삭제할 수 없습니다",
+            "en": "Unable to delete the session",
+        },
+        "suggestion": {
+            "ko": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
+            "en": "Please try again later or contact the administrator",
+        },
+    },
+    "SESSION-010": {
+        "error": {"ko": "통계 조회 실패", "en": "Failed to retrieve statistics"},
+        "message": {
+            "ko": "시스템 통계를 불러올 수 없습니다",
+            "en": "Unable to load system statistics",
+        },
+        "suggestion": {
+            "ko": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
+            "en": "Please try again later or contact the administrator",
+        },
+    },
+    "SESSION-011": {
+        "error": {"ko": "세션을 찾을 수 없습니다", "en": "Session not found"},
+        "message": {
+            "ko": "요청하신 세션이 존재하지 않거나 만료되었습니다",
+            "en": "The requested session does not exist or has expired",
+        },
+        "suggestion": {
+            "ko": "새로운 세션을 시작하거나 세션 ID를 확인하세요",
+            "en": "Start a new session or verify the session ID",
+        },
+    },
+    "SESSION-012": {
+        "error": {"ko": "세션 정보 조회 실패", "en": "Failed to retrieve session information"},
+        "message": {
+            "ko": "세션 정보를 불러올 수 없습니다",
+            "en": "Unable to load session information",
+        },
+        "suggestion": {
+            "ko": "잠시 후 다시 시도하거나 관리자에게 문의하세요",
+            "en": "Please try again later or contact the administrator",
+        },
+    },
 }
 
 # 에러 해결 방법 저장소: {error_code: {"ko": [...], "en": [...]}}
@@ -1778,6 +2085,144 @@ ERROR_SOLUTIONS: dict[str, dict[str, list[str]]] = {
             "If the problem persists, contact the administrator",
         ],
     },
+    # STREAM (SSE 스트리밍)
+    # ko 값은 기존 chat_router suggestion 문자열과 동일(회귀 0). suggestion은
+    # solutions[0]에서 파생된다(아래 chat_router 라우팅 참조).
+    "STREAM-001": {
+        "ko": [
+            "문제가 지속되면 관리자에게 문의하세요.",
+        ],
+        "en": [
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    # WEBSOCKET (양방향 스트리밍)
+    # ko 값은 기존 websocket_router solutions 리스트와 동일(회귀 0).
+    "WS-001-INVALID_JSON": {
+        "ko": [
+            "올바른 JSON 형식으로 메시지를 전송해주세요.",
+        ],
+        "en": [
+            "Please send the message in valid JSON format.",
+        ],
+    },
+    "WS-002-VALIDATION_ERROR": {
+        "ko": [
+            "type, message_id, content, session_id 필드를 확인해주세요.",
+            "content는 1자 이상 10000자 이하여야 합니다.",
+        ],
+        "en": [
+            "Check the type, message_id, content, and session_id fields.",
+            "content must be between 1 and 10000 characters.",
+        ],
+    },
+    "WS-003-SERVICE_NOT_INITIALIZED": {
+        "ko": [
+            "서버 관리자에게 문의해주세요.",
+        ],
+        "en": [
+            "Please contact the server administrator.",
+        ],
+    },
+    "WS-999-INTERNAL_ERROR": {
+        "ko": [
+            "잠시 후 다시 시도해주세요.",
+            "문제가 지속되면 관리자에게 문의해주세요.",
+        ],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    # EVAL (평가 시스템 API) - 14개
+    # 카탈로그 일관성을 위해 모든 EVAL 코드에 해결 방법을 등록한다
+    # (라우터는 HTTP detail에 solutions를 포함하지 않으나 KeyError를 원천 차단).
+    "EVAL-001": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-002": {
+        "ko": ["기존 평가를 조회하거나 수정하세요.", "다른 message_id로 평가를 생성하세요."],
+        "en": [
+            "Retrieve or update the existing evaluation.",
+            "Create the evaluation with a different message_id.",
+        ],
+    },
+    "EVAL-003": {
+        "ko": ["입력 값을 확인 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Check the input and try again.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-004": {
+        "ko": ["message_id가 올바른지 확인하세요.", "평가가 존재하는지 확인하세요."],
+        "en": ["Verify that the message_id is correct.", "Confirm the evaluation exists."],
+    },
+    "EVAL-005": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-006": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-007": {
+        "ko": ["json 또는 csv 형식을 사용하세요."],
+        "en": ["Use the json or csv format."],
+    },
+    "EVAL-008": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-009": {
+        "ko": ["한 번에 최대 100개까지 나눠서 요청하세요."],
+        "en": ["Split the request into batches of up to 100 items."],
+    },
+    "EVAL-010": {
+        "ko": ["입력 값을 확인 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Check the input and try again.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-011": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-012": {
+        "ko": ["잠시 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Please try again later.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
+    "EVAL-013": {
+        "ko": ["evaluation_id가 올바른지 확인하세요.", "평가가 존재하는지 확인하세요."],
+        "en": ["Verify that the evaluation_id is correct.", "Confirm the evaluation exists."],
+    },
+    "EVAL-014": {
+        "ko": ["입력 값을 확인 후 다시 시도해주세요.", "문제가 지속되면 관리자에게 문의해주세요."],
+        "en": [
+            "Check the input and try again.",
+            "If the problem persists, please contact the administrator.",
+        ],
+    },
 }
 
 
@@ -1825,3 +2270,29 @@ def get_solutions_list(error_code: str, lang: str = "ko") -> list[str]:
         raise ValueError(f"Unsupported language: {lang}")
 
     return ERROR_SOLUTIONS[error_code][lang]
+
+
+def get_user_facing_error(error_code: str, lang: str = "ko") -> dict[str, str]:
+    """사용자 노출 3-필드 에러(error/message/suggestion)의 양언어 본문을 반환한다.
+
+    USER_FACING_ERRORS에 정의된 에러 코드에 대해 {error, message, suggestion}
+    딕셔너리를 해당 언어로 반환한다. 알 수 없는 코드는 빈 dict를 반환한다.
+    지원하지 않는 언어는 ko로 폴백한다(회귀 0 — 기본 한국어).
+
+    Args:
+        error_code: 에러 코드 (예: "SESSION-005")
+        lang: 언어 코드 ("ko" 또는 "en", 기본 ko)
+
+    Returns:
+        {"error": ..., "message": ..., "suggestion": ...} (정의된 키만 포함)
+    """
+    if lang not in ("ko", "en"):
+        lang = "ko"
+    entry = USER_FACING_ERRORS.get(error_code)
+    if not entry:
+        return {}
+    result: dict[str, str] = {}
+    for key in ("error", "message", "suggestion"):
+        if key in entry:
+            result[key] = entry[key].get(lang) or entry[key].get("ko", "")
+    return result

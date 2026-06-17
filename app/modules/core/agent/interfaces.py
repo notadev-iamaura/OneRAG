@@ -40,6 +40,34 @@ class AgentConfig:
         max_reflection_iterations: 최대 Reflection 반복 횟수 (기본: 2)
         output_language: 에이전트 답변/추론 출력 언어 (기본: "한국어").
             비한국어 외주는 mcp.yaml의 agent.output_language로 변경한다.
+        planner_system_prompt: Planner 도구선택 시스템 프롬프트 오버라이드.
+            None이면 코드 내장 PLANNER_SYSTEM_PROMPT_TEMPLATE(한국어 기본값)를 사용한다.
+            {output_language}/{tool_schemas} 플레이스홀더가 보존되어야 한다.
+        planner_user_prompt: Planner 사용자 프롬프트 오버라이드.
+            None이면 코드 내장 PLANNER_USER_PROMPT를 사용한다.
+            {query}/{context} 플레이스홀더가 보존되어야 한다.
+        synthesizer_system_prompt: Synthesizer 답변생성 시스템 프롬프트 오버라이드.
+            None이면 코드 내장 SYNTHESIZER_SYSTEM_PROMPT_TEMPLATE를 사용한다.
+            {output_language} 플레이스홀더가 보존되어야 한다.
+        synthesizer_user_prompt: Synthesizer 사용자 프롬프트 오버라이드.
+            None이면 코드 내장 SYNTHESIZER_USER_PROMPT를 사용한다.
+            {query}/{tool_results} 플레이스홀더가 보존되어야 한다.
+        synthesizer_error_message: Synthesizer 답변생성 실패 시 폴백 메시지 오버라이드.
+            None이면 코드 내장 한국어 기본 메시지를 사용한다.
+        reflector_system_prompt: Reflector 품질평가 시스템 프롬프트 오버라이드.
+            None이면 코드 내장 REFLECTOR_SYSTEM_PROMPT_TEMPLATE를 사용한다.
+            {output_language} 플레이스홀더가 보존되어야 한다.
+        reflector_user_prompt: Reflector 사용자 프롬프트 오버라이드.
+            None이면 코드 내장 REFLECTOR_USER_PROMPT를 사용한다.
+            {query}/{answer}/{context} 플레이스홀더가 보존되어야 한다.
+        reflector_empty_context: Reflector 컨텍스트 누락 시 대체 문자열 오버라이드.
+            None이면 코드 내장 "컨텍스트 없음"을 사용한다.
+        orchestrator_error_message: Orchestrator 최상위 예외 시 사용자에게 반환되는
+            답변 메시지 오버라이드. None이면 코드 내장 한국어 기본 메시지를 사용한다.
+        orchestrator_empty_context: Orchestrator가 Reflection용 컨텍스트를 추출할 때
+            수집된 도구 결과가 없으면 사용하는 대체 문자열 오버라이드. 사용자에게
+            직접 노출되지 않고 LLM 프롬프트 내부 신호로만 쓰인다. None이면 코드 내장
+            "검색 결과 없음"을 사용한다.
     """
 
     # 도구 선택 방식: "llm" | "rule_based" | "hybrid"
@@ -82,6 +110,32 @@ class AgentConfig:
 
     # 에이전트 답변/추론 출력 언어 (기본: 한국어, 외주 언어 변경용)
     output_language: str = "한국어"
+
+    # === 프롬프트 오버라이드 설정 (config 외부화) ===
+    # 모든 필드는 None 기본값이며, None일 때 각 컴포넌트의 코드 내장 기본
+    # 프롬프트(현 한국어 프롬프트)를 그대로 사용한다 → 회귀 0.
+    # 운영자는 tools.yaml의 mcp.agent.prompts.* 로 코드 포크 없이 오버라이드한다.
+
+    # Planner: 도구선택 시스템 프롬프트 ({output_language}/{tool_schemas} 보존 필수)
+    planner_system_prompt: str | None = None
+    # Planner: 사용자 프롬프트 ({query}/{context} 보존 필수)
+    planner_user_prompt: str | None = None
+    # Synthesizer: 답변생성 시스템 프롬프트 ({output_language} 보존 필수)
+    synthesizer_system_prompt: str | None = None
+    # Synthesizer: 사용자 프롬프트 ({query}/{tool_results} 보존 필수)
+    synthesizer_user_prompt: str | None = None
+    # Synthesizer: 답변생성 실패 폴백 메시지
+    synthesizer_error_message: str | None = None
+    # Reflector: 품질평가 시스템 프롬프트 ({output_language} 보존 필수)
+    reflector_system_prompt: str | None = None
+    # Reflector: 사용자 프롬프트 ({query}/{answer}/{context} 보존 필수)
+    reflector_user_prompt: str | None = None
+    # Reflector: 컨텍스트 누락 시 대체 문자열
+    reflector_empty_context: str | None = None
+    # Orchestrator: 최상위 예외 시 사용자 노출 답변 메시지
+    orchestrator_error_message: str | None = None
+    # Orchestrator: Reflection 컨텍스트 추출 시 도구 결과 부재 대체 문자열(내부 신호)
+    orchestrator_empty_context: str | None = None
 
     def __post_init__(self) -> None:
         """설정값 검증"""

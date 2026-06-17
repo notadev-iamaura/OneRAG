@@ -42,8 +42,11 @@ weaviate:
 
   # Collection Schema 설정 (초기화 시 사용)
   schema:
-    # 한국어 토크나이저 사용 여부
-    use_korean_tokenizer: true
+    # content(BM25 대상) 필드 토크나이저. 미설정/미지원 값이면 word로 폴백.
+    # word(기본) | whitespace | lowercase | field | trigram | gse | gse_ch |
+    # kagome_kr(한국어 형태소) | kagome_ja(일본어). 한국어 검색 품질을 높이려면
+    # kagome_kr, 일본어 코퍼스는 kagome_ja로(해당 weaviate 모듈 가용 시).
+    bm25_tokenization: "word"
     # Vectorizer 설정 (외부 임베딩 사용)
     vectorizer: "none"
     # Vector 차원 (Gemini embedding-001: 3072)

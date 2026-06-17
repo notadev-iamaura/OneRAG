@@ -22,6 +22,7 @@ vector_db:
 imports:
   - features/embeddings.yaml
   - features/generation.yaml      # 답변 생성 전용 (사용자 응답 LLM — llm.yaml과 용도 분리)
+  - features/response_languages.yaml # 다국어 응답 프로파일 (generation 하위 — ko/en 동봉, ja는 예시 주석)
   - features/query_expansion.yaml # 쿼리 확장 전용 (신규)
   - features/privacy.yaml         # PII 마스킹 (di_container.privacy_masker 필수)
   - features/bm25.yaml            # BM25 전처리 (synonym/stopword/user_dictionary 필수)

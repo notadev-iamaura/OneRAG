@@ -54,11 +54,27 @@ reranking:
   # Provider별 설정
   # ========================================
 
+  # ────────────────────────────────────────────────────────────────────
+  # LLM approach 랭킹 프롬프트 오버라이드 (도메인/언어 범용화)
+  # ────────────────────────────────────────────────────────────────────
+  # 아래 provider별 prompt_template 키는 기본적으로 주석 처리되어 있다.
+  # 미설정 시 각 리랭커의 코드 내장 기본 프롬프트가 사용된다(회귀 0).
+  #   - google / openai : 영어 기본 프롬프트, 플레이스홀더 {query} {documents_text} {top_k}
+  #   - openrouter      : 한국어 기본 프롬프트, 플레이스홀더 {query} {docs_text}
+  # 코퍼스 언어/도메인에 맞춰 랭킹 지시를 바꾸려면 주석을 해제하고 작성하라.
+  # 주의: JSON 응답 예시의 중괄호는 str.format() 이스케이프를 위해 {{ }}로 적어야 한다.
+
   # Google (Gemini) - LLM approach용
   google:
     model: "gemini-flash-lite-latest"
     max_documents: 20
     timeout: 15
+    # prompt_template: |
+    #   You are a document ranking expert. Evaluate documents for "{query}".
+    #   Documents:
+    #   {documents_text}
+    #   Select the top {top_k}. Respond ONLY with JSON:
+    #   {{"results": [{{"index": 0, "score": 0.95}}]}}
 
   # OpenAI - LLM approach용
   openai:
@@ -67,12 +83,24 @@ reranking:
     timeout: 15
     verbosity: "low"
     reasoning_effort: "minimal"
+    # prompt_template: |
+    #   You are a document ranking expert. Evaluate documents for "{query}".
+    #   Documents:
+    #   {documents_text}
+    #   Select the top {top_k}. Respond ONLY with JSON:
+    #   {{"results": [{{"index": 0, "score": 0.95}}]}}
 
   # OpenRouter - LLM approach용
   openrouter:
     model: "google/gemini-2.5-flash-lite"
     max_documents: 20
     timeout: 15
+    # prompt_template: |
+    #   다음 문서들을 쿼리와의 관련성에 따라 순위를 매겨주세요.
+    #   쿼리: {query}
+    #   문서들:
+    #   {docs_text}
+    #   JSON 형식으로 응답: {{"rankings": [{{"index": 0, "score": 0.9}}]}}
 
   # Jina - cross-encoder 및 late-interaction용
   # approach에 따라 적절한 모델 자동 선택

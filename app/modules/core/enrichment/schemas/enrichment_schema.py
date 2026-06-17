@@ -122,6 +122,16 @@ class EnrichmentConfig(BaseModel):
         cache_enabled: 캐싱 활성화 여부
         min_confidence: 최소 신뢰도 점수
         fallback_to_original: 실패 시 원본 사용 여부
+        system_prompt: enrichment 시스템 프롬프트 오버라이드 (config 외부화).
+            None이면 코드 내장 SYSTEM_PROMPT(한국어 기본값)를 사용한다 → 회귀 0.
+        few_shot_examples: Few-shot 예시 블록 오버라이드.
+            None이면 코드 내장 FEW_SHOT_EXAMPLES를 사용한다.
+        user_prompt_template: 단건 사용자 프롬프트 템플릿 오버라이드.
+            None이면 코드 내장 USER_PROMPT_TEMPLATE를 사용한다. {content} 보존 필수.
+        batch_user_prompt_template: 배치 사용자 프롬프트 템플릿 오버라이드.
+            None이면 코드 내장 BATCH_USER_PROMPT_TEMPLATE를 사용한다 → 회귀 0.
+            {doc_count}, {batch_content} 보존 필수. (단건과 출력 형식이 달라 별도 키.)
+        include_examples: Few-shot 예시 포함 여부 (기본: True, 기존 동작 보존).
 
     사용 예시:
         >>> config = EnrichmentConfig(
@@ -156,6 +166,34 @@ class EnrichmentConfig(BaseModel):
     )
 
     fallback_to_original: bool = Field(default=True, description="실패 시 원본 사용 여부")
+
+    # === 프롬프트 오버라이드 (config 외부화) ===
+    # 모든 필드 None 기본값 → 코드 내장 한국어 기본 프롬프트 사용 (회귀 0).
+    # 운영자는 enrichment.yaml의 enrichment.prompt.* 로 코드 포크 없이 오버라이드한다.
+    system_prompt: str | None = Field(
+        default=None, description="enrichment 시스템 프롬프트 오버라이드 (None=코드 내장 기본값)"
+    )
+
+    few_shot_examples: str | None = Field(
+        default=None, description="Few-shot 예시 블록 오버라이드 (None=코드 내장 기본값)"
+    )
+
+    user_prompt_template: str | None = Field(
+        default=None,
+        description="단건 사용자 프롬프트 템플릿 오버라이드 ({content} 보존, None=코드 내장 기본값)",
+    )
+
+    batch_user_prompt_template: str | None = Field(
+        default=None,
+        description=(
+            "배치 사용자 프롬프트 템플릿 오버라이드 "
+            "({doc_count}, {batch_content} 보존, None=코드 내장 기본값)"
+        ),
+    )
+
+    include_examples: bool = Field(
+        default=True, description="Few-shot 예시 포함 여부 (기존 동작 보존)"
+    )
 
     class Config:
         """Pydantic 설정"""
