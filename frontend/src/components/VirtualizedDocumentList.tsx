@@ -18,6 +18,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useMenuMessages } from '../i18n/useMenuLocale';
+import { format, formatDate } from '../i18n/format';
 
 interface VirtualizedDocumentListProps {
   documents: Document[];
@@ -37,15 +39,18 @@ export const VirtualizedDocumentList: React.FC<VirtualizedDocumentListProps> = (
   onDocumentDelete,
   onDocumentDownload,
 }) => {
+  // i18n: 상태 라벨/크기·업로드 메타/빈 상태(현재 로케일)
+  const { messages, locale } = useMenuMessages();
+
   const Row = ({ index, style }: RowProps) => {
     const document = documents[index];
 
     const getStatusLabel = (status: string) => {
       switch (status) {
-        case 'completed': return '완료';
-        case 'processing': return '처리중';
-        case 'failed': return '실패';
-        default: return '알 수 없음';
+        case 'completed': return messages.virtualDocList.statusCompleted;
+        case 'processing': return messages.virtualDocList.statusProcessing;
+        case 'failed': return messages.virtualDocList.statusFailed;
+        default: return messages.virtualDocList.statusUnknown;
       }
     };
 
@@ -92,11 +97,11 @@ export const VirtualizedDocumentList: React.FC<VirtualizedDocumentListProps> = (
             <div className="space-y-1.5 flex-1">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                 <HardDrive className="w-3 h-3" />
-                <span>크기: {formatFileSize(document.size)}</span>
+                <span>{format(messages.virtualDocList.sizeLabel, { size: formatFileSize(document.size) })}</span>
               </div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                 <Clock className="w-3 h-3" />
-                <span>업로드: {new Date(document.uploadedAt).toLocaleDateString('ko-KR')}</span>
+                <span>{format(messages.virtualDocList.uploadLabel, { date: formatDate(document.uploadedAt, locale) })}</span>
               </div>
             </div>
 
@@ -148,7 +153,7 @@ export const VirtualizedDocumentList: React.FC<VirtualizedDocumentListProps> = (
         <div className="w-16 h-16 rounded-full bg-muted/30 flex items-center justify-center">
           <FileText className="w-8 h-8 opacity-20" />
         </div>
-        <p className="font-bold">문서가 없습니다</p>
+        <p className="font-bold">{messages.documentsTab.emptyTitle}</p>
       </div>
     );
   }
