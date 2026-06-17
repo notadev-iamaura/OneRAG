@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 
 interface AccessControlProps {
   isOpen: boolean;
@@ -54,7 +55,10 @@ const getAccessCode = (): string => {
   return FALLBACK_ACCESS_CODE;
 };
 
-export function AccessControl({ isOpen, onAccessGranted, onCancel, title = "관리자 접근" }: AccessControlProps) {
+export function AccessControl({ isOpen, onAccessGranted, onCancel, title }: AccessControlProps) {
+  const { messages } = useMenuMessages();
+  // 외부에서 title을 전달하면 그 값을, 미전달 시 현재 로케일 기본 라벨을 사용한다.
+  const resolvedTitle = title ?? messages.accessControl.title;
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
 
@@ -74,7 +78,7 @@ export function AccessControl({ isOpen, onAccessGranted, onCancel, title = "관�
       setAdminAccess();
       onAccessGranted();
     } else {
-      setError('잘못된 접근코드입니다.');
+      setError(messages.accessControl.invalidCode);
       setCode('');
     }
   };
@@ -87,10 +91,10 @@ export function AccessControl({ isOpen, onAccessGranted, onCancel, title = "관�
             <Lock className="h-7 w-7 text-primary" />
           </div>
           <DialogTitle className="text-2xl font-bold tracking-tight text-foreground">
-            {title}
+            {resolvedTitle}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground mt-2">
-            이 페이지에 접근하려면 접근코드를 입력하세요.
+            {messages.accessControl.description}
           </DialogDescription>
         </DialogHeader>
 
@@ -107,7 +111,7 @@ export function AccessControl({ isOpen, onAccessGranted, onCancel, title = "관�
           <div className="space-y-4">
             <Input
               type="password"
-              placeholder="접근코드를 입력하세요"
+              placeholder={messages.accessControl.placeholder}
               value={code}
               onChange={(e) => setCode(e.target.value)}
               className="h-12 border-border/60 rounded-xl focus-visible:ring-primary/20 transition-all font-mono text-center tracking-widest text-lg"
@@ -122,13 +126,13 @@ export function AccessControl({ isOpen, onAccessGranted, onCancel, title = "관�
               onClick={onCancel}
               className="flex-1 sm:flex-none h-11 px-6 rounded-xl border-border/60 font-semibold hover:bg-muted"
             >
-              취소
+              {messages.accessControl.cancel}
             </Button>
             <Button
               type="submit"
               className="flex-1 sm:flex-none h-11 px-8 rounded-xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
-              확인
+              {messages.accessControl.confirm}
             </Button>
           </DialogFooter>
         </form>

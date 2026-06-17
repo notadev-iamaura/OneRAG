@@ -4,6 +4,8 @@ import { RotateCcw, Bug, ArrowLeft, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { menuMessages } from '../i18n/menuMessages';
+import { getStoredMenuLocale } from '../i18n/useMenuLocale';
 
 interface Props {
   children: ReactNode;
@@ -82,6 +84,9 @@ class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
+      // 클래스 컴포넌트라 훅을 쓸 수 없으므로, 렌더 시점에 저장된 로케일의 카탈로그를 직접 읽는다.
+      const messages = menuMessages[getStoredMenuLocale()];
+
       return (
         <div className="flex items-center justify-center min-h-[60vh] p-6 bg-background animate-in fade-in duration-500">
           <Card className="max-w-xl w-full border-border/60 shadow-xl overflow-hidden">
@@ -92,10 +97,10 @@ class ErrorBoundary extends Component<Props, State> {
                 </div>
               </div>
               <CardTitle className="text-2xl font-bold text-foreground">
-                오류가 발생했습니다
+                {messages.errorBoundary.title}
               </CardTitle>
               <CardDescription className="text-muted-foreground mt-2">
-                예상치 못한 오류가 발생했습니다. 아래 버튼을 클릭하여 다시 시도해주세요.
+                {messages.errorBoundary.description}
               </CardDescription>
             </CardHeader>
 
@@ -123,10 +128,10 @@ class ErrorBoundary extends Component<Props, State> {
               <Button
                 onClick={this.handleReset}
                 className="gap-2 font-bold min-w-[140px] rounded-xl shadow-md shadow-primary/20"
-                title="현재 화면을 초기화하고 다시 로드합니다"
+                title={messages.errorBoundary.resetTitle}
               >
                 <RotateCcw className="h-4 w-4" />
-                화면 새로고침 (초기화)
+                {messages.errorBoundary.reset}
               </Button>
               <Button
                 variant="outline"
@@ -134,13 +139,13 @@ class ErrorBoundary extends Component<Props, State> {
                 className="gap-2 font-bold min-w-[140px] rounded-xl border-border/60"
               >
                 <ArrowLeft className="h-4 w-4" />
-                이전으로 돌아가기
+                {messages.errorBoundary.goBack}
               </Button>
             </CardFooter>
 
             <div className="text-center pb-6">
               <p className="text-[11px] text-muted-foreground/60 font-medium tracking-tight">
-                문제가 지속되면 관리자에게 문의해주세요.
+                {messages.errorBoundary.contactAdmin}
               </p>
             </div>
           </Card>

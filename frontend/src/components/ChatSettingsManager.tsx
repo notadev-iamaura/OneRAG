@@ -39,6 +39,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useMenuMessages } from '../i18n/useMenuLocale';
+import { format } from '../i18n/format';
 import { readOperatorSettings, writeOperatorSettings } from '../config/operatorSettings';
 
 // 편집 언어 탭 라벨 (각 로케일의 자국어 표기 — UI 로케일과 무관하게 고정).
@@ -54,7 +55,7 @@ interface ChatSettingsManagerProps {
 export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave }) => {
   const { toast } = useToast();
   // 현재 UI 로케일을 편집 대상의 기본값으로 사용한다.
-  const { locale } = useMenuMessages();
+  const { locale, messages } = useMenuMessages();
 
   // 편집 대상 로케일 (기본: 현재 UI 로케일)
   const [activeLocale, setActiveLocale] = useState<MenuLocale>(locale);
@@ -139,7 +140,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
   // 추천 질문 추가
   const handleAddSuggestion = () => {
     if (settings.suggestions.length >= 10) {
-      setErrors(['추천 질문은 최대 10개까지 추가할 수 있습니다']);
+      setErrors([messages.chatSettings.maxSuggestions]);
       return;
     }
     setSettings((prev) => ({
@@ -152,7 +153,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
   // 추천 질문 삭제
   const handleDeleteSuggestion = (index: number) => {
     if (settings.suggestions.length <= 1) {
-      setErrors(['최소 1개의 추천 질문이 필요합니다']);
+      setErrors([messages.chatSettings.minSuggestions]);
       return;
     }
     const newSuggestions = settings.suggestions.filter((_, i) => i !== index);
@@ -167,20 +168,20 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       return;
     }
     if (error instanceof MissingAdminKeyError) {
-      const message = '관리자 API 키가 필요합니다';
+      const message = messages.chatSettings.adminKeyRequired;
       setErrors([message]);
       toast({
         variant: 'destructive',
-        title: '저장 실패',
+        title: messages.chatSettings.saveFailedTitle,
         description: message,
       });
       return;
     }
-    const detail = error instanceof Error ? error.message : '설정 저장 중 오류가 발생했습니다';
+    const detail = error instanceof Error ? error.message : messages.chatSettings.saveErrorFallback;
     setErrors([detail]);
     toast({
       variant: 'destructive',
-      title: '저장 실패',
+      title: messages.chatSettings.saveFailedTitle,
       description: detail,
     });
   };
@@ -195,8 +196,8 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       setErrors([]);
       setHasChanges(false);
       toast({
-        title: '설정 저장 완료',
-        description: '대화 시작 화면 설정이 저장되었습니다.',
+        title: messages.chatSettings.saveSuccessTitle,
+        description: messages.chatSettings.saveSuccessDescription,
       });
       if (onSave) {
         onSave(saved);
@@ -218,8 +219,8 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       setErrors([]);
       setHasChanges(false);
       toast({
-        title: '설정 초기화',
-        description: '기본 설정으로 복원되었습니다.',
+        title: messages.chatSettings.resetSuccessTitle,
+        description: messages.chatSettings.resetSuccessDescription,
       });
       if (onSave) {
         onSave(def);
@@ -257,7 +258,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
 
   // 초기화 클릭 (확인 → 키 확인 → 초기화)
   const handleReset = () => {
-    if (!window.confirm('기본 설정으로 초기화하시겠습니까?')) {
+    if (!window.confirm(messages.chatSettings.resetConfirm)) {
       return;
     }
     runWithAdminKey('reset');
@@ -293,14 +294,14 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CardTitle className="text-xl font-bold">챗봇 Empty State 설정</CardTitle>
+            <CardTitle className="text-xl font-bold">{messages.chatSettings.cardTitle}</CardTitle>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Info className="h-4 w-4 text-muted-foreground/60 cursor-help" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  채팅이 비어있을 때 표시되는 메시지와 추천 질문을 설정합니다
+                  {messages.chatSettings.cardTooltip}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -310,7 +311,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
           </Badge>
         </div>
         <CardDescription className="text-sm">
-          사용자가 채팅을 시작할 때 표시되는 환영 메시지와 추천 질문을 로케일별로 서버에서 관리합니다
+          {messages.chatSettings.cardDescription}
         </CardDescription>
       </CardHeader>
 
@@ -319,8 +320,8 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
       <CardContent className="pt-6 space-y-8">
         {/* 편집 언어 탭 */}
         <div className="space-y-2">
-          <Label className="text-sm font-bold">편집 언어</Label>
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="편집 언어 선택">
+          <Label className="text-sm font-bold">{messages.chatSettings.editLanguageLabel}</Label>
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label={messages.chatSettings.editLanguageSelect}>
             {MENU_LOCALES.map((loc) => (
               <Button
                 key={loc}
@@ -342,7 +343,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
         {keyPromptOpen && (
           <Alert className="bg-amber-500/5 border-amber-500/30">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle className="text-xs font-bold">관리자 API 키가 필요합니다</AlertTitle>
+            <AlertTitle className="text-xs font-bold">{messages.chatSettings.adminKeyRequiredTitle}</AlertTitle>
             <AlertDescription>
               <div className="flex flex-col sm:flex-row gap-2 mt-2">
                 <Input
@@ -351,7 +352,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
                   value={keyInput}
                   onChange={(e) => setKeyInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleKeyConfirm(); }}
-                  placeholder="X-API-Key (관리자 키)"
+                  placeholder={messages.chatSettings.adminKeyPlaceholder}
                   className="rounded-xl h-9 text-xs"
                   autoComplete="off"
                   data-testid="admin-key-input"
@@ -363,7 +364,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
                     onClick={handleKeyConfirm}
                     disabled={!keyInput.trim()}
                   >
-                    확인
+                    {messages.common.confirm}
                   </Button>
                   <Button
                     size="sm"
@@ -371,7 +372,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
                     className="rounded-xl font-bold h-9"
                     onClick={handleKeyCancel}
                   >
-                    취소
+                    {messages.common.cancel}
                   </Button>
                 </div>
               </div>
@@ -383,7 +384,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
         {errors.length > 0 && (
           <Alert variant="destructive" className="bg-destructive/5 border-destructive/20 text-destructive animate-in fade-in slide-in-from-top-2">
             <AlertCircle className="h-4 w-4" />
-            <AlertTitle className="text-xs font-bold">오류가 발생했습니다</AlertTitle>
+            <AlertTitle className="text-xs font-bold">{messages.chatSettings.errorTitle}</AlertTitle>
             <AlertDescription className="text-xs">
               <ul className="list-disc list-inside space-y-1 mt-1">
                 {errors.map((error, index) => (
@@ -398,39 +399,39 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
           {/* 메인 메시지 */}
           <div className="space-y-2.5">
             <div className="flex items-center gap-2">
-              <Label htmlFor="mainMessage" className="text-sm font-bold">메인 메시지</Label>
+              <Label htmlFor="mainMessage" className="text-sm font-bold">{messages.chatSettings.mainMessageLabel}</Label>
               <Badge className="h-4 text-[9px] px-1 font-extrabold uppercase bg-primary/20 text-primary border-none">Required</Badge>
             </div>
             <Input
               id="mainMessage"
               value={settings.mainMessage}
               onChange={(e) => handleMainMessageChange(e.target.value)}
-              placeholder="무엇을 도와드릴까요?"
+              placeholder={messages.chatSettings.mainMessagePlaceholder}
               maxLength={100}
               className="rounded-xl border-border/60 focus:ring-primary/20"
             />
             <p className="text-[10px] text-muted-foreground/60 text-right font-medium">
-              {settings.mainMessage.length} / 100자
+              {format(messages.chatSettings.mainMessageCounter, { count: settings.mainMessage.length })}
             </p>
           </div>
 
           {/* 서브 메시지 */}
           <div className="space-y-2.5">
             <div className="flex items-center gap-2">
-              <Label htmlFor="subMessage" className="text-sm font-bold">보조 메시지</Label>
+              <Label htmlFor="subMessage" className="text-sm font-bold">{messages.chatSettings.subMessageLabel}</Label>
               <Badge className="h-4 text-[9px] px-1 font-extrabold uppercase bg-primary/20 text-primary border-none">Required</Badge>
             </div>
             <Textarea
               id="subMessage"
               value={settings.subMessage}
               onChange={(e) => handleSubMessageChange(e.target.value)}
-              placeholder="RAG 기반 AI가 문서를 분석하여 정확한 답변을 제공합니다"
+              placeholder={messages.chatSettings.subMessagePlaceholder}
               maxLength={200}
               rows={3}
               className="rounded-xl border-border/60 focus:ring-primary/20 resize-none min-h-[80px]"
             />
             <p className="text-[10px] text-muted-foreground/60 text-right font-medium">
-              {settings.subMessage.length} / 200자
+              {format(messages.chatSettings.subMessageCounter, { count: settings.subMessage.length })}
             </p>
           </div>
 
@@ -438,7 +439,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-border/30 pb-2">
               <div className="flex items-center gap-2">
-                <Label className="text-sm font-bold">추천 질문</Label>
+                <Label className="text-sm font-bold">{messages.chatSettings.suggestionsLabel}</Label>
                 <Badge variant="secondary" className="h-4 text-[10px] px-1.5 font-bold">
                   {settings.suggestions.length} / 10
                 </Badge>
@@ -451,7 +452,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
                 disabled={settings.suggestions.length >= 10}
               >
                 <Plus className="h-3.5 w-3.5 mr-1" />
-                추가
+                {messages.chatSettings.addSuggestion}
               </Button>
             </div>
 
@@ -463,12 +464,12 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
                       data-testid={`suggestion-input-${index}`}
                       value={suggestion}
                       onChange={(e) => handleSuggestionChange(index, e.target.value)}
-                      placeholder={`추천 질문 ${index + 1}`}
+                      placeholder={format(messages.chatSettings.suggestionPlaceholder, { index: index + 1 })}
                       maxLength={200}
                       className="rounded-xl border-border/60 focus:ring-primary/20"
                     />
                     <p className="text-[9px] text-muted-foreground/40 text-right pr-2">
-                      {suggestion.length} / 200자
+                      {format(messages.chatSettings.suggestionCounter, { count: suggestion.length })}
                     </p>
                   </div>
                   <TooltipProvider>
@@ -484,7 +485,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="left">삭제</TooltipContent>
+                      <TooltipContent side="left">{messages.chatSettings.deleteSuggestion}</TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
                 </div>
@@ -505,7 +506,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
           disabled={saving}
         >
           <RotateCcw className="h-4 w-4 mr-2 opacity-60" />
-          기본값으로 초기화
+          {messages.chatSettings.resetToDefault}
         </Button>
         <Button
           size="sm"
@@ -514,7 +515,7 @@ export const ChatSettingsManager: React.FC<ChatSettingsManagerProps> = ({ onSave
           disabled={saving}
         >
           <Save className="h-4 w-4 mr-2" />
-          설정 저장
+          {messages.chatSettings.saveSettings}
         </Button>
       </CardFooter>
     </Card>

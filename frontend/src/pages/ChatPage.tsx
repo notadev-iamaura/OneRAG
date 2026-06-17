@@ -2,6 +2,7 @@ import React from 'react';
 import { ChatTab } from '../components/ChatTab';
 import { useToast } from '@/hooks/use-toast';
 import { ToastMessage } from '../types';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 
 interface ChatPageProps {
   /** 임베드(embed) 모드 여부. /embed/chat 라우트에서 true로 전달된다. */
@@ -10,11 +11,12 @@ interface ChatPageProps {
 
 export default function ChatPage({ embedMode = false }: ChatPageProps) {
   const { toast } = useToast();
+  const { messages } = useMenuMessages();
 
   // 토스트 메시지 표시 (ChatTab에서 prop으로 전달받음)
   const showToast = (message: Omit<ToastMessage, 'id'>) => {
     toast({
-      title: message.type === 'error' ? '오류' : message.type === 'success' ? '성공' : '알림',
+      title: message.type === 'error' ? messages.common.toastError : message.type === 'success' ? messages.common.toastSuccess : messages.common.toastInfo,
       description: message.message,
       variant: message.type === 'error' ? 'destructive' : 'default',
     });

@@ -8,6 +8,7 @@ import { useConfig } from '../core/useConfig';
 import { Toaster } from '@/components/ui/toaster';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { cn } from '@/lib/utils';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,7 @@ interface AppLayoutProps {
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const { config } = useConfig();
+  const { messages } = useMenuMessages();
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     const saved = localStorage.getItem('sidebarOpen');
     return saved ? JSON.parse(saved) : true;
@@ -102,11 +104,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   // 현재 페이지 이름 추출
   const getCurrentPageName = () => {
     const path = location.pathname;
-    if (path === '/bot') return '챗봇';
-    if (path === '/upload') return '문서 관리';
-    if (path === '/prompts') return '프롬프트';
-    if (path === '/admin') return '관리자 대시보드';
-    if (path === '/admin/settings') return '글로벌 운영 설정';
+    if (path === '/bot') return messages.nav.chatbot;
+    if (path === '/upload') return messages.nav.documents;
+    if (path === '/prompts') return messages.nav.prompts;
+    if (path === '/admin') return messages.nav.adminDashboard;
+    if (path === '/admin/settings') return messages.nav.globalOperationSettings;
     return '';
   };
 

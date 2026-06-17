@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 import { usePromptManager } from '../hooks/prompt';
+import { useMenuMessages } from '../i18n/useMenuLocale';
 import {
   PromptHeader, PromptFilterBar, PromptCategoryTabs,
   PromptEditDialog, PromptViewDialog,
@@ -22,6 +23,7 @@ import {
 } from './prompt';
 
 const PromptManager: React.FC = () => {
+  const { messages } = useMenuMessages();
   const pm = usePromptManager();
 
   /** 편집 다이얼로그 닫힐 때 모달 에러 초기화 */
@@ -42,7 +44,7 @@ const PromptManager: React.FC = () => {
         {pm.error && (
           <Alert variant="destructive" className="bg-destructive/10 text-destructive border-none rounded-2xl animate-in slide-in-from-top-2 duration-300">
             <Info className="h-4 w-4" />
-            <AlertTitle className="font-bold">오류 발생</AlertTitle>
+            <AlertTitle className="font-bold">{messages.promptManager.errorTitle}</AlertTitle>
             <AlertDescription className="text-sm">{pm.error}</AlertDescription>
             <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-6 w-6 text-destructive hover:bg-destructive/20" onClick={() => pm.setError(null)}>
               <X className="h-4 w-4" />
@@ -60,7 +62,7 @@ const PromptManager: React.FC = () => {
         <Alert className="bg-amber-500/10 border-none text-amber-700 dark:text-amber-400 rounded-2xl">
           <Info className="h-4 w-4" />
           <AlertDescription className="text-sm font-medium">
-            프롬프트는 오직 1개만 활성화할 수 있습니다. 새로운 프롬프트를 활성화하면 기존 프롬프트는 자동으로 비활성화됩니다.
+            {messages.promptManager.activationRule}
           </AlertDescription>
         </Alert>
 
