@@ -4,6 +4,7 @@ import { Loader2, AlertCircle, MessageSquare, UploadCloud, BrainCircuit, Setting
 import ErrorBoundary from './components/ErrorBoundary';
 import { AppLayout } from './components/AppLayout';
 import { BRAND_CONFIG } from './config/brand';
+import { updateDocumentTitle } from './utils/accessibility';
 import { FeatureProvider } from './core/FeatureProvider';
 import { useIsModuleEnabled } from './core/useFeature';
 import { ConfigProvider } from './core/ConfigProvider';
@@ -330,6 +331,12 @@ function RuntimeProviders() {
  * - Router: 라우팅 관리
  */
 function App() {
+  // 브라우저 탭 제목을 브랜드 설정(BRAND_CONFIG.appTitle)에 배선합니다.
+  // 기본값 'OneRAG'는 index.html 정적 title과 동일(회귀 0)하며, 리브랜딩 시 탭 제목까지 자동 반영됩니다.
+  React.useEffect(() => {
+    updateDocumentTitle(BRAND_CONFIG.appTitle);
+  }, []);
+
   return (
     <ConfigProvider>
       <RuntimeProviders />
