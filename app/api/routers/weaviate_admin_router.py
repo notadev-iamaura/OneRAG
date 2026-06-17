@@ -115,7 +115,7 @@ async def check_weaviate_status():
         )
 
         # 샘플 문서 가져오기 (도메인 중립)
-        # 특정 도메인(venue 등) 필드를 하드코딩하지 않고, 실제 존재하는
+        # 특정 도메인 필드(예: field_a/field_b)를 하드코딩하지 않고, 실제 존재하는
         # 메타데이터를 그대로 노출한다. 대용량 content는 미리보기로 축약하고,
         # 임의 메타데이터는 metadata_json을 파싱해 펼쳐 보여준다.
         sample_documents = []
@@ -337,8 +337,8 @@ async def get_weaviate_analytics():
         # 모든 문서 가져오기 (배치 처리)
         from collections import Counter
 
-        # 엔티티 분포 집계 대상 필드는 도메인마다 다르다(웨딩=entity_name,
-        # 다른 도메인=item_title 등). 코드에 하드코딩하지 않고 config에서
+        # 엔티티 분포 집계 대상 필드는 도메인마다 다르다(예: entity_name,
+        # item_title 등). 코드에 하드코딩하지 않고 config에서
         # 파생한다. 미설정 시 기본 "entity_name"으로 폴백(회귀 0).
         entity_field = _resolve_entity_distribution_field()
 

@@ -85,7 +85,7 @@ domain:
     # Notion 속성→본문 결합 시 건너뛸 속성명(제목으로 이미 포함된 엔티티명 컬럼).
     # 미설정/빈 목록이면 코드 기본값({"업체명","이름","Name"})을 사용한다(회귀 0).
     # 비한국/타 도메인 Notion DB는 자신의 제목 속성명을 지정하세요.
-    # 예: ["Company", "会社名", "Title"]
+    # 예: ["Company", "<자국어 회사명 속성>", "Title"]
     skip_property_keys: []
 
     # Notion 페이지 제목에서 제거할 접두/마커 문자 목록(특정 워크스페이스 명명 규칙용).
@@ -132,24 +132,24 @@ domain:
     # (b) 검색 필터 타입맵, (c) 관리자 샘플 응답에 모두 반영됩니다.
     #
     # type: text | int | number | text_array (생략 시 text)
-    # 예시(venue=웨딩홀/식당/숙소 도메인):
+    # 예시(임의 도메인 — 필드명/설명은 자기 도메인에 맞게 교체):
     #   schema_fields:
     #     - name: entity_name
     #       type: text
-    #       description: 엔티티 이름
-    #     - name: location
+    #       description: 엔티티 이름(예: item_title)
+    #     - name: field_a
     #       type: text
-    #       description: 위치/장소
-    #     - name: price
+    #       description: 도메인 특화 필드 A
+    #     - name: category
     #       type: text
-    #       description: 가격/비용
-    #     - name: capacity
+    #       description: 분류/카테고리
+    #     - name: quantity
     #       type: text
-    #       description: 수용 인원/한도
-    #     - name: rating
+    #       description: 수량/한도
+    #     - name: score
     #       type: text
-    #       description: 평점/등급
-    # 간단 매핑 형식도 허용: schema_fields: {price: text, capacity: text}
+    #       description: 점수/등급
+    # 간단 매핑 형식도 허용: schema_fields: {field_a: text, quantity: text}
     schema_fields: []
 
     # 관리자 분석(/api/admin/weaviate/analytics)의 "엔티티 분포" 통계가
@@ -180,16 +180,16 @@ domain:
       #   - 순수 숫자 추출(예: "12345" → 12345)
       #   - ISO(YYYY-MM-DD)/점표기(2025.01.01) 날짜
       #
-      # 비한국/타 통화권 운영자 예시(USD + 일본어 날짜 + 일본어 불리언):
+      # 비한국/타 통화권 운영자 예시(USD + 자국어 날짜/불리언 토큰):
       #   parsing:
-      #     null_tokens: ["null", "none", "n/a", "-", "なし"]
+      #     null_tokens: ["null", "none", "n/a", "-"]
       #     currency:
       #       strip_symbols: ["$", ",", " "]
       #       unit_multipliers: {"k": 1000, "m": 1000000}
       #     date_patterns:
-      #       - "(\\d{4})年\\s*(\\d{1,2})月\\s*(\\d{1,2})日"  # (year, month, day) 3그룹
-      #     boolean_true_tokens: ["true", "はい", "o", "yes"]
-      #     boolean_false_tokens: ["false", "いいえ", "x", "no"]
+      #       - "(\\d{4})[./-](\\d{1,2})[./-](\\d{1,2})"  # (year, month, day) 3그룹
+      #     boolean_true_tokens: ["true", "o", "yes"]
+      #     boolean_false_tokens: ["false", "x", "no"]
       parsing: {}
 
   # 5. SQL 검색 설정 (SQL Search)
@@ -206,9 +206,9 @@ domain:
   # 소스(시드/DB/커스텀)든 placeholder 토큰이 LLM에 리터럴로 누출되지 않는다.
   # 미설정/누락 키는 코드 내장 중립 기본값으로 폴백한다(회귀 0). 자기 도메인
   # 페르소나를 코드 수정 없이 주입하려면 아래를 정의하세요.
-  #   예(보험 도메인): generation: {domain_name: "보험", system_role: "보험 상품 상담 전문가"}
+  #   예(임의 도메인): generation: {domain_name: "<도메인명>", system_role: "<도메인명> 상담 어시스턴트"}
   generation:
-    domain_name: ""          # 도메인 명사(예: "보험"). 빈 값이면 중립.
+    domain_name: ""          # 도메인 명사(예: "<도메인명>"). 빈 값이면 중립.
     system_role: ""          # 어시스턴트 역할 한 줄. 빈 값이면 코드 중립 기본.
     domain_description: ""    # 도메인/답변 설명 한 줄. 빈 값이면 코드 중립 기본.
     domain_context: ""        # 상세 스타일 프롬프트의 <context> 본문(선택).

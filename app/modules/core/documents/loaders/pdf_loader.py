@@ -2,12 +2,12 @@
 PDF Document Loader
 PDF 파일 로딩 전략 구현
 
-차용/개선 사항(JapanRAG 백포트):
+차용/개선 사항:
 - #13: 스캔/빈 페이지를 폐기하지 않고 scanned_page/extraction_warnings 메타로 보존해
        침묵 손실(silent loss)을 진단 가능하게 한다.
 - #12: 추출 품질 게이트(mojibake 감지 + PyMuPDF 재추출 폴백). 환경변수 opt-in, 기본 OFF.
 
-범용화: JapanRAG의 일본어 전용 CJK-공백 제거 정규식과 language_hint="ja" 하드코딩은
+범용화: 일본어 전용 CJK-공백 제거 정규식과 language_hint="ja" 하드코딩은
 차용하지 않는다(한국어 등 공백 구분 언어의 어절 경계를 파괴하므로). NFKC 정규화 +
 공백 정리만 채택하고, language_hint는 환경변수로 외부화하되 기본 None이다.
 """
@@ -70,7 +70,7 @@ def _normalize_pdf_text(text: str | None) -> str:
     """추출 텍스트를 경량 정리한다(어절 공백 보존).
 
     NFKC 정규화 + 개행 정규화(\\r\\n→\\n) + 줄당 연속 공백 단일화/strip만 수행한다.
-    JapanRAG의 일본어 전용 CJK-문자간 공백 제거 정규식은 차용하지 않는다 —
+    일본어 전용 CJK-문자간 공백 제거 정규식은 차용하지 않는다 —
     한국어/영어 등 공백 구분 언어의 어절 경계를 파괴하기 때문이다.
     """
     if not text:

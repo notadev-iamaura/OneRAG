@@ -2,12 +2,12 @@
 DOCX Document Loader
 Word 문서 파일 로딩 전략 구현
 
-차용/개선 사항(JapanRAG 백포트, #26):
+차용/개선 사항(백포트, #26):
 - 레거시 .doc 지원: LibreOffice headless 변환(soffice --convert-to docx) 후 기존
   DOCX 경로를 재사용한다.
 - graceful-optional: soffice/libreoffice 바이너리 부재 시 명확한 ValueError로 안내하고
   변환을 수행하지 않는다(필수 의존성 추가 금지 — OneRAG Docker/extras에 강제하지 않음).
-- 범용화: JapanRAG의 macOS 전용 하드코딩 경로(/opt/homebrew/bin/soffice) 대신
+- 범용화: macOS 전용 하드코딩 경로(/opt/homebrew/bin/soffice) 대신
   환경변수(ONERAG_SOFFICE_PATH)로 외부화하고 PATH 탐지를 우선한다.
 """
 

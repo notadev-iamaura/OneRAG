@@ -6,7 +6,7 @@
 
 청킹 규칙:
 1. 섹션 구분자: ————————————— (대시 8개 이상)
-2. 섹션 헤더: [정책 규정], [프로모션] 등 대괄호
+2. 섹션 헤더: [섹션 A], [섹션 B] 등 대괄호(도메인별 라벨)
 3. 불릿 리스트: •, - 로 시작하는 항목
 4. 청크 크기: ~1,000 토큰 (약 2,000자)
 5. 오버랩: 150 토큰 (약 300자)
@@ -70,7 +70,7 @@ class ChunkMetadata:
     entity_id: str  # 고유 ID
     entity_name: str  # 항목명
     category: str  # 카테고리
-    section: str  # 섹션 분류 (정책, 비용, 구성 등)
+    section: str  # 섹션 분류 (섹션 A, 섹션 B 등 도메인별 라벨)
     source_field: str  # 원본 속성 필드명
     chunk_index: int  # 청크 순서
     total_chunks: int  # 전체 청크 수
@@ -152,7 +152,7 @@ def extract_section_header(text: str) -> str | None:
     """
     대괄호로 감싼 섹션 헤더 추출
 
-    예: [정책 규정], [프로모션]
+    예: [섹션 A], [섹션 B] (도메인별 라벨)
 
     Args:
         text: 텍스트

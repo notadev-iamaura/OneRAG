@@ -134,7 +134,7 @@ class ChromaVectorStore(IVectorStore):
 
             for doc in documents:
                 doc_id = str(doc.get("id", ""))
-                # vector/embedding/dense_embedding 호환 입력 허용(JapanRAG 패턴)
+                # vector/embedding/dense_embedding 호환 입력 허용(동일 패턴)
                 vector: Sequence[float] = (
                     doc.get("vector")
                     or doc.get("embedding")
@@ -387,7 +387,7 @@ class ChromaVectorStore(IVectorStore):
         """컬렉션 객체를 메타데이터 필터로 조회한다(문서관리/인접청크 확장용).
 
         ChromaRetriever의 get_document_chunks/list_documents 등이 이 메서드에 위임한다
-        (JapanRAG ChromaVectorStore 파리티 백포트).
+        (ChromaVectorStore 파리티 백포트).
         """
 
         def _fetch_sync() -> list[dict[str, Any]]:

@@ -9,8 +9,8 @@ Weaviate 스키마 초기화 모듈
 
 설계 노트(도메인 범용화):
 - 코어 스키마는 도메인 무관 필드(content/document_id/source_file/file_* 등)만
-  정적으로 정의한다. price/capacity/rating/location/entity_name 같은 특정 도메인
-  (예: venue=웨딩홀/식당/숙소) 필드는 코어에서 분리한다.
+  정적으로 정의한다. category/quantity/score/location/entity_name 같은 특정 도메인
+  (예: 도메인 특화 필드 field_a/field_b) 필드는 코어에서 분리한다.
 - 임의 메타데이터는 이미 존재하는 `metadata_json` 단일 JSON 컬럼에 보존되므로
   타입 컬럼이 없어도 정보 손실이 없다(데이터 무손실).
 - 운영자가 자기 도메인 필드를 인덱싱 가능한 컬럼으로 노출하려면 domain.yaml의
@@ -92,13 +92,13 @@ def _load_domain_schema_fields() -> list[tuple[str, str, str]]:
 
     지원 형식(둘 다 허용):
         schema_fields:
-          - name: price
+          - name: field_a
             type: text          # text|int|number|text_array (생략 시 text)
-            description: 가격/비용
+            description: 도메인 특화 필드 설명
         # 또는 간단 매핑 형식
         schema_fields:
-          price: text
-          capacity: text
+          field_a: text
+          field_b: text
 
     Returns:
         (name, type_category, description) 튜플 목록. 코어 필드와 이름이

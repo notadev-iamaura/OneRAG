@@ -891,7 +891,7 @@ class VertexLLMClient(BaseLLMClient):
     의존성: google-auth(ADC 토큰 발급)는 코어 의존성이 아닌 선택적 extra(`vertex`)다.
     미설치 환경에서도 모듈 import는 성공하며, 인증 시점에 친절한 설치 안내 에러를 던진다.
 
-    개선점(JapanRAG 대비): _refresh_token을 threading.Lock으로 직렬화해, 멀티스레드
+    개선점: _refresh_token을 threading.Lock으로 직렬화해, 멀티스레드
     동시 갱신 시 토큰이 순간 None이 되는 race를 차단한다(임베딩 provider와 일관).
     """
 

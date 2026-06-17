@@ -1202,7 +1202,7 @@ async def process_document_background(
 
     각 단계 경계마다 (1) 취소 요청 협조 확인(#30), (2) stale attempt 가드(#30)를
     수행해, 취소 요청 시 즉시 중단하고 이전 attempt의 늦은 쓰기를 차단한다.
-    인덱싱(add_documents) 시작 이후는 취소 불가하다(JapanRAG와 동일 한계 수용).
+    인덱싱(add_documents) 시작 이후는 취소 불가하다(원본 구현과 동일 한계 수용).
     """
     indexing_started = False
     try:
