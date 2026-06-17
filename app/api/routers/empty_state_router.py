@@ -11,7 +11,7 @@
 
 인증:
 - 관리자 쓰기 엔드포인트는 OneRAG 표준 관리자 인증(`get_api_key`, FASTAPI_AUTH_KEY)을
-  사용합니다. JapanRAG의 클라이언트 노출용 EMPTY_STATE_API_KEY는 공개 OSS 배포 시
+  사용합니다. 클라이언트 노출용 EMPTY_STATE_API_KEY는 공개 OSS 배포 시
   누구나 문구를 수정할 수 있는 위험이 있어 제거했습니다.
 
 범용성:

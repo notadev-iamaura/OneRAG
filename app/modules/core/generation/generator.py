@@ -48,12 +48,12 @@ GOOGLE_OPENAI_COMPAT_URL = "https://generativelanguage.googleapis.com/v1beta/ope
 # 답변 생성 프롬프트의 언어별 문자열(시스템 규칙·응답 포맷·발췌 폴백·보안 거부·
 # 무문서 안내)을 코드가 아닌 설정으로 외부화한다.
 #
-# 범용화 핵심: 이전에는 ko/en/ja 프로파일이 이 파일에 Python dict로 박혀 있어
+# 범용화 핵심: 이전에는 언어 프로파일이 이 파일에 Python dict로 박혀 있어
 # 새 언어를 추가하려면 코드를 포크해야 했다. 이제는 운영자가
 # app/config/features/response_languages.yaml의 generation.response_languages.profiles
 # 에 언어 블록을 추가하기만 하면 코드 변경 없이 새 언어를 지원한다(코드 포크 불필요).
-# 일본어(ja)는 기본 배포에서 제거하고 해당 yaml의 '예시 언어 블록' 주석으로만
-# 안내한다(주석 해제만으로 복원, 코드 포크 불필요 = 진정한 범용화).
+# 추가 언어(예: <언어명> 블록)는 기본 배포에서 제거하고 해당 yaml의 '예시 언어 블록'
+# 주석으로만 안내한다(주석 해제만으로 복원, 코드 포크 불필요 = 진정한 범용화).
 #
 # 코드 기본값(_DEFAULT_RESPONSE_LANGUAGE_PROFILES): config가 없거나 ko/en 블록이
 # 누락돼도 시스템이 동작하도록 ko(기본)+en을 코드에 최소 동봉한다(회귀 안전판).
@@ -65,7 +65,7 @@ GOOGLE_OPENAI_COMPAT_URL = "https://generativelanguage.googleapis.com/v1beta/ope
 DEFAULT_RESPONSE_LANGUAGE = "ko"
 
 # 코드 내장 기본 프로파일(회귀 안전판). config 미설정/누락 시 사용한다.
-# yaml의 ko/en 블록과 동치이며, ja는 의도적으로 포함하지 않는다(기본 배포 제외).
+# yaml의 ko/en 블록과 동치이며, 그 외 추가 언어는 의도적으로 포함하지 않는다(기본 배포 제외).
 _DEFAULT_RESPONSE_LANGUAGE_PROFILES: dict[str, dict[str, Any]] = {
     # 기본 프로파일: 기존 한국어 하드코딩과 동치(회귀 안전판).
     # "{output_language}"는 generation.output_language로 치환되어 기존
@@ -217,7 +217,7 @@ _PII_SOFT_FLUSH = 80
 # 경계 스패닝 패턴의 최대 폭(이름 4자 + \s* + 접미사 등)을 덮도록 32자로 설정하며,
 # 스트림 종료 전까지 버퍼의 마지막 32자는 emit하지 않는다.
 _PII_HOLDBACK = 32
-# 공백이 전혀 없어도(일본어/중국어, 코드블록, 긴 URL) 토큰 중간 강제 분할하는 상한.
+# 공백이 전혀 없어도(공백 없는 표기 체계, 코드블록, 긴 URL) 토큰 중간 강제 분할하는 상한.
 # 공백 경계만 기다리다 스트리밍이 정지하거나 버퍼가 무한 증가하는 것을 방지한다.
 _PII_HARD_CAP = 512
 # 비상 경로(HARD_CAP*2) 후퇴 탐색의 스텝 폭(자).
@@ -682,7 +682,7 @@ class GenerationModule:
     ) -> str:
         """별칭 맵을 사용해 응답 언어 코드를 정규화한다(공통 로직).
 
-        대소문자·언더스코어·지역코드(en-US 등)·별칭(english/日本語 등)을 흡수하고,
+        대소문자·언더스코어·지역코드(en-US 등)·별칭(english 등 언어별 별칭)을 흡수하고,
         미지정/미지원 코드는 기본 ko로 폴백한다(하위 호환).
         """
         if value is None:
@@ -704,7 +704,7 @@ class GenerationModule:
         """요청 옵션/설정의 응답 언어 코드를 코드 기본 별칭으로 정규화한다(GAP #2).
 
         코드 내장 기본 프로파일(ko/en)의 별칭만 사용하는 정적 정규화 경로다.
-        config로 추가된 언어(예: ja)의 별칭은 인스턴스 경로
+        config로 추가된 언어(예: <언어명> 블록)의 별칭은 인스턴스 경로
         (_response_language_profile)에서 처리된다.
 
         Args:
@@ -721,7 +721,7 @@ class GenerationModule:
 
         우선순위: config(generation.response_languages.profiles) > 코드 기본값.
         config 미설정 시 코드 기본(ko/en)만 사용한다(회귀 0). 운영자가 yaml에
-        새 언어 블록(예: ja)을 추가하면 코드 변경 없이 해당 언어가 등록된다.
+        새 언어 블록(예: <언어명> 블록)을 추가하면 코드 변경 없이 해당 언어가 등록된다.
 
         Returns:
             언어코드→프로파일 딕셔너리(코드 기본 + config 병합)
@@ -747,7 +747,7 @@ class GenerationModule:
         """요청 언어에 맞는 응답 프로파일을 선택한다(GAP #2).
 
         우선순위: options.response_language > config generation.response_language >
-        기본 ko. config로 추가된 언어 블록(예: ja)의 별칭도 인식한다. ko 프로파일
+        기본 ko. config로 추가된 언어 블록(예: <언어명> 블록)의 별칭도 인식한다. ko 프로파일
         본문의 "{output_language}" 플레이스홀더는 호출부에서
         generation.output_language로 치환된다.
 

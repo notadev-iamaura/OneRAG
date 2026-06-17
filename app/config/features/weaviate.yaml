@@ -18,6 +18,11 @@ weaviate:
   # Collection name (기본 Documents)
   collection_name: "${WEAVIATE_COLLECTION:-Documents}"
 
+  # 엔티티/메타데이터 기반 검색결과의 source_file 표시 접미사.
+  # 미설정(null)이면 한국어 기본 " (메타데이터)"로 폴백(회귀 0).
+  # 비한국어 운영자는 자국어/영어 라벨(예: " (metadata)") 또는 ""(접미 없음)로 재정의.
+  metadata_source_suffix: null
+
   # Phase 3: 추가 검색 컬렉션 목록
   # 메인 컬렉션(Documents)과 함께 병렬 검색하여 RRF로 결과 병합
   # 도메인에 맞게 커스터마이징하세요. 예: ["ProductMetadata", "FAQCollection"] 등

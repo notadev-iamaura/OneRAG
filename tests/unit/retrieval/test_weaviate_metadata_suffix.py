@@ -39,3 +39,41 @@ class TestMetadataSourceSuffix:
             metadata_source_suffix=" (metadata)",
         )
         assert r._metadata_source_suffix == " (metadata)"
+
+
+class TestMetadataSourceSuffixFactoryWiring:
+    """DI 팩토리(create_retriever_via_factory)가 config 값을 생성자까지 배선하는지 검증.
+
+    생성자/상수 단위 테스트만으로는 'config 키가 팩토리에서 누락되어 오버라이드가
+    런타임에 도달하지 못하는' 데드 경로를 잡지 못한다(배선 트랩). 이 테스트는
+    weaviate.metadata_source_suffix가 실제 생성자까지 전달됨을 보장한다.
+    """
+
+    def test_factory_wires_config_suffix(self):
+        """config에 설정한 접미사가 팩토리 경유로 생성자에 도달한다."""
+        from unittest.mock import MagicMock
+
+        from app.core.di_container import create_retriever_via_factory
+
+        retriever = create_retriever_via_factory(
+            config={
+                "vector_db": {"provider": "weaviate"},
+                "weaviate": {"metadata_source_suffix": " (metadata)"},
+            },
+            embedder=MagicMock(),
+            weaviate_client=MagicMock(),
+        )
+        assert retriever._metadata_source_suffix == " (metadata)"
+
+    def test_factory_defaults_to_korean_when_unset(self):
+        """config 미설정 시 팩토리 경유로도 한국어 기본 폴백(회귀 0)."""
+        from unittest.mock import MagicMock
+
+        from app.core.di_container import create_retriever_via_factory
+
+        retriever = create_retriever_via_factory(
+            config={"vector_db": {"provider": "weaviate"}, "weaviate": {}},
+            embedder=MagicMock(),
+            weaviate_client=MagicMock(),
+        )
+        assert retriever._metadata_source_suffix == " (메타데이터)"

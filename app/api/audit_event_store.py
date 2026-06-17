@@ -10,7 +10,7 @@
     - safe_audit_identifier: 경로/URL형 식별자를 sha256으로 레덕션하는 헬퍼
 
 설계 노트:
-    - JapanRAG의 멀티테넌트(company_id NOT NULL) 모델을 OneRAG 단일 테넌트에 맞춰
+    - 멀티테넌트(company_id NOT NULL) 모델을 단일 테넌트 구조에 맞춰
       nullable로 일반화하고, 누락 시 'default'로 채운다(범용성).
     - 기록 실패를 호출자에게 전파하지 않는 non-blocking 사용은 호출부
       (upload.py의 _record_operational_audit_event)에서 보장한다.

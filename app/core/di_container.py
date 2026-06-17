@@ -1399,6 +1399,10 @@ def create_retriever_via_factory(
             "collection_properties": config.get("domain", {}).get("retrieval", {}).get(
                 "collections", {}
             ),
+            # 메타데이터 검색결과 source_file 표시 접미사를 config에서 파생한다.
+            # 미설정(None) 시 생성자가 한국어 기본 " (메타데이터)"로 폴백(회귀 0).
+            # 비한국어 운영자는 weaviate.metadata_source_suffix로 자국어/영어 라벨 주입.
+            "metadata_source_suffix": weaviate_config.get("metadata_source_suffix"),
         }
     elif provider == "chroma":
         resolved_vector_store = resolve_vector_store()

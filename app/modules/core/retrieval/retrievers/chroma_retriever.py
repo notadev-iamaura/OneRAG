@@ -295,7 +295,7 @@ class ChromaRetriever:
 
         Weaviate 경로와 동일한 입력 포맷({content, embedding, metadata})을 받아
         ChromaVectorStore가 기대하는 {id, vector, content, metadata}로 변환 후 위임한다.
-        (JapanRAG 프로덕션 ChromaRetriever.add_documents 패턴 백포트)
+        (프로덕션 ChromaRetriever.add_documents 패턴 백포트)
         """
         prepared: list[dict[str, Any]] = []
         errors: list[str] = []

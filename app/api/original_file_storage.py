@@ -13,7 +13,7 @@ Cloud Storage)는 선택형(opt-in)으로 lazy import 가드를 통해 제공합
     - delete_original_reference: 원본 정리
 
 설계 노트:
-    - JapanRAG의 멀티테넌트(company_id) 결합을 OneRAG 단일 테넌트에 맞춰 제거했다.
+    - 멀티테넌트(company_id) 결합을 OneRAG 단일 테넌트 구조에 맞춰 제거했다.
       originals 디렉토리는 테넌트 하위 경로 없이 upload_dir/originals 하나로 통합한다.
     - GCS는 google-cloud-storage 미설치 시 OriginalFileStorageConfigurationError로
       graceful하게 실패한다(코어 의존성 무게 0 유지). pyproject의 [gcs] extra로만 설치.

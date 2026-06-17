@@ -91,7 +91,7 @@ class ErrorCode(str, Enum):
     UPLOAD_013 = "UPLOAD-013"  # 문서 삭제 중 예외
     UPLOAD_014 = "UPLOAD-014"  # retrieval_module 없음 (bulk_delete)
     UPLOAD_015 = "UPLOAD-015"  # 일괄 삭제 중 예외
-    # --- 분할/취소/재시도 업로드 (jprag 차용 통합, #10/#11/#30) ---
+    # --- 분할/취소/재시도 업로드 (차용 통합, #10/#11/#30) ---
     UPLOAD_016 = "UPLOAD-016"  # 분할 업로드 offset 불일치 (409)
     UPLOAD_017 = "UPLOAD-017"  # 분할 업로드 선언 크기 초과 (400)
     UPLOAD_018 = "UPLOAD-018"  # 분할 업로드 완료 시 크기 검증 실패 (409)
