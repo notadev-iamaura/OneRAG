@@ -42,6 +42,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 import type { Prompt, CreatePromptRequest, UpdatePromptRequest } from '../../types/prompt';
 import { PROMPT_CATEGORIES } from '../../types/prompt';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 export interface PromptEditDialogProps {
   /** 다이얼로그 열림 상태 */
@@ -72,15 +73,17 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
   onSave,
   onEditingPromptChange,
 }) => {
+  const { messages } = useMenuMessages();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl overflow-hidden p-0 rounded-3xl border-none">
         <DialogHeader className="p-6 pb-0">
           <DialogTitle className="text-xl font-bold">
-            {isEditMode ? '프롬프트 편집' : '새 프롬프트 생성'}
+            {isEditMode ? messages.promptEdit.editTitle : messages.promptEdit.createTitle}
           </DialogTitle>
           <DialogDescription>
-            {isEditMode ? '기존 프롬프트를 수정합니다.' : '새로운 시스템 프롬프트를 생성합니다.'}
+            {isEditMode ? messages.promptEdit.editDescription : messages.promptEdit.createDescription}
           </DialogDescription>
         </DialogHeader>
 
@@ -89,7 +92,7 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
           {modalError && (
             <Alert variant="destructive" className="mb-4 bg-destructive/10 text-destructive border-none rounded-2xl animate-in slide-in-from-top-2 duration-300">
               <Info className="h-4 w-4" />
-              <AlertTitle className="font-bold">입력 오류</AlertTitle>
+              <AlertTitle className="font-bold">{messages.promptEdit.inputErrorTitle}</AlertTitle>
               <AlertDescription className="text-sm">{modalError}</AlertDescription>
             </Alert>
           )}
@@ -99,44 +102,44 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
             <div className="space-y-6 pt-0">
               {/* 프롬프트 이름 */}
               <div className="space-y-2">
-                <Label htmlFor="prompt-name" className="text-sm font-bold">프롬프트 이름</Label>
+                <Label htmlFor="prompt-name" className="text-sm font-bold">{messages.promptEdit.nameLabel}</Label>
                 <Input
                   id="prompt-name"
                   value={editingPrompt.name || ''}
                   onChange={(e) => onEditingPromptChange({ ...editingPrompt, name: e.target.value })}
                   disabled={isEditMode && selectedPrompt?.category === 'system'}
                   className="rounded-xl border-border/60"
-                  placeholder="프롬프트 명칭을 입력하세요"
+                  placeholder={messages.promptEdit.namePlaceholder}
                 />
                 {isEditMode && selectedPrompt?.category === 'system' && (
                   <p className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
-                    <Info className="w-3 h-3" /> 시스템 프롬프트는 이름을 변경할 수 없습니다
+                    <Info className="w-3 h-3" /> {messages.promptEdit.systemNameLocked}
                   </p>
                 )}
               </div>
 
               {/* 설명 */}
               <div className="space-y-2">
-                <Label htmlFor="prompt-desc" className="text-sm font-bold">설명</Label>
+                <Label htmlFor="prompt-desc" className="text-sm font-bold">{messages.promptEdit.descriptionLabel}</Label>
                 <Input
                   id="prompt-desc"
                   value={editingPrompt.description || ''}
                   onChange={(e) => onEditingPromptChange({ ...editingPrompt, description: e.target.value })}
                   className="rounded-xl border-border/60"
-                  placeholder="어떤 역할이나 페르소나인지 간단히 설명하세요"
+                  placeholder={messages.promptEdit.descriptionPlaceholder}
                 />
               </div>
 
               {/* 카테고리 */}
               <div className="space-y-2">
-                <Label className="text-sm font-bold">카테고리</Label>
+                <Label className="text-sm font-bold">{messages.promptEdit.categoryLabel}</Label>
                 <Select
                   value={editingPrompt.category || 'custom'}
                   onValueChange={(val) => onEditingPromptChange({ ...editingPrompt, category: val as 'system' | 'assistant' | 'user' | 'custom' })}
                   disabled={isEditMode && selectedPrompt?.category === 'system'}
                 >
                   <SelectTrigger className="rounded-xl border-border/60">
-                    <SelectValue placeholder="카테고리 선택" />
+                    <SelectValue placeholder={messages.promptEdit.categoryPlaceholder} />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
                     {PROMPT_CATEGORIES.map((category) => (
@@ -150,21 +153,21 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
 
               {/* 프롬프트 내용 */}
               <div className="space-y-2">
-                <Label htmlFor="prompt-content" className="text-sm font-bold">프롬프트 내용</Label>
+                <Label htmlFor="prompt-content" className="text-sm font-bold">{messages.promptEdit.contentLabel}</Label>
                 <Textarea
                   id="prompt-content"
                   value={editingPrompt.content || ''}
                   onChange={(e) => onEditingPromptChange({ ...editingPrompt, content: e.target.value })}
                   className="min-h-[200px] rounded-xl border-border/60 font-mono text-sm leading-relaxed"
-                  placeholder="AI에게 전달할 시스템 지침을 입력하세요..."
+                  placeholder={messages.promptEdit.contentPlaceholder}
                 />
               </div>
 
               {/* 활성화 상태 토글 */}
               <div className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl border border-border/40">
                 <div className="space-y-0.5">
-                  <Label className="text-sm font-bold">활성화 상태</Label>
-                  <p className="text-xs text-muted-foreground font-medium">저장 시 이 프롬프트를 즉시 적용합니다.</p>
+                  <Label className="text-sm font-bold">{messages.promptEdit.activeLabel}</Label>
+                  <p className="text-xs text-muted-foreground font-medium">{messages.promptEdit.activeHelp}</p>
                 </div>
                 <Switch
                   checked={editingPrompt.is_active !== false}
@@ -178,11 +181,11 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
         {/* 하단 버튼 */}
         <DialogFooter className="p-6 border-t border-border/40 bg-muted/10">
           <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl font-bold">
-            취소
+            {messages.common.cancel}
           </Button>
           <Button onClick={onSave} className="rounded-xl font-bold gap-2 px-8">
             <Save className="w-4 h-4" />
-            저장하기
+            {messages.promptEdit.save}
           </Button>
         </DialogFooter>
       </DialogContent>

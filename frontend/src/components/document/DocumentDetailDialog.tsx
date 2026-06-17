@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatFileSize } from '../../utils/documentUtils';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 import type { Document } from '../../types';
 
 /** DocumentDetailDialog 컴포넌트의 Props */
@@ -65,32 +67,34 @@ export const DocumentDetailDialog: React.FC<DocumentDetailDialogProps> = ({
   document: doc,
   onClose,
 }) => {
+  // i18n: 현재 로케일에 해당하는 번역 사전을 가져온다.
+  const { messages } = useMenuMessages();
   return (
     <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
       <DialogContent className="max-w-md rounded-[28px] border-border/40 p-0 overflow-hidden">
         <DialogHeader className="p-6 pb-4 bg-muted/30">
-          <DialogTitle className="text-xl font-black">문서 상세 정보</DialogTitle>
-          <DialogDescription className="text-sm font-medium">문서의 메타데이터와 상태 정보를 확인합니다</DialogDescription>
+          <DialogTitle className="text-xl font-black">{messages.docDetail.title}</DialogTitle>
+          <DialogDescription className="text-sm font-medium">{messages.docDetail.description}</DialogDescription>
         </DialogHeader>
         <div className="p-6 pt-0 space-y-4">
           <ScrollArea className="max-h-[60vh] pr-4">
             {doc && (
               <div className="space-y-4">
-                <DetailRow label="파일명" value={doc.originalName} />
-                <DetailRow label="문서 ID" value={doc.id} copyable />
-                <DetailRow label="파일 크기" value={formatFileSize(doc.size)} />
-                <DetailRow label="MIME 타입" value={doc.mimeType} />
-                <DetailRow label="업로드 일시" value={new Date(doc.uploadedAt).toLocaleString()} />
-                <DetailRow label="상태" value={doc.status} />
-                {hasPositiveCount(doc.chunks) && <DetailRow label="청크 수" value={`${doc.chunks}개`} />}
-                {hasPositiveCount(doc.metadata?.pageCount) && <DetailRow label="페이지 수" value={`${doc.metadata?.pageCount}P`} />}
-                {hasPositiveCount(doc.metadata?.wordCount) && <DetailRow label="단어 수" value={`${doc.metadata?.wordCount}개`} />}
+                <DetailRow label={messages.docDetail.filename} value={doc.originalName} />
+                <DetailRow label={messages.docDetail.documentId} value={doc.id} copyable />
+                <DetailRow label={messages.docDetail.fileSize} value={formatFileSize(doc.size)} />
+                <DetailRow label={messages.docDetail.mimeType} value={doc.mimeType} />
+                <DetailRow label={messages.docDetail.uploadedAt} value={new Date(doc.uploadedAt).toLocaleString()} />
+                <DetailRow label={messages.docDetail.status} value={doc.status} />
+                {hasPositiveCount(doc.chunks) && <DetailRow label={messages.docDetail.chunkCount} value={format(messages.docDetail.chunkCountValue, { count: doc.chunks })} />}
+                {hasPositiveCount(doc.metadata?.pageCount) && <DetailRow label={messages.docDetail.pageCount} value={format(messages.docDetail.pageCountValue, { count: doc.metadata?.pageCount ?? 0 })} />}
+                {hasPositiveCount(doc.metadata?.wordCount) && <DetailRow label={messages.docDetail.wordCount} value={format(messages.docDetail.wordCountValue, { count: doc.metadata?.wordCount ?? 0 })} />}
               </div>
             )}
           </ScrollArea>
         </div>
         <DialogFooter className="p-6 bg-muted/10">
-          <Button variant="secondary" className="rounded-xl font-bold w-full" onClick={onClose}>닫기</Button>
+          <Button variant="secondary" className="rounded-xl font-bold w-full" onClick={onClose}>{messages.docDetail.close}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

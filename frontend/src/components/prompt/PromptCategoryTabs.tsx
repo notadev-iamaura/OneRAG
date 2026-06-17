@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { PromptTable } from './PromptTable';
 import type { Prompt } from '../../types/prompt';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 export interface PromptCategoryTabsProps {
   /** 현재 선택된 탭 */
@@ -34,13 +35,6 @@ export interface PromptCategoryTabsProps {
   loading: boolean;
 }
 
-/** 카테고리별 탭 설정 */
-const CATEGORIES: { value: string; label: string; key: 'system' | 'style' | 'custom' }[] = [
-  { value: 'system', label: '시스템', key: 'system' },
-  { value: 'style', label: '스타일', key: 'style' },
-  { value: 'custom', label: '커스텀', key: 'custom' },
-];
-
 const TAB_CLS = 'bg-transparent border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent rounded-none h-11 px-1 font-bold text-muted-foreground data-[state=active]:text-foreground transition-all';
 const BADGE_CLS = 'ml-2 h-5 w-5 p-0 flex items-center justify-center rounded-full bg-muted text-muted-foreground';
 
@@ -48,6 +42,15 @@ export const PromptCategoryTabs: React.FC<PromptCategoryTabsProps> = ({
   currentTab, onTabChange, filteredPrompts, promptsByCategory,
   onEdit, onView, onDelete, onDuplicate, onToggleActive, loading,
 }) => {
+  const { messages } = useMenuMessages();
+
+  /** 카테고리별 탭 설정(value/key는 보존, label만 로케일 라벨로 구성) */
+  const categories: { value: string; label: string; key: 'system' | 'style' | 'custom' }[] = [
+    { value: 'system', label: messages.promptTabs.system, key: 'system' },
+    { value: 'style', label: messages.promptTabs.style, key: 'style' },
+    { value: 'custom', label: messages.promptTabs.custom, key: 'custom' },
+  ];
+
   /** PromptTable 공통 props */
   const tableProps = (prompts: Prompt[]) => ({
     prompts, onEdit, onView, onDelete, onDuplicate, onToggleActive, loading,
@@ -58,9 +61,9 @@ export const PromptCategoryTabs: React.FC<PromptCategoryTabsProps> = ({
       <div className="flex items-center justify-between border-b border-border/60 pb-px">
         <TabsList className="bg-transparent h-auto p-0 gap-8 justify-start">
           <TabsTrigger value="all" className={TAB_CLS}>
-            전체 <Badge className={BADGE_CLS}>{filteredPrompts.length}</Badge>
+            {messages.promptTabs.all} <Badge className={BADGE_CLS}>{filteredPrompts.length}</Badge>
           </TabsTrigger>
-          {CATEGORIES.map(({ value, label, key }) => (
+          {categories.map(({ value, label, key }) => (
             <TabsTrigger key={value} value={value} className={TAB_CLS}>
               {label} <Badge className={BADGE_CLS}>{promptsByCategory[key].length}</Badge>
             </TabsTrigger>
@@ -70,7 +73,7 @@ export const PromptCategoryTabs: React.FC<PromptCategoryTabsProps> = ({
       <TabsContent value="all" className="mt-0 outline-none">
         <PromptTable {...tableProps(filteredPrompts)} />
       </TabsContent>
-      {CATEGORIES.map(({ value, key }) => (
+      {categories.map(({ value, key }) => (
         <TabsContent key={value} value={value} className="mt-0 outline-none">
           <PromptTable {...tableProps(promptsByCategory[key])} />
         </TabsContent>

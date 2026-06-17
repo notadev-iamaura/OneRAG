@@ -29,12 +29,15 @@ import { LAYOUT_CONFIG } from '../../config/layout';
 import { FEATURE_FLAGS } from '../../config';
 import { THEME_PRESETS, getAllPresets, exportPresetAsJSON } from '../../config/presets';
 import { useConfig } from '../../core/useConfig';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 import { cn } from '@/lib/utils';
 
 export const SettingsPage: React.FC = () => {
   const { config, runtimeConfig, updateConfig, resetConfig } = useConfig();
   const [currentTab, setCurrentTab] = useState("colors");
   const { toast } = useToast();
+  const { messages } = useMenuMessages();
 
   // 색상 프리셋 상태
   const [selectedPreset, setSelectedPreset] = useState(
@@ -100,8 +103,8 @@ export const SettingsPage: React.FC = () => {
   const handlePresetSelect = (presetId: string) => {
     setSelectedPreset(presetId);
     toast({
-      title: "프리셋 변경",
-      description: `프리셋 "${THEME_PRESETS[presetId].name}"이(가) 선택되었습니다.`,
+      title: messages.adminSettings.presetChangeToastTitle,
+      description: format(messages.adminSettings.presetChangeToastDesc, { name: THEME_PRESETS[presetId].name }),
     });
   };
 
@@ -136,8 +139,8 @@ export const SettingsPage: React.FC = () => {
 
     updateConfig(newConfig);
     toast({
-      title: "설정 저장 완료",
-      description: "✅ 설정이 저장되었습니다! 페이지를 새로고침하면 적용됩니다.",
+      title: messages.adminSettings.saveToastTitle,
+      description: messages.adminSettings.saveToastDesc,
     });
   };
 
@@ -171,8 +174,8 @@ export const SettingsPage: React.FC = () => {
     });
     setSelectedPreset('monotone');
     toast({
-      title: "설정 초기화",
-      description: "✅ 설정이 초기화되었습니다. 페이지를 새로고침하면 적용됩니다.",
+      title: messages.adminSettings.resetToastTitle,
+      description: messages.adminSettings.resetToastDesc,
     });
   };
 
@@ -181,8 +184,8 @@ export const SettingsPage: React.FC = () => {
     if (!json) {
       toast({
         variant: "destructive",
-        title: "내보내기 실패",
-        description: "프리셋을 내보낼 수 없습니다.",
+        title: messages.adminSettings.exportFailToastTitle,
+        description: messages.adminSettings.exportFailToastDesc,
       });
       return;
     }
@@ -198,8 +201,8 @@ export const SettingsPage: React.FC = () => {
     URL.revokeObjectURL(url);
 
     toast({
-      title: "내보내기 성공",
-      description: "설정이 JSON 파일로 다운로드되었습니다.",
+      title: messages.adminSettings.exportSuccessToastTitle,
+      description: messages.adminSettings.exportSuccessToastDesc,
     });
   };
 
@@ -227,18 +230,18 @@ export const SettingsPage: React.FC = () => {
       {/* 헤더 */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border/40 pb-6">
         <div>
-          <h1 className="text-3xl font-black tracking-tight">시스템 설정</h1>
-          <p className="text-muted-foreground font-medium mt-1">브랜드, 색상, 레이아웃, 기능 플래그를 관리합니다.</p>
+          <h1 className="text-3xl font-black tracking-tight">{messages.adminSettings.pageTitle}</h1>
+          <p className="text-muted-foreground font-medium mt-1">{messages.adminSettings.pageSubtitle}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleResetSettings} className="rounded-xl font-bold">
-            <ResetIcon className="w-4 h-4 mr-2" /> 초기화
+            <ResetIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.resetButton}
           </Button>
           <Button variant="outline" size="sm" onClick={handleExportConfig} className="rounded-xl font-bold">
-            <PreviewIcon className="w-4 h-4 mr-2" /> JSON 내보내기
+            <PreviewIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.exportJsonButton}
           </Button>
           <Button variant="default" size="sm" onClick={handleSaveSettings} className="rounded-xl font-bold shadow-lg shadow-primary/20 bg-primary hover:bg-primary/90">
-            <SaveIcon className="w-4 h-4 mr-2" /> 설정 저장
+            <SaveIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.saveButton}
           </Button>
         </div>
       </div>
@@ -247,29 +250,29 @@ export const SettingsPage: React.FC = () => {
       <Alert className="bg-primary/5 border-primary/20 rounded-2xl flex items-center py-4">
         <Info className="h-5 w-5 text-primary" />
         <AlertDescription className="ml-2 font-bold text-primary/80">
-          설정 변경 후 <span className="underline underline-offset-4 decoration-primary/40 text-primary">저장</span> 버튼을 누르고 <span className="underline underline-offset-4 decoration-primary/40 text-primary">페이지를 새로고침</span>하셔야 변경 사항이 반영됩니다.
+          {messages.adminSettings.noticeBeforeSave}<span className="underline underline-offset-4 decoration-primary/40 text-primary">{messages.adminSettings.noticeSave}</span>{messages.adminSettings.noticeBetween}<span className="underline underline-offset-4 decoration-primary/40 text-primary">{messages.adminSettings.noticeRefresh}</span>{messages.adminSettings.noticeAfterRefresh}
         </AlertDescription>
       </Alert>
 
       <Tabs value={currentTab} onValueChange={setCurrentTab} className="space-y-6">
         <TabsList className="grid grid-cols-3 h-12 p-1 bg-muted/50 rounded-2xl gap-1">
           <TabsTrigger value="colors" className="rounded-xl font-black text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary transition-all duration-300">
-            <PaletteIcon className="w-4 h-4 mr-2" /> 색상 프리셋
+            <PaletteIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.tabColors}
           </TabsTrigger>
           <TabsTrigger value="layout" className="rounded-xl font-black text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary transition-all duration-300">
-            <LayoutIcon className="w-4 h-4 mr-2" /> 레이아웃
+            <LayoutIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.tabLayout}
           </TabsTrigger>
           <TabsTrigger value="features" className="rounded-xl font-black text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary transition-all duration-300">
-            <FeaturesIcon className="w-4 h-4 mr-2" /> 기능 플래그
+            <FeaturesIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.tabFeatures}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="colors" className="animate-in slide-in-from-bottom-4 duration-500">
           <div className="space-y-4 mb-6">
             <h2 className="text-xl font-black flex items-center gap-2">
-              <PaletteIcon className="w-5 h-5 text-primary" /> 🎨 테마 프리셋 선택
+              <PaletteIcon className="w-5 h-5 text-primary" /> {messages.adminSettings.colorsHeading}
             </h2>
-            <p className="text-sm font-medium text-muted-foreground">데이터 플랫폼의 무드를 결정하는 8가지 공식 프리셋 중 하나를 선택하세요.</p>
+            <p className="text-sm font-medium text-muted-foreground">{messages.adminSettings.colorsDescription}</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -287,7 +290,7 @@ export const SettingsPage: React.FC = () => {
                     <CardTitle className="text-lg font-black">{preset.name}</CardTitle>
                     {selectedPreset === preset.id && (
                       <Badge className="bg-primary text-white font-bold h-5 px-1.5 flex items-center rounded-lg">
-                        <CheckCircle2 className="w-3 h-3 mr-1" /> 선택됨
+                        <CheckCircle2 className="w-3 h-3 mr-1" /> {messages.adminSettings.presetSelected}
                       </Badge>
                     )}
                   </div>
@@ -308,28 +311,28 @@ export const SettingsPage: React.FC = () => {
         <TabsContent value="layout" className="animate-in slide-in-from-bottom-4 duration-500 space-y-6">
           <div className="space-y-4">
             <h2 className="text-xl font-black flex items-center gap-2">
-              <LayoutIcon className="w-5 h-5 text-primary" /> 📐 레이아웃 정밀 설정
+              <LayoutIcon className="w-5 h-5 text-primary" /> {messages.adminSettings.layoutHeading}
             </h2>
-            <p className="text-sm font-medium text-muted-foreground">브라우저 내 공간 활용도를 조절합니다. 사이드바와 헤더의 규격을 변경할 수 있습니다.</p>
+            <p className="text-sm font-medium text-muted-foreground">{messages.adminSettings.layoutDescription}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-bold">
             <LayoutSlider
-              label="사이드바 너비 (Sidebar)"
+              label={messages.adminSettings.sidebarWidthLabel}
               value={sidebarWidth}
               min={200} max={320} step={10}
               unit="px"
               onChange={setSidebarWidth}
             />
             <LayoutSlider
-              label="헤더 높이 (Header)"
+              label={messages.adminSettings.headerHeightLabel}
               value={headerHeight}
               min={48} max={80} step={4}
               unit="px"
               onChange={setHeaderHeight}
             />
             <LayoutSlider
-              label="콘텐츠 여백 (Padding)"
+              label={messages.adminSettings.contentPaddingLabel}
               value={contentPadding}
               min={12} max={48} step={4}
               unit="px"
@@ -341,29 +344,29 @@ export const SettingsPage: React.FC = () => {
         <TabsContent value="features" className="animate-in slide-in-from-bottom-4 duration-500 space-y-6">
           <div className="space-y-4">
             <h2 className="text-xl font-black flex items-center gap-2">
-              <FeaturesIcon className="w-5 h-5 text-primary" /> 🚩 기능 제어 플래그
+              <FeaturesIcon className="w-5 h-5 text-primary" /> {messages.adminSettings.featuresHeading}
             </h2>
-            <p className="text-sm font-medium text-muted-foreground">특정 모듈을 완전히 활성화하거나 세부 기능의 동작 여부를 결정합니다.</p>
+            <p className="text-sm font-medium text-muted-foreground">{messages.adminSettings.featuresDescription}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 font-bold">
-            <FeatureGroup title="📦 시스템 모듈 제어" description="핵심 비즈니스 모듈 활성화 여부">
-              <FeatureItem label="인텔리전트 챗봇" checked={features.modules.chatbot} onChange={() => handleFeatureToggle('modules.chatbot')} />
-              <FeatureItem label="중앙 문서 관리 센터" checked={features.modules.documentManagement} onChange={() => handleFeatureToggle('modules.documentManagement')} />
-              <FeatureItem label="AI 프롬프트 매니저" checked={features.modules.prompts} onChange={() => handleFeatureToggle('modules.prompts')} />
-              <FeatureItem label="실시간 DB 통계/분석" checked={features.modules.analysis} onChange={() => handleFeatureToggle('modules.analysis')} />
-              <FeatureItem label="시스템 관리자 도구" checked={features.modules.admin} onChange={() => handleFeatureToggle('modules.admin')} />
-              <FeatureItem label="개인정보 보호 필터 (Privacy)" checked={features.modules.privacy} onChange={() => handleFeatureToggle('modules.privacy')} />
+            <FeatureGroup title={messages.adminSettings.moduleGroupTitle} description={messages.adminSettings.moduleGroupDescription}>
+              <FeatureItem label={messages.adminSettings.moduleChatbot} checked={features.modules.chatbot} onChange={() => handleFeatureToggle('modules.chatbot')} />
+              <FeatureItem label={messages.adminSettings.moduleDocumentManagement} checked={features.modules.documentManagement} onChange={() => handleFeatureToggle('modules.documentManagement')} />
+              <FeatureItem label={messages.adminSettings.modulePrompts} checked={features.modules.prompts} onChange={() => handleFeatureToggle('modules.prompts')} />
+              <FeatureItem label={messages.adminSettings.moduleAnalysis} checked={features.modules.analysis} onChange={() => handleFeatureToggle('modules.analysis')} />
+              <FeatureItem label={messages.adminSettings.moduleAdmin} checked={features.modules.admin} onChange={() => handleFeatureToggle('modules.admin')} />
+              <FeatureItem label={messages.adminSettings.modulePrivacy} checked={features.modules.privacy} onChange={() => handleFeatureToggle('modules.privacy')} />
             </FeatureGroup>
 
-            <FeatureGroup title="⚙️ 세부 컴포넌트 동작" description="활성화된 모듈 내 상세 기능 옵션">
-              <FeatureItem label="스트리밍 실시간 응답" checked={features.features.streaming} onChange={() => handleFeatureToggle('features.streaming')} />
-              <FeatureItem label="다차원 채팅 히스토리" checked={features.features.history} onChange={() => handleFeatureToggle('features.history')} />
-              <FeatureItem label="대용량 파일 배치 업로드" checked={features.features.upload} onChange={() => handleFeatureToggle('features.upload')} />
-              <FeatureItem label="고급 시맨틱 문서 검색" checked={features.features.search} onChange={() => handleFeatureToggle('features.search')} />
+            <FeatureGroup title={messages.adminSettings.detailGroupTitle} description={messages.adminSettings.detailGroupDescription}>
+              <FeatureItem label={messages.adminSettings.featureStreaming} checked={features.features.streaming} onChange={() => handleFeatureToggle('features.streaming')} />
+              <FeatureItem label={messages.adminSettings.featureHistory} checked={features.features.history} onChange={() => handleFeatureToggle('features.history')} />
+              <FeatureItem label={messages.adminSettings.featureUpload} checked={features.features.upload} onChange={() => handleFeatureToggle('features.upload')} />
+              <FeatureItem label={messages.adminSettings.featureSearch} checked={features.features.search} onChange={() => handleFeatureToggle('features.search')} />
               <Separator className="my-3 opacity-40" />
               <FeatureItem
-                label="연락처 정보 패턴 마스킹"
+                label={messages.adminSettings.featureMaskPhoneNumbers}
                 checked={features.features.maskPhoneNumbers}
                 disabled={!features.modules.privacy}
                 onChange={() => handleFeatureToggle('features.maskPhoneNumbers')}

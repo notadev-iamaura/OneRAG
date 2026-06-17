@@ -29,6 +29,7 @@ import { Label } from '@/components/ui/label';
 
 import type { Prompt } from '../../types/prompt';
 import { PROMPT_CATEGORIES } from '../../types/prompt';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 export interface PromptViewDialogProps {
   /** 다이얼로그 열림 상태 */
@@ -47,13 +48,15 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
   selectedPrompt,
   onEdit,
 }) => {
+  const { messages } = useMenuMessages();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl overflow-hidden p-0 rounded-3xl border-none">
         <DialogHeader className="p-6 pb-0">
-          <DialogTitle className="text-xl font-bold">프롬프트 상세 정보</DialogTitle>
+          <DialogTitle className="text-xl font-bold">{messages.promptView.title}</DialogTitle>
           <DialogDescription>
-            프롬프트의 구성 요소와 설정 내역을 확인합니다.
+            {messages.promptView.description}
           </DialogDescription>
         </DialogHeader>
 
@@ -63,7 +66,7 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
               {/* 이름 및 카테고리 */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">프롬프트명</Label>
+                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.nameLabel}</Label>
                   <div className="font-bold flex items-center gap-2">
                     {selectedPrompt.name}
                     <Badge variant={selectedPrompt.is_active ? 'default' : 'secondary'} className="h-5 text-[10px] rounded-sm font-black">
@@ -72,7 +75,7 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">카테고리</Label>
+                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.categoryLabel}</Label>
                   <div>
                     <Badge variant="outline" className="rounded-md border-primary/20 text-primary bg-primary/5 font-bold">
                       {PROMPT_CATEGORIES.find(c => c.value === selectedPrompt.category)?.label || selectedPrompt.category}
@@ -83,18 +86,18 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
 
               {/* 설명 */}
               <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">설명</Label>
-                <p className="text-sm text-foreground/80 leading-relaxed">{selectedPrompt.description || '설명이 없습니다.'}</p>
+                <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.descriptionLabel}</Label>
+                <p className="text-sm text-foreground/80 leading-relaxed">{selectedPrompt.description || messages.promptView.noDescription}</p>
               </div>
 
               {/* 생성일/수정일 */}
               <div className="grid grid-cols-2 gap-4 pt-2">
                 <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">생성일</Label>
+                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.createdAtLabel}</Label>
                   <p className="text-xs font-medium text-muted-foreground italic">{new Date(selectedPrompt.created_at).toLocaleString('ko-KR')}</p>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">수정일</Label>
+                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.updatedAtLabel}</Label>
                   <p className="text-xs font-medium text-muted-foreground italic">{new Date(selectedPrompt.updated_at).toLocaleString('ko-KR')}</p>
                 </div>
               </div>
@@ -102,7 +105,7 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
               {/* 프롬프트 본문 */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">프롬프트 본문</Label>
+                  <Label className="text-[10px] uppercase tracking-wider font-extrabold text-muted-foreground">{messages.promptView.bodyLabel}</Label>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -111,7 +114,7 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
                       navigator.clipboard.writeText(selectedPrompt.content);
                     }}
                   >
-                    <Copy className="w-3 h-3" /> 복사
+                    <Copy className="w-3 h-3" /> {messages.promptView.copy}
                   </Button>
                 </div>
                 <div className="p-4 bg-muted/50 rounded-2xl border border-border/40 min-h-[100px] overflow-auto">
@@ -127,7 +130,7 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
         {/* 하단 버튼 */}
         <DialogFooter className="p-6 border-t border-border/40 bg-muted/10">
           <Button variant="ghost" onClick={() => onOpenChange(false)} className="rounded-xl font-bold">
-            닫기
+            {messages.promptView.close}
           </Button>
           {selectedPrompt && (
             <Button
@@ -138,7 +141,7 @@ export const PromptViewDialog: React.FC<PromptViewDialogProps> = ({
               className="rounded-xl font-bold gap-2 px-8"
             >
               <Edit2 className="w-4 h-4" />
-              프롬프트 수정
+              {messages.promptView.edit}
             </Button>
           )}
         </DialogFooter>
