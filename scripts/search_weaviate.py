@@ -47,7 +47,7 @@ except ImportError:
 
 
 # 설정
-WEAVIATE_URL = os.getenv("WEAVIATE_URL", "https://weaviate-production-70aa.up.railway.app")
+WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 GRAPHQL_ENDPOINT = f"{WEAVIATE_URL}/v1/graphql"
 
 

@@ -32,7 +32,7 @@ logger = get_logger(__name__)
 # 설정
 # =============================================================================
 
-WEAVIATE_URL = os.getenv("WEAVIATE_URL", "https://weaviate-production-70aa.up.railway.app")
+WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 
 # NotionMetadata 컬렉션 스키마
 # Documents 컬렉션과 동일하게 vectorizer: none 사용

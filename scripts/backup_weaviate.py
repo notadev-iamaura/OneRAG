@@ -11,8 +11,8 @@ from datetime import datetime
 
 import requests
 
-# Weaviate 설정
-WEAVIATE_URL = "https://weaviate-production-70aa.up.railway.app"
+# Weaviate 설정 (미설정 시 중립 로컬 기본값)
+WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 BACKUP_DIR = "data/backups"
 
 
