@@ -19,7 +19,7 @@ RRF 공식:
     retriever = WeaviateRetriever(config)
     graph_store = NetworkXGraphStore()
     hybrid = VectorGraphHybridSearch(retriever, graph_store, config)
-    result = await hybrid.search("서울 맛집", top_k=10)
+    result = await hybrid.search("RAG란 무엇인가요?", top_k=10)
 
 생성일: 2026-01-05
 """

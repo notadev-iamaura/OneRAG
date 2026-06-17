@@ -87,9 +87,9 @@ class InternalEvaluator:
         evaluator = InternalEvaluator(llm_client=my_llm_client)
 
         result = await evaluator.evaluate(
-            query="서울 맛집 추천해줘",
-            answer="서울에는 A식당이 유명합니다.",
-            context=["A식당은 강남역 근처에 위치..."],
+            query="RAG란 무엇인가요?",
+            answer="RAG는 검색으로 찾은 문서를 근거로 답변을 생성하는 기법입니다.",
+            context=["RAG는 검색(retrieval)과 생성(generation)을 결합합니다."],
         )
 
         if result.is_acceptable():
