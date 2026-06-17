@@ -99,7 +99,9 @@ const ko: MenuMessages = {
   },
   chat: {
     header: {
-      title: "OneRAG Chat",
+      // 브랜드명은 ChatHeader가 BRAND_CONFIG.appName을 앞에 붙입니다.
+      // 여기서는 접미 라벨만 보관 → 기본 출력 "OneRAG Chat" 유지, 리브랜딩 시 브랜드명만 교체.
+      title: "Chat",
       subtitle: "- 궁금한 것을 질문해주세요!",
       showDevTools: "개발자 도구 보기",
       newSession: "새 대화 시작",
@@ -167,7 +169,9 @@ const en: MenuMessages = {
   },
   chat: {
     header: {
-      title: "OneRAG Chat",
+      // 브랜드명은 ChatHeader가 BRAND_CONFIG.appName을 앞에 붙입니다.
+      // 여기서는 접미 라벨만 보관 → 기본 출력 "OneRAG Chat" 유지, 리브랜딩 시 브랜드명만 교체.
+      title: "Chat",
       subtitle: "- Ask anything you're curious about!",
       showDevTools: "Show developer tools",
       newSession: "Start new chat",

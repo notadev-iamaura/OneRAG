@@ -9,6 +9,7 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { BRAND_CONFIG } from '../../config/brand';
 
 interface ChatHeaderProps {
     sessionId: string;
@@ -30,7 +31,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
         <header className="px-6 py-4 border-b bg-gradient-to-r from-background to-muted/10 relative overflow-hidden backdrop-blur-sm">
             <div className="flex justify-between items-center relative z-10">
                 <div className="flex flex-col">
-                    <h1 className="text-xl font-bold tracking-tight leading-tight">{messages.chat.header.title}</h1>
+                    {/* 브랜드명(BRAND_CONFIG.appName) + 로케일 접미 라벨 합성 → 리브랜딩 시 자동 반영 */}
+                    <h1 className="text-xl font-bold tracking-tight leading-tight">{`${BRAND_CONFIG.appName} ${messages.chat.header.title}`}</h1>
                     <p className="text-sm text-muted-foreground">{messages.chat.header.subtitle}</p>
                 </div>
 
