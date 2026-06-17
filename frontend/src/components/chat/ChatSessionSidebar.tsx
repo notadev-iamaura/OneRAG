@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { ChatMessage } from '../../types';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 
 interface StoredChatSession {
   id: string;
@@ -36,14 +38,16 @@ function writeSessions(sessions: StoredChatSession[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions.slice(0, 50)));
 }
 
-function createDefaultTitle(messages: ChatMessage[]) {
+function createDefaultTitle(messages: ChatMessage[], defaultTitle: string) {
   const firstUserMessage = messages.find((message) => message.role === 'user' && message.content?.trim());
-  if (!firstUserMessage) return '새 대화';
+  if (!firstUserMessage) return defaultTitle;
   const title = firstUserMessage.content.trim().replace(/\s+/g, ' ');
   return title.length > 28 ? `${title.slice(0, 28)}...` : title;
 }
 
 export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelectSession }: ChatSessionSidebarProps) {
+  // i18n: prop의 messages(채팅 메시지 배열)와 이름 충돌을 피하기 위해 별칭(i18n)으로 받는다.
+  const { messages: i18n } = useMenuMessages();
   const [sessions, setSessions] = useState<StoredChatSession[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -78,9 +82,9 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
       const now = new Date().toISOString();
       const nextSession: StoredChatSession = {
         id: sessionId,
-        title: existing?.title && existing.title !== '새 대화'
+        title: existing?.title && existing.title !== i18n.chatSidebar.defaultTitle
           ? existing.title
-          : createDefaultTitle(messages),
+          : createDefaultTitle(messages, i18n.chatSidebar.defaultTitle),
         updatedAt: now,
         messageCount: messages.length,
       };
@@ -93,7 +97,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
       // 영속화는 위의 전용 effect가 담당한다(updater는 순수 유지).
       return next;
     });
-  }, [sessionId, messages]);
+  }, [sessionId, messages, i18n.chatSidebar.defaultTitle]);
 
   const sortedSessions = useMemo(
     () => [...sessions].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
@@ -125,7 +129,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
     if (!editingId) return;
     const next = sessions.map((session) =>
       session.id === editingId
-        ? { ...session, title: editingTitle.trim() || '새 대화' }
+        ? { ...session, title: editingTitle.trim() || i18n.chatSidebar.defaultTitle }
         : session
     );
     setSessions(next);  // 영속화는 전용 effect가 처리
@@ -138,10 +142,10 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
       <div className="p-4 border-b border-border/60 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-bold tracking-tight">대화방</h2>
-            <p className="text-xs text-muted-foreground">최근 대화를 빠르게 전환합니다</p>
+            <h2 className="text-sm font-bold tracking-tight">{i18n.chatSidebar.heading}</h2>
+            <p className="text-xs text-muted-foreground">{i18n.chatSidebar.subtitle}</p>
           </div>
-          <Button size="icon" variant="outline" className="rounded-xl" onClick={onNewSession} title="새 대화">
+          <Button size="icon" variant="outline" className="rounded-xl" onClick={onNewSession} title={i18n.chatSidebar.newChat}>
             <Plus className="w-4 h-4" />
           </Button>
         </div>
@@ -151,7 +155,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
         {sortedSessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center text-muted-foreground h-40 gap-2">
             <MessageSquare className="w-8 h-8 opacity-50" />
-            <p className="text-sm">저장된 대화가 없습니다</p>
+            <p className="text-sm">{i18n.chatSidebar.emptyState}</p>
           </div>
         ) : (
           sortedSessions.map((session) => {
@@ -189,7 +193,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
                       <p className="truncate text-sm font-semibold text-foreground">{session.title}</p>
                     )}
                     <p className="mt-1 text-xs text-muted-foreground">
-                      메시지 {session.messageCount}개 · {new Date(session.updatedAt).toLocaleDateString()}
+                      {format(i18n.chatSidebar.messageCount, { count: session.messageCount })} · {new Date(session.updatedAt).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -201,7 +205,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
                         event.stopPropagation();
                         startEditing(session);
                       }}
-                      title="이름 변경"
+                      title={i18n.chatSidebar.rename}
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
@@ -213,7 +217,7 @@ export function ChatSessionSidebar({ sessionId, messages, onNewSession, onSelect
                         event.stopPropagation();
                         handleDeleteSession(session.id);
                       }}
-                      title="삭제"
+                      title={i18n.chatSidebar.delete}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>

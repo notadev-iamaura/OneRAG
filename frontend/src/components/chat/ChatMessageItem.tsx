@@ -27,6 +27,7 @@ import {
     formatTimestamp,
 } from '../../utils/chat/formatters';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { format } from '../../i18n/format';
 
 interface ChatMessageItemProps {
     message: ChatMessage;
@@ -130,7 +131,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                                 <AccordionTrigger className="flex justify-start gap-2 py-2 px-0 hover:no-underline hover:opacity-80 transition-all border-none">
                                     <div className="flex items-center gap-2 text-[11px] font-bold text-primary/60">
                                         <BookOpen className="h-3.5 w-3.5 text-blue-500" />
-                                        참고한 문서 ({message.sources.length}개)
+                                        {format(messages.chat.message.sourcesCount, { count: message.sources.length })}
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="pt-2 pb-0">
