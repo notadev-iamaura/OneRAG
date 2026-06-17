@@ -1,6 +1,6 @@
 """ChromaRetriever.add_documents 회귀 테스트.
 
-chroma 모드 ingestion 파리티(JapanRAG 백포트): 업로드 임베딩 청크를
+chroma 모드 ingestion 파리티(원본 백포트): 업로드 임베딩 청크를
 {id, vector, content, metadata}로 변환해 ChromaVectorStore에 위임하고
 {success_count, error_count, total_count, errors} 결과를 반환한다.
 """

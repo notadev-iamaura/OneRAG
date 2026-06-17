@@ -14,9 +14,9 @@
   상태 전이가 깨지는 퇴행을 외부 의존성 0으로 잡는 결정론적 스모크.
 - 경로 누수 가드(tmp_path가 응답 JSON에 노출되지 않음)는 도메인 무관하게 유용.
 
-JapanRAG 원본 대비 일반화(제거/치환):
+원본 대비 일반화(제거/치환):
 - 멀티테넌트(company_id), get_document_source_detail, extraction_summary,
-  document_ledger, 일본어 골든 텍스트 등 JapanRAG 전용 가정 전부 제거.
+  document_ledger, 특정 언어 골든 텍스트 등 원본 전용 가정 전부 제거.
 - OneRAG retrieval/document_processor 시그니처에 맞춤
   (add_documents는 company_id 없음, 임베딩은 embed_chunks_parallel 사용).
 - 픽스처 텍스트는 언어 중립 영어 문장으로 작성.

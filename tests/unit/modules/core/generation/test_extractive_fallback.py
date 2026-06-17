@@ -2,7 +2,7 @@
 
 LLM이 빈 답변을 반환했을 때 무응답 대신 상위 3개 문서 발췌(각 ~700자)로 최소
 답변을 합성한다. 에러 숨김 금지 + graceful degradation 원칙에 부합한다.
-JapanRAG의 RESPONSE_LANGUAGE_PROFILES(전체 i18n)는 차용하지 않고 영어 기본 문자열만.
+원본의 RESPONSE_LANGUAGE_PROFILES(전체 i18n)는 차용하지 않고 영어 기본 문자열만.
 """
 
 from __future__ import annotations
