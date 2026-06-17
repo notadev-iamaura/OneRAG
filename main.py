@@ -416,7 +416,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if LANGSMITH_AVAILABLE:
             langsmith_tracing = os.getenv("LANGSMITH_TRACING", "false").lower() == "true"
             langsmith_api_key = os.getenv("LANGSMITH_API_KEY")
-            langsmith_project = os.getenv("LANGSMITH_PROJECT", "moneywork-chatbot")
+            langsmith_project = os.getenv("LANGSMITH_PROJECT", "rag-chatbot")
 
             if langsmith_tracing and langsmith_api_key:
                 # 환경변수를 통해 LangSmith 자동 활성화

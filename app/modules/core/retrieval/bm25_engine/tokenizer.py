@@ -72,8 +72,8 @@ class KoreanTokenizer:
 
     사용 예시:
         tokenizer = KoreanTokenizer()
-        tokens = tokenizer.tokenize("삼성전자의 주가가 올랐습니다")
-        # → ["삼성전자", "주가", "오르"]
+        tokens = tokenizer.tokenize("회사의 매출이 올랐습니다")
+        # → ["회사", "매출", "오르"]
     """
 
     def __init__(

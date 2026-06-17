@@ -85,7 +85,7 @@ make lint-imports       # 아키텍처 계층 검증 (Import Linter)
 
 ### 1. 지능형 검색 (Hybrid Retrieval)
 - **Weaviate**: Dense(의미) + Sparse(BM25) 하이브리드.
-- **GraphRAG**: `NetworkXGraphStore`에 벡터 검색 엔진 통합. "SAMSUNG"으로 "삼성전자" 노드 탐색 가능.
+- **GraphRAG**: `NetworkXGraphStore`에 벡터 검색 엔진 통합. 영문 약어 쿼리로 한글 정식 명칭 노드 탐색 가능.
 - **Reranker v2.1**: 3단계 계층 구조 (approach → provider → model)로 명확한 설정
   - **approach**: `llm`, `cross-encoder`, `late-interaction`, `local` (4종)
   - **provider**: google, openai, jina, cohere, openrouter, sentence-transformers (6종)

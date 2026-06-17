@@ -267,7 +267,7 @@ class LLMQueryRouter:
             return self._build_default_prompt()
 
         # 2. 시스템 역할 및 설명
-        system_role = domain_config.get("system_role", "AI Assistant")
+        system_role = domain_config.get("system_role", "사용자 질문의 의도를 분석하는 어시스턴트")
         domain_desc = domain_config.get("domain_description", "사용자의 질문에 답변합니다.")
 
         # 3. RAG 카테고리 구성

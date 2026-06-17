@@ -12,8 +12,19 @@ from pathlib import Path
 from time import time
 from typing import Any
 
-# 한국 시간대 (KST = UTC+9)
-KST = timezone(timedelta(hours=9))
+
+# 로그 타임스탬프 타임존: LOG_TZ_OFFSET_HOURS env로 오버라이드 가능, 미설정 시 KST(UTC+9) 기본.
+# 비한국 지역 배포 시 자국 타임존 오프셋을 지정할 수 있다(미설정 시 기존 KST 동작 유지=회귀 0).
+def _resolve_log_timezone() -> timezone:
+    """LOG_TZ_OFFSET_HOURS env로 로그 타임스탬프 오프셋(시간)을 지정. 미설정/오류 시 KST(+9)로 폴백."""
+    try:
+        return timezone(timedelta(hours=float(os.getenv("LOG_TZ_OFFSET_HOURS", "9"))))
+    except (TypeError, ValueError):
+        # 잘못된 값이면 기본 KST로 폴백(graceful degradation)
+        return timezone(timedelta(hours=9))
+
+
+KST = _resolve_log_timezone()
 
 
 class LogThrottler:
