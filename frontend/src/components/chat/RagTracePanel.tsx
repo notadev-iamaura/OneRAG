@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { ApiLog, ChatMessage, Source as SourceType } from '../../types';
 import { formatModelDisplayName } from './formatModelDisplayName';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
+import type { MenuMessages } from '../../i18n/menuMessages';
 
 interface RagTracePanelProps {
   messages: ChatMessage[];
@@ -26,10 +28,10 @@ function asChatResponseLogData(data: unknown): ChatResponseLogData {
   return data && typeof data === 'object' ? data as ChatResponseLogData : {};
 }
 
-function formatValue(value: unknown) {
+function formatValue(value: unknown, messages: MenuMessages) {
   if (value === undefined || value === null || value === '') return 'N/A';
   if (typeof value === 'number') return Number.isFinite(value) ? value.toLocaleString() : String(value);
-  if (typeof value === 'boolean') return value ? '예' : '아니오';
+  if (typeof value === 'boolean') return value ? messages.ragTrace.booleanTrue : messages.ragTrace.booleanFalse;
   return String(value);
 }
 
@@ -42,6 +44,8 @@ function latestUserMessage(messages: ChatMessage[]) {
 }
 
 export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }: RagTracePanelProps) {
+  // i18n: prop의 messages(채팅 메시지 배열)와 이름 충돌을 피하기 위해 별칭(i18n)으로 받는다.
+  const { messages: i18n } = useMenuMessages();
   const assistantMessage = useMemo(() => latestAssistantMessage(messages), [messages]);
   const userMessage = useMemo(() => latestUserMessage(messages), [messages]);
   const sources = assistantMessage?.sources ?? [];
@@ -66,7 +70,7 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
               <Activity className="w-4 h-4 text-primary" />
               RAG Trace
             </h2>
-            <p className="text-xs text-muted-foreground mt-1">검색·재순위·생성 흐름을 확인합니다</p>
+            <p className="text-xs text-muted-foreground mt-1">{i18n.ragTrace.flowDescription}</p>
           </div>
           <Badge variant={isStreaming ? 'default' : 'secondary'} className="rounded-full">
             {isStreaming ? 'Streaming' : 'Ready'}
@@ -79,12 +83,12 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <MessageSquareText className="w-4 h-4 text-primary" />
-              최근 질문
+              {i18n.ragTrace.recentQuestion}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground line-clamp-4">
-              {userMessage?.content || '아직 질문이 없습니다.'}
+              {userMessage?.content || i18n.ragTrace.noQuestionYet}
             </p>
           </CardContent>
         </Card>
@@ -92,20 +96,20 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
         <div className="grid grid-cols-2 gap-3">
           <TraceMetric icon={FileSearch} label="Sources" value={sources.length} />
           <TraceMetric icon={Timer} label="Latency" value={processingTime ? `${processingTime}ms` : 'N/A'} />
-          <TraceMetric icon={Gauge} label="Tokens" value={formatValue(tokensUsed)} />
-          <TraceMetric icon={Bot} label="Model" value={formatValue(formatModelDisplayName(modelInfo?.model) ?? modelInfo?.provider)} />
+          <TraceMetric icon={Gauge} label="Tokens" value={formatValue(tokensUsed, i18n)} />
+          <TraceMetric icon={Bot} label="Model" value={formatValue(formatModelDisplayName(modelInfo?.model) ?? modelInfo?.provider, i18n)} />
         </div>
 
         <Card className="rounded-2xl border-border/60 bg-card/60">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Database className="w-4 h-4 text-primary" />
-              검색된 문서 Top-K
+              {i18n.ragTrace.topKDocuments}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {sources.length === 0 ? (
-              <p className="text-sm text-muted-foreground">아직 표시할 출처가 없습니다.</p>
+              <p className="text-sm text-muted-foreground">{i18n.ragTrace.noSourcesYet}</p>
             ) : (
               sources.slice(0, 5).map((source, index) => (
                 <div
@@ -126,12 +130,12 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
                     )}
                   </div>
                   <p className="text-muted-foreground line-clamp-2">
-                    {source.content_preview || '본문 미리보기가 없습니다.'}
+                    {source.content_preview || i18n.ragTrace.noContentPreview}
                   </p>
                   <div className="flex flex-wrap gap-1 pt-1 text-[10px] text-muted-foreground">
-                    <span>page: {formatValue(source.page)}</span>
-                    <span>chunk: {formatValue(source.chunk)}</span>
-                    <span>rerank: {formatValue(source.rerank_method)}</span>
+                    <span>page: {formatValue(source.page, i18n)}</span>
+                    <span>chunk: {formatValue(source.chunk, i18n)}</span>
+                    <span>rerank: {formatValue(source.rerank_method, i18n)}</span>
                   </div>
                 </div>
               ))
@@ -158,7 +162,7 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
                 </Badge>
               </div>
             ))}
-            {apiLogs.length === 0 && <p className="text-sm text-muted-foreground">API 로그가 없습니다.</p>}
+            {apiLogs.length === 0 && <p className="text-sm text-muted-foreground">{i18n.ragTrace.noApiLogs}</p>}
           </CardContent>
         </Card>
       </div>

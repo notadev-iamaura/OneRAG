@@ -36,6 +36,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from '@/lib/utils';
+import { useMenuMessages } from '../../i18n/useMenuLocale';
 
 interface ChatDevToolsProps {
     showDevTools: boolean;
@@ -68,6 +69,8 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
     handleNewSession,
     copyToClipboard
 }) => {
+    // i18n: 개발자 도구 패널의 사용자 노출 라벨
+    const { messages } = useMenuMessages();
     if (!showDevTools) return null;
 
     const modelConfigEntries = sessionInfo?.modelInfo?.model_config
@@ -80,14 +83,14 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
             <div className="p-4 border-b bg-muted/30 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Settings className="h-4 w-4 text-primary" />
-                    <h2 className="text-sm font-bold tracking-tight">개발자 도구</h2>
+                    <h2 className="text-sm font-bold tracking-tight">{messages.chatDevTools.title}</h2>
                 </div>
                 <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 rounded-lg hover:bg-muted"
                     onClick={() => setShowDevTools(false)}
-                    title="개발자 도구 닫기"
+                    title={messages.chatDevTools.close}
                 >
                     <EyeOff className="h-4 w-4 text-muted-foreground" />
                 </Button>
@@ -102,11 +105,11 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                 <TabsList className="w-full flex rounded-none bg-muted/20 border-b h-10 p-1">
                     <TabsTrigger value="0" className="flex-1 text-[11px] font-bold gap-1.5 data-[state=active]:bg-background shadow-sm h-8 rounded-md transition-all">
                         <Info className="h-3 w-3" />
-                        세션 정보
+                        {messages.chatDevTools.sessionInfoTab}
                     </TabsTrigger>
                     <TabsTrigger value="1" className="flex-1 text-[11px] font-bold gap-1.5 data-[state=active]:bg-background shadow-sm h-8 rounded-md transition-all">
                         <History className="h-3 w-3" />
-                        API 로그
+                        {messages.chatDevTools.apiLogTab}
                     </TabsTrigger>
                 </TabsList>
 
@@ -117,7 +120,7 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                             <CardContent className="p-3.5 space-y-2.5">
                                 <div className="flex items-center gap-2">
                                     <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">현재 세션</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{messages.chatDevTools.currentSession}</span>
                                 </div>
                                 <div className="font-mono text-[10px] bg-muted p-2.5 rounded-lg break-all border border-border/50 text-foreground/80 leading-relaxed">
                                     {sessionId || 'N/A'}
@@ -132,19 +135,19 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                                     <CardContent className="p-3.5 space-y-3">
                                         <div className="flex items-center gap-2">
                                             <BarChart2 className="h-3.5 w-3.5 text-green-500" />
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">세션 통계</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{messages.chatDevTools.sessionStats}</span>
                                         </div>
                                         <div className="grid gap-2">
                                             <div className="flex items-center justify-between">
-                                                <span className="text-[11px] font-medium text-muted-foreground">메시지</span>
+                                                <span className="text-[11px] font-medium text-muted-foreground">{messages.chatDevTools.messages}</span>
                                                 <Badge variant="secondary" className="h-5 text-[10px] font-bold">{sessionInfo.messageCount}</Badge>
                                             </div>
                                             <div className="flex items-center justify-between">
-                                                <span className="text-[11px] font-medium text-muted-foreground">토큰</span>
+                                                <span className="text-[11px] font-medium text-muted-foreground">{messages.chatDevTools.tokens}</span>
                                                 <Badge className="h-5 text-[10px] font-bold bg-blue-500 hover:bg-blue-600">{sessionInfo.tokensUsed}</Badge>
                                             </div>
                                             <div className="flex items-center justify-between">
-                                                <span className="text-[11px] font-medium text-muted-foreground">처리시간</span>
+                                                <span className="text-[11px] font-medium text-muted-foreground">{messages.chatDevTools.processingTime}</span>
                                                 <Badge className="h-5 text-[10px] font-bold bg-green-500 hover:bg-green-600">{sessionInfo.processingTime?.toFixed(2)}s</Badge>
                                             </div>
                                         </div>
@@ -156,28 +159,28 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                                         <CardContent className="p-3.5 space-y-3">
                                             <div className="flex items-center gap-2">
                                                 <ChatbotIcon width={14} height={14} animated={true} />
-                                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">LLM 모델 정보</span>
+                                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{messages.chatDevTools.llmModelInfo}</span>
                                             </div>
                                             <div className="space-y-1.5">
                                                 <div className="flex justify-between text-[11px]">
-                                                    <span className="text-muted-foreground">프로바이더</span>
+                                                    <span className="text-muted-foreground">{messages.chatDevTools.provider}</span>
                                                     <span className="font-bold">{sessionInfo.modelInfo.provider || 'N/A'}</span>
                                                 </div>
                                                 <div className="flex justify-between text-[11px]">
-                                                    <span className="text-muted-foreground">모델</span>
+                                                    <span className="text-muted-foreground">{messages.chatDevTools.model}</span>
                                                     <span className="font-bold truncate max-w-[120px]" title={sessionInfo.modelInfo.model}>
                                                         {sessionInfo.modelInfo.model || 'N/A'}
                                                     </span>
                                                 </div>
                                                 <div className="flex justify-between text-[11px]">
-                                                    <span className="text-muted-foreground">생성시간</span>
+                                                    <span className="text-muted-foreground">{messages.chatDevTools.generationTime}</span>
                                                     <span className="font-bold">{sessionInfo.modelInfo.generation_time ? `${sessionInfo.modelInfo.generation_time.toFixed(3)}s` : 'N/A'}</span>
                                                 </div>
 
                                                 {modelConfigEntries.length > 0 && (
                                                     <div className="pt-2 space-y-2">
                                                         <Separator className="bg-border/40" />
-                                                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground/70 block px-0.5">모델 파라미터</span>
+                                                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-muted-foreground/70 block px-0.5">{messages.chatDevTools.modelParameters}</span>
                                                         <div className="grid gap-1 px-0.5">
                                                             {modelConfigEntries.map(([key, value]) => (
                                                                 <div key={key} className="flex justify-between text-[10px]">
@@ -202,7 +205,7 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                                         >
                                             <div className="flex items-center gap-2">
                                                 <Bug className="h-3.5 w-3.5 text-orange-500" />
-                                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Debug 정보</span>
+                                                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{messages.chatDevTools.debugInfo}</span>
                                             </div>
                                             {isDebugExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                                         </div>
@@ -236,7 +239,7 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                             onClick={handleNewSession}
                         >
                             <RefreshCw className="h-3.5 w-3.5" />
-                            새 세션 시작
+                            {messages.chatDevTools.startNewSession}
                         </Button>
                     </TabsContent>
 
@@ -244,7 +247,7 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                         {apiLogs.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-12 text-center space-y-3">
                                 <History className="h-10 w-10 text-muted-foreground/30" />
-                                <p className="text-xs text-muted-foreground italic">API 호출 내역이 없습니다.</p>
+                                <p className="text-xs text-muted-foreground italic">{messages.chatDevTools.noApiCalls}</p>
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -270,17 +273,17 @@ export const ChatDevTools: React.FC<ChatDevToolsProps> = ({
                                                                     variant="ghost"
                                                                     size="icon"
                                                                     className="h-6 w-6 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                                                                    aria-label="로그 복사"
+                                                                    aria-label={messages.chatDevTools.copyLog}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         const logText = JSON.stringify(log.data, null, 2);
-                                                                        copyToClipboard(logText, '로그가 복사되었습니다');
+                                                                        copyToClipboard(logText, messages.chatDevTools.logCopiedNotice);
                                                                     }}
                                                                 >
                                                                     <Copy className="h-3 w-3" />
                                                                 </Button>
                                                             </TooltipTrigger>
-                                                            <TooltipContent className="text-[10px]">복사</TooltipContent>
+                                                            <TooltipContent className="text-[10px]">{messages.chatDevTools.copy}</TooltipContent>
                                                         </Tooltip>
                                                     </TooltipProvider>
                                                     <Badge

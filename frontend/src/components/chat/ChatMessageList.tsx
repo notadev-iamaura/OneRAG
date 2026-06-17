@@ -62,7 +62,7 @@ const StreamingMessageItem: React.FC<{
                 </div>
                 <div className="flex items-center gap-1.5 px-0.5 mt-1">
                     <Loader2 className="h-2.5 w-2.5 animate-spin text-primary opacity-80" />
-                    <span className="text-[10px] text-muted-foreground opacity-60 font-bold tracking-tight">스트리밍 중...</span>
+                    <span className="text-[10px] text-muted-foreground opacity-60 font-bold tracking-tight">{messages.chatStream.streaming}</span>
                 </div>
             </div>
         </div>
@@ -150,7 +150,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                                         <Skeleton className="h-3.5 w-[80%] bg-muted-foreground/10" />
                                         <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/20">
                                             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground opacity-60" />
-                                            <span className="text-[11px] text-muted-foreground opacity-80 font-medium">답변을 생성하고 있습니다...</span>
+                                            <span className="text-[11px] text-muted-foreground opacity-80 font-medium">{i18n.chatStream.generating}</span>
                                         </div>
                                     </div>
                                 </div>

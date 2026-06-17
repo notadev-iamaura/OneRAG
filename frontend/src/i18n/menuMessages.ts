@@ -48,7 +48,59 @@ export interface MenuMessages {
       copiedNotice: string;
       scrollToBottom: string;
       preparingResponse: string;
+      sourcesCount: string;
     };
+  };
+  // 스트리밍/생성 진행 안내(채팅 메시지 목록)
+  chatStream: {
+    streaming: string;
+    generating: string;
+  };
+  // 대화방 사이드바
+  chatSidebar: {
+    defaultTitle: string;
+    heading: string;
+    subtitle: string;
+    newChat: string;
+    emptyState: string;
+    rename: string;
+    delete: string;
+    messageCount: string;
+  };
+  // 개발자 도구 패널
+  chatDevTools: {
+    title: string;
+    close: string;
+    sessionInfoTab: string;
+    apiLogTab: string;
+    currentSession: string;
+    sessionStats: string;
+    messages: string;
+    tokens: string;
+    processingTime: string;
+    llmModelInfo: string;
+    provider: string;
+    model: string;
+    generationTime: string;
+    modelParameters: string;
+    debugInfo: string;
+    startNewSession: string;
+    noApiCalls: string;
+    copyLog: string;
+    logCopiedNotice: string;
+    copy: string;
+  };
+  // RAG Trace 패널
+  ragTrace: {
+    flowDescription: string;
+    recentQuestion: string;
+    noQuestionYet: string;
+    topKDocuments: string;
+    noSourcesYet: string;
+    noContentPreview: string;
+    noApiLogs: string;
+    booleanTrue: string;
+    booleanFalse: string;
   };
   // 청크(인용 출처) 상세 모달
   chunkDetail: {
@@ -122,7 +174,55 @@ const ko: MenuMessages = {
       copiedNotice: "답변이 복사되었습니다",
       scrollToBottom: "맨 아래로 이동",
       preparingResponse: "응답을 준비하고 있습니다...",
+      sourcesCount: "참고한 문서 ({count}개)",
     },
+  },
+  chatStream: {
+    streaming: "스트리밍 중...",
+    generating: "답변을 생성하고 있습니다...",
+  },
+  chatSidebar: {
+    defaultTitle: "새 대화",
+    heading: "대화방",
+    subtitle: "최근 대화를 빠르게 전환합니다",
+    newChat: "새 대화",
+    emptyState: "저장된 대화가 없습니다",
+    rename: "이름 변경",
+    delete: "삭제",
+    messageCount: "메시지 {count}개",
+  },
+  chatDevTools: {
+    title: "개발자 도구",
+    close: "개발자 도구 닫기",
+    sessionInfoTab: "세션 정보",
+    apiLogTab: "API 로그",
+    currentSession: "현재 세션",
+    sessionStats: "세션 통계",
+    messages: "메시지",
+    tokens: "토큰",
+    processingTime: "처리시간",
+    llmModelInfo: "LLM 모델 정보",
+    provider: "프로바이더",
+    model: "모델",
+    generationTime: "생성시간",
+    modelParameters: "모델 파라미터",
+    debugInfo: "Debug 정보",
+    startNewSession: "새 세션 시작",
+    noApiCalls: "API 호출 내역이 없습니다.",
+    copyLog: "로그 복사",
+    logCopiedNotice: "로그가 복사되었습니다",
+    copy: "복사",
+  },
+  ragTrace: {
+    flowDescription: "검색·재순위·생성 흐름을 확인합니다",
+    recentQuestion: "최근 질문",
+    noQuestionYet: "아직 질문이 없습니다.",
+    topKDocuments: "검색된 문서 Top-K",
+    noSourcesYet: "아직 표시할 출처가 없습니다.",
+    noContentPreview: "본문 미리보기가 없습니다.",
+    noApiLogs: "API 로그가 없습니다.",
+    booleanTrue: "예",
+    booleanFalse: "아니오",
   },
   chunkDetail: {
     modalTitle: "RAG 참고 자료 상세",
@@ -192,7 +292,55 @@ const en: MenuMessages = {
       copiedNotice: "Answer copied",
       scrollToBottom: "Scroll to bottom",
       preparingResponse: "Preparing a response...",
+      sourcesCount: "Referenced documents ({count})",
     },
+  },
+  chatStream: {
+    streaming: "Streaming...",
+    generating: "Generating a response...",
+  },
+  chatSidebar: {
+    defaultTitle: "New chat",
+    heading: "Conversations",
+    subtitle: "Quickly switch between recent chats",
+    newChat: "New chat",
+    emptyState: "No saved conversations",
+    rename: "Rename",
+    delete: "Delete",
+    messageCount: "{count} messages",
+  },
+  chatDevTools: {
+    title: "Developer tools",
+    close: "Close developer tools",
+    sessionInfoTab: "Session info",
+    apiLogTab: "API logs",
+    currentSession: "Current session",
+    sessionStats: "Session stats",
+    messages: "Messages",
+    tokens: "Tokens",
+    processingTime: "Processing time",
+    llmModelInfo: "LLM model info",
+    provider: "Provider",
+    model: "Model",
+    generationTime: "Generation time",
+    modelParameters: "Model parameters",
+    debugInfo: "Debug info",
+    startNewSession: "Start new session",
+    noApiCalls: "No API calls yet.",
+    copyLog: "Copy log",
+    logCopiedNotice: "Log copied",
+    copy: "Copy",
+  },
+  ragTrace: {
+    flowDescription: "Review the search, rerank, and generation flow",
+    recentQuestion: "Recent question",
+    noQuestionYet: "No question yet.",
+    topKDocuments: "Top-K retrieved documents",
+    noSourcesYet: "No sources to display yet.",
+    noContentPreview: "No content preview available.",
+    noApiLogs: "No API logs.",
+    booleanTrue: "Yes",
+    booleanFalse: "No",
   },
   chunkDetail: {
     modalTitle: "RAG Source Details",
