@@ -320,6 +320,12 @@ class GoogleLLMClient(BaseLLMClient):
             )
             raise
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Google, multimodal)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def generate_multimodal(
         self,
         prompt: str,
@@ -387,6 +393,15 @@ class GoogleLLMClient(BaseLLMClient):
             )
 
             logger.info("멀티모달 응답 수신 완료")
+            p, c, t = self._usage_google(response)
+            self._emit_generation(
+                model=self.model,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
             return response.text  # type: ignore[no-any-return]
 
         except ValueError as e:

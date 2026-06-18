@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.lib.errors import ErrorCode, RetrievalError
+from app.lib.langfuse_client import observe, record_generation
 
 GROK_RESPONSES_API_URL = "https://api.x.ai/v1/responses"
 GROK_DEFAULT_MODEL = "grok-3"
@@ -66,6 +67,12 @@ class GrokAnswerProvider:
             "Content-Type": "application/json",
         }
 
+    @observe(
+        as_type="generation",
+        name="Grok Answer Generation",
+        capture_input=False,
+        capture_output=False,
+    )
     async def answer(
         self,
         question: str,
@@ -133,6 +140,16 @@ class GrokAnswerProvider:
         answer_text, citations = self._parse_answer_and_citations(data)
         usage = data.get("usage") or {}
         tokens_used = int(usage.get("total_tokens") or usage.get("output_tokens") or 0)
+
+        # Grok 답변 생성 LLM 호출의 토큰/비용을 Langfuse generation으로 기록.
+        # xAI Responses API는 input/output_tokens를 쓰며, prompt/completion_tokens 폴백을 둔다.
+        record_generation(
+            model=data.get("model", self.model),
+            prompt_tokens=int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0),
+            completion_tokens=int(usage.get("output_tokens") or usage.get("completion_tokens") or 0),
+            total_tokens=int(usage.get("total_tokens") or 0),
+            model_parameters={"temperature": temperature},
+        )
 
         return GrokAnswerResult(
             answer=answer_text,

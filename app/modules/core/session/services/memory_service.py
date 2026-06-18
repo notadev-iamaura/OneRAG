@@ -15,6 +15,7 @@ from cachetools import TTLCache
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.messages import AIMessage, HumanMessage
 
+from .....lib.langfuse_client import observe, record_generation
 from .....lib.logger import get_logger
 from .....lib.mongodb_client import MongoDBClient
 
@@ -931,6 +932,12 @@ class MemoryService:
             logger.error(f"MongoDB 채팅 히스토리 저장 실패: {e}", exc_info=True)
             # ❌ raise 하지 않음 → 채팅 중단 없음
 
+    @observe(
+        as_type="generation",
+        name="Conversation Summary",
+        capture_input=False,
+        capture_output=False,
+    )
     async def _summarize_conversations(self, messages: list) -> str:
         """
         대화 목록을 LLM으로 요약
@@ -983,6 +990,17 @@ class MemoryService:
 
             summary = response.text.strip()
             logger.debug(f"대화 요약 생성 성공: {summary[:100]}...")
+            # 대화 요약 LLM 호출의 토큰/비용을 Langfuse generation으로 기록한다.
+            # genai 네이티브 SDK는 usage_metadata를 속성(prompt_token_count 등)으로 노출한다.
+            um = getattr(response, "usage_metadata", None)
+            if um is not None:
+                record_generation(
+                    model=self.summary_llm_model,
+                    prompt_tokens=getattr(um, "prompt_token_count", 0) or 0,
+                    completion_tokens=getattr(um, "candidates_token_count", 0) or 0,
+                    total_tokens=getattr(um, "total_token_count", 0) or 0,
+                    model_parameters={"temperature": 0.3, "max_output_tokens": 200},
+                )
             return summary
 
         except Exception as e:
