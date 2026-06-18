@@ -114,6 +114,57 @@ if not LANGFUSE_AVAILABLE:
     Langfuse = Any  # type: ignore[assignment, misc]
 
 
+def record_generation(
+    *,
+    model: str,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    total_tokens: int = 0,
+    output: str | None = None,
+    model_parameters: dict[str, Any] | None = None,
+) -> None:
+    """현재 Langfuse generation observation에 model/usage/파라미터/출력을 기록한다.
+
+    `@observe(as_type="generation")`로 감싼 함수 내부에서 호출해, LLM 호출별 model과
+    토큰 usage(input/output/total)를 기록한다. Langfuse가 등록 모델 가격표로 호출 단위
+    비용을 자동 계산한다.
+
+    llm_client를 경유하지 않는 호출처(LangChain self_rag evaluator, LLM 리랭커 등)의
+    공통 계측 진입점이다(llm_client는 자체 _emit_generation을 사용).
+
+    Args:
+        model: 호출 모델 ID.
+        prompt_tokens: 입력 토큰 수.
+        completion_tokens: 출력 토큰 수.
+        total_tokens: 총 토큰 수(0이면 prompt+completion으로 보정).
+        output: 응답 텍스트(generation output). None이면 생략(PII 주의 — 호출측이 판단).
+        model_parameters: 생성 파라미터(temperature/max_tokens 등). None이면 생략.
+
+    Note:
+        LANGFUSE 비활성(ENVIRONMENT=test 등) 시 langfuse_context는 더미 no-op이며,
+        기록 실패가 호출을 깨뜨리지 않도록 예외를 흡수한다(graceful degradation).
+    """
+    try:
+        usage: dict[str, Any] | None = None
+        if total_tokens or prompt_tokens or completion_tokens:
+            usage = {
+                "input": prompt_tokens,
+                "output": completion_tokens,
+                "total": total_tokens or (prompt_tokens + completion_tokens),
+                "unit": "TOKENS",
+            }
+        obs_kwargs: dict[str, Any] = {"model": model}
+        if usage is not None:
+            obs_kwargs["usage"] = usage
+        if model_parameters:
+            obs_kwargs["model_parameters"] = model_parameters
+        if output is not None:
+            obs_kwargs["output"] = output
+        langfuse_context.update_current_observation(**obs_kwargs)
+    except Exception as e:  # noqa: BLE001 - 관측 실패는 비치명적(graceful degradation)
+        logger.debug(f"Langfuse generation 기록 건너뜀: {e}")
+
+
 class LangfuseClient:
     """
     Langfuse 클라이언트 래퍼
@@ -322,4 +373,10 @@ class LangfuseClient:
 
 # 전역 observe 데코레이터 export (편의성)
 # 사용 예: @observe(name="Query Expansion")
-__all__ = ["LangfuseClient", "observe", "langfuse_context", "LANGFUSE_AVAILABLE"]
+__all__ = [
+    "LangfuseClient",
+    "observe",
+    "langfuse_context",
+    "LANGFUSE_AVAILABLE",
+    "record_generation",
+]

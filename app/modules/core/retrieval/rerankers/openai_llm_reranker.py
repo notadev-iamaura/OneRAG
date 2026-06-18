@@ -21,6 +21,7 @@ from typing import Any, cast
 
 import structlog
 
+from .....lib.langfuse_client import observe, record_generation
 from ..interfaces import IReranker, SearchResult
 
 logger = structlog.get_logger(__name__)
@@ -121,6 +122,12 @@ Do not include any other text, explanation, or formatting. Only the JSON object.
             reasoning_effort=reasoning_effort,
         )
 
+    @observe(
+        as_type="generation",
+        name="Reranker (OpenAI LLM)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def rerank(
         self, query: str, results: list[SearchResult], top_k: int | None = None
     ) -> list[SearchResult]:
@@ -195,6 +202,13 @@ User: {prompt}"""
             self._stats["total_processing_time"] += processing_time
             if hasattr(response, "usage") and response.usage:
                 self._stats["total_tokens_used"] += response.usage.total_tokens
+                # LLM 리랭킹 호출의 토큰/비용을 Langfuse generation으로 기록
+                record_generation(
+                    model=self.model,
+                    prompt_tokens=getattr(response.usage, "input_tokens", 0) or 0,
+                    completion_tokens=getattr(response.usage, "output_tokens", 0) or 0,
+                    total_tokens=getattr(response.usage, "total_tokens", 0) or 0,
+                )
 
             logger.info(
                 "openai_llm_reranking_completed",

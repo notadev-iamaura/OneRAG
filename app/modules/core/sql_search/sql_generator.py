@@ -20,6 +20,7 @@ from typing import Any
 
 from openai import OpenAI
 
+from ....lib.langfuse_client import observe, record_generation
 from ....lib.logger import get_logger
 from .prompts.sql_generation import SQL_GENERATION_SYSTEM_PROMPT, get_sql_generation_prompt
 
@@ -152,6 +153,12 @@ class SQLGenerator:
             )
         return self._client
 
+    @observe(
+        as_type="generation",
+        name="SQL Generation",
+        capture_input=False,
+        capture_output=False,
+    )
     async def generate(
         self,
         user_query: str,
@@ -205,6 +212,16 @@ class SQLGenerator:
 
             raw_response = response.choices[0].message.content or ""
             logger.debug(f"LLM 응답: {raw_response[:200]}...")
+
+            # SQL 생성 LLM 호출의 토큰/비용을 Langfuse generation으로 기록(OpenAI SDK usage)
+            usage = getattr(response, "usage", None)
+            record_generation(
+                model=self.model,
+                prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                total_tokens=getattr(usage, "total_tokens", 0) or 0,
+                model_parameters={"max_tokens": self.max_tokens, "temperature": self.temperature},
+            )
 
             # JSON 파싱
             result = self._parse_response(raw_response)

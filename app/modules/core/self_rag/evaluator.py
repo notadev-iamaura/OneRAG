@@ -17,6 +17,8 @@ from typing import Any
 import structlog
 from langchain_google_genai import ChatGoogleGenerativeAI
 
+from ....lib.langfuse_client import observe, record_generation
+
 logger = structlog.get_logger(__name__)
 
 
@@ -180,6 +182,12 @@ class LLMQualityEvaluator:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
 
 
+    @observe(
+        as_type="generation",
+        name="Self-RAG Evaluation",
+        capture_input=False,
+        capture_output=False,
+    )
     async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityScore:
         """
         답변 품질 평가
@@ -204,6 +212,16 @@ class LLMQualityEvaluator:
         # LLM 평가 수행
         try:
             response = await self.llm.ainvoke(prompt)
+            # LLM 호출별 토큰/비용을 Langfuse generation으로 기록한다(LangChain은
+            # AIMessage.usage_metadata에 input/output/total 토큰을 제공).
+            um = getattr(response, "usage_metadata", None)
+            if um:
+                record_generation(
+                    model=getattr(self.llm, "model", "gemini"),
+                    prompt_tokens=um.get("input_tokens", 0) or 0,
+                    completion_tokens=um.get("output_tokens", 0) or 0,
+                    total_tokens=um.get("total_tokens", 0) or 0,
+                )
             # response.content는 str | list 타입이므로 str 변환
             content: str = (
                 response.content if isinstance(response.content, str) else str(response.content)

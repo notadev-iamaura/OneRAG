@@ -14,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from .....lib.langfuse_client import observe, record_generation
 from .....lib.logger import get_logger
 from ..interfaces import IReranker, SearchResult
 
@@ -105,6 +106,12 @@ JSON 형식으로 응답해주세요:
         await self.http_client.aclose()
         logger.info("OpenRouterReranker 종료 완료")
 
+    @observe(
+        as_type="generation",
+        name="Reranker (OpenRouter)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def rerank(
         self,
         query: str,
@@ -147,6 +154,15 @@ JSON 형식으로 응답해주세요:
             )
             response.raise_for_status()
             response_data = response.json()
+
+            # LLM 리랭킹 호출의 토큰/비용을 Langfuse generation으로 기록(OpenAI 호환 usage)
+            usage = response_data.get("usage", {}) or {}
+            record_generation(
+                model=self.model,
+                prompt_tokens=usage.get("prompt_tokens", 0) or 0,
+                completion_tokens=usage.get("completion_tokens", 0) or 0,
+                total_tokens=usage.get("total_tokens", 0) or 0,
+            )
 
             # 응답 파싱
             content = response_data["choices"][0]["message"]["content"]

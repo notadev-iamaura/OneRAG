@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 import structlog
 
+from .....lib.langfuse_client import observe, record_generation
 from ..interfaces import IReranker, SearchResult
 
 logger = structlog.get_logger(__name__)
@@ -112,6 +113,12 @@ Do not include any other text, explanation, or formatting. Only the JSON object.
             api_mode="httpx_async",  # 모드 표시
         )
 
+    @observe(
+        as_type="generation",
+        name="Reranker (Gemini)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def rerank(
         self, query: str, results: list[SearchResult], top_k: int | None = None
     ) -> list[SearchResult]:
@@ -184,6 +191,15 @@ Do not include any other text, explanation, or formatting. Only the JSON object.
 
             # 응답 JSON 파싱
             response_data = response.json()
+
+            # LLM 리랭킹 호출의 토큰/비용을 Langfuse generation으로 기록
+            um = response_data.get("usageMetadata", {}) or {}
+            record_generation(
+                model=self.model,
+                prompt_tokens=um.get("promptTokenCount", 0) or 0,
+                completion_tokens=um.get("candidatesTokenCount", 0) or 0,
+                total_tokens=um.get("totalTokenCount", 0) or 0,
+            )
 
             # 응답 처리
             processing_time = time.time() - start_time
