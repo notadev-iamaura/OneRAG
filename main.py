@@ -553,6 +553,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as e:
                 logger.warning(f"⚠️ LangSmith shutdown error: {e}")
 
+        # Langfuse 트레이스 flush (그레이스풀 종료 시 버퍼에 남은 trace/score 유실 방지)
+        # @observe 데코레이터는 전역 langfuse_context를 사용하므로 그 전역을 flush한다.
+        # 비활성 시 langfuse_context는 더미(flush=no-op)라 항상 안전하게 호출 가능하다.
+        try:
+            from app.lib.langfuse_client import langfuse_context
+
+            logger.info("📊 Flushing Langfuse traces...")
+            langfuse_context.flush()
+            logger.info("📊 Langfuse tracing shutdown completed")
+        except Exception as e:
+            logger.warning(f"⚠️ Langfuse shutdown error: {e}")
+
         logger.info("📡 Application shutdown completed")
 
     except Exception as e:

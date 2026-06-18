@@ -77,7 +77,9 @@ dependencies = [
     # LangChain Text Splitters (텍스트 분할 유틸리티)
     "langchain-text-splitters>=0.0.1",
     # Langfuse for LLM observability and tracing
-    "langfuse>=2.0.0",
+    # v3는 langfuse.decorators(observe/langfuse_context) 제거 + score API 변경(breaking)이라
+    # v2 데코레이터 API에 의존하는 현재 코드와 호환되지 않는다. v3 자동 업그레이드 차단.
+    "langfuse>=2.36.2,<3.0.0",
     # Text Processing
     "tiktoken>=0.7.0",
     # Enhanced RAG System Dependencies
