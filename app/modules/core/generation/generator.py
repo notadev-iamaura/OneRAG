@@ -23,9 +23,11 @@ import re
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from ....lib.errors import ErrorCode, GenerationError
+from ....lib.langfuse_client import langfuse_context, observe
 from ....lib.logger import get_logger
 from ....lib.prompt_sanitizer import escape_xml, sanitize_for_prompt
 from ._async_bridge import aiter_sync_stream
@@ -860,6 +862,66 @@ class GenerationModule:
         # 중복 제거 (순서 유지)
         return list(dict.fromkeys(models_to_try))
 
+    def _record_generation_observation(
+        self,
+        *,
+        model: str,
+        model_settings: dict[str, Any],
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        output: str | None = None,
+        completion_start_time: datetime | None = None,
+    ) -> None:
+        """현재 Langfuse generation observation에 모델/토큰/파라미터/출력을 기록한다.
+
+        LLM 호출별 model·usage(input/output/total 토큰)·model_parameters를 Langfuse
+        `generation` 객체로 남겨, 대시보드에서 호출 단위 토큰/비용 분석이 가능하게 한다.
+        Langfuse는 등록된 모델 가격표로 usage→비용을 자동 계산한다.
+
+        Args:
+            model: 호출 모델 ID (예: "anthropic/claude-sonnet-4.5").
+            model_settings: 모델별 설정(temperature/max_tokens 등) — model_parameters로 기록.
+            prompt_tokens: 입력(prompt) 토큰 수.
+            completion_tokens: 출력(completion) 토큰 수.
+            total_tokens: 총 토큰 수(0이면 prompt+completion으로 보정).
+            output: LLM 응답 텍스트(generation output). None이면 기록 생략.
+            completion_start_time: 첫 토큰 도착 시각(스트리밍 TTFT). None이면 생략.
+
+        Note:
+            LANGFUSE 비활성(ENVIRONMENT=test 등) 시 langfuse_context는 더미 no-op이며,
+            기록 실패가 답변 생성을 깨뜨리지 않도록 예외를 흡수한다(graceful degradation).
+        """
+        try:
+            usage: dict[str, Any] | None = None
+            if total_tokens or prompt_tokens or completion_tokens:
+                usage = {
+                    "input": prompt_tokens,
+                    "output": completion_tokens,
+                    "total": total_tokens or (prompt_tokens + completion_tokens),
+                    "unit": "TOKENS",
+                }
+
+            model_parameters: dict[str, Any] = {}
+            if "temperature" in model_settings:
+                model_parameters["temperature"] = model_settings["temperature"]
+            if "max_tokens" in model_settings:
+                model_parameters["max_tokens"] = model_settings["max_tokens"]
+
+            kwargs: dict[str, Any] = {"model": model}
+            if usage is not None:
+                kwargs["usage"] = usage
+            if model_parameters:
+                kwargs["model_parameters"] = model_parameters
+            if output is not None:
+                kwargs["output"] = output
+            if completion_start_time is not None:
+                kwargs["completion_start_time"] = completion_start_time
+
+            langfuse_context.update_current_observation(**kwargs)
+        except Exception as e:  # noqa: BLE001 - 관측 실패는 비치명적(graceful degradation)
+            logger.debug(f"Langfuse generation 기록 건너뜀: {e}")
+
     async def generate_answer(
         self, query: str, context_documents: list[Any], options: dict[str, Any] | None = None
     ) -> GenerationResult:
@@ -945,6 +1007,16 @@ class GenerationModule:
             "LLM 서비스 상태는 https://status.openai.com 에서 확인할 수 있습니다."
         )
 
+    # capture_input/output=False: 함수 인자(raw query·context_documents)와 반환
+    # GenerationResult가 관측 데이터로 자동 직렬화되지 않게 한다(부피·PII 방지).
+    # 입력 텍스트가 필요하면 상위 trace(rag_pipeline)가 캡처하고, 출력은 아래에서
+    # PII 마스킹 후 명시적으로 기록한다(스트리밍 경로와 대칭).
+    @observe(
+        as_type="generation",
+        name="LLM Generation",
+        capture_input=False,
+        capture_output=False,
+    )
     async def _generate_with_model(
         self, model: str, query: str, context_documents: list[Any], options: dict[str, Any]
     ) -> GenerationResult:
@@ -1059,14 +1131,38 @@ class GenerationModule:
                     document_count=len(context_documents),
                 )
 
-            # 토큰 사용량
+            # 토큰 사용량 (prompt/completion 분리 추출 — Langfuse generation usage 기록용)
+            prompt_tokens = 0
+            completion_tokens = 0
             tokens_used = 0
             if hasattr(response, "usage") and response.usage:
-                tokens_used = getattr(response.usage, "total_tokens", 0)
+                prompt_tokens = getattr(response.usage, "prompt_tokens", 0) or 0
+                completion_tokens = getattr(response.usage, "completion_tokens", 0) or 0
+                tokens_used = getattr(response.usage, "total_tokens", 0) or 0
                 if not tokens_used:
-                    tokens_used = getattr(response.usage, "prompt_tokens", 0) + getattr(
-                        response.usage, "completion_tokens", 0
-                    )
+                    tokens_used = prompt_tokens + completion_tokens
+
+            # generation output은 PII 마스킹 후 텍스트로 기록한다(스트리밍 경로와 대칭 —
+            # 스트리밍은 마스킹된 청크가 캡처됨). 관측 채널로의 raw PII 유출을 막는다.
+            # 마스킹 자체가 실패하면 원문 대신 출력 기록을 생략한다(보수적 fail-safe).
+            observation_output: str | None = answer
+            if self._privacy_enabled and self.privacy_masker is not None:
+                try:
+                    observation_output = self.privacy_masker.mask_text(answer)
+                except Exception as mask_err:  # noqa: BLE001 - 마스킹 실패 시 원문 미기록
+                    logger.debug(f"generation output 마스킹 실패, 출력 기록 생략: {mask_err}")
+                    observation_output = None
+
+            # Langfuse generation observation에 모델/토큰/파라미터/출력을 기록한다.
+            # (ENVIRONMENT=test 또는 LANGFUSE 비활성 시 langfuse_context는 더미 no-op)
+            self._record_generation_observation(
+                model=model,
+                model_settings=model_settings,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=tokens_used,
+                output=observation_output,
+            )
 
             logger.info(f"✅ OpenRouter 응답 성공 (model={model}, tokens={tokens_used})")
 
@@ -1752,6 +1848,15 @@ class GenerationModule:
         async for chunk in aiter_sync_stream(stream):
             yield chunk
 
+    # capture_input=False: raw query·context_documents 자동 캡처 방지(부피·PII).
+    # output은 transform_to_string이 yield된 청크를 합쳐 캡처하며, 청크는 PII 마스킹
+    # 후 emit되므로 출력은 마스킹된 상태로 기록된다(비스트리밍 경로와 대칭).
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Streaming)",
+        capture_input=False,
+        transform_to_string=lambda chunks: "".join(str(c) for c in chunks),
+    )
     async def stream_answer(
         self,
         query: str,
@@ -1831,6 +1936,7 @@ class GenerationModule:
         # 모델 순회: 스트림 생성에 성공한 첫 모델을 사용한다.
         stream = None
         model = requested_model
+        model_settings: dict[str, Any] = {}
         last_error: Exception | None = None
         for model in models_to_try:
             model_settings = self._get_model_settings(model, options)
@@ -1838,6 +1944,9 @@ class GenerationModule:
                 "model": model,
                 "messages": messages,
                 "stream": True,  # 스트리밍 활성화
+                # 스트리밍 모드에서도 정확한 토큰 usage를 마지막 청크로 받는다
+                # (OpenAI/OpenRouter 호환). 없으면 청크 수×5 추정으로 폴백한다.
+                "stream_options": {"include_usage": True},
             }
             if "o1" in model.lower() or "gpt-5" in model.lower():
                 api_params["max_completion_tokens"] = model_settings.get("max_tokens", 20000)
@@ -1990,13 +2099,29 @@ class GenerationModule:
                 break  # 다음 청크 대기
             return pieces, buffer
 
+        # usage 추적: include_usage로 받은 마지막 usage 청크에서 실제 토큰을 추출한다.
+        # 첫 콘텐츠 토큰 시각(first_token_at)은 Langfuse TTFT(completion_start_time)로 쓴다.
+        stream_prompt_tokens = 0
+        stream_completion_tokens = 0
+        stream_total_tokens = 0
+        first_token_at: datetime | None = None
+
         # 청크 단위로 yield
         async for chunk in self._iterate_stream_chunks(stream):
+            # usage 청크(보통 choices가 비고 usage가 채워짐)에서 정확한 토큰 추출
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                stream_prompt_tokens = getattr(chunk_usage, "prompt_tokens", 0) or 0
+                stream_completion_tokens = getattr(chunk_usage, "completion_tokens", 0) or 0
+                stream_total_tokens = getattr(chunk_usage, "total_tokens", 0) or 0
+
             if chunk.choices and len(chunk.choices) > 0:
                 delta = chunk.choices[0].delta
                 if hasattr(delta, "content") and delta.content:
                     content = delta.content
                     chunk_count += 1  # 청크 카운트 증가
+                    if first_token_at is None:
+                        first_token_at = datetime.now(UTC)
 
                     if masking_active:
                         pii_buffer += content
@@ -2011,14 +2136,33 @@ class GenerationModule:
         if masking_active and pii_buffer:
             yield _mask(pii_buffer)
 
-        # Issue 2 수정: 스트리밍 완료 후 통계 업데이트
+        # 스트리밍 완료 후 통계 업데이트.
         generation_time = time.time() - start_time
-        # 청크당 평균 5토큰으로 추정 (스트리밍에서는 정확한 토큰 수 계산 불가)
-        estimated_tokens = chunk_count * 5
-        self._update_stats(model, estimated_tokens, generation_time)
+        # 실제 usage가 있으면 정확한 토큰, 없으면 청크 수×5 추정으로 폴백한다.
+        if stream_total_tokens or stream_completion_tokens or stream_prompt_tokens:
+            tokens_for_stats = stream_total_tokens or (
+                stream_prompt_tokens + stream_completion_tokens
+            )
+            token_source = "usage"
+        else:
+            tokens_for_stats = chunk_count * 5
+            token_source = "estimated"
+        self._update_stats(model, tokens_for_stats, generation_time)
+
+        # Langfuse generation observation에 모델/실제 토큰/TTFT를 기록한다.
+        # (출력 텍스트는 데코레이터의 transform_to_string이 청크를 합쳐 자동 캡처)
+        self._record_generation_observation(
+            model=model,
+            model_settings=model_settings,
+            prompt_tokens=stream_prompt_tokens,
+            completion_tokens=stream_completion_tokens,
+            total_tokens=stream_total_tokens,
+            completion_start_time=first_token_at,
+        )
+
         logger.debug(
             f"✅ 스트리밍 완료 (model={model}, chunks={chunk_count}, "
-            f"estimated_tokens={estimated_tokens}, time={generation_time:.2f}s)"
+            f"tokens={tokens_for_stats}[{token_source}], time={generation_time:.2f}s)"
         )
 
     # ========================================
