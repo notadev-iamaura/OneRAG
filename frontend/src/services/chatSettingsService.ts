@@ -48,6 +48,36 @@ const DEFAULTS: AllEmptyStateSettings = {
       'Sample question 3',
     ],
   },
+  ja: {
+    mainMessage: '何かお手伝いできますか？',
+    subMessage: 'AIが参考文書を分析して正確な回答を提供します',
+    suggestions: [
+      'この文書の要点を要約してください',
+      'サンプル質問1',
+      'サンプル質問2',
+      'サンプル質問3',
+    ],
+  },
+  es: {
+    mainMessage: '¿En qué puedo ayudarte?',
+    subMessage: 'La IA analiza los documentos de referencia para ofrecer respuestas precisas',
+    suggestions: [
+      'Resume los puntos clave de este documento',
+      'Pregunta de ejemplo 1',
+      'Pregunta de ejemplo 2',
+      'Pregunta de ejemplo 3',
+    ],
+  },
+  zhHant: {
+    mainMessage: '有什麼可以幫您的嗎？',
+    subMessage: 'AI 分析參考文件以提供準確的回答',
+    suggestions: [
+      '請摘要這份文件的重點',
+      '範例問題 1',
+      '範例問題 2',
+      '範例問題 3',
+    ],
+  },
 };
 
 // localStorage 캐시 키 (서버 응답 캐시 — 오프라인/즉시 렌더용).

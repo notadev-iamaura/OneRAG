@@ -8,7 +8,8 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useMenuMessages } from '../../i18n/useMenuLocale';
+import { useMenuMessages, resolveMenuLocale } from '../../i18n/useMenuLocale';
+import { MENU_LOCALES } from '../../i18n/menuMessages';
 import { BRAND_CONFIG } from '../../config/brand';
 
 interface ChatHeaderProps {
@@ -42,11 +43,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                         aria-label={messages.language.select}
                         title={messages.language.select}
                         value={locale}
-                        onChange={(e) => setLocale(e.target.value === 'en' ? 'en' : 'ko')}
+                        onChange={(e) => setLocale(resolveMenuLocale(e.target.value))}
                         className="h-8 rounded-lg border border-border/50 bg-muted/30 px-2 text-xs font-medium text-foreground hover:bg-muted/50 transition-colors cursor-pointer shrink-0"
                     >
-                        <option value="ko">{messages.language.ko}</option>
-                        <option value="en">{messages.language.en}</option>
+                        {MENU_LOCALES.map((loc) => (
+                            <option key={loc} value={loc}>{messages.language[loc]}</option>
+                        ))}
                     </select>
 
                     {!sessionId.startsWith('id-12345') && (

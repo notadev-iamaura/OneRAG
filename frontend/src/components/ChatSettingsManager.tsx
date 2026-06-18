@@ -46,6 +46,9 @@ import { readOperatorSettings, writeOperatorSettings } from '../config/operatorS
 const LOCALE_LABELS: Record<MenuLocale, string> = {
   ko: '한국어',
   en: 'English',
+  ja: '日本語',
+  es: 'Español',
+  zhHant: '繁體中文',
 };
 
 interface ChatSettingsManagerProps {

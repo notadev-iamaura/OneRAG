@@ -65,10 +65,14 @@ describe('menu locale storage', () => {
     expect(DEFAULT_MENU_LOCALE).toBe('ko');
   });
 
-  it('지원되지 않는 로케일 값은 기본 로케일로 폴백한다', () => {
+  it('지원 로케일은 그대로, 미지원 로케일 값은 기본 로케일로 폴백한다', () => {
+    // 지원 로케일(ko/en/ja/es/zhHant)은 그대로 통과한다.
     expect(resolveMenuLocale('ko')).toBe('ko');
     expect(resolveMenuLocale('en')).toBe('en');
-    expect(resolveMenuLocale('ja')).toBe(DEFAULT_MENU_LOCALE);
+    expect(resolveMenuLocale('ja')).toBe('ja');
+    expect(resolveMenuLocale('es')).toBe('es');
+    expect(resolveMenuLocale('zhHant')).toBe('zhHant');
+    // 미지원 로케일/잘못된 입력은 기본 로케일로 폴백한다.
     expect(resolveMenuLocale('fr')).toBe(DEFAULT_MENU_LOCALE);
     expect(resolveMenuLocale(undefined)).toBe(DEFAULT_MENU_LOCALE);
     expect(resolveMenuLocale(null)).toBe(DEFAULT_MENU_LOCALE);
