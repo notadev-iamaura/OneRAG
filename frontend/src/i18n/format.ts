@@ -14,6 +14,9 @@ import { type MenuLocale } from "./menuMessages";
 const INTL_LOCALES: Record<MenuLocale, string> = {
   ko: "ko-KR",
   en: "en-US",
+  ja: "ja-JP",
+  es: "es-ES",
+  zhHant: "zh-Hant",
 };
 
 /**
