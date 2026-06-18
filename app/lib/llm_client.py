@@ -14,6 +14,7 @@ import google.generativeai as genai
 from anthropic import Anthropic
 from openai import OpenAI
 
+from .langfuse_client import langfuse_context, observe
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -37,6 +38,90 @@ class BaseLLMClient(ABC):
         max_tok = kwargs.get("max_tokens")
         max_tokens = int(max_tok) if max_tok is not None else self.max_tokens
         return model, temperature, max_tokens
+
+    # ------------------------------------------------------------------
+    # Langfuse generation 계측 공통 헬퍼
+    # ------------------------------------------------------------------
+    # 모든 provider의 generate_text/stream_text가 @observe(as_type="generation")로
+    # 감싸지며, LLM 응답에서 추출한 model/usage(토큰)를 아래 헬퍼로 현재 generation
+    # observation에 기록한다. Langfuse는 등록된 모델 가격표로 호출 단위 비용을 자동
+    # 계산하므로, llm_client를 경유하는 모든 호출(/v1·Agent·쿼리확장·라우터 등)의
+    # 토큰/비용이 일괄 추적된다.
+    #
+    # 의도적으로 input/output 텍스트는 기록하지 않는다(capture_input/output=False).
+    # llm_client는 저수준이라 PII 마스킹 책임이 없으므로, 텍스트 관측은 상위
+    # GenerationModule(마스킹 후)에 맡기고 여기서는 비용 메트릭만 남긴다.
+    def _emit_generation(
+        self,
+        *,
+        model: str,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> None:
+        """현재 Langfuse generation observation에 model/usage/파라미터를 기록한다.
+
+        LANGFUSE 비활성(ENVIRONMENT=test 등) 시 langfuse_context는 더미 no-op이며,
+        기록 실패가 LLM 호출을 깨뜨리지 않도록 예외를 흡수한다(graceful degradation).
+        """
+        try:
+            usage: dict[str, Any] | None = None
+            if total_tokens or prompt_tokens or completion_tokens:
+                usage = {
+                    "input": prompt_tokens,
+                    "output": completion_tokens,
+                    "total": total_tokens or (prompt_tokens + completion_tokens),
+                    "unit": "TOKENS",
+                }
+            obs_kwargs: dict[str, Any] = {"model": model}
+            if usage is not None:
+                obs_kwargs["usage"] = usage
+            params: dict[str, Any] = {}
+            if temperature is not None:
+                params["temperature"] = temperature
+            if max_tokens is not None:
+                params["max_tokens"] = max_tokens
+            if params:
+                obs_kwargs["model_parameters"] = params
+            langfuse_context.update_current_observation(**obs_kwargs)
+        except Exception as e:  # noqa: BLE001 - 관측 실패는 비치명적(graceful degradation)
+            logger.debug(f"Langfuse generation 기록 건너뜀: {e}")
+
+    @staticmethod
+    def _usage_openai(response: Any) -> tuple[int, int, int]:
+        """OpenAI 호환 응답에서 (prompt, completion, total) 토큰을 추출한다."""
+        u = getattr(response, "usage", None)
+        if not u:
+            return (0, 0, 0)
+        return (
+            getattr(u, "prompt_tokens", 0) or 0,
+            getattr(u, "completion_tokens", 0) or 0,
+            getattr(u, "total_tokens", 0) or 0,
+        )
+
+    @staticmethod
+    def _usage_anthropic(response: Any) -> tuple[int, int, int]:
+        """Anthropic 응답에서 (prompt, completion, total) 토큰을 추출한다."""
+        u = getattr(response, "usage", None)
+        if not u:
+            return (0, 0, 0)
+        inp = getattr(u, "input_tokens", 0) or 0
+        out = getattr(u, "output_tokens", 0) or 0
+        return (inp, out, inp + out)
+
+    @staticmethod
+    def _usage_google(response: Any) -> tuple[int, int, int]:
+        """Google Gemini 응답에서 (prompt, completion, total) 토큰을 추출한다."""
+        u = getattr(response, "usage_metadata", None)
+        if not u:
+            return (0, 0, 0)
+        return (
+            getattr(u, "prompt_token_count", 0) or 0,
+            getattr(u, "candidates_token_count", 0) or 0,
+            getattr(u, "total_token_count", 0) or 0,
+        )
 
     @abstractmethod
     async def generate_text(
@@ -109,6 +194,12 @@ class GoogleLLMClient(BaseLLMClient):
             "max_output_tokens": self.max_tokens,
         }
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Google)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def generate_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> str:
@@ -130,6 +221,15 @@ class GoogleLLMClient(BaseLLMClient):
                 generation_config=gen_config,  # type: ignore[arg-type]
             )
 
+            p, c, t = self._usage_google(response)
+            self._emit_generation(
+                model=model_name,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
             return response.text  # type: ignore[no-any-return]
         except Exception as e:
             logger.error(
@@ -142,6 +242,12 @@ class GoogleLLMClient(BaseLLMClient):
             )
             raise
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Google, streaming)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def stream_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> AsyncGenerator[str, None]:
@@ -177,10 +283,31 @@ class GoogleLLMClient(BaseLLMClient):
                 stream=True,
             )
 
-            # 청크 단위로 yield (빈 텍스트는 건너뜀)
+            # 청크 단위로 yield (빈 텍스트는 건너뜀). usage_metadata는 청크/응답에 누적된다.
+            p = c = t = 0
             for chunk in response:
+                cu = getattr(chunk, "usage_metadata", None)
+                if cu is not None:
+                    p = getattr(cu, "prompt_token_count", 0) or p
+                    c = getattr(cu, "candidates_token_count", 0) or c
+                    t = getattr(cu, "total_token_count", 0) or t
                 if chunk.text:
                     yield chunk.text
+
+            # 스트림 종료 후 응답 누적 usage도 시도(있으면 우선)
+            ru = getattr(response, "usage_metadata", None)
+            if ru is not None:
+                p = getattr(ru, "prompt_token_count", 0) or p
+                c = getattr(ru, "candidates_token_count", 0) or c
+                t = getattr(ru, "total_token_count", 0) or t
+            self._emit_generation(
+                model=model_name,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
         except Exception as e:
             logger.error(
@@ -310,6 +437,12 @@ class OpenAILLMClient(BaseLLMClient):
             f"verbosity={self.verbosity}, reasoning_effort={self.reasoning_effort})"
         )
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (OpenAI)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def generate_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> str:
@@ -368,6 +501,15 @@ class OpenAILLMClient(BaseLLMClient):
                 }
             )
 
+            p, c, t = self._usage_openai(response)
+            self._emit_generation(
+                model=model,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
             return response.choices[0].message.content or ""
         except Exception as e:
             elapsed = time.time() - start_time
@@ -382,6 +524,12 @@ class OpenAILLMClient(BaseLLMClient):
             )
             raise
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (OpenAI, streaming)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def stream_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> AsyncGenerator[str, None]:
@@ -412,6 +560,8 @@ class OpenAILLMClient(BaseLLMClient):
                 "model": model,
                 "messages": messages,
                 "stream": True,
+                # 스트리밍에서도 정확한 토큰 usage를 마지막 청크로 받는다(Langfuse 비용)
+                "stream_options": {"include_usage": True},
             }
 
             if is_reasoning_model:
@@ -423,10 +573,24 @@ class OpenAILLMClient(BaseLLMClient):
             # stream=True로 스트리밍 응답 요청
             response = self.client.chat.completions.create(**api_params)  # type: ignore[arg-type]
 
-            # 청크 단위로 yield (빈 콘텐츠는 건너뜀)
+            # 청크 단위로 yield (빈 콘텐츠는 건너뜀). usage 청크(choices 빔)에서 토큰 추출.
+            p = c = t = 0
             for chunk in response:  # type: ignore[union-attr]
+                cu = getattr(chunk, "usage", None)
+                if cu is not None:
+                    p = getattr(cu, "prompt_tokens", 0) or 0
+                    c = getattr(cu, "completion_tokens", 0) or 0
+                    t = getattr(cu, "total_tokens", 0) or 0
                 if chunk.choices and chunk.choices[0].delta.content:  # type: ignore[union-attr]
                     yield chunk.choices[0].delta.content  # type: ignore[union-attr]
+            self._emit_generation(
+                model=model,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
         except Exception as e:
             logger.error(
@@ -444,6 +608,12 @@ class AnthropicLLMClient(BaseLLMClient):
         super().__init__(config)
         self.client = Anthropic(api_key=config.get("api_key"))
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Anthropic)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def generate_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> str:
@@ -457,6 +627,16 @@ class AnthropicLLMClient(BaseLLMClient):
                 temperature=temperature,
                 system=system_prompt if system_prompt else "",
                 messages=[{"role": "user", "content": prompt}],
+            )
+
+            p, c, t = self._usage_anthropic(response)
+            self._emit_generation(
+                model=model,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
 
             # TextBlock만 text 속성을 가지므로 타입 체크
@@ -475,6 +655,12 @@ class AnthropicLLMClient(BaseLLMClient):
             )
             raise
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Anthropic, streaming)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def stream_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> AsyncGenerator[str, None]:
@@ -506,6 +692,24 @@ class AnthropicLLMClient(BaseLLMClient):
                 for event in stream:
                     if event.type == "content_block_delta":
                         yield event.delta.text  # type: ignore[union-attr]
+
+                # 스트림 소비 완료 후 최종 메시지에서 토큰 usage 추출(Langfuse 비용)
+                try:
+                    final = stream.get_final_message()
+                    fu = getattr(final, "usage", None)
+                    if fu is not None:
+                        inp = getattr(fu, "input_tokens", 0) or 0
+                        out = getattr(fu, "output_tokens", 0) or 0
+                        self._emit_generation(
+                            model=model,
+                            prompt_tokens=inp,
+                            completion_tokens=out,
+                            total_tokens=inp + out,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                        )
+                except Exception as ue:  # noqa: BLE001 - usage 추출 실패는 비치명적
+                    logger.debug(f"Anthropic 스트리밍 usage 추출 건너뜀: {ue}")
 
         except Exception as e:
             logger.error(
@@ -573,6 +777,12 @@ class OpenRouterLLMClient(BaseLLMClient):
             }
         )
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (OpenRouter)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def generate_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> str:
@@ -629,6 +839,15 @@ class OpenRouterLLMClient(BaseLLMClient):
                 }
             )
 
+            p, c, t = self._usage_openai(response)
+            self._emit_generation(
+                model=model,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
             return response.choices[0].message.content or ""
 
         except Exception as e:
@@ -644,6 +863,12 @@ class OpenRouterLLMClient(BaseLLMClient):
             )
             raise
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (OpenRouter, streaming)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def stream_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> AsyncGenerator[str, None]:
@@ -675,6 +900,8 @@ class OpenRouterLLMClient(BaseLLMClient):
                 "messages": messages,
                 "stream": True,
                 "timeout": self.timeout,
+                # 스트리밍에서도 정확한 토큰 usage를 마지막 청크로 받는다(Langfuse 비용)
+                "stream_options": {"include_usage": True},
             }
 
             if is_reasoning_model:
@@ -686,10 +913,24 @@ class OpenRouterLLMClient(BaseLLMClient):
             # OpenAI SDK의 스트리밍 응답 (OpenRouter도 동일 인터페이스)
             response = self.client.chat.completions.create(**api_params)  # type: ignore[arg-type]
 
-            # 청크 단위로 yield (빈 콘텐츠는 건너뜀)
+            # 청크 단위로 yield (빈 콘텐츠는 건너뜀). usage 청크(choices 빔)에서 토큰 추출.
+            p = c = t = 0
             for chunk in response:  # type: ignore[union-attr]
+                cu = getattr(chunk, "usage", None)
+                if cu is not None:
+                    p = getattr(cu, "prompt_tokens", 0) or 0
+                    c = getattr(cu, "completion_tokens", 0) or 0
+                    t = getattr(cu, "total_tokens", 0) or 0
                 if chunk.choices and chunk.choices[0].delta.content:  # type: ignore[union-attr]
                     yield chunk.choices[0].delta.content  # type: ignore[union-attr]
+            self._emit_generation(
+                model=model,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
         except Exception as e:
             logger.error(
@@ -755,6 +996,12 @@ class OllamaLLMClient(BaseLLMClient):
             )
         return self._client
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Ollama)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def generate_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> str:
@@ -785,6 +1032,15 @@ class OllamaLLMClient(BaseLLMClient):
                 temperature=temperature,
             )
 
+            p, c, t = self._usage_openai(response)
+            self._emit_generation(
+                model=model,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
             return response.choices[0].message.content or ""
         except Exception as e:
             logger.error(
@@ -799,6 +1055,12 @@ class OllamaLLMClient(BaseLLMClient):
             )
             raise
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Ollama, streaming)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def stream_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> AsyncGenerator[str, None]:
@@ -826,11 +1088,27 @@ class OllamaLLMClient(BaseLLMClient):
                 max_tokens=max_tokens,
                 temperature=temperature,
                 stream=True,
+                # 스트리밍에서도 정확한 토큰 usage를 마지막 청크로 받는다(Langfuse 비용)
+                stream_options={"include_usage": True},
             )
 
+            p = c = t = 0
             for chunk in response:  # type: ignore[union-attr]
+                cu = getattr(chunk, "usage", None)
+                if cu is not None:
+                    p = getattr(cu, "prompt_tokens", 0) or 0
+                    c = getattr(cu, "completion_tokens", 0) or 0
+                    t = getattr(cu, "total_tokens", 0) or 0
                 if chunk.choices and chunk.choices[0].delta.content:  # type: ignore[union-attr]
                     yield chunk.choices[0].delta.content  # type: ignore[union-attr]
+            self._emit_generation(
+                model=model,
+                prompt_tokens=p,
+                completion_tokens=c,
+                total_tokens=t,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
         except Exception as e:
             logger.error(
@@ -1018,6 +1296,12 @@ class VertexLLMClient(BaseLLMClient):
             return f"google/{model}"
         return model
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Vertex)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def generate_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> str:
@@ -1047,6 +1331,15 @@ class VertexLLMClient(BaseLLMClient):
             self.client.chat.completions.create,
             **api_params,  # type: ignore[arg-type]
         )
+        p, c, t = self._usage_openai(response)
+        self._emit_generation(
+            model=model,
+            prompt_tokens=p,
+            completion_tokens=c,
+            total_tokens=t,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
         # 방어적 None 처리: thinking(추론) 모델은 max_tokens가 부족하면 추론에 토큰을
         # 모두 소진해 choices가 비거나 message/content가 None으로 반환될 수 있다.
         # 이 경우 AttributeError로 상위 fallback을 무의미하게 유발하는 대신, 빈 문자열로
@@ -1069,6 +1362,12 @@ class VertexLLMClient(BaseLLMClient):
             return ""
         return str(content)
 
+    @observe(
+        as_type="generation",
+        name="LLM Generation (Vertex, streaming)",
+        capture_input=False,
+        capture_output=False,
+    )
     async def stream_text(
         self, prompt: str, system_prompt: str | None = None, **kwargs: Any
     ) -> AsyncGenerator[str, None]:
@@ -1087,10 +1386,26 @@ class VertexLLMClient(BaseLLMClient):
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=self.timeout,
+            # 스트리밍에서도 정확한 토큰 usage를 마지막 청크로 받는다(Langfuse 비용)
+            stream_options={"include_usage": True},
         )
+        p = c = t = 0
         for chunk in response:  # type: ignore[union-attr]
+            cu = getattr(chunk, "usage", None)
+            if cu is not None:
+                p = getattr(cu, "prompt_tokens", 0) or 0
+                c = getattr(cu, "completion_tokens", 0) or 0
+                t = getattr(cu, "total_tokens", 0) or 0
             if chunk.choices and chunk.choices[0].delta.content:  # type: ignore[union-attr]
                 yield chunk.choices[0].delta.content  # type: ignore[union-attr]
+        self._emit_generation(
+            model=model,
+            prompt_tokens=p,
+            completion_tokens=c,
+            total_tokens=t,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
 
 class LLMClientFactory:
