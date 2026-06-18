@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import Any
 
 from ...lib.errors import ErrorCode, SessionError
+from ...lib.langfuse_client import langfuse_context, observe
 from ...lib.logger import get_logger
 from ...lib.metrics import CostTracker, PerformanceMetrics
 from ...lib.topic_extractor import extract_topic
@@ -528,6 +529,7 @@ class ChatService:
             chunks.append("".join(current))
         return chunks
 
+    @observe(name="RAG Pipeline (Streaming)", capture_output=False)
     async def stream_rag_pipeline(
         self, message: str, session_id: str | None, options: dict[str, Any] | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -658,6 +660,14 @@ class ChatService:
                 except Exception as e:
                     # 확장 실패는 비치명적 — 리랭킹 결과 그대로 진행.
                     logger.warning(f"스트리밍: 컨텍스트 확장 실패, 원본 사용 - {e}")
+
+            # Langfuse trace에 세션 ID를 기록해 대시보드에서 세션별 그룹핑/필터를
+            # 가능하게 한다. LANGFUSE 비활성 시 langfuse_context는 더미 no-op이며,
+            # 관측 실패가 스트리밍을 깨뜨리지 않도록 예외를 흡수한다(graceful degradation).
+            try:
+                langfuse_context.update_current_trace(session_id=final_session_id)
+            except Exception:  # noqa: BLE001 - 관측 실패는 파이프라인에 비치명적
+                pass
 
             # 5. 메타데이터 이벤트 전송
             stream_sources = self._format_stream_sources(reranked_documents)

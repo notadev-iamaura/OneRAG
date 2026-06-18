@@ -46,12 +46,26 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 켜면 Langfuse 대시보드에서:
 - ✅ **RAG 파이프라인 트레이스 트리** — 검색 → 재순위 → 생성 등 단계별 `@observe`
 - ✅ **Self-RAG 품질 점수** — 트레이스에 score로 기록
+- ✅ **LLM 호출별 generation** — model·토큰(input/output/total)·생성 파라미터가
+  `generation` 객체로 기록됨. Langfuse가 등록된 모델 가격표로 호출 단위 **비용을
+  자동 계산**한다(앱 내부 CostTracker + `/api/admin/realtime-metrics`와 별개로 호출별
+  분해 가능).
+- ✅ **스트리밍(SSE `/chat/stream`, WebSocket `/chat-ws`) 트레이싱** —
+  `RAG Pipeline (Streaming)` 트레이스 + 스트리밍 generation(실제 usage,
+  첫 토큰 시각=TTFT). 세션 ID로 트레이스를 그룹핑한다.
+  - 스트리밍 토큰은 `stream_options={"include_usage": True}`로 받은 usage 청크에서
+    추출하며, 게이트웨이가 usage를 주지 않으면 청크 수 기반 추정으로 폴백한다.
 - ✅ 단계별 지연시간, 트레이스 메타데이터
 
-현재 **미캡처(향후 보강 예정)**:
-- ⏳ LLM 호출별 **모델/토큰/비용**이 Langfuse `generation`으로 기록되지는 않음
-  (비용은 앱 내부 CostTracker + `/api/admin/realtime-metrics`로 확인).
-- ⏳ SSE/WebSocket **스트리밍 경로** 트레이싱.
+> 개인정보 주의:
+> - **출력(LLM 답변)**: generation output은 비스트리밍·스트리밍 **모두 PII 마스킹 후**
+>   기록된다(관측 채널로의 raw 답변 유출 방지). generation observation은 입력 자동
+>   캡처를 끄고(capture_input=False) 출력만 마스킹해 명시 기록한다.
+> - **입력(사용자 질문)**: 파이프라인 trace는 디버깅을 위해 사용자 질문을 **마스킹 전
+>   raw**로 캡처한다(비스트리밍 `RAG Pipeline`·스트리밍 `RAG Pipeline (Streaming)` 공통).
+>   컨텍스트 문서는 generation observation에 자동 캡처되지 않는다.
+> - 관측은 운영자가 명시적으로 켜는 내부 디버깅 채널이므로, 민감 데이터 정책에 따라
+>   Langfuse 프로젝트 접근을 통제하라.
 
 ## 5. 종료 시 트레이스 유실 방지
 
