@@ -1,23 +1,55 @@
 # OneRAG Current Status
 
-Last updated: 2026-06-10
+Last updated: 2026-06-18
 
 This page is the canonical current status for git-tracked documentation. Older
 roadmaps and reports may preserve their original historical findings, but this
-page reflects the current `main` branch after PR #78.
+page reflects the current `main` branch after PR #129.
 
 ## Source Of Truth
 
 | Item | Current value |
 |---|---|
 | Repository | `notadev-iamaura/OneRAG` |
-| Current release-readiness baseline | `main` after PR #78 |
-| Latest merged commit | `43c4605` (Merge PR #78) |
+| Current release-readiness baseline | `main` after PR #129 |
+| Latest merged commit | `9022e67` (Merge PR #129) |
 | Latest merged operational-stability commit | `fe87219fde0c07ceae61880d93851bee24abca69` |
 | Runtime readiness model | `/health` for liveness, `/ready` for readiness |
 | Retrieval startup policy | `RETRIEVAL_STARTUP_POLICY=required|degraded` |
 | Local Docker default | degraded retrieval startup allowed |
 | Production Docker default | retrieval readiness required |
+
+## Domain Generalization & Frontend i18n (PR #115–#129)
+
+OneRAG was backported/generalized from a private domain-specific fork. A
+multi-pass campaign (multi-modal sweep + adversarial verification + completeness
+critic, verified by repo-wide `git grep`) brought every tracked file to zero
+non-generic carryover:
+
+- **Fork-origin identifiers**: `JapanRAG`/`jprag`/`moneywork` (origin product
+  name) — 0 across `app/`, `scripts/`, `frontend/`, `tests/`, `docs/`. The four
+  jprag migration docs were removed; provenance comments de-identified.
+- **Origin infrastructure**: the hardcoded origin production backend URL in
+  `frontend/public/config.js` (a clone would have called the origin backend by
+  default) was reset to empty (localhost fallback); origin URLs in deploy docs
+  were genericized to placeholders.
+- **Specific brands / domain verticals**: Samsung/Toyota demo content and
+  domain-color comment examples (wedding/insurance/photo/medical) — 0.
+- **Locale neutrality (regression-zero)**: Korean stays the legitimate default,
+  but every behavior-affecting hardcoding is config/env-overridable with a
+  Korean-default fallback. Examples: `weaviate.metadata_source_suffix`,
+  `LOG_TZ_OFFSET_HOURS`, response-language profiles externalized to
+  `app/config/features/response_languages.yaml`.
+
+**Frontend i18n (전메뉴 다국어화)**: the homegrown lightweight layer
+(`useMenuMessages`: localStorage + CustomEvent + storage sync, with compile-time
+key-parity enforcement) was extended — not replaced by react-i18next — with an
+interpolation helper (`format`) and `Intl`-based `formatDate`/`formatNumber`
+wrappers. All user-facing literals across the component/page tree were migrated
+to a single ko/en catalog (`frontend/src/i18n/menuMessages.ts`), so the language
+selector switches the entire menu UI with one click. ko output is byte-identical
+(regression-zero). Additional locales (ja/zh, …) need only a `MENU_LOCALES` +
+catalog entry — no code fork; `VITE_DEFAULT_LOCALE` sets the default locale.
 
 ## CI Gates
 
