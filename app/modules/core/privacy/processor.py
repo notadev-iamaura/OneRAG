@@ -297,27 +297,6 @@ class PIIProcessor:
 
     def _process_filename(self, text: str) -> PIIProcessResult:
         """
-        파일명 마스킹 처리
-        """
-        if not text:
-            return PIIProcessResult(
-                original_text=text,
-                masked_text=text,
-                mode=ProcessMode.FILENAME,
-            )
-
-        masked = self.masker.mask_filename(text)
-        was_masked = masked != text
-
-        return PIIProcessResult(
-            original_text=text,
-            masked_text=masked,
-            mode=ProcessMode.FILENAME,
-            name_masked_count=1 if was_masked else 0,
-            total_masked_count=1 if was_masked else 0,
-            contains_pii=was_masked,
-        )
-        """
         파일명 마스킹 처리 (API 응답용)
 
         - "홍길동 고객님.txt" → "고객_고객님.txt"
