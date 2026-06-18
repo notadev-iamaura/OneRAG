@@ -27,10 +27,25 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from langfuse import Langfuse
 
-# 테스트 환경 또는 명시적 비활성화 시 SDK 임포트 건너뛰기 (네트워크 연결 방지)
-if os.getenv("ENVIRONMENT") == "test" or os.getenv("LANGFUSE_ENABLED") == "False":
+# import 시점 비활성 판정(네트워크/SDK 로드 회피). config 시스템은 아직 로드되기
+# 전이므로 환경변수만으로 결정한다 — 이 env 게이트가 활성 트레이싱(@observe/
+# langfuse_context, SDK 전역 클라이언트)의 권위 있는 on/off 스위치다(YAML의
+# langfuse.enabled는 미사용 LangfuseClient 래퍼 전용이며 이 게이트를 제어하지 않는다).
+def _langfuse_disabled_by_env() -> bool:
+    """LANGFUSE_ENABLED/ENVIRONMENT 환경변수로 비활성 여부를 판정한다.
+
+    - ENVIRONMENT=test → 항상 비활성(테스트 격리, 외부 통신 차단).
+    - LANGFUSE_ENABLED가 false 계열(false/0/no/off, 대소문자 무관) → 비활성.
+    - 미설정/그 외(true 등) → 활성(SDK 로드; 단 키 미설정 시 SDK가 자체적으로 inert).
+    """
+    if os.getenv("ENVIRONMENT") == "test":
+        return True
+    return os.getenv("LANGFUSE_ENABLED", "").strip().lower() in ("false", "0", "no", "off")
+
+
+if _langfuse_disabled_by_env():
     LANGFUSE_AVAILABLE = False
-    logger.info("테스트 환경 감지: Langfuse SDK를 로드하지 않고 Dummy 모드로 동작합니다.")
+    logger.info("Langfuse 비활성(ENVIRONMENT=test 또는 LANGFUSE_ENABLED=false): Dummy 모드로 동작합니다.")
 else:
     try:
         from langfuse import Langfuse

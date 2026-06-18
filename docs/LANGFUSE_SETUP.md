@@ -37,9 +37,9 @@ LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 ```
 
-- 키가 하나라도 비어 있으면 트레이싱은 **안전하게 비활성화**됩니다(본 기능에는 영향 없음 — graceful degradation).
-- 환경별 기본 토글: **production = on, development/test = off**
-  (`app/config/features/langfuse.yaml` + `app/config/environments/*.yaml`).
+- 키가 하나라도 비어 있으면 트레이싱은 **안전하게 비활성화**됩니다(본 기능에는 영향 없음 — graceful degradation, 크래시 없음).
+- **on/off 권위 스위치는 `LANGFUSE_ENABLED` 환경변수**입니다(import 시점 게이트). `ENVIRONMENT=test`이거나 `LANGFUSE_ENABLED`가 false 계열(`false`/`0`/`no`/`off`, 대소문자 무관)이면 SDK 자체를 로드하지 않습니다. 미설정/`true`면 로드(키 없으면 inert).
+  - 주의: config(YAML)의 `langfuse.enabled`는 import 시점 게이트를 제어하지 않습니다(미사용 래퍼 전용). 끄려면 반드시 `LANGFUSE_ENABLED=false`(또는 `ENVIRONMENT=test`)를 쓰세요.
 
 ## 4. 무엇이 보이나 (현재 캡처 범위)
 
