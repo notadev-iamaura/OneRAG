@@ -754,22 +754,26 @@ class OpenRouterLLMClient(BaseLLMClient):
 
     # OpenRouter API 기본 URL
     OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+    # 서브클래스에서 재정의 가능한 base_url / API 키 환경변수
+    # (OpenAI 호환 게이트웨이는 base_url만 다름)
+    BASE_URL = OPENROUTER_BASE_URL
+    API_KEY_ENV = "OPENROUTER_API_KEY"
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         import httpx
 
-        # OpenRouter API 키 (환경변수 또는 config에서 가져옴)
-        api_key = config.get("api_key") or os.getenv("OPENROUTER_API_KEY")
+        # API 키 (환경변수 또는 config에서 가져옴)
+        api_key = config.get("api_key") or os.getenv(self.API_KEY_ENV)
         if not api_key:
             raise ValueError(
-                "OpenRouter API 키가 필요합니다. "
-                "환경변수 OPENROUTER_API_KEY를 설정하거나 config에 api_key를 추가하세요."
+                f"API 키가 필요합니다. "
+                f"환경변수 {self.API_KEY_ENV}를 설정하거나 config에 api_key를 추가하세요."
             )
 
-        # OpenAI SDK를 OpenRouter base_url로 초기화
+        # OpenAI SDK를 게이트웨이 base_url로 초기화
         self.client = OpenAI(
-            base_url=self.OPENROUTER_BASE_URL,
+            base_url=self.BASE_URL,
             api_key=api_key,
             timeout=self.timeout,
             max_retries=0,  # 재시도 없이 폴백 처리
@@ -954,6 +958,28 @@ class OpenRouterLLMClient(BaseLLMClient):
                 exc_info=True,
             )
             raise
+
+
+class RequestyLLMClient(OpenRouterLLMClient):
+    """
+    Requesty 통합 클라이언트
+
+    Requesty(https://requesty.ai)는 300+ AI 모델을 단일 OpenAI 호환 API로
+    제공하는 통합 게이트웨이입니다. 캐싱, 폴백, 비용 최적화를 지원합니다.
+    OpenRouter와 동일하게 OpenAI SDK와 호환되며 base_url만 다릅니다.
+
+    지원 모델 예시 (provider/model 형식):
+    - openai/gpt-4o-mini, openai/gpt-4o
+    - anthropic/claude-sonnet-4-5
+    - google/gemini-2.5-flash
+    - deepseek/deepseek-chat
+
+    참고: https://docs.requesty.ai
+    """
+
+    # Requesty API 기본 URL (OpenAI 호환)
+    BASE_URL = "https://router.requesty.ai/v1"
+    API_KEY_ENV = "REQUESTY_API_KEY"
 
 
 class OllamaLLMClient(BaseLLMClient):
@@ -1436,6 +1462,7 @@ class LLMClientFactory:
         "openai": OpenAILLMClient,
         "anthropic": AnthropicLLMClient,
         "openrouter": OpenRouterLLMClient,  # OpenRouter 통합 게이트웨이
+        "requesty": RequestyLLMClient,  # Requesty 통합 게이트웨이 (OpenAI 호환)
         "ollama": OllamaLLMClient,  # Ollama 로컬 LLM
         "vertex": VertexLLMClient,  # Vertex AI Gemini (ADC 인증, api_key 불필요)
     }
@@ -1446,6 +1473,7 @@ class LLMClientFactory:
         "openai": "OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "openrouter": "OPENROUTER_API_KEY",  # OpenRouter API 키
+        "requesty": "REQUESTY_API_KEY",  # Requesty API 키
         "ollama": "OLLAMA_BASE_URL",  # Ollama 서버 URL (API 키 불필요)
     }
 

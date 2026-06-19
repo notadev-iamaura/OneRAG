@@ -16,7 +16,7 @@ from app.lib.logger import get_logger
 logger = get_logger(__name__)
 
 # LLMClientFactory._PROVIDER_REGISTRY 키와 일치하는 유효 provider 목록
-VALID_PROVIDERS = {"google", "gemini", "openai", "anthropic", "claude", "openrouter", "ollama"}
+VALID_PROVIDERS = {"google", "gemini", "openai", "anthropic", "claude", "openrouter", "requesty", "ollama"}
 
 # provider 별칭 정규화 (사용자 편의)
 PROVIDER_ALIASES: dict[str, str] = {
@@ -30,6 +30,7 @@ DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
     "anthropic": "claude-sonnet-4-20250514",
     "openrouter": "google/gemini-2.5-flash",
+    "requesty": "openai/gpt-4o-mini",
     "ollama": "llama3.2",
 }
 
@@ -44,6 +45,10 @@ AVAILABLE_MODELS = [
     {"id": "openrouter/google/gemini-2.5-flash", "description": "OpenRouter → Gemini 2.5 Flash"},
     {"id": "openrouter/anthropic/claude-sonnet-4.5", "description": "OpenRouter → Claude Sonnet 4.5"},
     {"id": "openrouter/anthropic/claude-3.5-haiku", "description": "OpenRouter → Claude 3.5 Haiku"},
+    {"id": "requesty", "description": "Requesty (기본 모델)"},
+    {"id": "requesty/openai/gpt-4o-mini", "description": "Requesty → GPT-4o mini"},
+    {"id": "requesty/anthropic/claude-sonnet-4-5", "description": "Requesty → Claude Sonnet 4.5"},
+    {"id": "requesty/google/gemini-2.5-flash", "description": "Requesty → Gemini 2.5 Flash"},
     {"id": "claude", "description": "Anthropic Claude (기본 모델)"},
     {"id": "claude/claude-sonnet-4-20250514", "description": "Anthropic Claude Sonnet 4"},
     {"id": "openai", "description": "OpenAI GPT (기본 모델)"},
