@@ -87,6 +87,16 @@ export interface ChatAPIHistoryEntry {
   sources?: ChatAPISearchSource[];
 }
 
+export interface ChatAPISessionResponse {
+  session_id: string;
+  message?: string;
+  timestamp?: string;
+  ws_token?: string | null;
+  upload_token?: string | null;
+  upload_token_expires_at?: number | null;
+  upload_token_ttl_seconds?: number | null;
+}
+
 // ============================================================================
 // 설정 타입 정의
 // ============================================================================
@@ -187,7 +197,7 @@ export interface IChatAPIService {
    *
    * @returns 새 세션 ID
    */
-  startNewSession(): Promise<AxiosResponse<{ session_id: string; ws_token?: string | null }>>;
+  startNewSession(): Promise<AxiosResponse<ChatAPISessionResponse>>;
 
   /**
    * 세션 정보 조회

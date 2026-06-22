@@ -18,8 +18,13 @@
 import { ChatEmptyStateSettings, ChatEmptyStateSettingsUpdateRequest } from '../types';
 import { MENU_LOCALES, type MenuLocale } from '../i18n/menuMessages';
 import { getAdminAPIBaseURL } from './adminService';
-import { readOperatorSettings } from '../config/operatorSettings';
 import { logger } from '../utils/logger';
+import {
+  getRequiredAdminAuthHeaders,
+  hasAdminApiKey,
+} from './authHeaders';
+
+export { MissingAdminKeyError } from './authHeaders';
 
 // 전 로케일 설정 묶음 (ko/en).
 export type AllEmptyStateSettings = Record<MenuLocale, ChatEmptyStateSettings>;
@@ -89,14 +94,6 @@ const MAIN_MAX = 100;
 const SUB_MAX = 200;
 const SUGGESTION_MAX = 200;
 const SUGGESTIONS_MAX = 10;
-
-/** 관리자 API 키 미설정 시 던지는 에러 (호출 측에서 안내 메시지 표시) */
-export class MissingAdminKeyError extends Error {
-  constructor() {
-    super('admin api key is not configured');
-    this.name = 'MissingAdminKeyError';
-  }
-}
 
 /** 클라이언트 사전 검증 실패 에러 (한국어 메시지 배열 보유) */
 export class ChatSettingsValidationError extends Error {
@@ -235,33 +232,14 @@ class ChatSettingsService {
     return def;
   }
 
-  /**
-   * 관리자 키 조회.
-   * 우선순위: 운영 설정 수동 입력(adminApiKey) → 배포 주입(RUNTIME_CONFIG.ADMIN_API_KEY).
-   */
-  private getAdminKey(): string {
-    const fromSettings = (readOperatorSettings().adminApiKey || '').trim();
-    if (fromSettings) {
-      return fromSettings;
-    }
-    if (typeof window !== 'undefined') {
-      return (window.RUNTIME_CONFIG?.ADMIN_API_KEY || '').trim();
-    }
-    return '';
-  }
-
   /** 관리자 키 존재 여부(운영 설정 또는 배포 주입). */
   hasAdminKey(): boolean {
-    return Boolean(this.getAdminKey());
+    return hasAdminApiKey();
   }
 
   /** 관리자 요청 헤더 구성(키 없으면 MissingAdminKeyError). */
   private adminHeaders(): Record<string, string> {
-    const key = this.getAdminKey();
-    if (!key) {
-      throw new MissingAdminKeyError();
-    }
-    return { 'Content-Type': 'application/json', 'X-API-Key': key };
+    return getRequiredAdminAuthHeaders();
   }
 
   /** 서버 응답(부분 형태 허용)을 안전한 ChatEmptyStateSettings로 정규화. */

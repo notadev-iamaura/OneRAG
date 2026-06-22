@@ -45,7 +45,7 @@ export const handlers = [
   }),
 
   // 문서 목록 조회
-  http.get(`${BASE_URL}/api/documents`, () => {
+  http.get(`${BASE_URL}/api/upload/documents`, () => {
     return HttpResponse.json(mockDocuments);
   }),
 
@@ -64,13 +64,13 @@ export const handlers = [
   }),
 
   // 문서 삭제
-  http.delete(`${BASE_URL}/api/documents/:id`, ({ params }) => {
+  http.delete(`${BASE_URL}/api/upload/documents/:id`, ({ params }) => {
     const { id } = params;
     return HttpResponse.json({ success: true, id });
   }),
 
   // 전체 문서 삭제
-  http.delete(`${BASE_URL}/api/documents`, () => {
+  http.delete(`${BASE_URL}/api/documents/all`, () => {
     return HttpResponse.json({ success: true, deletedCount: mockDocuments.length });
   }),
 
@@ -93,14 +93,18 @@ export const handlers = [
   }),
 
   // 새 세션 시작
-  http.post(`${BASE_URL}/api/session/new`, () => {
+  http.post(`${BASE_URL}/api/chat/session`, () => {
     return HttpResponse.json({
-      sessionId: `session-${Date.now()}`,
+      session_id: `session-${Date.now()}`,
+      ws_token: 'mock-ws-token',
+      upload_token: 'mock-upload-token',
+      upload_token_expires_at: Math.floor(Date.now() / 1000) + 900,
+      upload_token_ttl_seconds: 900,
     });
   }),
 
   // 채팅 기록 조회
-  http.get(`${BASE_URL}/api/chat/history`, () => {
+  http.get(`${BASE_URL}/api/chat/history/:sessionId`, () => {
     return HttpResponse.json({
       messages: [
         { role: 'user', content: '안녕하세요', timestamp: new Date().toISOString() },
@@ -143,7 +147,7 @@ export const handlers = [
 
 // 에러 핸들러 (네트워크 오류 시뮬레이션)
 export const errorHandlers = [
-  http.get(`${BASE_URL}/api/documents`, () => {
+  http.get(`${BASE_URL}/api/upload/documents`, () => {
     return HttpResponse.json(
       { error: 'Network error' },
       { status: 503 }

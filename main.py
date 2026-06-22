@@ -772,6 +772,7 @@ app.include_router(upload.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(image_chat.router, prefix="/api")  # 이미지 채팅 API
 app.include_router(admin.router)
+app.include_router(admin.websocket_router)
 app.include_router(prompts.router)
 app.include_router(langsmith_logs.router)
 app.include_router(ingest.router, prefix="/api")  # Phase 8: 데이터 적재 API

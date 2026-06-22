@@ -23,6 +23,7 @@ router = APIRouter(
     tags=["Admin"],
     dependencies=[Depends(get_api_key)]
 )
+websocket_router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
 modules: dict[str, Any] = {}
 config: dict[str, Any] = {}
@@ -1115,7 +1116,7 @@ async def broadcast_metrics():
             await asyncio.sleep(5)
 
 
-@router.websocket("/ws")
+@websocket_router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """관리자 WebSocket 엔드포인트 (API Key 인증 필수)"""
     # WebSocket은 라우터 dependencies가 적용되지 않으므로 수동 인증

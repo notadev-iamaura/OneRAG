@@ -16,9 +16,18 @@ import type {
   StreamChatEvent,
   StreamChatClientOptions,
 } from '../types/chatStreaming';
+import type { ChatAPISessionResponse } from '../types/chatAPI';
 import { logger } from '../utils/logger';
 import { maskPhoneNumberDeep } from '../utils/privacy';
 import { getOperatorApiBaseUrl } from '../config/operatorSettings';
+import {
+  getOptionalAdminAuthHeaders,
+  getRequiredAdminAuthHeaders,
+  getUploadAccessHeaders,
+  isAdminProtectedApiRequest,
+  isUploadApiRequest,
+  persistUploadAccessToken,
+} from './authHeaders';
 
 // Railway 배포 최적화 API URL 관리
 const getAPIBaseURL = (): string => {
@@ -164,10 +173,34 @@ const summarizePayloadForLog = (payload: unknown): string | null => {
 
 const summarizeHeadersForLog = (headers: unknown) => ({
   authorization: summarizeSensitiveHeader(headers, 'Authorization'),
+  apiKey: summarizeSensitiveHeader(headers, 'X-API-Key'),
+  uploadToken: summarizeSensitiveHeader(headers, 'X-OneRAG-Upload-Token'),
   csrfToken: summarizeSensitiveHeader(headers, 'X-XSRF-TOKEN'),
   sessionId: summarizeSensitiveHeader(headers, 'X-Session-Id'),
+  uploadSessionId: summarizeSensitiveHeader(headers, 'X-OneRAG-Session-Id'),
   contentType: getHeaderValue(headers, 'Content-Type') ? '설정됨' : '없음',
 });
+
+const redactSessionResponseData = (data: unknown): unknown => {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return data;
+  }
+  const record = data as Record<string, unknown>;
+  return {
+    ...record,
+    ws_token: record.ws_token ? '설정됨' : record.ws_token,
+    upload_token: record.upload_token ? '설정됨' : record.upload_token,
+  };
+};
+
+const setRequestHeaders = (
+  headers: Record<string, unknown>,
+  values: Record<string, string>,
+): void => {
+  for (const [key, value] of Object.entries(values)) {
+    headers[key] = value;
+  }
+};
 
 // Axios 재시도 설정
 axiosRetry(api, {
@@ -247,6 +280,16 @@ api.interceptors.request.use(
       }
     }
 
+    if (isUploadApiRequest(config.url)) {
+      const uploadHeaders = getUploadAccessHeaders();
+      setRequestHeaders(
+        config.headers,
+        Object.keys(uploadHeaders).length > 0 ? uploadHeaders : getOptionalAdminAuthHeaders(),
+      );
+    } else if (isAdminProtectedApiRequest(config.url, config.method)) {
+      setRequestHeaders(config.headers, getOptionalAdminAuthHeaders());
+    }
+
     // 3. CSRF 토큰 추가 (POST, PUT, DELETE, PATCH 요청)
     if (['post', 'put', 'delete', 'patch'].includes(config.method?.toLowerCase() || '')) {
       const csrfToken = getCsrfToken();
@@ -267,9 +310,18 @@ api.interceptors.response.use(
   (response) => {
     // 세션 생성 API 응답 시 상세 로깅
     if (response.config.url === '/api/chat/session') {
+      const sessionData = response.data as Partial<ChatAPISessionResponse>;
+      if (sessionData.session_id) {
+        persistUploadAccessToken({
+          sessionId: sessionData.session_id,
+          token: sessionData.upload_token,
+          expiresAt: sessionData.upload_token_expires_at,
+          ttlSeconds: sessionData.upload_token_ttl_seconds,
+        });
+      }
       logger.log('세션 생성 응답 성공:', {
         status: response.status,
-        data: response.data,
+        data: redactSessionResponseData(response.data),
         headers: response.headers,
       });
     }
@@ -310,37 +362,13 @@ api.interceptors.response.use(
       logger.error('세션 생성 응답 실패:', errorDetails);
     }
 
-    // 401 에러 처리: JWT 토큰 갱신 시도
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        // authService를 동적으로 import하여 순환 참조 방지
-        const { authService } = await import('./authService');
-
-        // 토큰 갱신 시도
-        const newTokens = await authService.refreshToken();
-
-        // 새 토큰으로 헤더 업데이트
-        originalRequest.headers.Authorization = `Bearer ${newTokens.accessToken}`;
-
-        // 원래 요청 재시도
-        return api(originalRequest);
-      } catch (refreshError) {
-        // 토큰 갱신 실패 시 로그아웃 처리
-        logger.error('토큰 갱신 실패, 로그아웃 처리:', refreshError);
-        localStorage.removeItem('auth_tokens');
-        localStorage.removeItem('user_info');
-        localStorage.removeItem('sessionId');
-        localStorage.removeItem('chatSessionId');
-
-        // 랜딩 페이지로 리다이렉션 (/login 라우트가 없으므로 /로 이동)
-        if (window.location.pathname !== '/') {
-          window.location.href = '/';
-        }
-
-        return Promise.reject(refreshError);
-      }
+    // 401 에러는 백엔드에 존재하지 않는 JWT refresh API로 재시도하지 않는다.
+    if (error.response?.status === 401) {
+      logger.warn('인증 실패 (401 Unauthorized):', {
+        url: originalRequest?.url,
+        method: originalRequest?.method,
+        requestHeaders: summarizeHeadersForLog(originalRequest?.headers),
+      });
     }
 
     // 403 에러: 권한 없음
@@ -349,7 +377,7 @@ api.interceptors.response.use(
     }
 
     // CORS 오류 상세 로깅
-    if (error.code === 'ERR_NETWORK' || error.message.includes('CORS')) {
+    if (error.code === 'ERR_NETWORK' || String(error.message || '').includes('CORS')) {
       logger.warn('CORS 오류 감지:', {
         message: error.message,
         config: error.config ? {
@@ -618,7 +646,8 @@ export const documentAPI = {
   deleteAllDocuments: (confirmCode: string, reason: string, dryRun?: boolean) =>
     api.delete('/api/documents/all', {
       params: { dry_run: dryRun || false },
-      data: { confirm_code: confirmCode, reason }
+      data: { confirm_code: confirmCode, reason },
+      headers: getRequiredAdminAuthHeaders(),
     }),
 
   // 원본 문서 다운로드
@@ -816,7 +845,7 @@ export const chatAPI = {
       endpoint: '/api/chat/session',
     });
 
-    return api.post<{ session_id: string; ws_token?: string | null }>('/api/chat/session', {}, {
+    return api.post<ChatAPISessionResponse>('/api/chat/session', {}, {
       timeout: 30000, // 30초 타임아웃
     });
   },
@@ -831,8 +860,7 @@ export const chatAPI = {
    * content_preview([:300] 절단본) 대신 전체 원문을 받아오기 위한 호출.
    * source_id/document_id가 없으면 호출 자체를 거부한다.
    *
-   * 주의: 이 엔드포인트는 백엔드 지원이 필요하다(GET /api/upload/documents/{document_id}/sources/{source_id}).
-   * 백엔드가 아직 미지원이면 호출이 실패하므로, 호출부(useChatInteraction)에서
+   * 백엔드 상세 엔드포인트가 실패하면 호출부(useChatInteraction)에서
    * content_preview로 graceful fallback 처리한다.
    */
   getSourceDetail: (source: Pick<Source, 'source_id' | 'document_id' | 'page' | 'chunk'>) => {

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const mockReadOperatorSettings = vi.hoisted(() => vi.fn(() => ({ adminApiKey: 'admin-key' })));
+
 // 로거는 콘솔 노이즈를 막기 위해 mock 처리한다.
 vi.mock('../../utils/logger', () => ({
   logger: {
@@ -13,6 +15,7 @@ vi.mock('../../utils/logger', () => ({
 vi.mock('../../config/operatorSettings', () => ({
   getOperatorApiBaseUrl: vi.fn(() => ''),
   getOperatorWsBaseUrl: vi.fn(() => ''),
+  readOperatorSettings: () => mockReadOperatorSettings(),
 }));
 
 describe('adminService 런타임 URL 계약', () => {
@@ -28,6 +31,8 @@ describe('adminService 런타임 URL 계약', () => {
     });
     delete window.RUNTIME_CONFIG?.API_BASE_URL;
     delete window.RUNTIME_CONFIG?.WS_BASE_URL;
+    delete window.RUNTIME_CONFIG?.ADMIN_API_KEY;
+    mockReadOperatorSettings.mockReturnValue({ adminApiKey: 'admin-key' });
   });
 
   it('RUNTIME_CONFIG의 API_BASE_URL이 빈 문자열이면 same-origin(빈 문자열)을 사용한다', async () => {
@@ -94,17 +99,44 @@ describe('adminService 런타임 URL 계약', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(blob, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    // jsdom에 createObjectURL/revokeObjectURL이 없으므로 보강한다.
-    const urlMock = {
-      createObjectURL: vi.fn(() => 'blob:mock'),
-      revokeObjectURL: vi.fn(),
+    const { AdminService } = await import('../adminService');
+    const service = new AdminService();
+    const result = await service.downloadLogs();
+
+    expect(result).toBeInstanceOf(Blob);
+    expect(fetchMock).toHaveBeenCalledWith('/api/admin/logs/download', {
+      headers: { 'X-API-Key': 'admin-key' },
+    });
+  });
+
+  it('관리자 WebSocket URL에 api_key query를 첨부한다', async () => {
+    window.RUNTIME_CONFIG = {
+      ...(window.RUNTIME_CONFIG || {}),
+      WS_BASE_URL: 'ws://backend.example.com',
     };
-    vi.stubGlobal('URL', Object.assign(URL, urlMock));
+    mockReadOperatorSettings.mockReturnValue({ adminApiKey: 'ws-secret' });
+
+    const wsConstructor = vi.fn();
+    class MockWebSocket {
+      static OPEN = 1;
+      readyState = 0;
+      onopen: (() => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onclose: ((event: CloseEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+
+      constructor(url: string) {
+        wsConstructor(url);
+      }
+    }
+    vi.stubGlobal('WebSocket', MockWebSocket);
 
     const { AdminService } = await import('../adminService');
     const service = new AdminService();
-    await service.downloadLogs();
+    service.initWebSocket();
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/logs/download');
+    expect(wsConstructor).toHaveBeenCalledWith(
+      'ws://backend.example.com/api/admin/ws?api_key=ws-secret'
+    );
   });
 });

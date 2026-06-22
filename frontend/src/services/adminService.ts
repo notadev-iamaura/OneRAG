@@ -6,6 +6,11 @@
 
 import { logger } from '../utils/logger';
 import { getOperatorApiBaseUrl, getOperatorWsBaseUrl } from '../config/operatorSettings';
+import {
+  buildAdminWebSocketUrl,
+  getRequiredAdminAuthHeaders,
+  MissingAdminKeyError,
+} from './authHeaders';
 
 // RUNTIME_CONFIG에 특정 키가 "정의되어 있는지"(빈 문자열 포함) 확인하는 공통 헬퍼.
 // 빈 문자열은 same-origin 의도이므로 truthy 체크가 아니라 hasOwnProperty로 판별해야 한다.
@@ -100,12 +105,13 @@ class AdminService {
     logger.log('🌐 API 호출:', url);
 
     try {
+      const headers = {
+        ...getRequiredAdminAuthHeaders(),
+        ...((options?.headers as Record<string, string> | undefined) || {}),
+      };
       const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...options?.headers,
-        },
         ...options,
+        headers,
       });
 
       if (!response.ok) {
@@ -134,8 +140,8 @@ class AdminService {
 
     try {
       const wsBaseUrl = getAdminWSBaseURL();
-      const wsUrl = `${wsBaseUrl}/api/admin/ws`;
-      logger.log('🔗 WebSocket 연결 시도:', wsUrl);
+      const wsUrl = buildAdminWebSocketUrl(wsBaseUrl);
+      logger.log('🔗 WebSocket 연결 시도:', wsUrl.replace(/api_key=[^&]+/, 'api_key=***'));
       this.wsConnection = new WebSocket(wsUrl);
 
       this.wsConnection.onopen = () => {
@@ -166,6 +172,10 @@ class AdminService {
       };
     } catch (error) {
       logger.error('❌ WebSocket 연결 실패:', error);
+      if (error instanceof MissingAdminKeyError) {
+        this.emit('error', error);
+        return;
+      }
       this.scheduleReconnect();
     }
   }
@@ -315,22 +325,14 @@ class AdminService {
       const url = `${getAdminAPIBaseURL()}/api/admin/logs/download`;
       logger.log('📥 로그 다운로드:', url);
 
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: getRequiredAdminAuthHeaders({ includeContentType: false }),
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = `system-logs-${new Date().toISOString().split('T')[0]}.log`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(downloadUrl);
-
-      return { success: true };
+      return response.blob();
     } catch (error) {
       logger.error('❌ 로그 다운로드 실패:', error);
       throw error;

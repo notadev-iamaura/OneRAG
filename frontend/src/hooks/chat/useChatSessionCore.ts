@@ -21,8 +21,9 @@ import {
   SessionInfo,
   ChatTabProps,
 } from '../../types/chat';
-import type { IChatAPIService } from '../../types/chatAPI';
+import type { ChatAPISessionResponse, IChatAPIService } from '../../types/chatAPI';
 import { mapHistoryEntryToChatMessage } from '../../utils/chat/mappers';
+import { clearUploadAccessToken, persistUploadAccessToken } from '../../services/authHeaders';
 
 // Axios 에러 응답 타입 정의
 interface ApiErrorResponse {
@@ -97,6 +98,10 @@ function persistChatSessionId(newSessionId: string): void {
  * 저장된 세션 ID와 생성 시각을 모두 제거한다(세션 폐기).
  */
 function clearStoredChatSessionId(): void {
+  const storedSessionId = localStorage.getItem(CHAT_SESSION_ID_STORAGE_KEY);
+  if (storedSessionId) {
+    clearUploadAccessToken(storedSessionId);
+  }
   localStorage.removeItem(CHAT_SESSION_ID_STORAGE_KEY);
   localStorage.removeItem(CHAT_SESSION_CREATED_AT_STORAGE_KEY);
 }
@@ -119,6 +124,24 @@ function persistWebSocketToken(sessionId: string, token?: string | null): void {
   } catch (error) {
     logger.warn('WebSocket 세션 토큰 저장 실패:', error);
   }
+}
+
+function persistSessionAccessTokens(sessionId: string, response: ChatAPISessionResponse): void {
+  persistWebSocketToken(sessionId, response.ws_token);
+  persistUploadAccessToken({
+    sessionId,
+    token: response.upload_token,
+    expiresAt: response.upload_token_expires_at,
+    ttlSeconds: response.upload_token_ttl_seconds,
+  });
+}
+
+function redactSessionTokenPayload(data: ChatAPISessionResponse): Record<string, unknown> {
+  return {
+    ...data,
+    ws_token: data.ws_token ? '설정됨' : data.ws_token,
+    upload_token: data.upload_token ? '설정됨' : data.upload_token,
+  };
 }
 
 /**
@@ -326,7 +349,7 @@ export function useChatSessionCore(
             type: 'response',
             method: 'POST',
             endpoint: '/api/chat/session',
-            data: response.data,
+            data: redactSessionTokenPayload(response.data),
             status: response.status,
             duration,
           };
@@ -334,7 +357,7 @@ export function useChatSessionCore(
 
           setSessionId(newSessionId);
           persistChatSessionId(newSessionId);
-          persistWebSocketToken(newSessionId, response.data.ws_token);
+          persistSessionAccessTokens(newSessionId, response.data);
           setIsSessionInitialized(true);
         } catch (error: unknown) {
           const duration = Date.now() - startTime;
@@ -394,7 +417,7 @@ export function useChatSessionCore(
 
       setSessionId(newSessionId);
       persistChatSessionId(newSessionId);
-      persistWebSocketToken(newSessionId, response.data.ws_token);
+      persistSessionAccessTokens(newSessionId, response.data);
       setMessages([]);
       setSessionInfo(null);
 

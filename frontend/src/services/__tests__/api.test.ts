@@ -2,7 +2,7 @@
  * api.ts 서비스 테스트
  *
  * TDD Issue #3: getUploadStatus가 메인 api 인스턴스 사용 검증
- * TDD Issue #2: 토큰 갱신 실패 시 올바른 리다이렉트 검증
+ * 인증 계약: upload token/admin key 헤더 첨부와 401 처리 검증
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -72,9 +72,43 @@ vi.mock('../../utils/privacy', () => ({
     maskPhoneNumberDeep: vi.fn((data: unknown) => data),
 }));
 
+class MemoryStorage {
+    private store = new Map<string, string>();
+
+    getItem(key: string): string | null {
+        return this.store.get(key) ?? null;
+    }
+
+    setItem(key: string, value: string): void {
+        this.store.set(key, value);
+    }
+
+    removeItem(key: string): void {
+        this.store.delete(key);
+    }
+
+    clear(): void {
+        this.store.clear();
+    }
+
+    get length(): number {
+        return this.store.size;
+    }
+
+    key(index: number): string | null {
+        return Array.from(this.store.keys())[index] ?? null;
+    }
+}
+
 describe('api.ts', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        Object.defineProperty(window, 'localStorage', {
+            value: new MemoryStorage(),
+            writable: true,
+            configurable: true,
+        });
+        localStorage.clear();
     });
 
     afterEach(() => {
@@ -261,8 +295,123 @@ describe('api.ts', () => {
         });
     });
 
-    describe('Issue #2: 토큰 갱신 실패 시 적절한 리다이렉트', () => {
-        it('토큰 갱신 실패 시 /login이 아닌 /로 리다이렉트해야 함', async () => {
+    describe('request auth headers', () => {
+        it('upload API에는 저장된 upload token과 세션 ID를 첨부해야 함', async () => {
+            vi.resetModules();
+            localStorage.setItem('chatSessionId', 'session-123');
+            localStorage.setItem('chatUploadToken:session-123', JSON.stringify({
+                sessionId: 'session-123',
+                token: 'upload-token',
+                expiresAt: Math.floor(Date.now() / 1000) + 600,
+            }));
+
+            vi.doMock('axios', () => {
+                const mainInstance = {
+                    get: vi.fn(),
+                    post: vi.fn(),
+                    delete: vi.fn(),
+                    interceptors: {
+                        request: { use: vi.fn() },
+                        response: { use: vi.fn() },
+                    },
+                    defaults: { headers: { common: {} } },
+                };
+
+                return {
+                    default: {
+                        create: vi.fn().mockReturnValue(mainInstance),
+                    },
+                    __esModule: true,
+                    __mainInstance: mainInstance,
+                };
+            });
+
+            vi.doMock('axios-retry', () => ({
+                default: vi.fn(),
+                __esModule: true,
+            }));
+
+            vi.doMock('../../utils/logger', () => ({
+                logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+            }));
+
+            vi.doMock('../../utils/privacy', () => ({
+                maskPhoneNumberDeep: vi.fn((data: unknown) => data),
+            }));
+
+            await import('../../services/api');
+            const axios = await import('axios');
+            const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { request: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
+            const requestHandler = mainInstance.interceptors.request.use.mock.calls[0][0];
+
+            const config = requestHandler({
+                url: '/api/upload/documents/doc-123/original',
+                method: 'get',
+                headers: {},
+            });
+
+            expect(config.headers['X-OneRAG-Upload-Token']).toBe('upload-token');
+            expect(config.headers['X-OneRAG-Session-Id']).toBe('session-123');
+            expect(config.headers['X-Session-Id']).toBe('session-123');
+        });
+
+        it('관리자 보호 API에는 런타임 admin key를 첨부해야 함', async () => {
+            vi.resetModules();
+            window.RUNTIME_CONFIG = { ADMIN_API_KEY: 'admin-key' };
+
+            vi.doMock('axios', () => {
+                const mainInstance = {
+                    get: vi.fn(),
+                    post: vi.fn(),
+                    delete: vi.fn(),
+                    interceptors: {
+                        request: { use: vi.fn() },
+                        response: {
+                            use: vi.fn(),
+                        },
+                    },
+                    defaults: { headers: { common: {} } },
+                };
+
+                return {
+                    default: {
+                        create: vi.fn().mockReturnValue(mainInstance),
+                    },
+                    __esModule: true,
+                    __mainInstance: mainInstance,
+                };
+            });
+
+            vi.doMock('axios-retry', () => ({
+                default: vi.fn(),
+                __esModule: true,
+            }));
+
+            vi.doMock('../../utils/logger', () => ({
+                logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+            }));
+
+            vi.doMock('../../utils/privacy', () => ({
+                maskPhoneNumberDeep: vi.fn((data: unknown) => data),
+            }));
+
+            await import('../../services/api');
+            const axios = await import('axios');
+            const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { request: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
+            const requestHandler = mainInstance.interceptors.request.use.mock.calls[0][0];
+
+            const config = requestHandler({
+                url: '/api/prompts',
+                method: 'post',
+                headers: {},
+            });
+
+            expect(config.headers['X-API-Key']).toBe('admin-key');
+        });
+    });
+
+    describe('401 handling', () => {
+        it('존재하지 않는 JWT refresh API로 재시도하거나 리다이렉트하지 않아야 함', async () => {
             vi.resetModules();
 
             // window.location mock
@@ -308,9 +457,9 @@ describe('api.ts', () => {
                 maskPhoneNumberDeep: vi.fn((data: unknown) => data),
             }));
 
-            // api 모듈 import (이 시점에서 interceptor가 등록됨)
             await import('../../services/api');
             const axios = await import('axios');
+            const { logger } = await import('../../utils/logger');
             const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { response: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
 
             // response interceptor의 에러 핸들러 추출
@@ -322,25 +471,15 @@ describe('api.ts', () => {
             // 에러 핸들러는 두 번째 인자
             const errorHandler = responseInterceptorCall[1];
 
-            // authService mock
-            vi.doMock('../../services/authService', () => ({
-                authService: {
-                    refreshToken: vi.fn().mockRejectedValue(new Error('refresh failed')),
-                },
-            }));
-
             // 401 에러 시뮬레이션
-            try {
-                await errorHandler({
-                    response: { status: 401 },
-                    config: { _retry: false, headers: {}, url: '/api/test' },
-                });
-            } catch {
-                // 에러는 예상됨
-            }
+            const authError = {
+                response: { status: 401 },
+                config: { _retry: false, headers: {}, url: '/api/test', method: 'get' },
+            };
+            await expect(errorHandler(authError)).rejects.toBe(authError);
 
-            // /login이 아닌 '/'로 리다이렉트 확인
-            expect(window.location.href).not.toBe('/login');
+            expect(logger.warn).toHaveBeenCalledWith('인증 실패 (401 Unauthorized):', expect.any(Object));
+            expect(window.location.href).toBe('/bot');
 
             // 정리
             Object.defineProperty(window, 'location', {
@@ -424,8 +563,11 @@ describe('api.ts', () => {
             const [, details] = (logger.error as ReturnType<typeof vi.fn>).mock.calls[0];
             expect(details.requestHeaders).toEqual({
                 authorization: '설정됨',
+                apiKey: '없음',
+                uploadToken: '없음',
                 csrfToken: '설정됨',
                 sessionId: '설정됨',
+                uploadSessionId: '없음',
                 contentType: '설정됨',
             });
             expect(details.requestData).toBe('object');
@@ -508,8 +650,11 @@ describe('api.ts', () => {
             const [, details] = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0];
             expect(details.config.headers).toEqual({
                 authorization: '설정됨',
+                apiKey: '없음',
+                uploadToken: '없음',
                 csrfToken: '설정됨',
                 sessionId: '설정됨',
+                uploadSessionId: '없음',
                 contentType: '설정됨',
             });
             expect(details.config.data).toBe('object');

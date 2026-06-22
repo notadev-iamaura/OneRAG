@@ -23,7 +23,9 @@ import type {
   ChatAPIResponse,
   ChatAPISessionInfo,
   ChatAPIHistoryEntry,
+  ChatAPISessionResponse,
 } from '../types/chatAPI';
+import { persistUploadAccessToken } from './authHeaders';
 
 /**
  * Chat API 서비스 생성 함수
@@ -101,8 +103,19 @@ export function createChatAPIService(config: ChatAPIConfig): IChatAPIService {
      *
      * @returns 새 세션 ID
      */
-    startNewSession(): Promise<AxiosResponse<{ session_id: string; ws_token?: string | null }>> {
-      return axiosInstance.post('/api/chat/session', {}, { timeout: 30000 });
+    async startNewSession(): Promise<AxiosResponse<ChatAPISessionResponse>> {
+      const response = await axiosInstance.post<ChatAPISessionResponse>(
+        '/api/chat/session',
+        {},
+        { timeout: 30000 }
+      );
+      persistUploadAccessToken({
+        sessionId: response.data.session_id,
+        token: response.data.upload_token,
+        expiresAt: response.data.upload_token_expires_at,
+        ttlSeconds: response.data.upload_token_ttl_seconds,
+      });
+      return response;
     },
 
     /**

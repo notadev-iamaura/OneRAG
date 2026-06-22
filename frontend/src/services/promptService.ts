@@ -6,6 +6,7 @@
  */
 
 import api from './api';
+import { getRequiredAdminAuthHeaders } from './authHeaders';
 
 // 하위 호환성을 위한 re-export (타입/상수는 types/prompt.ts에서 관리)
 export type {
@@ -56,19 +57,25 @@ class PromptService {
 
   // 새 프롬프트 생성
   async createPrompt(promptData: CreatePromptRequest): Promise<Prompt> {
-    const response = await api.post<Prompt>('/api/prompts', promptData);
+    const response = await api.post<Prompt>('/api/prompts', promptData, {
+      headers: getRequiredAdminAuthHeaders(),
+    });
     return response.data;
   }
 
   // 프롬프트 수정
   async updatePrompt(id: string, promptData: UpdatePromptRequest): Promise<Prompt> {
-    const response = await api.put<Prompt>(`/api/prompts/${id}`, promptData);
+    const response = await api.put<Prompt>(`/api/prompts/${id}`, promptData, {
+      headers: getRequiredAdminAuthHeaders(),
+    });
     return response.data;
   }
 
   // 프롬프트 삭제
   async deletePrompt(id: string): Promise<void> {
-    await api.delete(`/api/prompts/${id}`);
+    await api.delete(`/api/prompts/${id}`, {
+      headers: getRequiredAdminAuthHeaders(),
+    });
   }
 
   // 프롬프트 활성화/비활성화 토글
@@ -86,7 +93,8 @@ class PromptService {
   async importPrompts(data: PromptImportRequest, overwrite = false): Promise<{ message: string; imported: number }> {
     const response = await api.post<{ message: string; imported: number }>(
       `/api/prompts/import?overwrite=${overwrite}`,
-      data
+      data,
+      { headers: getRequiredAdminAuthHeaders() }
     );
     return response.data;
   }

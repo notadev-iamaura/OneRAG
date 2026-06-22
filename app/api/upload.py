@@ -17,6 +17,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Request,
     UploadFile,
 )
@@ -2085,6 +2086,241 @@ def _guess_original_media_type(filename: str) -> str:
         "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }
     return media_types.get(ext, "application/octet-stream")
+
+
+_SOURCE_DETAIL_PRIVATE_METADATA_KEYS = {
+    "embedding",
+    "embeddings",
+    "vector",
+    "vectors",
+    "file_path",
+    "original_file_path",
+    "storage_backend",
+    "original_storage_backend",
+}
+
+
+def _chunk_metadata(chunk: Any) -> dict[str, Any]:
+    if isinstance(chunk, dict):
+        metadata = chunk.get("metadata")
+    else:
+        metadata = getattr(chunk, "metadata", None)
+    return dict(metadata) if isinstance(metadata, dict) else {}
+
+
+def _chunk_content(chunk: Any) -> str:
+    if isinstance(chunk, dict):
+        value = (
+            chunk.get("content")
+            or chunk.get("page_content")
+            or chunk.get("text")
+            or chunk.get("full_content")
+        )
+    else:
+        value = getattr(chunk, "page_content", None) or getattr(chunk, "content", None)
+    return str(value or "")
+
+
+def _chunk_id(chunk: Any) -> str | None:
+    if isinstance(chunk, dict):
+        value = chunk.get("id") or chunk.get("_id") or chunk.get("chunk_id")
+    else:
+        value = getattr(chunk, "id", None) or getattr(chunk, "_id", None)
+    return str(value) if value not in (None, "") else None
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value in (None, "") or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _first_source_detail_value(metadata: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = metadata.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _public_source_detail_uri(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    uri = str(value)
+    if uri.startswith(("file://", "gs://", "/")):
+        return None
+    if "://" not in uri and "/" in uri:
+        return None
+    return uri
+
+
+def _public_source_detail_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in metadata.items()
+        if key not in _SOURCE_DETAIL_PRIVATE_METADATA_KEYS
+    }
+
+
+def _source_detail_candidate_ids(
+    *,
+    document_id: str,
+    chunk: Any,
+    metadata: dict[str, Any],
+    fallback_order: int,
+) -> set[str]:
+    candidates: set[str] = set()
+    for key in ("source_id", "citation_id", "id", "_id"):
+        value = metadata.get(key)
+        if value not in (None, ""):
+            candidates.add(str(value))
+    chunk_id = _chunk_id(chunk)
+    if chunk_id:
+        candidates.add(chunk_id)
+
+    page = _coerce_optional_int(_first_source_detail_value(metadata, "page", "page_number"))
+    chunk_index = _coerce_optional_int(_first_source_detail_value(metadata, "chunk_index", "chunk"))
+    stable_page = page if page is not None else "na"
+    stable_chunk = chunk_index if chunk_index is not None else fallback_order
+    candidates.add(f"rag:{document_id}:{stable_page}:{stable_chunk}")
+    candidates.add(f"rag:{document_id}:na:{stable_chunk}")
+    return candidates
+
+
+def _matches_source_detail_filters(
+    *,
+    metadata: dict[str, Any],
+    page: int | None,
+    chunk: int | None,
+) -> bool:
+    if page is not None:
+        metadata_page = _coerce_optional_int(
+            _first_source_detail_value(metadata, "page", "page_number")
+        )
+        if metadata_page != page:
+            return False
+    if chunk is not None:
+        metadata_chunk = _coerce_optional_int(
+            _first_source_detail_value(metadata, "chunk_index", "chunk")
+        )
+        if metadata_chunk != chunk:
+            return False
+    return True
+
+
+async def _get_document_chunks_for_detail(document_id: str) -> list[Any]:
+    retrieval_module = modules.get("retrieval")
+    if not retrieval_module:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "시스템 모듈 사용 불가",
+                "message": "문서 검색 모듈을 사용할 수 없습니다",
+                "document_id": document_id,
+            },
+        )
+
+    get_document_chunks = getattr(retrieval_module, "get_document_chunks", None)
+    if not callable(get_document_chunks):
+        orchestrator = getattr(retrieval_module, "orchestrator", None)
+        get_document_chunks = getattr(orchestrator, "get_document_chunks", None)
+    if not callable(get_document_chunks):
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "error": "청크 상세 조회 미지원",
+                "message": "현재 검색 모듈은 문서 청크 상세 조회를 지원하지 않습니다",
+                "document_id": document_id,
+            },
+        )
+
+    try:
+        chunks = await get_document_chunks(document_id)
+    except NotImplementedError as error:
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "error": "청크 상세 조회 미지원",
+                "message": "현재 검색 모듈은 문서 청크 상세 조회를 지원하지 않습니다",
+                "document_id": document_id,
+            },
+        ) from error
+    if not isinstance(chunks, list):
+        return []
+    return chunks
+
+
+@router.get("/upload/documents/{document_id}/sources/{source_id}")
+async def get_document_source_detail(
+    document_id: str,
+    source_id: str,
+    page: int | None = Query(default=None),
+    chunk: int | None = Query(default=None),
+) -> dict[str, Any]:
+    """청크(인용 출처)의 전체 본문을 source_id로 조회한다."""
+    chunks = await _get_document_chunks_for_detail(document_id)
+    for index, item in enumerate(chunks):
+        metadata = _chunk_metadata(item)
+        if source_id not in _source_detail_candidate_ids(
+            document_id=document_id,
+            chunk=item,
+            metadata=metadata,
+            fallback_order=index,
+        ):
+            continue
+        if not _matches_source_detail_filters(metadata=metadata, page=page, chunk=chunk):
+            continue
+
+        content = _chunk_content(item)
+        page_number = _coerce_optional_int(
+            _first_source_detail_value(metadata, "page", "page_number")
+        )
+        chunk_index = _coerce_optional_int(
+            _first_source_detail_value(metadata, "chunk_index", "chunk")
+        )
+        document_name = (
+            _first_source_detail_value(
+                metadata,
+                "document_name",
+                "source_file",
+                "filename",
+                "title",
+            )
+        )
+        return {
+            "source_id": source_id,
+            "document_id": document_id,
+            "document_name": str(document_name) if document_name else None,
+            "document": str(document_name) if document_name else None,
+            "page": page_number,
+            "chunk": chunk_index,
+            "section": metadata.get("section") or metadata.get("heading"),
+            "content": content,
+            "full_content": content,
+            "source_uri": _public_source_detail_uri(
+                _first_source_detail_value(
+                    metadata,
+                    "source_uri",
+                    "uri",
+                    "url",
+                    "citation",
+                )
+            ),
+            "metadata": _public_source_detail_metadata(metadata),
+        }
+
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "error": "출처 청크를 찾을 수 없음",
+            "message": "요청하신 출처 청크를 찾을 수 없습니다",
+            "document_id": document_id,
+            "source_id": source_id,
+        },
+    )
 
 
 @router.get("/upload/documents/{document_id}/original")

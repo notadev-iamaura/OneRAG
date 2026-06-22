@@ -122,6 +122,17 @@ def test_download_original_404_when_no_original(upload_app: FastAPI) -> None:
     assert response.status_code == 404
 
 
+def test_source_detail_returns_full_content(upload_app: FastAPI) -> None:
+    """source_id 상세 조회는 content_preview가 아닌 전체 청크 본문을 반환해야 한다."""
+    client = _client(upload_app)
+    response = client.get("/api/upload/documents/doc-1/sources/rag:doc-1:na:0")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["source_id"] == "rag:doc-1:na:0"
+    assert response.json()["document_id"] == "doc-1"
+    assert response.json()["full_content"] == "재결합"
+
+
 def test_chunked_upload_flow(upload_app: FastAPI) -> None:
     """분할 업로드 start→chunk→complete 정상 흐름(#11)."""
     client = _client(upload_app)
