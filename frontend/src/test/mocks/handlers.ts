@@ -35,6 +35,59 @@ const mockChatResponse: ChatResponse = {
   sessionId: 'test-session-123',
 };
 
+const mockChatEmptyStateSettings = {
+  ko: {
+    mainMessage: '무엇을 도와드릴까요?',
+    subMessage: 'AI가 참고 문서를 분석하여 정확한 답변을 제공합니다',
+    suggestions: [
+      '이 문서에서 핵심 내용을 요약해주세요',
+      '기본 질문 설정1',
+      '기본 질문 설정2',
+      '기본 질문 설정3',
+    ],
+  },
+  en: {
+    mainMessage: 'How can I help you?',
+    subMessage: 'AI analyzes reference documents to provide accurate answers',
+    suggestions: [
+      'Summarize the key points of this document',
+      'Sample question 1',
+      'Sample question 2',
+      'Sample question 3',
+    ],
+  },
+  ja: {
+    mainMessage: '何かお手伝いできますか？',
+    subMessage: 'AIが参考文書を分析して正確な回答を提供します',
+    suggestions: [
+      'この文書の要点を要約してください',
+      'サンプル質問1',
+      'サンプル質問2',
+      'サンプル質問3',
+    ],
+  },
+  es: {
+    mainMessage: '¿En qué puedo ayudarte?',
+    subMessage: 'La IA analiza los documentos de referencia para ofrecer respuestas precisas',
+    suggestions: [
+      'Resume los puntos clave de este documento',
+      'Pregunta de ejemplo 1',
+      'Pregunta de ejemplo 2',
+      'Pregunta de ejemplo 3',
+    ],
+  },
+  zhHant: {
+    mainMessage: '有什麼可以幫您的嗎？',
+    subMessage: 'AI 分析參考文件以提供準確的回答',
+    suggestions: [
+      '請摘要這份文件的重點',
+      '範例問題 1',
+      '範例問題 2',
+      '範例問題 3',
+    ],
+  },
+};
+
 export const handlers = [
   // Health Check
   http.get(`${BASE_URL}/health`, () => {
@@ -111,6 +164,11 @@ export const handlers = [
         { role: 'assistant', content: '안녕하세요! 무엇을 도와드릴까요?', timestamp: new Date().toISOString() },
       ],
     });
+  }),
+
+  // 채팅 빈 화면 설정 조회
+  http.get(/\/api\/chat-empty-state$/, () => {
+    return HttpResponse.json(mockChatEmptyStateSettings);
   }),
 
   // 세션 삭제
