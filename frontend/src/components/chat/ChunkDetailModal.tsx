@@ -114,9 +114,9 @@ export const ChunkDetailModal: React.FC<ChunkDetailModalProps> = ({
     );
 
     // PDF blob을 받아 만든 object URL과 로딩/실패 상태.
-    // OneRAG documentAPI에는 직접 다운로드 URL이 없고 /download가 인증을 요구하므로,
-    // iframe src에 원격 URL을 직접 넣지 않고 axios(인증 인터셉터 적용)로 blob을 받아
-    // URL.createObjectURL로 만든 로컬 URL을 사용한다(#page=N 프래그먼트로 페이지 점프).
+    // 원본 다운로드 API가 인증을 요구하므로 iframe src에 원격 URL을 직접 넣지 않고,
+    // axios(인증 인터셉터 적용)로 blob을 받아 URL.createObjectURL로 만든 로컬 URL을
+    // 사용한다(#page=N 프래그먼트로 페이지 점프).
     const [pdfObjectUrl, setPdfObjectUrl] = React.useState<string | null>(null);
     const [pdfPreviewLoading, setPdfPreviewLoading] = React.useState<boolean>(false);
     const [pdfPreviewFailed, setPdfPreviewFailed] = React.useState<boolean>(false);

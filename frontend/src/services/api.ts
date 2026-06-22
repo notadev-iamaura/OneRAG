@@ -621,9 +621,9 @@ export const documentAPI = {
       data: { confirm_code: confirmCode, reason }
     }),
 
-  // 문서 다운로드
+  // 원본 문서 다운로드
   downloadDocument: (id: string) =>
-    api.get(`/api/upload/documents/${id}/download`, {
+    api.get(`/api/upload/documents/${id}/original`, {
       responseType: 'blob',
     }),
 };

@@ -209,6 +209,58 @@ describe('api.ts', () => {
         });
     });
 
+    describe('documentAPI.downloadDocument', () => {
+        it('원본 문서 다운로드 API를 blob 응답으로 호출해야 함', async () => {
+            vi.resetModules();
+
+            vi.doMock('axios', () => {
+                const mainGet = vi.fn().mockResolvedValue({ data: new Blob(['original']) });
+                const mainInstance = {
+                    get: mainGet,
+                    post: vi.fn().mockResolvedValue({ data: {} }),
+                    delete: vi.fn().mockResolvedValue({ data: {} }),
+                    interceptors: {
+                        request: { use: vi.fn() },
+                        response: { use: vi.fn() },
+                    },
+                    defaults: { headers: { common: {} } },
+                };
+
+                return {
+                    default: {
+                        create: vi.fn().mockReturnValue(mainInstance),
+                    },
+                    __esModule: true,
+                    __mainGet: mainGet,
+                };
+            });
+
+            vi.doMock('axios-retry', () => ({
+                default: vi.fn(),
+                __esModule: true,
+            }));
+
+            vi.doMock('../../utils/logger', () => ({
+                logger: { log: vi.fn(), warn: vi.fn(), error: vi.fn() },
+            }));
+
+            vi.doMock('../../utils/privacy', () => ({
+                maskPhoneNumberDeep: vi.fn((data: unknown) => data),
+            }));
+
+            const { documentAPI } = await import('../../services/api');
+            const axios = await import('axios');
+
+            await documentAPI.downloadDocument('doc-123');
+
+            const mainGet = (axios as unknown as { __mainGet: ReturnType<typeof vi.fn> }).__mainGet;
+            expect(mainGet).toHaveBeenCalledWith(
+                '/api/upload/documents/doc-123/original',
+                { responseType: 'blob' }
+            );
+        });
+    });
+
     describe('Issue #2: 토큰 갱신 실패 시 적절한 리다이렉트', () => {
         it('토큰 갱신 실패 시 /login이 아닌 /로 리다이렉트해야 함', async () => {
             vi.resetModules();
