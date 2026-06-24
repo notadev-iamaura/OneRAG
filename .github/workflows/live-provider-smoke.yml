@@ -63,7 +63,7 @@ jobs:
       MONGODB_ATLAS_DB: ${{ secrets.MONGODB_ATLAS_DB }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup Python
         uses: actions/setup-python@v6
