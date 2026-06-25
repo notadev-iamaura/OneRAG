@@ -40,6 +40,11 @@ from .gemini_embedder import GeminiEmbedder
 from .interfaces import BaseEmbedder, IEmbedder
 from .local_embedder import DEFAULT_LOCAL_MODEL, SUPPORTED_LOCAL_MODELS, LocalEmbedder
 from .openai_embedder import OpenAIEmbedder, OpenRouterEmbedder
+from .twelvelabs_embedder import (
+    TWELVELABS_DEFAULT_MODEL,
+    TWELVELABS_EMBEDDING_DIM,
+    TwelveLabsEmbedder,
+)
 from .vertex_embedder import VertexAIEmbedder
 
 # 하위 호환성을 위한 별칭 (기존 코드가 GeminiEmbeddings를 사용하는 경우)
@@ -58,9 +63,13 @@ __all__ = [
     "OpenRouterEmbedder",
     "LocalEmbedder",
     "VertexAIEmbedder",
+    "TwelveLabsEmbedder",
     # 로컬 임베더 상수
     "SUPPORTED_LOCAL_MODELS",
     "DEFAULT_LOCAL_MODEL",
+    # TwelveLabs 임베더 상수
+    "TWELVELABS_DEFAULT_MODEL",
+    "TWELVELABS_EMBEDDING_DIM",
     # 하위 호환성 별칭
     "GeminiEmbeddings",
 ]
