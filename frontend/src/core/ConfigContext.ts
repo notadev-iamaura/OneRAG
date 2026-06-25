@@ -7,11 +7,13 @@
 import { createContext } from 'react';
 import type { AppConfig } from '../config';
 import { APP_CONFIG } from '../config';
-import type { OperatorSettings } from '../config/operatorSettings';
+import type { RuntimeBrandConfig } from '../config/brand';
+import type { OperatorRuntimeSettings } from '../config/operatorSettings';
 
 export interface RuntimeConfig {
   preset?: string;
-  operator?: OperatorSettings;
+  brand?: RuntimeBrandConfig;
+  operator?: OperatorRuntimeSettings;
   layout?: {
     sidebar?: { width?: number };
     header?: { height?: number };

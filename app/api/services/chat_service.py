@@ -529,7 +529,7 @@ class ChatService:
             chunks.append("".join(current))
         return chunks
 
-    @observe(name="RAG Pipeline (Streaming)", capture_output=False)
+    @observe(name="RAG Pipeline (Streaming)", capture_input=False, capture_output=False)
     async def stream_rag_pipeline(
         self, message: str, session_id: str | None, options: dict[str, Any] | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:

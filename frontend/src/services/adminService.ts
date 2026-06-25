@@ -256,11 +256,64 @@ class AdminService {
     return this.apiCall('/realtime-metrics');
   }
 
+  async getAISettings() {
+    return this.apiCall('/ai-settings');
+  }
+
+  async updateAISettings(payload: { provider: string; model: string }) {
+    return this.apiCall('/ai-settings', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async replaceAIProviderKey(provider: string, apiKey: string) {
+    return this.apiCall(`/ai-settings/providers/${encodeURIComponent(provider)}/key`, {
+      method: 'PUT',
+      body: JSON.stringify({ apiKey }),
+    });
+  }
+
+  async testAISettings(payload: { provider: string; model: string }) {
+    return this.apiCall('/ai-settings/test', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async applyAISettings() {
+    return this.apiCall('/ai-settings/apply', { method: 'POST' });
+  }
+
   /**
    * 시스템 메트릭 조회
    */
   async getMetrics(period: string = '7d') {
     return this.apiCall(`/metrics?period=${period}`);
+  }
+
+  async getAnalyticsSummary(days: number = 365) {
+    return this.apiCall(`/analytics/summary?days=${days}`);
+  }
+
+  async getAnalyticsTimeseries(months: number = 12, grain: 'month' | 'day' = 'month') {
+    return this.apiCall(`/analytics/timeseries?months=${months}&grain=${grain}`);
+  }
+
+  async getAnalyticsModels(days: number = 365) {
+    return this.apiCall(`/analytics/models?days=${days}`);
+  }
+
+  async getLangfuseStatus() {
+    return this.apiCall('/langfuse/status');
+  }
+
+  async getLangfuseTraces(limit: number = 25) {
+    return this.apiCall(`/langfuse/traces?limit=${limit}`);
+  }
+
+  async getLangfuseDailyMetrics(limit: number = 30) {
+    return this.apiCall(`/langfuse/daily-metrics?limit=${limit}`);
   }
 
   /**

@@ -163,6 +163,44 @@ interface RealtimeMetrics {
   cpuUsage: number;
 }
 
+interface AnalyticsSummary {
+  visitors: number;
+  sessions: number;
+  questions: number;
+  answers: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+  avgLatencyMs: number;
+}
+
+interface AnalyticsPoint {
+  bucket: string;
+  visitors: number;
+  sessions: number;
+  questions: number;
+  answers: number;
+  totalTokens: number;
+}
+
+interface AnalyticsModelUsage {
+  provider: string;
+  model: string;
+  answers: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+}
+
+interface LangfuseTraceSummary {
+  traceId?: string;
+  name?: string;
+  timestamp?: string;
+  sessionId?: string;
+  model?: string;
+  latencyMs?: number;
+  totalTokens?: number;
+  totalCost?: number;
+}
+
 const AdminDashboard: React.FC = () => {
   // 탭 관리
   const [currentTab, setCurrentTab] = useState("overview");
@@ -181,6 +219,12 @@ const AdminDashboard: React.FC = () => {
   // 새로운 state 변수들
   const [sessions, setSessions] = useState<Session[]>([]);
   const [realtimeMetrics, setRealtimeMetrics] = useState<RealtimeMetrics | null>(null);
+  const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
+  const [analyticsSeries, setAnalyticsSeries] = useState<AnalyticsPoint[]>([]);
+  const [analyticsModels, setAnalyticsModels] = useState<AnalyticsModelUsage[]>([]);
+  const [langfuseAvailable, setLangfuseAvailable] = useState(false);
+  const [langfuseTraces, setLangfuseTraces] = useState<LangfuseTraceSummary[]>([]);
+  const [trackingUnavailable, setTrackingUnavailable] = useState(false);
 
   // 다이얼로그 상태
   const [testDialogOpen, setTestDialogOpen] = useState(false);
@@ -237,7 +281,21 @@ const AdminDashboard: React.FC = () => {
         adminService.getRecentChats(20),
         adminService.getDocuments(),
         adminService.getSessions({ status: 'all', limit: 50, offset: 0 }),
-        adminService.getRealtimeMetrics()
+        adminService.getRealtimeMetrics(),
+      ]);
+
+      const [
+        analyticsSummaryResult,
+        analyticsTimeseriesResult,
+        analyticsModelsResult,
+        langfuseStatusResult,
+        langfuseTracesResult,
+      ] = await Promise.allSettled([
+        adminService.getAnalyticsSummary(365),
+        adminService.getAnalyticsTimeseries(12, 'month'),
+        adminService.getAnalyticsModels(365),
+        adminService.getLangfuseStatus(),
+        adminService.getLangfuseTraces(25)
       ]);
 
       setSystemStatus(statusData);
@@ -248,7 +306,40 @@ const AdminDashboard: React.FC = () => {
       setRecentChats(chatsData.chats);
       setDocuments(documentsData.documents);
       setSessions(sessionsData.sessions);
-      setRealtimeMetrics(realtimeData);
+      setRealtimeMetrics({
+        activeConnections: realtimeData.activeConnections ?? realtimeData.active_sessions ?? 0,
+        requestsPerSecond: realtimeData.requestsPerSecond ?? realtimeData.chat_requests_per_minute ?? 0,
+        averageResponseTime: realtimeData.averageResponseTime ?? realtimeData.average_response_time ?? 0,
+        errorRate: realtimeData.errorRate ?? realtimeData.error_rate ?? 0,
+        memoryUsage: realtimeData.memoryUsage ?? realtimeData.memory_usage_mb ?? 0,
+        cpuUsage: realtimeData.cpuUsage ?? realtimeData.cpu_usage_percent ?? 0,
+      });
+      const trackingFailed = [
+        analyticsSummaryResult,
+        analyticsTimeseriesResult,
+        analyticsModelsResult,
+        langfuseStatusResult,
+        langfuseTracesResult,
+      ].some((result) => result.status === 'rejected');
+      setTrackingUnavailable(trackingFailed);
+      if (analyticsSummaryResult.status === 'fulfilled') {
+        setAnalyticsSummary(analyticsSummaryResult.value.summary);
+      }
+      if (analyticsTimeseriesResult.status === 'fulfilled') {
+        setAnalyticsSeries(analyticsTimeseriesResult.value.series || []);
+      }
+      if (analyticsModelsResult.status === 'fulfilled') {
+        setAnalyticsModels(analyticsModelsResult.value.models || []);
+      }
+      if (langfuseStatusResult.status === 'fulfilled') {
+        setLangfuseAvailable(Boolean(langfuseStatusResult.value.available));
+      }
+      if (langfuseTracesResult.status === 'fulfilled') {
+        setLangfuseTraces(langfuseTracesResult.value.traces || []);
+      }
+      if (trackingFailed) {
+        logger.warn('Optional tracking data partially failed to load');
+      }
     } catch (error) {
       logger.error('Failed to load dashboard data:', error);
       toast({
@@ -446,6 +537,9 @@ const AdminDashboard: React.FC = () => {
           </TabsTrigger>
           <TabsTrigger value="performance" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
             <BarChart3 className="w-4 h-4" /> <span className="hidden sm:inline">{messages.adminDashboard.tabPerformance}</span>
+          </TabsTrigger>
+          <TabsTrigger value="tracking" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
+            <Eye className="w-4 h-4" /> <span className="hidden sm:inline">Tracking</span>
           </TabsTrigger>
           <TabsTrigger value="prompts" className="flex-1 rounded-xl data-[state=active]:bg-white data-[state=active]:text-primary font-black text-xs gap-2">
             <Brain className="w-4 h-4" /> <span className="hidden sm:inline">{messages.adminDashboard.tabPrompts}</span>
@@ -745,12 +839,134 @@ const AdminDashboard: React.FC = () => {
           </div>
         </TabsContent>
 
-        {/* 탭 4: 프롬프트 관리 */}
+        {/* 탭 4: 트래킹 */}
+        <TabsContent value="tracking" className="animate-in slide-in-from-bottom-2 duration-400 space-y-6">
+          {trackingUnavailable && (
+            <Card className="rounded-[28px] border-amber-200 bg-amber-500/5">
+              <CardContent className="p-4 text-sm font-medium text-amber-700">
+                일부 트래킹 데이터를 불러오지 못했습니다. 기본 운영 대시보드는 계속 사용할 수 있습니다.
+              </CardContent>
+            </Card>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            <MetricCard label="Visitors" value={analyticsSummary?.visitors || 0} isStatic />
+            <MetricCard label="Questions" value={analyticsSummary?.questions || 0} isStatic />
+            <MetricCard label="Tokens" value={(analyticsSummary?.totalTokens || 0).toLocaleString()} isStatic />
+            <MetricCard label="Cost" value={`$${(analyticsSummary?.estimatedCostUsd || 0).toFixed(4)}`} isStatic />
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            <Card className="xl:col-span-7 rounded-[28px] border-border/60">
+              <CardHeader>
+                <CardTitle className="text-lg font-black">12-month usage trend</CardTitle>
+                <CardDescription className="text-xs font-medium">Application-owned analytics events, not static samples.</CardDescription>
+              </CardHeader>
+              <CardContent className="h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={analyticsSeries}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={COLORS.border.default.light} />
+                    <XAxis dataKey="bucket" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} dx={-10} />
+                    <YAxis yAxisId="tokens" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700 }} dx={10} />
+                    <Tooltip contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: COLORS.shadow.md.light }} />
+                    <Line type="monotone" dataKey="visitors" stroke={COLORS.chart.blue} strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="questions" stroke={COLORS.chart.green} strokeWidth={3} dot={false} />
+                    <Line type="monotone" dataKey="totalTokens" yAxisId="tokens" stroke={COLORS.chart.purple} strokeWidth={3} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card className="xl:col-span-5 rounded-[28px] border-border/60">
+              <CardHeader>
+                <CardTitle className="text-lg font-black">Model usage</CardTitle>
+                <CardDescription className="text-xs font-medium">Answer completions grouped by provider/model.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-black text-xs uppercase">Model</TableHead>
+                      <TableHead className="font-black text-xs uppercase text-right">Answers</TableHead>
+                      <TableHead className="font-black text-xs uppercase text-right">Tokens</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {analyticsModels.slice(0, 8).map((model) => (
+                      <TableRow key={`${model.provider}-${model.model}`}>
+                        <TableCell className="font-bold text-xs">
+                          <div>{model.provider}</div>
+                          <div className="text-muted-foreground font-medium">{model.model}</div>
+                        </TableCell>
+                        <TableCell className="text-right font-black">{model.answers}</TableCell>
+                        <TableCell className="text-right font-black">{model.totalTokens.toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))}
+                    {analyticsModels.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
+                          No model usage data available.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="rounded-[28px] border-border/60">
+            <CardHeader>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg font-black">Langfuse trace summaries</CardTitle>
+                  <CardDescription className="text-xs font-medium">Redacted recent traces. Full trace inspection stays in Langfuse.</CardDescription>
+                </div>
+                <Badge variant={langfuseAvailable ? 'secondary' : 'destructive'} className="rounded-full">
+                  {langfuseAvailable ? 'connected' : 'not configured'}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="font-black text-xs uppercase">Time</TableHead>
+                    <TableHead className="font-black text-xs uppercase">Trace</TableHead>
+                    <TableHead className="font-black text-xs uppercase">Model</TableHead>
+                    <TableHead className="font-black text-xs uppercase text-right">Latency</TableHead>
+                    <TableHead className="font-black text-xs uppercase text-right">Tokens</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {langfuseTraces.map((trace) => (
+                    <TableRow key={trace.traceId || `${trace.timestamp}-${trace.name}`}>
+                      <TableCell className="text-xs text-muted-foreground">{trace.timestamp || '-'}</TableCell>
+                      <TableCell className="text-xs font-bold">{trace.name || trace.traceId || '-'}</TableCell>
+                      <TableCell className="text-xs max-w-[260px] truncate">{trace.model || '-'}</TableCell>
+                      <TableCell className="text-right text-xs font-black">{trace.latencyMs !== undefined && trace.latencyMs !== null ? `${Math.round(trace.latencyMs)}ms` : '-'}</TableCell>
+                      <TableCell className="text-right text-xs font-black">{trace.totalTokens || 0}</TableCell>
+                    </TableRow>
+                  ))}
+                  {langfuseTraces.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                        No trace summaries available.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 탭 5: 프롬프트 관리 */}
         <TabsContent value="prompts" className="animate-in slide-in-from-bottom-2 duration-400">
           <PromptManager />
         </TabsContent>
 
-        {/* 탭 5: 설정 */}
+        {/* 탭 6: 설정 */}
         <TabsContent value="settings" className="animate-in slide-in-from-bottom-2 duration-400">
           <SettingsPage />
         </TabsContent>

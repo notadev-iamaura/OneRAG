@@ -2892,7 +2892,7 @@ class RAGPipeline:
         remaining = self.pipeline_stream_total_budget_seconds - (time.time() - start_time)
         return remaining if remaining > 0 else 0.0
 
-    @observe(name="RAG Pipeline", capture_input=True, capture_output=True)
+    @observe(name="RAG Pipeline", capture_input=False, capture_output=False)
     async def execute(
         self, message: str, session_id: str, options: dict[str, Any] | None = None
     ) -> RAGResultDict:
@@ -3305,7 +3305,7 @@ class RAGPipeline:
     # 스코어 가중치는 ScoringService(rag.yaml의 scoring 섹션)에서 관리됩니다.
     # 마이그레이션 가이드: DOMAIN_CUSTOMIZATION_GUIDE.md 참조
 
-    @observe(name="Query Expansion & Context Preparation")
+    @observe(name="Query Expansion & Context Preparation", capture_input=False, capture_output=False)
     async def prepare_context(self, message: str, session_id: str) -> PreparedContext:
         """
         2단계: 세션 컨텍스트 조회 + 쿼리 확장
@@ -3435,7 +3435,7 @@ class RAGPipeline:
             anchor_sources=anchor_sources,
         )
 
-    @observe(name="Document Retrieval (Hybrid Search)")
+    @observe(name="Document Retrieval (Hybrid Search)", capture_input=False, capture_output=False)
     async def retrieve_documents(
         self,
         search_queries: list[str] | str,
@@ -3860,7 +3860,7 @@ class RAGPipeline:
                 documents=search_results, count=len(search_results), reranked=False
             )
 
-    @observe(name="Answer Generation (LLM)")
+    @observe(name="Answer Generation (LLM)", capture_input=False, capture_output=False)
     async def generate_answer(
         self, message: str, ranked_results: list[Any], context: str | None, options: dict[str, Any]
     ) -> GenerationResult:
@@ -4058,7 +4058,7 @@ class RAGPipeline:
                 error=str(e),
             ) from e
 
-    @observe(name="Self-RAG Quality Verification")
+    @observe(name="Self-RAG Quality Verification", capture_input=False, capture_output=False)
     async def self_rag_verify(
         self,
         message: str,

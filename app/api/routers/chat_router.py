@@ -41,6 +41,8 @@ from ...lib.errors import (
     wrap_exception,
 )
 from ...lib.logger import get_logger
+from ..admin_ai_settings_store import get_active_generation_override
+from ..analytics_event_store import get_analytics_event_store
 from ..schemas.chat_schemas import (
     ChatHistoryResponse,
     ChatRequest,
@@ -153,6 +155,63 @@ def _ensure_service_initialized(lang: str = "ko") -> None:
         )
 
 
+def _apply_admin_ai_defaults(options: dict[str, Any] | None) -> dict[str, Any]:
+    """Apply server-side admin model defaults when safe for the active provider."""
+    resolved_options = dict(options or {})
+    if resolved_options.get("model"):
+        return resolved_options
+    try:
+        override = get_active_generation_override()
+        generation_module = getattr(chat_service, "modules", {}).get("generation")
+        running_provider = getattr(generation_module, "provider", None)
+        if override.get("provider") == running_provider and override.get("model"):
+            resolved_options["model"] = override["model"]
+    except Exception as e:  # noqa: BLE001 - settings fallback must not break chat
+        logger.debug(f"Admin AI default 적용 건너뜀: {e}")
+    return resolved_options
+
+
+def _record_chat_analytics(
+    request: Request,
+    *,
+    session_id: str | None,
+    message_id: str | None,
+    model_info: dict[str, Any] | None,
+    tokens_used: int,
+    processing_time: float,
+    success: bool = True,
+) -> None:
+    """Record chat analytics without raw question/answer content."""
+    try:
+        visitor_id = request.headers.get("X-OneRAG-Visitor-ID")
+        route = str(request.url.path)
+        referrer = request.headers.get("origin") or request.headers.get("referer")
+        model_info = model_info or {}
+        base_event = {
+            "visitorId": visitor_id,
+            "sessionId": session_id,
+            "messageId": message_id,
+            "channel": "rest",
+            "route": route,
+            "referrerOrigin": referrer,
+            "modelProvider": model_info.get("provider"),
+            "modelName": model_info.get("model") or model_info.get("model_used"),
+        }
+        store = get_analytics_event_store()
+        store.record_event({**base_event, "eventType": "question_submitted"})
+        store.record_event(
+            {
+                **base_event,
+                "eventType": "answer_completed" if success else "answer_failed",
+                "totalTokens": tokens_used,
+                "latencyMs": processing_time * 1000,
+                "success": success,
+            }
+        )
+    except Exception as e:  # noqa: BLE001 - analytics must not break chat
+        logger.debug(f"chat analytics 기록 건너뜀: {e}")
+
+
 def _get_confidence_level(score: float) -> str:
     """
     품질 점수 → 신뢰도 레벨 변환
@@ -211,7 +270,7 @@ async def chat(
         session_id = session_result["session_id"]
         # Self-RAG는 RAGPipeline 내부에서 자동으로 처리됨 (중복 실행 제거)
         # Agent 모드 옵션 병합 (use_agent 필드를 options에 포함)
-        options = chat_request.options or {}
+        options = _apply_admin_ai_defaults(chat_request.options)
         if chat_request.use_agent:
             options["use_agent"] = True
         if chat_request.enable_debug_trace:
@@ -243,6 +302,14 @@ async def chat(
                 "can_evaluate": True,
                 "debug_trace": rag_result.get("debug_trace"),  # E2E 테스트용 디버그 추적
             },
+        )
+        _record_chat_analytics(
+            request,
+            session_id=session_id,
+            message_id=message_id,
+            model_info=rag_result.get("model_info"),
+            tokens_used=rag_result.get("tokens_used", 0),
+            processing_time=time.time() - start_time,
         )
         # Self-RAG 메타데이터는 model_info에 포함되어 있음
         self_rag_metadata = None
@@ -788,10 +855,20 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest) -> Stre
             async for event in chat_service.stream_rag_pipeline(
                 message=chat_request.message,
                 session_id=chat_request.session_id,
-                options=chat_request.options,
+                options=_apply_admin_ai_defaults(chat_request.options),
             ):
                 # 이벤트 타입 추출 (기본값: chunk)
                 event_type = event.get("event", "chunk")
+                if event_type == "done":
+                    data = event.get("data") if isinstance(event.get("data"), dict) else {}
+                    _record_chat_analytics(
+                        request,
+                        session_id=data.get("session_id"),
+                        message_id=data.get("message_id"),
+                        model_info=data.get("model_info"),
+                        tokens_used=int(data.get("tokens_used") or 0),
+                        processing_time=float(data.get("processing_time") or 0.0),
+                    )
 
                 # JSON으로 직렬화 (한글 유니코드 유지)
                 event_data = json.dumps(event, ensure_ascii=False)

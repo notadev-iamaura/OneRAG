@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  Image as ImageIcon,
   Palette as PaletteIcon,
   Layout as LayoutIcon,
   Settings2 as FeaturesIcon,
@@ -15,11 +16,14 @@ import {
   Eye as PreviewIcon,
   Info,
   CheckCircle2,
+  Upload as UploadIcon,
+  X as XIcon,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,9 +37,13 @@ import { useMenuMessages } from '../../i18n/useMenuLocale';
 import { format } from '../../i18n/format';
 import { cn } from '@/lib/utils';
 
+const MAX_LOGO_FILE_SIZE_BYTES = 512 * 1024;
+const ACCEPTED_LOGO_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp']);
+const ACCEPTED_LOGO_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.svg', '.webp'];
+
 export const SettingsPage: React.FC = () => {
   const { config, runtimeConfig, updateConfig, resetConfig } = useConfig();
-  const [currentTab, setCurrentTab] = useState("colors");
+  const [currentTab, setCurrentTab] = useState("brand");
   const { toast } = useToast();
   const { messages } = useMenuMessages();
 
@@ -54,6 +62,10 @@ export const SettingsPage: React.FC = () => {
   const [contentPadding, setContentPadding] = useState(
     config.layout.content.padding
   );
+  const [logoDataUrl, setLogoDataUrl] = useState(() => (
+    config.brand.logo.type === 'image' ? config.brand.logo.main : ''
+  ));
+  const [logoFileName, setLogoFileName] = useState('');
 
   // 기능 플래그 상태
   const [features, setFeatures] = useState(() => {
@@ -97,6 +109,11 @@ export const SettingsPage: React.FC = () => {
       if (runtimeConfig.layout?.content?.padding) {
         setContentPadding(runtimeConfig.layout.content.padding);
       }
+      if (runtimeConfig.brand?.logo) {
+        const logo = runtimeConfig.brand.logo;
+        setLogoDataUrl(logo.type === 'image' && logo.main ? logo.main : '');
+        setLogoFileName('');
+      }
     }
   }, [runtimeConfig]);
 
@@ -116,7 +133,27 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleSaveSettings = () => {
+    const logoOverride = logoDataUrl
+      ? {
+        main: logoDataUrl,
+        dark: logoDataUrl,
+        fallback: logoDataUrl,
+        type: 'image' as const,
+      }
+      : {
+        main: '',
+        dark: '',
+        type: 'text' as const,
+      };
+
     const newConfig = {
+      brand: {
+        ...config.brand,
+        logo: {
+          ...config.brand.logo,
+          ...logoOverride,
+        },
+      },
       preset: selectedPreset,
       layout: {
         sidebar: { width: sidebarWidth },
@@ -156,6 +193,8 @@ export const SettingsPage: React.FC = () => {
     setSidebarWidth(LAYOUT_CONFIG.sidebar.width);
     setHeaderHeight(LAYOUT_CONFIG.header.height);
     setContentPadding(LAYOUT_CONFIG.content.padding);
+    setLogoDataUrl('');
+    setLogoFileName('');
     const cfg = FEATURE_FLAGS || {};
     setFeatures({
       modules: {
@@ -184,6 +223,60 @@ export const SettingsPage: React.FC = () => {
       title: messages.adminSettings.resetToastTitle,
       description: messages.adminSettings.resetToastDesc,
     });
+  };
+
+  const handleLogoFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    const hasAcceptedType = ACCEPTED_LOGO_MIME_TYPES.has(file.type);
+    const hasAcceptedExtension = ACCEPTED_LOGO_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
+
+    if (!hasAcceptedType && !hasAcceptedExtension) {
+      toast({
+        variant: "destructive",
+        title: messages.adminSettings.logoInvalidFileToastTitle,
+        description: messages.adminSettings.logoInvalidFileToastDesc,
+      });
+      return;
+    }
+
+    if (file.size > MAX_LOGO_FILE_SIZE_BYTES) {
+      toast({
+        variant: "destructive",
+        title: messages.adminSettings.logoInvalidFileToastTitle,
+        description: messages.adminSettings.logoTooLargeToastDesc,
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        toast({
+          variant: "destructive",
+          title: messages.adminSettings.logoReadFailToastTitle,
+          description: messages.adminSettings.logoReadFailToastDesc,
+        });
+        return;
+      }
+      setLogoDataUrl(reader.result);
+      setLogoFileName(file.name);
+      toast({
+        title: messages.adminSettings.logoSelectedToastTitle,
+        description: format(messages.adminSettings.logoSelectedToastDesc, { name: file.name }),
+      });
+    };
+    reader.onerror = () => {
+      toast({
+        variant: "destructive",
+        title: messages.adminSettings.logoReadFailToastTitle,
+        description: messages.adminSettings.logoReadFailToastDesc,
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleExportConfig = () => {
@@ -262,7 +355,10 @@ export const SettingsPage: React.FC = () => {
       </Alert>
 
       <Tabs value={currentTab} onValueChange={setCurrentTab} className="space-y-6">
-        <TabsList className="grid grid-cols-3 h-12 p-1 bg-muted/50 rounded-2xl gap-1">
+        <TabsList className="grid grid-cols-4 h-12 p-1 bg-muted/50 rounded-2xl gap-1">
+          <TabsTrigger value="brand" className="rounded-xl font-black text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary transition-all duration-300">
+            <ImageIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.tabBrand}
+          </TabsTrigger>
           <TabsTrigger value="colors" className="rounded-xl font-black text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-primary transition-all duration-300">
             <PaletteIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.tabColors}
           </TabsTrigger>
@@ -273,6 +369,83 @@ export const SettingsPage: React.FC = () => {
             <FeaturesIcon className="w-4 h-4 mr-2" /> {messages.adminSettings.tabFeatures}
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="brand" className="animate-in slide-in-from-bottom-4 duration-500 space-y-6">
+          <div className="space-y-4">
+            <h2 className="text-xl font-black flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-primary" /> {messages.adminSettings.brandHeading}
+            </h2>
+            <p className="text-sm font-medium text-muted-foreground">{messages.adminSettings.brandDescription}</p>
+          </div>
+
+          <Card className="rounded-[32px] border-border/60 overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b border-border/40 pb-4">
+              <CardTitle className="text-lg font-black tracking-tight">{messages.adminSettings.logoCardTitle}</CardTitle>
+              <CardDescription className="text-xs font-medium">{messages.adminSettings.logoCardDescription}</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6 grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+              <div className="rounded-3xl border border-dashed border-border/70 bg-muted/20 min-h-44 flex items-center justify-center p-6">
+                {logoDataUrl ? (
+                  <img
+                    src={logoDataUrl}
+                    alt={config.brand.logo.alt}
+                    className="max-h-28 max-w-full object-contain"
+                  />
+                ) : (
+                  <div className="text-center space-y-2">
+                    <div className="mx-auto h-14 w-14 rounded-2xl bg-background border border-border/50 flex items-center justify-center">
+                      <ImageIcon className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm font-black">{config.brand.appName}</p>
+                    <p className="text-xs font-medium text-muted-foreground">{messages.adminSettings.logoEmptyPreview}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-xs font-black uppercase text-muted-foreground/60 tracking-widest">{messages.adminSettings.logoPreviewLabel}</Label>
+                  <p className="mt-1 text-sm font-bold break-all">
+                    {logoFileName || (logoDataUrl ? messages.adminSettings.logoCurrentCustom : messages.adminSettings.logoCurrentText)}
+                  </p>
+                </div>
+                <p className="text-sm font-medium text-muted-foreground leading-relaxed">
+                  {messages.adminSettings.logoHelpText}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild className="rounded-xl font-bold">
+                    <Label className="cursor-pointer">
+                      <UploadIcon className="w-4 h-4 mr-2" />
+                      {messages.adminSettings.logoUploadButton}
+                      <Input
+                        type="file"
+                        accept="image/png,image/jpeg,image/svg+xml,image/webp,.png,.jpg,.jpeg,.svg,.webp"
+                        className="hidden"
+                        onChange={handleLogoFileChange}
+                      />
+                    </Label>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-xl font-bold"
+                    disabled={!logoDataUrl}
+                    onClick={() => {
+                      setLogoDataUrl('');
+                      setLogoFileName('');
+                    }}
+                  >
+                    <XIcon className="w-4 h-4 mr-2" />
+                    {messages.adminSettings.logoRemoveButton}
+                  </Button>
+                </div>
+                <p className="text-xs font-bold text-muted-foreground/70">
+                  {messages.adminSettings.logoSupportedFormats}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="colors" className="animate-in slide-in-from-bottom-4 duration-500">
           <div className="space-y-4 mb-6">

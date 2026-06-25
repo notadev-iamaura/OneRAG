@@ -61,9 +61,12 @@ LANGFUSE_SECRET_KEY=sk-lf-...
 > - **출력(LLM 답변)**: generation output은 비스트리밍·스트리밍 **모두 PII 마스킹 후**
 >   기록된다(관측 채널로의 raw 답변 유출 방지). generation observation은 입력 자동
 >   캡처를 끄고(capture_input=False) 출력만 마스킹해 명시 기록한다.
-> - **입력(사용자 질문)**: 파이프라인 trace는 디버깅을 위해 사용자 질문을 **마스킹 전
->   raw**로 캡처한다(비스트리밍 `RAG Pipeline`·스트리밍 `RAG Pipeline (Streaming)` 공통).
->   컨텍스트 문서는 generation observation에 자동 캡처되지 않는다.
+> - **입력(사용자 질문)**: high-level RAG/stream/retrieval/generation span은
+>   `capture_input=False`, `capture_output=False`로 raw 질문·답변·컨텍스트 자동
+>   캡처를 끈다. 모델·토큰·지연시간처럼 운영에 필요한 메타데이터만 명시 기록한다.
+> - **관리자 대시보드**: `/api/admin/langfuse/*`는 Langfuse 키를 서버에만 두고,
+>   trace 목록은 redacted summary로만 반환한다. 전체 raw trace 검수는 Langfuse 접근
+>   권한이 있는 운영자가 Langfuse UI에서 별도 정책에 따라 수행한다.
 > - 관측은 운영자가 명시적으로 켜는 내부 디버깅 채널이므로, 민감 데이터 정책에 따라
 >   Langfuse 프로젝트 접근을 통제하라.
 

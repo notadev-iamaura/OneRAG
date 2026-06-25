@@ -709,9 +709,30 @@ export interface MenuMessages {
     noticeRefresh: string;
     noticeAfterRefresh: string;
     // 탭
+    tabBrand: string;
     tabColors: string;
     tabLayout: string;
     tabFeatures: string;
+    // 브랜드 탭
+    brandHeading: string;
+    brandDescription: string;
+    logoCardTitle: string;
+    logoCardDescription: string;
+    logoPreviewLabel: string;
+    logoEmptyPreview: string;
+    logoCurrentCustom: string;
+    logoCurrentText: string;
+    logoHelpText: string;
+    logoUploadButton: string;
+    logoRemoveButton: string;
+    logoSupportedFormats: string;
+    logoInvalidFileToastTitle: string;
+    logoInvalidFileToastDesc: string;
+    logoTooLargeToastDesc: string;
+    logoReadFailToastTitle: string;
+    logoReadFailToastDesc: string;
+    logoSelectedToastTitle: string;
+    logoSelectedToastDesc: string;
     // 색상 프리셋 탭
     colorsHeading: string;
     colorsDescription: string;
@@ -1363,9 +1384,29 @@ const ko: MenuMessages = {
     noticeBetween: " 버튼을 누르고 ",
     noticeRefresh: "페이지를 새로고침",
     noticeAfterRefresh: "하셔야 변경 사항이 반영됩니다.",
+    tabBrand: "브랜드",
     tabColors: "색상 프리셋",
     tabLayout: "레이아웃",
     tabFeatures: "기능 플래그",
+    brandHeading: "🏷️ 브랜드 로고",
+    brandDescription: "관리자 화면에서 로고 이미지를 업로드해 사이드바와 헤더 로고를 교체합니다.",
+    logoCardTitle: "로고 이미지",
+    logoCardDescription: "PNG, JPG, SVG, WebP 파일을 업로드하면 저장 후 앱 로고로 적용됩니다.",
+    logoPreviewLabel: "현재 선택",
+    logoEmptyPreview: "텍스트 로고 사용 중",
+    logoCurrentCustom: "사용자 지정 로고",
+    logoCurrentText: "기본 텍스트 로고",
+    logoHelpText: "선택한 이미지는 브라우저 런타임 설정에 저장됩니다. 운영 저장소가 연결되기 전까지는 현재 브라우저 환경에서 적용됩니다.",
+    logoUploadButton: "로고 업로드",
+    logoRemoveButton: "로고 제거",
+    logoSupportedFormats: "지원 형식: PNG, JPG, SVG, WebP / 최대 512KB",
+    logoInvalidFileToastTitle: "로고 파일을 사용할 수 없습니다",
+    logoInvalidFileToastDesc: "PNG, JPG, SVG, WebP 형식의 이미지만 업로드할 수 있습니다.",
+    logoTooLargeToastDesc: "로고 파일은 512KB 이하로 업로드해 주세요.",
+    logoReadFailToastTitle: "로고 읽기 실패",
+    logoReadFailToastDesc: "파일을 읽는 중 오류가 발생했습니다. 다른 이미지를 선택해 주세요.",
+    logoSelectedToastTitle: "로고 선택 완료",
+    logoSelectedToastDesc: "\"{name}\" 파일이 선택되었습니다. 저장 후 새로고침하면 적용됩니다.",
     colorsHeading: "🎨 테마 프리셋 선택",
     colorsDescription: "데이터 플랫폼의 무드를 결정하는 8가지 공식 프리셋 중 하나를 선택하세요.",
     presetSelected: "선택됨",
@@ -2014,9 +2055,29 @@ const en: MenuMessages = {
     noticeBetween: " and ",
     noticeRefresh: "refresh the page",
     noticeAfterRefresh: " for the changes to take effect.",
+    tabBrand: "Brand",
     tabColors: "Color presets",
     tabLayout: "Layout",
     tabFeatures: "Feature flags",
+    brandHeading: "🏷️ Brand logo",
+    brandDescription: "Upload a logo image from the admin screen and replace the sidebar and header logo.",
+    logoCardTitle: "Logo image",
+    logoCardDescription: "Upload a PNG, JPG, SVG, or WebP file and save it to apply it as the app logo.",
+    logoPreviewLabel: "Current selection",
+    logoEmptyPreview: "Using text logo",
+    logoCurrentCustom: "Custom logo",
+    logoCurrentText: "Default text logo",
+    logoHelpText: "The selected image is stored in browser runtime settings. Until backend settings storage is connected, it applies to the current browser environment.",
+    logoUploadButton: "Upload logo",
+    logoRemoveButton: "Remove logo",
+    logoSupportedFormats: "Supported: PNG, JPG, SVG, WebP / max 512KB",
+    logoInvalidFileToastTitle: "Logo file cannot be used",
+    logoInvalidFileToastDesc: "Only PNG, JPG, SVG, and WebP images can be uploaded.",
+    logoTooLargeToastDesc: "Upload a logo file that is 512KB or smaller.",
+    logoReadFailToastTitle: "Could not read logo",
+    logoReadFailToastDesc: "An error occurred while reading the file. Choose another image.",
+    logoSelectedToastTitle: "Logo selected",
+    logoSelectedToastDesc: "\"{name}\" has been selected. Save and refresh to apply it.",
     colorsHeading: "🎨 Select theme preset",
     colorsDescription: "Choose one of the 8 official presets that set the mood of the data platform.",
     presetSelected: "Selected",

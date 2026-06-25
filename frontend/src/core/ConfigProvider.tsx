@@ -50,6 +50,7 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
           ? {
               ...parsed,
               operator: parsed.operator ?? operatorRuntimeConfig.operator,
+              brand: parsed.brand ?? operatorRuntimeConfig.brand,
               features: parsed.features ?? operatorRuntimeConfig.features,
             }
           : parsed;
@@ -85,6 +86,11 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
       } else {
         logger.error(`[ConfigProvider] 프리셋 "${runtime.preset}" 찾을 수 없음`);
       }
+    }
+
+    // 브랜드 설정 적용
+    if (runtime.brand) {
+      updatedConfig = mergeConfig(updatedConfig, { brand: runtime.brand });
     }
 
     // 레이아웃 설정 적용

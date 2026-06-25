@@ -3,7 +3,7 @@
 from importlib import import_module
 from types import ModuleType
 
-__all__ = ["chat", "upload", "admin", "health", "prompts"]
+__all__ = ["analytics", "chat", "upload", "admin", "health", "prompts"]
 
 
 def __getattr__(name: str) -> ModuleType:

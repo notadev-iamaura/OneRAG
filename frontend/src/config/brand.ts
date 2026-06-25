@@ -7,8 +7,35 @@
  * ⚠️ 이 파일은 브랜드 메타데이터만 포함 (보라색 사용 금지)
  */
 
+export type BrandLogoType = 'image' | 'svg-component' | 'text';
+
+export interface BrandConfig {
+  appName: string;
+  appTitle: string;
+  logo: {
+    main: string;
+    dark: string;
+    favicon: string;
+    icon192: string;
+    icon512: string;
+    appleTouchIcon: string;
+    alt: string;
+    type: BrandLogoType;
+    fallback: string;
+  };
+  shadows: {
+    default: { light: string; dark: string };
+    hover: { light: string; dark: string };
+    medium: { light: string; dark: string };
+  };
+}
+
+export type RuntimeBrandConfig = Partial<Omit<BrandConfig, 'logo'>> & {
+  logo?: Partial<BrandConfig['logo']>;
+};
+
 // 브랜드 정보
-export const BRAND_CONFIG = {
+export const BRAND_CONFIG: BrandConfig = {
   // 앱 이름
   appName: 'OneRAG',
   appTitle: 'OneRAG', // HTML title
@@ -29,7 +56,7 @@ export const BRAND_CONFIG = {
     // 로고 대체 텍스트
     alt: 'OneRAG 로고',
     // 로고 사용 방식
-    type: 'text' as 'image' | 'svg-component' | 'text', // 'text': 텍스트 로고
+    type: 'text', // 'text': 텍스트 로고
     // SVG 컴포넌트를 사용할 경우 폴백 이미지
     fallback: '/chatbot.svg',
   },
@@ -49,7 +76,7 @@ export const BRAND_CONFIG = {
       dark: '0 4px 14px 0 rgba(0, 0, 0, 0.3)',
     },
   },
-} as const;
+};
 
 // 페이지별 제목 생성 헬퍼 함수
 export const getPageTitle = (pageName?: string): string => {

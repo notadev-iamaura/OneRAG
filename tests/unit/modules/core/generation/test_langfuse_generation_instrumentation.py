@@ -202,7 +202,7 @@ async def test_nonstreaming_records_generation_usage(
     assert call["model"] == "anthropic/claude-sonnet-4.5"
     assert call["usage"] == {"input": 10, "output": 20, "total": 30, "unit": "TOKENS"}
     assert call["model_parameters"] == {"temperature": 0.3, "max_tokens": 512}
-    assert call["output"] == "답변입니다"
+    assert "output" not in call
 
 
 @pytest.mark.asyncio
@@ -297,10 +297,10 @@ async def test_observation_failure_is_non_fatal(
 
 
 @pytest.mark.asyncio
-async def test_nonstreaming_output_is_masked_before_recording(
+async def test_nonstreaming_output_is_not_recorded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """비스트리밍: generation output은 PII 마스킹 후 텍스트로 기록된다(raw 미유출)."""
+    """비스트리밍: generation output 텍스트는 관측 채널에 기록하지 않는다."""
     from app.modules.core.privacy.masker import PrivacyMasker
 
     spy = _SpyLangfuseContext()
@@ -314,10 +314,9 @@ async def test_nonstreaming_output_is_masked_before_recording(
         model="m1", query="q", context_documents=[{"content": "d"}], options={}
     )
 
-    recorded_output = spy.observation_calls[0].get("output") or ""
-    # 관측 채널에 raw 전화번호가 유출되지 않고, 마스킹 토큰이 적용됨
-    assert "010-1234-5678" not in recorded_output
-    assert "****" in recorded_output
+    recorded = spy.observation_calls[0]
+    assert "output" not in recorded
+    assert "010-1234-5678" not in str(recorded)
 
 
 @pytest.mark.asyncio

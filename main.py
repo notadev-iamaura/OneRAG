@@ -47,6 +47,7 @@ sys.path.append(str(app_dir))
 # TASK-H3: DI Container import
 from app.api import (
     admin,
+    analytics,
     chat,
     documents,
     evaluations,  # 평가 API 추가
@@ -702,7 +703,14 @@ app.add_middleware(
     allow_origins=default_allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["Content-Type", "Authorization", "X-API-Key", "X-Session-ID", "Accept-Language"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-API-Key",
+        "X-Session-ID",
+        "X-OneRAG-Visitor-ID",
+        "Accept-Language",
+    ],
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -767,6 +775,7 @@ if static_path.exists():
 
 # 라우터 등록
 app.include_router(health.router)
+app.include_router(analytics.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")

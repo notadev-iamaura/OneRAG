@@ -5,8 +5,10 @@ Admin API endpoints
 
 import asyncio
 import json
+import os
+import re
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -14,6 +16,13 @@ from pydantic import BaseModel
 
 from ..lib.auth import get_api_key, get_api_key_auth
 from ..lib.logger import get_logger
+from .admin_ai_settings_store import (
+    can_persist_provider_keys,
+    canonical_provider,
+    get_admin_ai_settings_store,
+)
+from .analytics_event_store import get_analytics_event_store
+from .services.openai_model_resolver import list_available_models, parse_model, resolve_model_config
 
 logger = get_logger(__name__)
 
@@ -82,6 +91,20 @@ class ModuleInfo(BaseModel):
     initialized: bool
     config: dict[str, Any]
     stats: dict[str, Any] | None = None
+
+
+class AISettingsUpdate(BaseModel):
+    provider: str
+    model: str
+
+
+class AIProviderKeyUpdate(BaseModel):
+    apiKey: str
+
+
+class AISettingsTestRequest(BaseModel):
+    provider: str
+    model: str
 
 
 def get_memory_usage() -> dict[str, Any]:
@@ -226,8 +249,8 @@ async def get_module_info():
                     name=module_name,
                     status=status,
                     initialized=bool(module_instance),
-                    config=module_config,
-                    stats=module_stats,
+                    config=mask_sensitive_data(module_config),
+                    stats=mask_sensitive_data(module_stats),
                 )
             )
         return module_info
@@ -249,13 +272,7 @@ async def get_module_info():
 async def get_config_info():
     """설정 정보 조회"""
     try:
-        safe_config = {}
-        for key, value in config.items():
-            if key in ["models", "session"]:
-                safe_value = mask_sensitive_data(value)
-                safe_config[key] = safe_value
-            else:
-                safe_config[key] = value
+        safe_config = mask_sensitive_data(config)
         return {
             "config": safe_config,
             "environment": config.get("environment", "unknown"),
@@ -274,6 +291,253 @@ async def get_config_info():
         raise HTTPException(status_code=500, detail="Failed to retrieve configuration") from error
 
 
+SUPPORTED_GENERATION_PROVIDERS = {"google", "openai", "openrouter", "ollama"}
+
+
+def _build_ai_catalog() -> dict[str, Any]:
+    """Build a provider/model catalog for admin settings."""
+    store = get_admin_ai_settings_store()
+    provider_models = _catalog_provider_models()
+    providers = []
+    for provider in sorted(SUPPORTED_GENERATION_PROVIDERS):
+        models = provider_models[provider]
+        providers.append(
+            {
+                "id": provider,
+                "label": {
+                    "google": "Google Gemini",
+                    "openai": "OpenAI",
+                    "openrouter": "OpenRouter",
+                    "ollama": "Ollama",
+                }.get(provider, provider),
+                "models": models,
+                "key": store.get_key_metadata(provider),
+            }
+        )
+    return {"providers": providers}
+
+
+def _catalog_provider_models() -> dict[str, list[dict[str, str]]]:
+    provider_models: dict[str, list[dict[str, str]]] = {
+        provider: [] for provider in sorted(SUPPORTED_GENERATION_PROVIDERS)
+    }
+    for model_info in list_available_models():
+        model_id = model_info.get("id", "")
+        try:
+            provider, sub_model = parse_model(model_id)
+            resolved = resolve_model_config(provider, sub_model)
+        except ValueError:
+            continue
+        resolved_provider = canonical_provider(resolved["provider"])
+        if resolved_provider not in SUPPORTED_GENERATION_PROVIDERS:
+            continue
+        provider_models.setdefault(resolved_provider, []).append(
+            {
+                "id": resolved["model"],
+                "label": model_id,
+                "description": model_info.get("description", ""),
+            }
+        )
+
+    fallback_models = {
+        "google": [{"id": "gemini-2.0-flash", "label": "gemini-2.0-flash"}],
+        "openai": [{"id": "gpt-4o", "label": "gpt-4o"}],
+        "openrouter": [{"id": "google/gemini-2.5-flash", "label": "google/gemini-2.5-flash"}],
+        "ollama": [{"id": "llama3.2", "label": "llama3.2"}],
+    }
+    catalog: dict[str, list[dict[str, str]]] = {}
+    for provider in sorted(SUPPORTED_GENERATION_PROVIDERS):
+        models = provider_models.get(provider) or fallback_models[provider]
+        # Stable de-duplication by concrete model id.
+        catalog[provider] = list({model["id"]: model for model in models}.values())
+    return catalog
+
+
+def _running_generation_info() -> dict[str, Any]:
+    generation_module = modules.get("generation")
+    return {
+        "provider": getattr(generation_module, "provider", None),
+        "model": getattr(generation_module, "default_model", None),
+        "available": bool(generation_module),
+    }
+
+
+def _validate_ai_settings(provider: str, model: str) -> tuple[str, str]:
+    resolved_provider = _validate_provider(provider)
+    resolved_model = str(model or "").strip()
+    if not resolved_model:
+        raise HTTPException(status_code=400, detail="model is required")
+    valid_model_ids = {model["id"] for model in _catalog_provider_models()[resolved_provider]}
+    if resolved_model not in valid_model_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported model for {resolved_provider}: {resolved_model}",
+        )
+    return resolved_provider, resolved_model
+
+
+def _validate_provider(provider: str) -> str:
+    resolved_provider = canonical_provider(provider)
+    if resolved_provider not in SUPPORTED_GENERATION_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported generation provider: {provider}",
+        )
+    return resolved_provider
+
+
+@router.get("/ai-settings")
+async def get_ai_settings():
+    """Return active AI settings and provider key metadata without raw keys."""
+    try:
+        store = get_admin_ai_settings_store()
+        settings = store.get_settings()
+        running = _running_generation_info()
+        catalog = _build_ai_catalog()
+        return {
+            "settings": settings,
+            "running": running,
+            "catalog": catalog,
+            "applyMode": "request_model_override",
+            "restartRequired": bool(settings.get("configured"))
+            and (
+                bool(settings.get("restartRequired"))
+                or settings.get("provider") != running.get("provider")
+            ),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as error:
+        logger.error(
+            "AI 설정 조회 실패",
+            extra={"error": str(error), "error_type": type(error).__name__},
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve AI settings") from error
+
+
+@router.patch("/ai-settings")
+async def update_ai_settings(payload: AISettingsUpdate):
+    """Persist provider/model settings server-side."""
+    provider, model = _validate_ai_settings(payload.provider, payload.model)
+    try:
+        store = get_admin_ai_settings_store()
+        previous_settings = store.get_settings()
+        settings = store.update_settings(provider, model)
+        running = _running_generation_info()
+        restart_required = provider != running.get("provider") or (
+            bool(previous_settings.get("restartRequired"))
+            and previous_settings.get("provider") == running.get("provider")
+            and provider == running.get("provider")
+        )
+        if not restart_required:
+            store.set_restart_required(False)
+            settings = store.get_settings()
+        return {
+            "settings": settings,
+            "running": running,
+            "restartRequired": restart_required,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as error:
+        logger.error(
+            "AI 설정 저장 실패",
+            extra={"error": str(error), "error_type": type(error).__name__},
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to update AI settings") from error
+
+
+@router.put("/ai-settings/providers/{provider}/key")
+async def replace_ai_provider_key(provider: str, payload: AIProviderKeyUpdate):
+    """Replace a provider API key. The raw key is write-only."""
+    resolved_provider = _validate_provider(provider)
+    if not payload.apiKey or not payload.apiKey.strip():
+        raise HTTPException(status_code=400, detail="apiKey is required")
+    if not can_persist_provider_keys():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Provider key replacement requires ONERAG_SETTINGS_SECRET "
+                "or FASTAPI_AUTH_KEY so the key can be encrypted at rest"
+            ),
+        )
+    try:
+        store = get_admin_ai_settings_store()
+        if not store.get_settings().get("configured"):
+            raise HTTPException(
+                status_code=400,
+                detail="Save provider/model settings before replacing a provider key",
+            )
+        metadata = store.replace_provider_key(
+            resolved_provider, payload.apiKey
+        )
+        return {
+            "provider": resolved_provider,
+            "key": metadata,
+            "restartRequired": True,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.error(
+            "AI provider key 교체 실패",
+            extra={"provider": resolved_provider, "error": str(error)},
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to replace provider key") from error
+
+
+@router.post("/ai-settings/test")
+async def test_ai_settings(payload: AISettingsTestRequest):
+    """Dry-run validate provider/model/key availability without echoing secrets."""
+    provider, model = _validate_ai_settings(payload.provider, payload.model)
+    store = get_admin_ai_settings_store()
+    key_metadata = store.get_key_metadata(provider)
+    requires_key = provider != "ollama"
+    configured = bool(key_metadata.get("configured")) or not requires_key
+    return {
+        "provider": provider,
+        "model": model,
+        "ok": configured,
+        "mode": "dry_run",
+        "message": (
+            "Provider key is configured"
+            if configured
+            else "Provider key is not configured"
+        ),
+        "key": key_metadata,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@router.post("/ai-settings/apply")
+async def apply_ai_settings():
+    """Report conservative runtime application status."""
+    store = get_admin_ai_settings_store()
+    settings = store.get_settings()
+    running = _running_generation_info()
+    restart_required = bool(settings.get("configured")) and (
+        bool(settings.get("restartRequired"))
+        or settings.get("provider") != running.get("provider")
+    )
+    store.set_restart_required(restart_required)
+    return {
+        "settings": store.get_settings(),
+        "running": running,
+        "applied": bool(settings.get("configured")) and not restart_required,
+        "restartRequired": restart_required,
+        "message": (
+            "Model override is applied per chat request"
+            if settings.get("configured") and not restart_required
+            else "No admin AI setting has been saved"
+            if not settings.get("configured")
+            else "Provider or key changes require service restart to rebuild clients"
+        ),
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
 def mask_sensitive_data(data: Any) -> Any:
     """민감한 데이터 마스킹"""
     if isinstance(data, dict):
@@ -283,7 +547,7 @@ def mask_sensitive_data(data: Any) -> Any:
                 sensitive in key.lower() for sensitive in ["key", "secret", "password", "token"]
             ):
                 if isinstance(value, str) and len(value) > 4:
-                    masked[key] = value[:4] + "*" * (len(value) - 4)
+                    masked[key] = f"****{value[-4:]}"
                 else:
                     masked[key] = "***"
             else:
@@ -478,19 +742,23 @@ async def restart_module(module_name: str):
 async def get_metrics(period: str = "7d"):
     """시계열 메트릭 데이터 조회"""
     try:
+        period_days = _period_to_days(period)
+        store = get_analytics_event_store()
+        summary = store.summary(days=period_days)
+        time_series = store.timeseries(months=max(1, period_days // 31), grain="day")
         return {
             "period": period,
-            "totalSessions": 150,
-            "totalQueries": 1250,
-            "avgResponseTime": 0.8,
+            "totalSessions": summary["sessions"],
+            "totalQueries": summary["questions"],
+            "avgResponseTime": round(summary["avgLatencyMs"] / 1000, 2),
             "timeSeries": [
-                {"date": "2024-01-01", "sessions": 20, "queries": 180, "avgResponseTime": 0.7},
-                {"date": "2024-01-02", "sessions": 25, "queries": 220, "avgResponseTime": 0.9},
-                {"date": "2024-01-03", "sessions": 18, "queries": 160, "avgResponseTime": 0.6},
-                {"date": "2024-01-04", "sessions": 30, "queries": 280, "avgResponseTime": 1.1},
-                {"date": "2024-01-05", "sessions": 22, "queries": 200, "avgResponseTime": 0.8},
-                {"date": "2024-01-06", "sessions": 28, "queries": 250, "avgResponseTime": 0.9},
-                {"date": "2024-01-07", "sessions": 32, "queries": 300, "avgResponseTime": 1.0},
+                {
+                    "date": row["bucket"],
+                    "sessions": row["sessions"],
+                    "queries": row["questions"],
+                    "avgResponseTime": round(row["avgLatencyMs"] / 1000, 2),
+                }
+                for row in time_series
             ],
         }
     except Exception as error:
@@ -503,6 +771,253 @@ async def get_metrics(period: str = "7d"):
             exc_info=True
         )
         raise HTTPException(status_code=500, detail="Failed to retrieve metrics") from error
+
+
+def _period_to_days(period: str) -> int:
+    normalized = str(period or "7d").strip().lower()
+    if normalized.endswith("d"):
+        try:
+            return max(1, min(int(normalized[:-1]), 366))
+        except ValueError:
+            return 7
+    if normalized.endswith("m"):
+        try:
+            return max(1, min(int(normalized[:-1]), 12)) * 31
+        except ValueError:
+            return 31
+    if normalized.endswith("y"):
+        try:
+            return max(1, min(int(normalized[:-1]), 2)) * 366
+        except ValueError:
+            return 366
+    return 7
+
+
+@router.get("/analytics/summary")
+async def get_analytics_summary(days: int = 365):
+    """12개월 운영 통계 요약."""
+    try:
+        bounded_days = max(1, min(days, 366))
+        return {
+            "summary": get_analytics_event_store().summary(days=bounded_days),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as error:
+        logger.error("analytics summary 조회 실패", extra={"error": str(error)}, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve analytics summary") from error
+
+
+@router.get("/analytics/timeseries")
+async def get_analytics_timeseries(months: int = 12, grain: str = "month"):
+    """월/일 단위 운영 통계 시계열."""
+    try:
+        bounded_months = max(1, min(months, 12))
+        resolved_grain = "day" if grain == "day" else "month"
+        return {
+            "grain": resolved_grain,
+            "months": bounded_months,
+            "series": get_analytics_event_store().timeseries(
+                months=bounded_months,
+                grain=resolved_grain,
+            ),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as error:
+        logger.error("analytics timeseries 조회 실패", extra={"error": str(error)}, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve analytics timeseries") from error
+
+
+@router.get("/analytics/models")
+async def get_analytics_model_usage(days: int = 365):
+    """모델/Provider별 사용량."""
+    try:
+        bounded_days = max(1, min(days, 366))
+        return {
+            "models": get_analytics_event_store().model_usage(days=bounded_days),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as error:
+        logger.error("analytics models 조회 실패", extra={"error": str(error)}, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve analytics models") from error
+
+
+def _langfuse_settings() -> dict[str, Any]:
+    enabled = os.getenv("LANGFUSE_ENABLED", "").strip().lower() not in {
+        "false",
+        "0",
+        "no",
+        "off",
+    }
+    host = (os.getenv("LANGFUSE_HOST") or "https://cloud.langfuse.com").rstrip("/")
+    public_key = os.getenv("LANGFUSE_PUBLIC_KEY")
+    secret_key = os.getenv("LANGFUSE_SECRET_KEY")
+    return {
+        "enabled": enabled,
+        "host": host,
+        "publicKeyConfigured": bool(public_key),
+        "secretKeyConfigured": bool(secret_key),
+        "configured": enabled and bool(public_key and secret_key),
+        "publicKey": public_key,
+        "secretKey": secret_key,
+    }
+
+
+def _redact_preview(value: Any, *, limit: int = 220) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    text = re.sub(r"[\w.+-]+@[\w-]+\.[\w.-]+", "[email]", text)
+    text = re.sub(r"\b\d{2,3}[-.\s]?\d{3,4}[-.\s]?\d{4}\b", "[phone]", text)
+    text = re.sub(r"(sk|pk|api)[-_][A-Za-z0-9]{12,}", "[secret]", text)
+    text = " ".join(text.split())
+    if len(text) > limit:
+        return text[: limit - 1] + "..."
+    return text
+
+
+def _sanitize_langfuse_trace(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    usage = row.get("usage") if isinstance(row.get("usage"), dict) else {}
+    total_tokens = row.get("totalTokens") or usage.get("total") or usage.get("totalUsage")
+    latency_ms = row.get("latencyMs") or row.get("latency_ms")
+    if latency_ms is None and row.get("latency") is not None:
+        try:
+            latency_ms = round(float(row["latency"]) * 1000, 2)
+        except (TypeError, ValueError):
+            latency_ms = None
+    return {
+        "traceId": row.get("id") or row.get("traceId"),
+        "name": _redact_preview(row.get("name"), limit=120),
+        "timestamp": row.get("timestamp") or row.get("createdAt"),
+        "sessionId": _redact_preview(row.get("sessionId"), limit=80),
+        "userId": _redact_preview(row.get("userId"), limit=80),
+        "model": _redact_preview(metadata.get("model") or metadata.get("model_name"), limit=120),
+        "latencyMs": latency_ms,
+        "totalTokens": total_tokens,
+        "totalCost": row.get("totalCost"),
+    }
+
+
+def _parse_trace_timestamp(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _is_trace_within_retention(row: dict[str, Any], *, days: int) -> bool:
+    timestamp = _parse_trace_timestamp(row.get("timestamp") or row.get("createdAt"))
+    if timestamp is None:
+        return False
+    return timestamp >= datetime.now(UTC) - timedelta(days=days)
+
+
+@router.get("/langfuse/status")
+async def get_langfuse_status():
+    """Langfuse server-side integration status."""
+    settings = _langfuse_settings()
+    return {
+        "available": settings["configured"],
+        "enabled": settings["enabled"],
+        "host": settings["host"],
+        "publicKeyConfigured": settings["publicKeyConfigured"],
+        "secretKeyConfigured": settings["secretKeyConfigured"],
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@router.get("/langfuse/daily-metrics")
+async def get_langfuse_daily_metrics(limit: int = 30):
+    """Proxy Langfuse daily metrics through the admin API."""
+    settings = _langfuse_settings()
+    if not settings["configured"]:
+        return {
+            "available": False,
+            "reason": "Langfuse is not configured",
+            "data": [],
+            "timestamp": datetime.now().isoformat(),
+        }
+    try:
+        import httpx
+
+        bounded_limit = max(1, min(limit, 366))
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings['host']}/api/public/metrics/daily",
+                auth=(settings["publicKey"], settings["secretKey"]),
+                params={"limit": bounded_limit},
+            )
+            response.raise_for_status()
+        payload = response.json()
+        return {
+            "available": True,
+            "data": payload.get("data", []),
+            "meta": payload.get("meta", {}),
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as error:
+        logger.warning("Langfuse daily metrics 조회 실패", extra={"error": str(error)})
+        return {
+            "available": False,
+            "reason": "Langfuse metrics request failed",
+            "data": [],
+            "timestamp": datetime.now().isoformat(),
+        }
+
+
+@router.get("/langfuse/traces")
+async def get_langfuse_traces(limit: int = 25):
+    """Proxy recent Langfuse traces as redacted summaries."""
+    settings = _langfuse_settings()
+    if not settings["configured"]:
+        return {
+            "available": False,
+            "reason": "Langfuse is not configured",
+            "traces": [],
+            "retentionDays": 7,
+            "timestamp": datetime.now().isoformat(),
+        }
+    try:
+        import httpx
+
+        bounded_limit = max(1, min(limit, 100))
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{settings['host']}/api/public/traces",
+                auth=(settings["publicKey"], settings["secretKey"]),
+                params={"limit": bounded_limit},
+            )
+            response.raise_for_status()
+        payload = response.json()
+        rows = payload.get("data", []) if isinstance(payload, dict) else []
+        retained_rows = [
+            row
+            for row in rows
+            if isinstance(row, dict) and _is_trace_within_retention(row, days=7)
+        ]
+        return {
+            "available": True,
+            "traces": [
+                _sanitize_langfuse_trace(row)
+                for row in retained_rows
+            ],
+            "retentionDays": 7,
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as error:
+        logger.warning("Langfuse traces 조회 실패", extra={"error": str(error)})
+        return {
+            "available": False,
+            "reason": "Langfuse traces request failed",
+            "traces": [],
+            "retentionDays": 7,
+            "timestamp": datetime.now().isoformat(),
+        }
 
 
 @router.get("/keywords")

@@ -12,6 +12,7 @@ import { useConfig } from './core/useConfig';
 import { WebSocketProvider } from './core/WebSocketProvider';
 import { ChatAPIProvider } from './core/ChatAPIProvider';
 import { createChatAPIService } from './services/chatAPIService';
+import { trackAnalyticsEvent } from './services/analyticsService';
 import { defaultChatAPIConfig } from './types/chatAPI';
 import { cn } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -171,6 +172,14 @@ function AppRoutes() {
   const isPromptsEnabled = useIsModuleEnabled('prompts');
   const isAdminEnabled = useIsModuleEnabled('admin');
   const location = useLocation();
+
+  React.useEffect(() => {
+    const isChatSurface = location.pathname === '/bot' || location.pathname === '/embed/chat';
+    if (isChatSurface) {
+      void trackAnalyticsEvent('page_view');
+      void trackAnalyticsEvent('chat_open');
+    }
+  }, [location.pathname]);
 
   return (
     <Routes>

@@ -28,6 +28,7 @@ import {
   isUploadApiRequest,
   persistUploadAccessToken,
 } from './authHeaders';
+import { getAnalyticsVisitorId } from './analyticsService';
 
 // Railway 배포 최적화 API URL 관리
 const getAPIBaseURL = (): string => {
@@ -87,6 +88,8 @@ const api = axios.create({
   // CORS 설정 추가 - Railway 백엔드 호환성
   withCredentials: false, // CORS 이슈 해결을 위해 credentials 비활성화
 });
+
+api.defaults.headers.common['X-OneRAG-Visitor-ID'] = getAnalyticsVisitorId();
 
 const isBinaryResponseData = (data: unknown): boolean => {
   if (typeof Blob !== 'undefined' && data instanceof Blob) {
@@ -791,6 +794,7 @@ export const chatAPI = {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
+      'X-OneRAG-Visitor-ID': getAnalyticsVisitorId(),
     };
 
     // JWT Access Token (axios 인터셉터와 동일한 출처)

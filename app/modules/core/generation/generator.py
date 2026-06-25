@@ -43,6 +43,7 @@ logger = get_logger(__name__)
 # LLM Provider별 API URL
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GOOGLE_OPENAI_COMPAT_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+RUNTIME_ADMIN_GENERATION_PROVIDERS = {"google", "openai", "openrouter", "ollama"}
 
 # ============================================================================
 # 다국어 응답 프로파일 (GAP #2) — config 외부화
@@ -440,8 +441,23 @@ class GenerationModule:
         self.privacy_masker = privacy_masker
         self._privacy_enabled = privacy_masker is not None
 
-        # Provider 설정 (환경변수 우선, 기본값 openrouter)
-        self.provider = self.gen_config.get("default_provider", "openrouter")
+        admin_runtime_settings = self._load_admin_runtime_settings()
+
+        # Provider 설정 (관리자 서버 설정 우선, 없으면 config 기본값)
+        configured_provider = self.gen_config.get("default_provider", "openrouter")
+        runtime_provider = admin_runtime_settings.get("provider")
+        self.provider = (
+            runtime_provider
+            if admin_runtime_settings.get("configured")
+            and runtime_provider in RUNTIME_ADMIN_GENERATION_PROVIDERS
+            else configured_provider
+        )
+        runtime_model = (
+            admin_runtime_settings.get("model")
+            if admin_runtime_settings.get("configured")
+            and admin_runtime_settings.get("provider") == self.provider
+            else None
+        )
 
         # Provider별 설정 로드
         self.provider_config = self.gen_config.get(self.provider, {})
@@ -469,6 +485,8 @@ class GenerationModule:
                 "default_model",
                 self.gen_config.get("default_model", "google/gemini-2.5-flash"),
             )
+        if runtime_model:
+            self.default_model = str(runtime_model)
         self.fallback_models = self.gen_config.get(
             "fallback_models",
             [
@@ -503,6 +521,27 @@ class GenerationModule:
             "phone_masked": 0,  # 마스킹된 전화번호 총 개수
             "name_masked": 0,  # 마스킹된 이름 총 개수
         }
+
+    @staticmethod
+    def _load_admin_runtime_settings() -> dict[str, Any]:
+        """Load admin-selected provider/model without making generation depend on FastAPI."""
+        try:
+            from app.api.admin_ai_settings_store import get_active_generation_override
+
+            settings = get_active_generation_override()
+            return settings if isinstance(settings, dict) else {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _load_admin_provider_key(provider: str) -> str | None:
+        """Load server-side provider key replacement when configured."""
+        try:
+            from app.api.admin_ai_settings_store import get_admin_ai_settings_store
+
+            return get_admin_ai_settings_store().get_provider_key(provider)
+        except Exception:
+            return None
 
     async def initialize(self) -> None:
         """
@@ -542,7 +581,11 @@ class GenerationModule:
         import httpx
         from openai import OpenAI
 
-        api_key = self.provider_config.get("api_key") or os.getenv("GOOGLE_API_KEY")
+        api_key = (
+            self.provider_config.get("api_key")
+            or self._load_admin_provider_key("google")
+            or os.getenv("GOOGLE_API_KEY")
+        )
         if not api_key:
             raise ValueError(
                 "Google API 키가 설정되지 않았습니다. "
@@ -570,7 +613,11 @@ class GenerationModule:
         import httpx
         from openai import OpenAI
 
-        api_key = self.provider_config.get("api_key") or os.getenv("OPENAI_API_KEY")
+        api_key = (
+            self.provider_config.get("api_key")
+            or self._load_admin_provider_key("openai")
+            or os.getenv("OPENAI_API_KEY")
+        )
         if not api_key:
             raise ValueError(
                 "OpenAI API 키가 설정되지 않았습니다. "
@@ -619,7 +666,11 @@ class GenerationModule:
         import httpx
         from openai import OpenAI
 
-        api_key = self.openrouter_config.get("api_key") or os.getenv("OPENROUTER_API_KEY")
+        api_key = (
+            self.openrouter_config.get("api_key")
+            or self._load_admin_provider_key("openrouter")
+            or os.getenv("OPENROUTER_API_KEY")
+        )
         if not api_key:
             raise ValueError(
                 "OpenRouter API 키가 설정되지 않았습니다. "
@@ -1142,18 +1193,8 @@ class GenerationModule:
                 if not tokens_used:
                     tokens_used = prompt_tokens + completion_tokens
 
-            # generation output은 PII 마스킹 후 텍스트로 기록한다(스트리밍 경로와 대칭 —
-            # 스트리밍은 마스킹된 청크가 캡처됨). 관측 채널로의 raw PII 유출을 막는다.
-            # 마스킹 자체가 실패하면 원문 대신 출력 기록을 생략한다(보수적 fail-safe).
-            observation_output: str | None = answer
-            if self._privacy_enabled and self.privacy_masker is not None:
-                try:
-                    observation_output = self.privacy_masker.mask_text(answer)
-                except Exception as mask_err:  # noqa: BLE001 - 마스킹 실패 시 원문 미기록
-                    logger.debug(f"generation output 마스킹 실패, 출력 기록 생략: {mask_err}")
-                    observation_output = None
-
-            # Langfuse generation observation에 모델/토큰/파라미터/출력을 기록한다.
+            # Langfuse generation observation에는 텍스트 출력을 기록하지 않는다.
+            # 답변 원문은 고객 문서/질문 내용을 포함할 수 있으므로 토큰/모델 메타데이터만 남긴다.
             # (ENVIRONMENT=test 또는 LANGFUSE 비활성 시 langfuse_context는 더미 no-op)
             self._record_generation_observation(
                 model=model,
@@ -1161,7 +1202,6 @@ class GenerationModule:
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=tokens_used,
-                output=observation_output,
             )
 
             logger.info(f"✅ OpenRouter 응답 성공 (model={model}, tokens={tokens_used})")
@@ -1848,13 +1888,12 @@ class GenerationModule:
         async for chunk in aiter_sync_stream(stream):
             yield chunk
 
-    # capture_input=False: raw query·context_documents 자동 캡처 방지(부피·PII).
-    # output은 transform_to_string이 yield된 청크를 합쳐 캡처하며, 청크는 PII 마스킹
-    # 후 emit되므로 출력은 마스킹된 상태로 기록된다(비스트리밍 경로와 대칭).
+    # capture_input/output=False: raw query/context_documents/answer 자동 캡처 방지.
     @observe(
         as_type="generation",
         name="LLM Generation (Streaming)",
         capture_input=False,
+        capture_output=False,
         transform_to_string=lambda chunks: "".join(str(c) for c in chunks),
     )
     async def stream_answer(

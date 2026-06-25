@@ -1480,6 +1480,10 @@ class LLMClientFactory:
 
                 # 환경 변수 자동 주입 (api_key가 없으면)
                 if "api_key" not in provider_config:
+                    runtime_api_key = self._load_admin_provider_key(provider_name)
+                    if runtime_api_key:
+                        provider_config["api_key"] = runtime_api_key
+                if "api_key" not in provider_config:
                     env_var = self._ENV_VAR_MAPPING.get(provider_name)
                     if env_var:
                         api_key = os.getenv(env_var)
@@ -1492,7 +1496,6 @@ class LLMClientFactory:
                     "LLM 클라이언트 초기화 완료",
                     extra={"provider": provider_name}
                 )
-
             except Exception as e:
                 logger.warning(
                     "LLM 클라이언트 초기화 실패",
@@ -1521,6 +1524,15 @@ class LLMClientFactory:
                 "providers": list(self._clients.keys())
             }
         )
+
+    @staticmethod
+    def _load_admin_provider_key(provider: str) -> str | None:
+        try:
+            from app.api.admin_ai_settings_store import get_admin_ai_settings_store
+
+            return get_admin_ai_settings_store().get_provider_key(provider)
+        except Exception:
+            return None
 
     def get_client(
         self,

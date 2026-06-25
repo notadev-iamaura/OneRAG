@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useIsDarkMode } from '../../hooks/useIsDarkMode';
 import { BRAND_CONFIG } from '../../config/brand';
 import { COLORS } from '../../config/colors';
+import { useConfig } from '../../core/useConfig';
 import { cn } from '@/lib/utils';
 
 interface BrandLogoProps {
@@ -121,17 +122,24 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 }) => {
   const [imageError, setImageError] = useState(false);
   const isDark = useIsDarkMode();
+  const { config } = useConfig();
+  const brandConfig = config.brand ?? BRAND_CONFIG;
+  const logoConfig = brandConfig.logo;
 
   const style = {
     width: typeof width === 'number' ? `${width}px` : width,
     height: typeof height === 'number' ? `${height}px` : height,
   };
 
-  if (BRAND_CONFIG.logo.type === 'svg-component') {
+  useEffect(() => {
+    setImageError(false);
+  }, [logoConfig.dark, logoConfig.fallback, logoConfig.main, logoConfig.type, variant]);
+
+  if (logoConfig.type === 'svg-component') {
     return <SVGLogoFallback width={width} height={height} className={className} isDark={isDark} />;
   }
 
-  if (BRAND_CONFIG.logo.type === 'text') {
+  if (logoConfig.type === 'text') {
     return (
       <div
         className={cn("flex flex-col items-center justify-center font-bold tracking-tight", className)}
@@ -143,21 +151,21 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
           ...style,
         }}
       >
-        {BRAND_CONFIG.appName}
+        {brandConfig.appName}
       </div>
     );
   }
 
   const logoSrc = variant === 'main'
-    ? (isDark && BRAND_CONFIG.logo.dark ? BRAND_CONFIG.logo.dark : BRAND_CONFIG.logo.main)
-    : BRAND_CONFIG.logo.main;
+    ? (isDark && logoConfig.dark ? logoConfig.dark : logoConfig.main)
+    : logoConfig.main;
 
   if (imageError || !logoSrc) {
-    if (BRAND_CONFIG.logo.fallback) {
+    if (logoConfig.fallback) {
       return (
         <img
-          src={BRAND_CONFIG.logo.fallback}
-          alt={BRAND_CONFIG.logo.alt}
+          src={logoConfig.fallback}
+          alt={logoConfig.alt}
           style={style}
           className={cn("object-contain block", className)}
           onError={() => setImageError(false)}
@@ -170,7 +178,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   return (
     <img
       src={logoSrc}
-      alt={BRAND_CONFIG.logo.alt}
+      alt={logoConfig.alt}
       style={style}
       className={cn("object-contain block", className)}
       onError={() => setImageError(true)}
