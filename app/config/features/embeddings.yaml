@@ -44,6 +44,7 @@
 #   - "vertex"    : Vertex AI Gemini Embedding (ADC 인증, GCP 운영용 — 선택적 extra)
 #   - "openai"    : OpenAI Embedding (직접 API)
 #   - "openrouter": OpenRouter 통합 게이트웨이 (권장 - 다양한 모델 지원)
+#   - "twelvelabs": TwelveLabs Marengo 멀티모달 임베딩 (텍스트/이미지/오디오/비디오 공통 공간 — 선택적 extra)
 embeddings:
   provider: "openrouter"
 
@@ -164,6 +165,22 @@ embeddings:
 
     # API 키 (환경 변수 사용 권장)
     api_key: "${OPENAI_API_KEY:-}"
+
+  # ============================================================
+  # TwelveLabs 설정 (멀티모달 - 선택적 extra)
+  # ============================================================
+  # provider: "twelvelabs" 선택 시 사용. uv pip install "onerag[twelvelabs]" 필요.
+  #
+  # Marengo는 텍스트/이미지/오디오/비디오를 동일한 512차원 공간으로 임베딩하므로,
+  # 텍스트 쿼리로 영상 콘텐츠를 검색하는 멀티모달 RAG가 가능합니다.
+  # ⚠️ 차원 고정(512). 기존 코퍼스와 다른 차원이므로 전환 시 재인덱싱 필수!
+  # 무료 API 키: https://twelvelabs.io
+  twelvelabs:
+    model: "marengo3.0"
+    output_dimensionality: 512
+
+    # API 키 (환경 변수 사용 권장)
+    api_key: "${TWELVELABS_API_KEY:-}"
 
 # ============================================================
 # 모델 선택 가이드
