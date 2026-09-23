@@ -145,3 +145,18 @@ self_rag:
     log_prompts: false  # 평가 프롬프트 전체 로깅 (보안 주의)
     save_evaluation_history: true  # 평가 히스토리 저장 (분석용)
     max_history_entries: 1000  # 최대 히스토리 항목 수
+
+  # 11. Jev grounding precheck (optional; default off; fail-open)
+  # shadow/enforce는 질문·답변·컨텍스트를 TypeSafe로 전송한다.
+  # enforce는 fix/self-rag-gates 적용 후 활성화한다.
+  precheck:
+    mode: "off"            # "off" | "shadow" | "enforce"
+    provider: "jev"        # "jev" | "mock"
+    instructions: "Is the answer fully supported by the provided context?"
+    threshold: 0.35
+    timeout_ms: 500
+    max_context_chars: 8000
+    api_base: "${TYPESAFE_API_BASE:-https://api.typesafe.ai}"
+    systemone_path: "${TYPESAFE_SYSTEMONE_PATH:-/v1/systemone}"
+    model: "${TYPESAFE_JEV_MODEL:-jev-latest}"
+    api_key: "${TYPESAFE_API_KEY:-}"
