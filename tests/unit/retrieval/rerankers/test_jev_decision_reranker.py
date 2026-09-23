@@ -23,8 +23,9 @@ def results(count: int) -> list[SearchResult]:
 
 
 class FakeClient:
-    def __init__(self, probabilities: list[float | None]) -> None:
+    def __init__(self, probabilities: list[float | None], error_kind: str = "timeout") -> None:
         self.probabilities = probabilities
+        self.error_kind = error_kind
         self.calls: list[str] = []
 
     async def ask(self, state: dict, questions: dict) -> dict[str, JevAnswer]:
@@ -32,7 +33,7 @@ class FakeClient:
         self.calls.append(passage)
         probability = self.probabilities[int(passage.split()[-1])]
         if probability is None:
-            raise JevAPIError("timeout")
+            raise JevAPIError(self.error_kind)
         return {"relevant": JevAnswer(probability)}
 
 
@@ -166,11 +167,65 @@ async def test_enforce_top_n_zero_returns_empty() -> None:
 async def test_all_errors_fail_open() -> None:
     incoming = results(2)
     reranker = JevDecisionReranker(
-        "key", mode="enforce", client=FakeClient([None, None]),
+        "key", mode="enforce", client=FakeClient([None, None], error_kind="http_500"),
         circuit_failure_threshold=1,
     )
     assert await reranker.rerank("q", incoming) is incoming
     assert reranker.get_stats()["fail_open_count"] == 1
+    assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["circuit_open_skips"] == 1
+
+
+@pytest.mark.asyncio
+async def test_all_timeouts_do_not_open_circuit() -> None:
+    incoming = results(2)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([None, None]),
+        circuit_failure_threshold=1,
+    )
+    for _ in range(3):
+        assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["circuit_open_skips"] == 0
+    assert reranker.get_stats()["jev_requests"] == 6
+    assert reranker.get_stats()["timeout_batches"] == 3
+
+
+@pytest.mark.asyncio
+async def test_batch_deadline_does_not_feed_circuit() -> None:
+    class SlowClient:
+        async def ask(self, state: dict, questions: dict) -> dict[str, JevAnswer]:
+            await asyncio.sleep(1)
+            return {"relevant": JevAnswer(0.9)}
+
+    incoming = results(1)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=SlowClient(),
+        deadline_seconds=0.02, circuit_failure_threshold=1,
+    )
+    for _ in range(2):
+        assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["batch_timeouts"] == 2
+    assert reranker.get_stats()["circuit_open_skips"] == 0
+
+
+@pytest.mark.asyncio
+async def test_timeouts_do_not_reset_hard_failure_count() -> None:
+    class AlternatingClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ask(self, state: dict, questions: dict) -> dict[str, JevAnswer]:
+            self.calls += 1
+            raise JevAPIError("timeout" if self.calls == 2 else "http_500")
+
+    incoming = results(1)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=AlternatingClient(),
+        circuit_failure_threshold=2,
+    )
+    for _ in range(3):
+        assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["timeout_batches"] == 1
     assert await reranker.rerank("q", incoming) is incoming
     assert reranker.get_stats()["circuit_open_skips"] == 1
 

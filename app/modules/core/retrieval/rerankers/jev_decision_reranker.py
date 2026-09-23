@@ -129,6 +129,7 @@ class JevDecisionReranker:
             "docs_dropped": 0,
             "fail_open_count": 0,
             "batch_timeouts": 0,
+            "timeout_batches": 0,
             "circuit_open_skips": 0,
             "shadow_tasks_dropped": 0,
         }
@@ -171,6 +172,7 @@ class JevDecisionReranker:
                 self._judge(query, snapshot, doc_ids), timeout=self.deadline_seconds
             )
         except TimeoutError:
+            # Cancellation skips _judge's circuit accounting.
             self.stats["batch_timeouts"] += 1
             self.stats["fail_open_count"] += 1
             return self._passthrough(base, top_n)
@@ -240,12 +242,17 @@ class JevDecisionReranker:
         judged = await asyncio.gather(
             *(judge_one(i, doc_id, passage) for i, (doc_id, passage) in enumerate(snapshot))
         )
-        if judged and all(decision.status == "error" for decision in judged):
+        errors = [decision for decision in judged if decision.status == "error"]
+        all_failed = bool(judged) and len(errors) == len(judged)
+        hard = [decision for decision in errors if decision.error_kind != "timeout"]
+        if not all_failed:
+            self._consecutive_failures = 0
+        elif hard:
             self._consecutive_failures += 1
             if self._consecutive_failures >= self._circuit_failure_threshold:
                 self._circuit_open_until = time.monotonic() + self._circuit_cooldown_seconds
         else:
-            self._consecutive_failures = 0
+            self.stats["timeout_batches"] += 1
         decisions = (*judged, *(
             JevDecision(doc_ids[i], i, None, None, True, "skipped_cap")
             for i in range(len(snapshot), len(doc_ids))
