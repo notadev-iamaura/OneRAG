@@ -47,6 +47,13 @@ _modules: dict[str, Any] = {}
 
 # 검색 결과 최대 개수 (openai_compat.yaml에서 설정 가능)
 _MAX_SEARCH_RESULTS = 5
+_DEFAULT_BLOCKED_ANSWER = "죄송합니다. 해당 질문은 처리할 수 없습니다."
+
+
+class _QueryBlockedError(Exception):
+    def __init__(self, answer: str) -> None:
+        self.answer = answer
+        super().__init__(answer)
 
 # =============================================================================
 # RAG 프롬프트 래퍼 (기본값 + 외부화 오버라이드 경로)
@@ -314,6 +321,7 @@ async def _pipeline_rag_search(
     options: dict[str, Any] = {"limit": _MAX_SEARCH_RESULTS}
 
     # 라우팅으로 data_source(namespace) 재판단(통짜 경로와 일관화). 실패는 비치명적.
+    route_decision = None
     try:
         route_decision = await pipeline.route_query(user_message, session_id, start_time)
         data_source = route_decision.metadata.get("data_source")
@@ -321,6 +329,10 @@ async def _pipeline_rag_search(
             options["data_source"] = data_source
     except Exception as e:  # noqa: BLE001 - 라우팅 실패는 비치명적
         logger.warning(f"/v1 라우팅 실패(무시): {e}")
+
+    if route_decision is not None and not route_decision.should_continue:
+        immediate = route_decision.immediate_response or {}
+        raise _QueryBlockedError(immediate.get("answer") or _DEFAULT_BLOCKED_ANSWER)
 
     # standalone rewrite + 멀티쿼리 확장(적재된 ephemeral 세션 맥락 참조)
     prepared = await pipeline.prepare_context(user_message, session_id)
@@ -378,6 +390,8 @@ async def _rag_search(
             )
             ephemeral_sid = await _seed_ephemeral_session(chat_service, chat_history)
             return await _pipeline_rag_search(chat_service, user_message, ephemeral_sid)
+        except _QueryBlockedError:
+            raise
         except Exception as e:  # noqa: BLE001 - 파이프라인 실패는 단순 검색으로 폴백
             logger.warning(f"RAG 파이프라인 검색 실패, 단순 검색으로 폴백: {e}")
         finally:
@@ -469,7 +483,15 @@ async def chat_completions(request: Request, req: OpenAICompletionRequest) -> An
     # 4. 문서 검색 (RAG) — 메인 채팅과 동일한 멀티쿼리·rerank 체인 재사용(#14 비대칭 해소).
     #    messages를 함께 넘겨 멀티턴 직전 맥락을 검색에 반영한다(GAP #1).
     #    chat_service 미주입/실패 시 retriever.search 단순 검색으로 폴백.
-    documents = await _rag_search(user_message, req.messages)
+    try:
+        documents = await _rag_search(user_message, req.messages)
+    except _QueryBlockedError as blocked:
+        return OpenAICompletionResponse.create(
+            model=req.model,
+            content=blocked.answer,
+            prompt_tokens=len(user_message.split()),
+            completion_tokens=len(blocked.answer.split()),
+        ).model_dump()
 
     # 5. RAG 프롬프트 구성
     rag_prompt = _build_rag_prompt(user_message, documents)
@@ -541,7 +563,17 @@ async def _stream_completion(
     async def event_generator():  # type: ignore[return]
         # 1. 문서 검색 — 비스트리밍 경로와 동일한 멀티쿼리·rerank 체인 재사용(#14).
         #    messages를 함께 넘겨 멀티턴 직전 맥락을 검색에 반영한다(GAP #1).
-        documents = await _rag_search(user_message, req.messages)
+        try:
+            documents = await _rag_search(user_message, req.messages)
+        except _QueryBlockedError as blocked:
+            chunk = OpenAIStreamChunk.create(
+                model=req.model, content=blocked.answer, index=0, is_first=True
+            )
+            yield f"data: {json.dumps(chunk.model_dump(exclude_none=True), ensure_ascii=False)}\n\n"
+            finish = OpenAIStreamChunk.create_finish(model=req.model)
+            yield f"data: {json.dumps(finish.model_dump(exclude_none=True), ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
         # 2. RAG 프롬프트
         rag_prompt = _build_rag_prompt(user_message, documents)
