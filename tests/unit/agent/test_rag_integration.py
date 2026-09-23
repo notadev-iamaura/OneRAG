@@ -184,6 +184,35 @@ class TestRAGPipelineAgentIntegration:
         assert result.get("metadata", {}).get("mode") == "agent"
 
     @pytest.mark.asyncio
+    async def test_pipeline_agent_mode_blocked_by_rule(
+        self,
+        mock_config: dict[str, Any],
+        mock_agent_orchestrator: AsyncMock,
+        mock_modules: dict[str, Any],
+    ) -> None:
+        from app.api.services.rag_pipeline import RAGPipeline
+        from app.modules.core.routing.rule_based_router import RuleMatch
+
+        pipeline = RAGPipeline(
+            config=mock_config,
+            agent_orchestrator=mock_agent_orchestrator,
+            extract_topic_func=lambda x: "테스트 토픽",
+            **mock_modules,
+        )
+        pipeline.rule_based_router.check_rules = AsyncMock(
+            return_value=RuleMatch(
+                rule_name="security", route="blocked", domain="general",
+                intent="security", confidence=1.0, direct_answer="차단됨",
+            )
+        )
+
+        result = await pipeline.execute("차단 질문", "test-session", {"use_agent": True})
+
+        assert result["answer"] == "차단됨"
+        mock_agent_orchestrator.run.assert_not_called()
+        mock_modules["retrieval_module"].search.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_pipeline_without_agent_mode(
         self,
         mock_config: dict[str, Any],

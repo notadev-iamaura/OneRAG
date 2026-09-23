@@ -263,7 +263,11 @@ class TestExecute:
         mock_modules["agent_orchestrator"] = mock_agent
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
 
-        with patch.object(pipeline, "_execute_agent_mode") as mock_agent_exec:
+        with (
+            patch.object(pipeline, "route_query", new_callable=AsyncMock) as mock_route,
+            patch.object(pipeline, "_execute_agent_mode") as mock_agent_exec,
+        ):
+            mock_route.return_value = RouteDecision(should_continue=True, metadata={})
             mock_agent_exec.return_value = {
                 "answer": "Agent 답변",
                 "sources": [],
@@ -277,7 +281,28 @@ class TestExecute:
             )
 
         assert result["answer"] == "Agent 답변"
+        mock_route.assert_awaited_once()
         mock_agent_exec.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_mode_blocked_never_enters_agent(
+        self, mock_config, mock_modules
+    ) -> None:
+        mock_modules["agent_orchestrator"] = AsyncMock()
+        pipeline = RAGPipeline(config=mock_config, **mock_modules)
+        blocked = pipeline._build_blocked_decision(
+            "차단 질문", time.time(), {"route": "blocked"}, None, "rule_based"
+        )
+        with (
+            patch.object(pipeline, "route_query", new_callable=AsyncMock) as mock_route,
+            patch.object(pipeline, "_execute_agent_mode") as mock_agent_exec,
+        ):
+            mock_route.return_value = blocked
+            result = await pipeline.execute("차단 질문", "test", {"use_agent": True})
+
+        assert result["answer"] == pipeline._DEFAULT_BLOCKED_ANSWER
+        mock_route.assert_awaited_once()
+        mock_agent_exec.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_execute_grok_answer_mode_bypasses_local_pipeline(
@@ -546,6 +571,47 @@ class TestRouteQuery:
         return RAGPipeline(config=mock_config, **mock_modules)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("route", "answer", "should_continue"),
+        [
+            ("blocked", "규칙 차단 답변", False),
+            ("blocked", None, False),
+            ("rag", None, True),
+        ],
+        ids=[
+            "test_route_rule_based_blocked_stops_pipeline",
+            "test_route_rule_based_blocked_without_response_uses_default",
+            "test_route_rule_based_rag_still_continues",
+        ],
+    )
+    async def test_rule_based_route_decision(
+        self, pipeline: RAGPipeline, route: str, answer: str | None,
+        should_continue: bool,
+    ) -> None:
+        match = SimpleNamespace(
+            route=route, direct_answer=answer, intent="test", domain="general",
+            confidence=1.0, rule_name="security",
+        )
+        pipeline.rule_based_router = MagicMock()
+        pipeline.rule_based_router.check_rules = AsyncMock(return_value=match)
+        pipeline.query_router.enabled = True
+        pipeline.query_router.analyze_and_route = AsyncMock()
+
+        decision = await pipeline.route_query("차단 질문", "test", time.time())
+
+        assert decision.should_continue is should_continue
+        if route == "blocked":
+            assert decision.immediate_response is not None
+            assert decision.immediate_response["answer"] == (
+                answer or pipeline._DEFAULT_BLOCKED_ANSWER
+            )
+            assert decision.immediate_response["search_count"] == 0
+            assert decision.immediate_response["model_info"]["provider"] == "rule_based"
+        else:
+            assert decision.immediate_response is None
+        pipeline.query_router.analyze_and_route.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_route_to_rag_with_disabled_router(
         self, pipeline: RAGPipeline
     ) -> None:
@@ -667,8 +733,15 @@ class TestRouteQuery:
         assert decision.should_continue is True
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("configured_answer", "expected_answer"),
+        [
+            ("", "죄송합니다. 해당 질문은 처리할 수 없습니다."),
+            ("설정된 차단 답변", "설정된 차단 답변"),
+        ],
+    )
     async def test_route_llm_blocked(
-        self, mock_config, mock_modules
+        self, mock_config, mock_modules, configured_answer, expected_answer
     ) -> None:
         """
         LLM 라우터가 "blocked" 라우트 반환
@@ -702,6 +775,7 @@ class TestRouteQuery:
             should_call_rag=False,
             should_block=True,
             notes="부적절한 질문입니다",
+            direct_answer=configured_answer,
         )
         mock_query_router.analyze_and_route = AsyncMock(
             return_value=(mock_profile, mock_routing)
@@ -723,7 +797,7 @@ class TestRouteQuery:
         # 검증: blocked 라우트 시 즉시 응답
         assert decision.should_continue is False
         assert decision.immediate_response is not None
-        assert decision.immediate_response["answer"] == "죄송합니다. 해당 질문은 처리할 수 없습니다."
+        assert decision.immediate_response["answer"] == expected_answer
         assert decision.metadata.get("llm_route") == "blocked"
 
     @pytest.mark.asyncio

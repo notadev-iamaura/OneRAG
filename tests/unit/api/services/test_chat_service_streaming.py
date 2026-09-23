@@ -16,9 +16,114 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.api.services.rag_pipeline import RAGPipeline, RouteDecision
+
+
+@pytest.fixture(autouse=True)
+def allow_stream_route(monkeypatch):
+    """Existing streaming cases exercise generation, independent of routing rules."""
+    monkeypatch.setattr(
+        RAGPipeline, "route_query",
+        AsyncMock(return_value=RouteDecision(should_continue=True, metadata={})),
+    )
+
+
+@pytest.fixture
+def guarded_stream_service():
+    from app.api.services.chat_service import ChatService
+
+    session = MagicMock()
+    session.get_session = AsyncMock(return_value={"is_valid": True})
+    session.get_context_string = AsyncMock(return_value="")
+    session.add_conversation = AsyncMock()
+    retrieval = MagicMock()
+    retrieval.search = AsyncMock(return_value=[])
+    generation = MagicMock()
+    generation.stream_answer = AsyncMock()
+    service = ChatService(
+        {"session": session, "retrieval": retrieval, "generation": generation}, {}
+    )
+    service.add_conversation_to_session = AsyncMock()
+    return service, session, retrieval, generation
+
 
 class TestChatServiceStreaming:
     """ChatService 스트리밍 테스트"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("route", "answer"),
+        [("blocked", "차단 답변"), ("direct_answer", "즉시 답변")],
+    )
+    async def test_stream_short_circuits_without_search(
+        self, guarded_stream_service, route, answer
+    ):
+        service, session, retrieval, generation = guarded_stream_service
+        service.rag_pipeline.route_query = AsyncMock(
+            return_value=RouteDecision(
+                should_continue=False,
+                immediate_response={"answer": answer, "model_info": {"provider": "rule_based"}},
+                metadata={"route": route},
+            )
+        )
+
+        events = [
+            event async for event in service.stream_rag_pipeline("질문", "test-session")
+        ]
+
+        assert [event["event"] for event in events] == ["metadata", "chunk", "done"]
+        assert events[0]["data"]["search_results"] == 0
+        assert events[0]["data"]["sources"] == []
+        assert events[0]["data"]["route"] == route
+        assert events[1]["data"] == answer
+        assert events[1]["chunk_index"] == 0
+        assert events[2]["data"]["total_chunks"] == 1
+        service.rag_pipeline.route_query.assert_awaited_once()
+        assert service.rag_pipeline.route_query.await_args.args[:2] == (
+            "질문", "test-session"
+        )
+        retrieval.search.assert_not_awaited()
+        generation.stream_answer.assert_not_called()
+        service.add_conversation_to_session.assert_not_awaited()
+        session.add_conversation.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_stream_route_query_called_before_search(self, guarded_stream_service):
+        service, _, retrieval, _ = guarded_stream_service
+        calls = []
+
+        async def route(*args):
+            calls.append("route")
+            return RouteDecision(should_continue=True, metadata={})
+
+        async def search(*args):
+            calls.append("search")
+            return []
+
+        service.rag_pipeline.route_query = AsyncMock(side_effect=route)
+        retrieval.search.side_effect = search
+        events = [
+            event async for event in service.stream_rag_pipeline("질문", "test-session")
+        ]
+
+        assert calls == ["route", "search"]
+        assert events[-1]["event"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_stream_route_query_exception_emits_error_no_search(
+        self, guarded_stream_service
+    ):
+        service, _, retrieval, generation = guarded_stream_service
+        service.rag_pipeline.route_query = AsyncMock(side_effect=RuntimeError("route failed"))
+
+        events = [
+            event async for event in service.stream_rag_pipeline("질문", "test-session")
+        ]
+
+        assert [event["event"] for event in events] == ["error"]
+        retrieval.search.assert_not_awaited()
+        generation.stream_answer.assert_not_called()
+        service.add_conversation_to_session.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_stream_rag_pipeline_yields_chunks(self):
