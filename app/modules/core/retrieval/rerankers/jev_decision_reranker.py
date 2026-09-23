@@ -285,7 +285,7 @@ class JevDecisionReranker:
     def _copy_with_decision(self, result: SearchResult, decision: JevDecision) -> SearchResult:
         # copy + setattr: mirrors SearchResult.__post_init__ promotion without
         # re-running it (rebuilding would let metadata["score"] clobber .score).
-        # setattr keeps mypy happy vs assigning copied.jev directly.
+        # __dict__ keeps mypy/ruff happy vs copied.jev / setattr(const).
         copied = copy.copy(result)
         jev_meta = {
             "p": decision.probability,
@@ -295,7 +295,7 @@ class JevDecisionReranker:
             "status": decision.status,
         }
         copied.metadata = {**result.metadata, "jev": jev_meta}
-        setattr(copied, "jev", jev_meta)
+        copied.__dict__["jev"] = jev_meta  # dynamic attr; avoids mypy attr-defined + ruff B010
         return copied
 
     def supports_caching(self) -> bool:
