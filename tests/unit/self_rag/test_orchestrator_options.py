@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from app.modules.core.routing import ComplexityResult
-from app.modules.core.self_rag.evaluator import QualityScore
+from app.modules.core.self_rag.evaluator import EvalStatus, QualityEvaluation, QualityScore
 from app.modules.core.self_rag.orchestrator import SelfRAGOrchestrator
 
 
@@ -32,13 +32,14 @@ class _FakeEvaluator:
     """초기 품질을 충분하다고 판단해 재생성 없이 종료시키는 평가기 더블."""
 
     quality_threshold = 0.75
+    is_available = True
 
     def __init__(self, requires_regen: bool = False) -> None:
         self._requires_regen = requires_regen
 
-    async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityScore:
+    async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityEvaluation:
         overall = 0.5 if self._requires_regen else 0.9
-        return QualityScore(
+        score = QualityScore(
             relevance=overall,
             grounding=overall,
             completeness=overall,
@@ -47,6 +48,7 @@ class _FakeEvaluator:
             reasoning="테스트용 평가 결과",
             raw_response={},
         )
+        return QualityEvaluation(EvalStatus.OK, score)
 
     def requires_regeneration(self, quality: QualityScore) -> bool:
         return self._requires_regen
