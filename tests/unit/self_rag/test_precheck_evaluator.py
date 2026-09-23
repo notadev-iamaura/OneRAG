@@ -7,7 +7,12 @@ from unittest.mock import Mock
 import pytest
 
 from app.modules.core.decision import JevDecisionProvider, MockDecisionProvider, NoulResult
-from app.modules.core.self_rag.evaluator import LLMQualityEvaluator, QualityScore
+from app.modules.core.self_rag.evaluator import (
+    EvalStatus,
+    LLMQualityEvaluator,
+    QualityEvaluation,
+    QualityScore,
+)
 from app.modules.core.self_rag.precheck import (
     PrecheckQualityEvaluator,
     PrecheckSettings,
@@ -25,12 +30,16 @@ class _RecordingEvaluator(_FakeEvaluator):
         super().__init__(requires_regen)
         self.calls = []
         self.last_score = None
+        self.last_evaluation = None
 
     async def evaluate(self, query, answer, context):
         self.calls.append({"query": query, "answer": answer, "context": context})
-        self.last_score = await super().evaluate(query, answer, context)
-        self.last_score.raw_response["base_metadata"] = {"preserved": True}
-        return self.last_score
+        evaluation = await super().evaluate(query, answer, context)
+        assert evaluation.score is not None
+        evaluation.score.raw_response["base_metadata"] = {"preserved": True}
+        self.last_score = evaluation.score
+        self.last_evaluation = evaluation
+        return evaluation
 
 
 @pytest.mark.parametrize(
@@ -76,7 +85,10 @@ async def test_shadow_low_preserves_base_score_and_regeneration(requires_regen):
     base = _RecordingEvaluator(requires_regen)
     provider = MockDecisionProvider(0.01)
     evaluator = PrecheckQualityEvaluator(base, provider, PrecheckSettings(mode="shadow"))
-    score = await evaluator.evaluate("q", "a", ["ctx"])
+    evaluation = await evaluator.evaluate("q", "a", ["ctx"])
+    score = evaluation.score
+    assert evaluation.status is EvalStatus.OK
+    assert score is not None
     assert len(base.calls) == len(provider.calls) == 1
     assert score is not base.last_score
     assert replace(score, raw_response=base.last_score.raw_response) == base.last_score
@@ -96,7 +108,9 @@ async def test_provider_failures_preserve_base_result(mode, status):
     evaluator = PrecheckQualityEvaluator(
         base, MockDecisionProvider(status=status), PrecheckSettings(mode=mode)
     )
-    score = await evaluator.evaluate("q", "a", ["ctx"])
+    evaluation = await evaluator.evaluate("q", "a", ["ctx"])
+    score = evaluation.score
+    assert score is not None
     assert len(base.calls) == 1
     assert score.overall == 0.9
     assert not evaluator.requires_regeneration(score)
@@ -115,7 +129,9 @@ async def test_exception_and_wall_clock_timeout_fail_open(mode, failure):
         if failure == "raise" else MockDecisionProvider(delay_s=2)
     )
     evaluator = PrecheckQualityEvaluator(base, provider, PrecheckSettings(mode=mode, timeout_ms=10))
-    score = await asyncio.wait_for(evaluator.evaluate("q", "a", ["ctx"]), timeout=1)
+    evaluation = await asyncio.wait_for(evaluator.evaluate("q", "a", ["ctx"]), timeout=1)
+    score = evaluation.score
+    assert score is not None
     assert len(base.calls) == 1
     assert score.overall == 0.9
     assert score.raw_response["precheck"]["status"] == ("error" if failure == "raise" else "timeout")
@@ -129,7 +145,10 @@ async def test_enforce_low_short_circuits_and_triggers_real_regeneration(thresho
     evaluator = PrecheckQualityEvaluator(
         base, MockDecisionProvider(probability), PrecheckSettings(mode="enforce", threshold=threshold)
     )
-    score = await evaluator.evaluate("q", "a", ["ctx"])
+    evaluation = await evaluator.evaluate("q", "a", ["ctx"])
+    score = evaluation.score
+    assert evaluation.status is EvalStatus.OK
+    assert score is not None
     assert base.calls == []
     assert score.grounding == probability
     assert score.overall == pytest.approx(
@@ -148,7 +167,9 @@ async def test_enforce_threshold_or_higher_still_calls_base(probability):
     evaluator = PrecheckQualityEvaluator(
         base, MockDecisionProvider(probability), PrecheckSettings(mode="enforce")
     )
-    score = await evaluator.evaluate("q", "a", ["ctx"])
+    evaluation = await evaluator.evaluate("q", "a", ["ctx"])
+    score = evaluation.score
+    assert score is not None
     assert len(base.calls) == 1
     assert score.overall == 0.5
     assert evaluator.requires_regeneration(score)
@@ -161,7 +182,9 @@ async def test_invalid_success_result_from_provider_fails_open(probability):
     base = _RecordingEvaluator()
     provider = MockDecisionProvider(sequence=[NoulResult(probability, "ok", 0, "mock")])
     evaluator = PrecheckQualityEvaluator(base, provider, PrecheckSettings(mode="enforce"))
-    score = await evaluator.evaluate("q", "a", ["ctx"])
+    evaluation = await evaluator.evaluate("q", "a", ["ctx"])
+    score = evaluation.score
+    assert score is not None
     assert len(base.calls) == 1
     assert score.raw_response["precheck"]["status"] == "parse_error"
     assert score.raw_response["precheck"]["decision"] == "fail_open"
@@ -172,7 +195,9 @@ async def test_missing_jev_key_falls_through_without_creating_http_client():
     base = _RecordingEvaluator()
     provider = JevDecisionProvider(api_key="")
     evaluator = PrecheckQualityEvaluator(base, provider, PrecheckSettings(mode="enforce"))
-    score = await evaluator.evaluate("q", "a", ["ctx"])
+    evaluation = await evaluator.evaluate("q", "a", ["ctx"])
+    score = evaluation.score
+    assert score is not None
     assert score.raw_response["precheck"]["status"] == "missing_api_key"
     assert len(base.calls) == 1
     assert provider._client is None
@@ -215,15 +240,19 @@ async def test_annotation_preserves_future_quality_fields():
 
     class ExtendedEvaluator(_RecordingEvaluator):
         async def evaluate(self, query, answer, context):
-            score = await super().evaluate(query, answer, context)
-            return ExtendedScore(**vars(score))
+            evaluation = await super().evaluate(query, answer, context)
+            assert evaluation.score is not None
+            extended = ExtendedScore(**vars(evaluation.score))
+            return QualityEvaluation(evaluation.status, extended, evaluation.error)
 
     evaluator = PrecheckQualityEvaluator(
         ExtendedEvaluator(), MockDecisionProvider(0.01), PrecheckSettings(mode="shadow")
     )
-    score = await evaluator.evaluate("q", "a", [])
+    evaluation = await evaluator.evaluate("q", "a", [])
+    score = evaluation.score
     assert isinstance(score, ExtendedScore)
     assert score.evaluation_failed is True
+    assert "precheck" in score.raw_response
 
 
 @pytest.mark.asyncio

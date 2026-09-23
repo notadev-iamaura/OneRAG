@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 
 from app.modules.core.decision import DecisionProvider, NoulResult, create_decision_provider
 
-from .evaluator import QualityScore
+from .evaluator import EvalStatus, QualityEvaluation, QualityScore
 
 logger = structlog.get_logger(__name__)
 
@@ -73,7 +73,7 @@ class _QualityEvaluator(Protocol):
     @property
     def quality_threshold(self) -> float: ...
 
-    async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityScore: ...
+    async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityEvaluation: ...
 
     def requires_regeneration(self, quality: QualityScore) -> bool: ...
 
@@ -104,17 +104,17 @@ class PrecheckQualityEvaluator:
             raise AttributeError(name)
         return getattr(self.base_evaluator, name)
 
-    async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityScore:
+    async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityEvaluation:
         """provider 오류는 기존 평가기로 fail-open하며 기본 평가 오류는 보존한다."""
         if self.settings.mode == "off":
             return await self.base_evaluator.evaluate(query, answer, context)
 
         if self.settings.mode == "shadow":
-            result, quality = await asyncio.gather(
+            result, evaluation = await asyncio.gather(
                 self._safe_noul(query, answer, context),
                 self.base_evaluator.evaluate(query, answer, context),
             )
-            return self._annotate(quality, result, "shadow")
+            return self._annotate(evaluation, result, "shadow")
 
         result = await self._safe_noul(query, answer, context)
         if (
@@ -131,11 +131,13 @@ class PrecheckQualityEvaluator:
                 reasoning=f"jev_precheck: ungrounded (p={result.probability:.4f})",
                 raw_response={"source": "jev_precheck"},
             )
-            return self._annotate(quality, result, "short_circuit")
+            return self._annotate(
+                QualityEvaluation(EvalStatus.OK, quality), result, "short_circuit"
+            )
 
-        quality = await self.base_evaluator.evaluate(query, answer, context)
+        evaluation = await self.base_evaluator.evaluate(query, answer, context)
         decision = "fallthrough" if result.status == "ok" else "fail_open"
-        return self._annotate(quality, result, decision)
+        return self._annotate(evaluation, result, decision)
 
     async def _safe_noul(self, query: str, answer: str, context: list[str]) -> NoulResult:
         started = time.perf_counter()
@@ -176,7 +178,9 @@ class PrecheckQualityEvaluator:
                 error=type(exc).__name__,
             )
 
-    def _annotate(self, quality: QualityScore, result: NoulResult, decision: str) -> QualityScore:
+    def _annotate(
+        self, evaluation: QualityEvaluation, result: NoulResult, decision: str
+    ) -> QualityEvaluation:
         metadata = {
             "mode": self.settings.mode,
             "provider": result.provider,
@@ -190,7 +194,13 @@ class PrecheckQualityEvaluator:
         self.stats[decision] += 1
         self.stats[f"status_{result.status}"] += 1
         logger.debug("self_rag_precheck", **metadata)
-        return replace(quality, raw_response={**quality.raw_response, "precheck": metadata})
+        if evaluation.score is None:
+            return evaluation
+        annotated = replace(
+            evaluation.score,
+            raw_response={**evaluation.score.raw_response, "precheck": metadata},
+        )
+        return replace(evaluation, score=annotated)
 
 
 def build_self_rag_evaluator(

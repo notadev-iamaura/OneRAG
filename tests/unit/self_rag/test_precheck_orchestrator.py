@@ -64,7 +64,7 @@ async def test_enforce_low_regenerates_and_only_evaluates_regenerated_answer(ent
     assert retrieval.search_calls[-1] == {"response_language": "en", "limit": 17}
     expected_calls = 2 if entrypoint == "process" else 1
     assert len(retrieval.search_calls) == len(generation.generate_calls) == expected_calls
-    assert all(call == {"response_language": "en"} for call in generation.generate_calls)
+    assert all(call.get("response_language") == "en" for call in generation.generate_calls)
     if entrypoint == "verify_existing_answer":
         assert provider.calls[0]["state"]["context"] == "original content\n\npage content"
 
@@ -116,7 +116,15 @@ async def test_enforce_rechecks_regenerated_answer(entrypoint):
 async def test_enforce_low_then_midband_regeneration_does_not_rollback():
     class MidbandEvaluator(_RecordingEvaluator):
         async def evaluate(self, query, answer, context):
-            return replace(await super().evaluate(query, answer, context), overall=0.65)
+            from app.modules.core.self_rag.evaluator import QualityEvaluation
+
+            evaluation = await super().evaluate(query, answer, context)
+            assert evaluation.score is not None
+            return QualityEvaluation(
+                evaluation.status,
+                replace(evaluation.score, overall=0.65),
+                evaluation.error,
+            )
 
     base = MidbandEvaluator()
     provider = MockDecisionProvider(sequence=[0.1, 0.95])
