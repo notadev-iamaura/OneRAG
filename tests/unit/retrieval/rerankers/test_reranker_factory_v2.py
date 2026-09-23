@@ -325,3 +325,70 @@ class TestRerankerFactoryV2Helpers:
         assert "cohere" in providers
         assert "openrouter" in providers
         assert "sentence-transformers" in providers
+
+
+class TestDecisionFactory:
+    def test_decision_registry(self):
+        from app.modules.core.retrieval.rerankers.factory import (
+            APPROACH_REGISTRY,
+            PROVIDER_REGISTRY,
+            RerankerFactoryV2,
+        )
+
+        assert APPROACH_REGISTRY["decision"]["providers"] == ["typesafe"]
+        assert PROVIDER_REGISTRY["typesafe"]["api_key_env"] == "TYPESAFE_API_KEY"
+        assert RerankerFactoryV2.get_providers_for_approach("decision") == ["typesafe"]
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_create_decision_without_key(self):
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+        from app.modules.core.retrieval.rerankers.jev_decision_reranker import (
+            JevDecisionReranker,
+        )
+
+        reranker = RerankerFactoryV2.create(
+            {"reranking": {"approach": "decision", "provider": "typesafe"}}
+        )
+        assert isinstance(reranker, JevDecisionReranker)
+        assert reranker.mode == "shadow"
+        assert reranker.get_stats()["disabled_reason"] == "missing_api_key"
+
+    @patch.dict("os.environ", {"TYPESAFE_API_KEY": "test-key"}, clear=True)
+    def test_create_decision_with_key_and_mode(self):
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+        from app.modules.core.retrieval.rerankers.jev_decision_reranker import (
+            JevDecisionReranker,
+        )
+
+        reranker = RerankerFactoryV2.create(
+            {"reranking": {
+                "approach": "decision", "provider": "typesafe",
+                "typesafe": {"mode": "enforce", "max_documents": 3},
+            }}
+        )
+        assert isinstance(reranker, JevDecisionReranker)
+        assert reranker.mode == "enforce"
+        assert reranker.max_documents == 3
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_create_decision_with_empty_typesafe_config(self):
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+        from app.modules.core.retrieval.rerankers.jev_decision_reranker import (
+            JevDecisionReranker,
+        )
+
+        reranker = RerankerFactoryV2.create(
+            {"reranking": {
+                "approach": "decision", "provider": "typesafe", "typesafe": None,
+            }}
+        )
+        assert isinstance(reranker, JevDecisionReranker)
+        assert reranker.deadline_seconds == 5.0
+
+    def test_invalid_decision_provider(self):
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+
+        with pytest.raises(ValueError, match="provider"):
+            RerankerFactoryV2.create(
+                {"reranking": {"approach": "decision", "provider": "google"}}
+            )

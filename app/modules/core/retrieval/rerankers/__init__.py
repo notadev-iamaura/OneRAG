@@ -23,6 +23,7 @@ __all__ = [
     "RerankerFactoryV2",
     "SUPPORTED_RERANKERS",
     "LocalReranker",
+    "JevDecisionReranker",
 ]
 
 _EXPORTS = {
@@ -69,6 +70,10 @@ _EXPORTS = {
     "LocalReranker": (
         "app.modules.core.retrieval.rerankers.local_reranker",
         "LocalReranker",
+    ),
+    "JevDecisionReranker": (
+        "app.modules.core.retrieval.rerankers.jev_decision_reranker",
+        "JevDecisionReranker",
     ),
 }
 
