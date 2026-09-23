@@ -30,6 +30,7 @@ from app.api.schemas.openai_compat import (
     OpenAIModelList,
     OpenAIStreamChunk,
 )
+from app.api.services.blocked_response import DEFAULT_BLOCKED_ANSWER
 from app.api.services.openai_model_resolver import (
     list_available_models,
     parse_model,
@@ -47,7 +48,6 @@ _modules: dict[str, Any] = {}
 
 # 검색 결과 최대 개수 (openai_compat.yaml에서 설정 가능)
 _MAX_SEARCH_RESULTS = 5
-_DEFAULT_BLOCKED_ANSWER = "죄송합니다. 해당 질문은 처리할 수 없습니다."
 
 
 class _QueryBlockedError(Exception):
@@ -332,7 +332,7 @@ async def _pipeline_rag_search(
 
     if route_decision is not None and not route_decision.should_continue:
         immediate = route_decision.immediate_response or {}
-        raise _QueryBlockedError(immediate.get("answer") or _DEFAULT_BLOCKED_ANSWER)
+        raise _QueryBlockedError(immediate.get("answer") or DEFAULT_BLOCKED_ANSWER)
 
     # standalone rewrite + 멀티쿼리 확장(적재된 ephemeral 세션 맥락 참조)
     prepared = await pipeline.prepare_context(user_message, session_id)
