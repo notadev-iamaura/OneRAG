@@ -1,7 +1,6 @@
 """Fail-open Jev decision filter for retrieved passages."""
 
 import asyncio
-import copy
 import hashlib
 import inspect
 import time
@@ -283,19 +282,23 @@ class JevDecisionReranker:
         )
 
     def _copy_with_decision(self, result: SearchResult, decision: JevDecision) -> SearchResult:
-        copied = copy.copy(result)
-        copied.metadata = {
-            **result.metadata,
-            "jev": {
-                "p": decision.probability,
-                "conf": decision.confidence,
-                "keep": decision.keep,
-                "model": self.model,
-                "status": decision.status,
+        # Rebuild so SearchResult.__post_init__ promotes metadata["jev"] via setattr
+        # (avoids mypy attr-defined on dynamic .jev; same runtime shape as before).
+        return SearchResult(
+            id=result.id,
+            content=result.content,
+            score=result.score,
+            metadata={
+                **result.metadata,
+                "jev": {
+                    "p": decision.probability,
+                    "conf": decision.confidence,
+                    "keep": decision.keep,
+                    "model": self.model,
+                    "status": decision.status,
+                },
             },
-        }
-        copied.jev = copied.metadata["jev"]
-        return copied
+        )
 
     def supports_caching(self) -> bool:
         return False
