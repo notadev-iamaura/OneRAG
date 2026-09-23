@@ -52,7 +52,7 @@ DecisionSink = Callable[[JevDecisionBatch], Awaitable[None] | None]
 
 
 class JevDecisionReranker:
-    """Judge incoming results without changing them in shadow mode."""
+    """Judge results without shadow mutation; min_keep stays within top_n."""
 
     name = "jev-decision"
     enabled = True
@@ -115,6 +115,7 @@ class JevDecisionReranker:
         self._sem = asyncio.Semaphore(concurrency)
         self._max_pending = concurrency * 4
         self._pending: set[asyncio.Task[None]] = set()
+        self._closed = False
         self._recent: deque[JevDecisionBatch] = deque(maxlen=recent_maxlen)
         self._decision_sink = decision_sink
         self._circuit_failure_threshold = circuit_failure_threshold
@@ -129,6 +130,7 @@ class JevDecisionReranker:
             "docs_dropped": 0,
             "fail_open_count": 0,
             "batch_timeouts": 0,
+            "timeout_batches": 0,
             "circuit_open_skips": 0,
             "shadow_tasks_dropped": 0,
         }
@@ -171,6 +173,7 @@ class JevDecisionReranker:
                 self._judge(query, snapshot, doc_ids), timeout=self.deadline_seconds
             )
         except TimeoutError:
+            # Cancellation skips _judge's circuit accounting.
             self.stats["batch_timeouts"] += 1
             self.stats["fail_open_count"] += 1
             return self._passthrough(base, top_n)
@@ -179,9 +182,11 @@ class JevDecisionReranker:
             self.stats["fail_open_count"] += 1
             await self._record(batch)
             return self._passthrough(base, top_n)
+        limit = len(base) if top_n is None else min(top_n, len(base))
+        keep_floor = min(self.min_keep, limit)
         keep_positions = {d.position for d in batch.decisions if d.keep}
-        if len(keep_positions) < min(self.min_keep, len(base)):
-            keep_positions.update(range(min(self.min_keep, len(base))))
+        if len(keep_positions) < keep_floor:
+            keep_positions.update(range(keep_floor))
         selected = [
             self._copy_with_decision(result, decision)
             for result, decision in zip(base, batch.decisions, strict=True)
@@ -189,7 +194,7 @@ class JevDecisionReranker:
         ]
         self.stats["docs_dropped"] += len(base) - len(selected)
         await self._record(replace(batch, applied=len(selected) != len(base)))
-        return selected[: max(top_n, self.min_keep)] if top_n is not None else selected
+        return selected[:limit]
 
     def _passthrough(
         self, results: list[SearchResult], top_n: int | None
@@ -238,12 +243,17 @@ class JevDecisionReranker:
         judged = await asyncio.gather(
             *(judge_one(i, doc_id, passage) for i, (doc_id, passage) in enumerate(snapshot))
         )
-        if judged and all(decision.status == "error" for decision in judged):
+        errors = [decision for decision in judged if decision.status == "error"]
+        all_failed = bool(judged) and len(errors) == len(judged)
+        hard = [decision for decision in errors if decision.error_kind != "timeout"]
+        if not all_failed:
+            self._consecutive_failures = 0
+        elif hard:
             self._consecutive_failures += 1
             if self._consecutive_failures >= self._circuit_failure_threshold:
                 self._circuit_open_until = time.monotonic() + self._circuit_cooldown_seconds
         else:
-            self._consecutive_failures = 0
+            self.stats["timeout_batches"] += 1
         decisions = (*judged, *(
             JevDecision(doc_ids[i], i, None, None, True, "skipped_cap")
             for i in range(len(snapshot), len(doc_ids))
@@ -304,14 +314,23 @@ class JevDecisionReranker:
     async def initialize(self) -> None:
         """No initialization is needed for the HTTP client."""
 
-    async def drain(self) -> None:
-        if self._pending:
-            await asyncio.gather(*tuple(self._pending), return_exceptions=True)
+    async def drain(self, timeout: float | None = None) -> None:
+        pending = set(self._pending)
+        if pending:
+            _, stragglers = await asyncio.wait(pending, timeout=timeout)
+            for task in stragglers:
+                task.cancel()
+            await asyncio.gather(*stragglers, return_exceptions=True)
+            self._pending.difference_update(pending)
 
     async def close(self) -> None:
-        await self.drain()
+        if self._closed:
+            return
+        await self.drain(timeout=self.deadline_seconds)
         if self._client is not None and self._owns_client:
             await self._client.aclose()
+            self._client = None
+        self._closed = True
 
     def get_stats(self) -> dict[str, Any]:
         return {**self.stats, "disabled_reason": self._disabled_reason}

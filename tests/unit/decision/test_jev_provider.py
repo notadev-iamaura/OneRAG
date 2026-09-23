@@ -142,3 +142,27 @@ async def test_missing_key_creates_no_client_and_makes_zero_http_calls(monkeypat
     assert calls == []
     assert provider._client is None
     await provider.aclose()
+
+
+async def test_aclose_is_idempotent_and_noul_recreates_client():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"answers": {"grounded": {"noul": 0.8}}})
+
+    provider = JevDecisionProvider(api_key="test-key", transport=httpx.MockTransport(handler))
+    await provider.aclose()
+    assert provider._client is None
+    first = await provider.noul(instructions="i", state="s", timeout_s=0.5)
+    old_client = provider._client
+    assert first.status == "ok"
+    assert old_client is not None and not old_client.is_closed
+    await provider.aclose()
+    assert old_client.is_closed and provider._client is None
+    await provider.aclose()
+    second = await provider.noul(instructions="i", state="s", timeout_s=0.5)
+    assert second.status == "ok"
+    assert provider._client is not old_client
+    assert len(calls) == 2
+    await provider.aclose()

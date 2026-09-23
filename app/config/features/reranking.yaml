@@ -183,7 +183,7 @@ reranking:
     mode: "${TYPESAFE_JEV_MODE:-shadow}"  # off | shadow | enforce
     question_type: "noul"
     min_relevance: 0.5
-    min_keep: 1
+    min_keep: 1  # enforce에서 top_n 범위 내 최소 보존 수 / floor within top_n
     max_documents: 20
     max_passage_chars: 2000
     timeout: 3.0

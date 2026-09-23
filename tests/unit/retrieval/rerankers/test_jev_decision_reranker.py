@@ -3,6 +3,7 @@
 import asyncio
 import time
 from copy import deepcopy
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -22,9 +23,20 @@ def results(count: int) -> list[SearchResult]:
     return [SearchResult(str(i), f"passage {i}", 0.9 - i * 0.1, {"source": str(i)}) for i in range(count)]
 
 
+def results_with_metadata_score() -> list[SearchResult]:
+    incoming = [
+        SearchResult(str(i), f"passage {i}", 0.0, {"score": 0.1, "source": str(i)})
+        for i in range(2)
+    ]
+    for item in incoming:
+        item.score = 0.95
+    return incoming
+
+
 class FakeClient:
-    def __init__(self, probabilities: list[float | None]) -> None:
+    def __init__(self, probabilities: list[float | None], error_kind: str = "timeout") -> None:
         self.probabilities = probabilities
+        self.error_kind = error_kind
         self.calls: list[str] = []
 
     async def ask(self, state: dict, questions: dict) -> dict[str, JevAnswer]:
@@ -32,7 +44,7 @@ class FakeClient:
         self.calls.append(passage)
         probability = self.probabilities[int(passage.split()[-1])]
         if probability is None:
-            raise JevAPIError("timeout")
+            raise JevAPIError(self.error_kind)
         return {"relevant": JevAnswer(probability)}
 
 
@@ -91,6 +103,38 @@ async def test_shadow_background_returns_before_judgment() -> None:
 
 
 @pytest.mark.asyncio
+async def test_close_is_idempotent_and_drains_bounded() -> None:
+    class WaitingClient:
+        def __init__(self) -> None:
+            self.aclose = AsyncMock()
+
+        async def ask(self, state: dict, questions: dict) -> dict[str, JevAnswer]:
+            await asyncio.sleep(10)
+            return {"relevant": JevAnswer(0.8)}
+
+    injected = WaitingClient()
+    reranker = JevDecisionReranker(
+        "key", client=injected, deadline_seconds=0.05
+    )
+    await reranker.rerank("q", results(1))
+    await asyncio.sleep(0)
+    started = time.monotonic()
+    await reranker.close()
+    assert time.monotonic() - started < 0.5
+    assert not reranker._pending or all(task.cancelled() for task in reranker._pending)
+    await reranker.close()
+    injected.aclose.assert_not_awaited()
+
+    owned = JevDecisionReranker("key", deadline_seconds=0.05)
+    assert owned._client is not None
+    client = owned._client
+    client.aclose = AsyncMock(wraps=client.aclose)
+    await owned.close()
+    await owned.close()
+    client.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_enforce_filters_and_copies_without_score_change() -> None:
     incoming = results(3)
     original = deepcopy(incoming)
@@ -106,6 +150,38 @@ async def test_enforce_filters_and_copies_without_score_change() -> None:
     assert incoming == original
     assert all("jev" not in item.metadata for item in incoming)
     assert reranker.get_recent_decisions()[0].applied is True
+
+
+@pytest.mark.asyncio
+async def test_enforce_preserves_score_when_metadata_has_score() -> None:
+    incoming = results_with_metadata_score()
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.9, 0.9])
+    )
+    output = await reranker.rerank("q", incoming)
+    assert len(output) == 2
+    for original, copied in zip(incoming, output, strict=True):
+        assert copied is not original
+        assert copied.score == original.score == 0.95
+        assert copied.metadata["score"] == original.metadata["score"] == 0.1
+        assert copied.metadata["jev"]["keep"] is True
+        assert copied.__dict__["jev"] is copied.metadata["jev"]
+        assert "jev" not in original.metadata
+
+
+@pytest.mark.asyncio
+async def test_backfilled_result_preserves_score_when_metadata_has_score() -> None:
+    incoming = results_with_metadata_score()
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.1, 0.1]), min_keep=1
+    )
+    output = await reranker.rerank("q", incoming)
+    assert [item.id for item in output] == ["0"]
+    assert output[0].score == incoming[0].score == 0.95
+    assert output[0].metadata["score"] == 0.1
+    assert output[0].metadata["jev"]["keep"] is False
+    assert output[0].__dict__["jev"] is output[0].metadata["jev"]
+    assert all("jev" not in item.metadata and item.score == 0.95 for item in incoming)
 
 
 @pytest.mark.asyncio
@@ -136,14 +212,95 @@ async def test_min_keep_prevents_empty() -> None:
 
 
 @pytest.mark.asyncio
+async def test_min_keep_never_exceeds_top_n() -> None:
+    incoming = results(3)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.1] * 3), min_keep=3
+    )
+    assert [item.id for item in await reranker.rerank("q", incoming, top_n=2)] == ["0", "1"]
+
+
+@pytest.mark.asyncio
+async def test_all_kept_still_respects_top_n() -> None:
+    incoming = results(3)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.9] * 3), min_keep=1
+    )
+    assert len(await reranker.rerank("q", incoming, top_n=2)) == 2
+    assert len(await reranker.rerank("q", incoming, top_n=None)) == 3
+
+
+@pytest.mark.asyncio
+async def test_enforce_top_n_zero_returns_empty() -> None:
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.9, 0.9])
+    )
+    assert await reranker.rerank("q", results(2), top_n=0) == []
+
+
+@pytest.mark.asyncio
 async def test_all_errors_fail_open() -> None:
+    incoming = results(2)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([None, None], error_kind="http_500"),
+        circuit_failure_threshold=1,
+    )
+    assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["fail_open_count"] == 1
+    assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["circuit_open_skips"] == 1
+
+
+@pytest.mark.asyncio
+async def test_all_timeouts_do_not_open_circuit() -> None:
     incoming = results(2)
     reranker = JevDecisionReranker(
         "key", mode="enforce", client=FakeClient([None, None]),
         circuit_failure_threshold=1,
     )
-    assert await reranker.rerank("q", incoming) is incoming
-    assert reranker.get_stats()["fail_open_count"] == 1
+    for _ in range(3):
+        assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["circuit_open_skips"] == 0
+    assert reranker.get_stats()["jev_requests"] == 6
+    assert reranker.get_stats()["timeout_batches"] == 3
+
+
+@pytest.mark.asyncio
+async def test_batch_deadline_does_not_feed_circuit() -> None:
+    class SlowClient:
+        async def ask(self, state: dict, questions: dict) -> dict[str, JevAnswer]:
+            await asyncio.sleep(1)
+            return {"relevant": JevAnswer(0.9)}
+
+    incoming = results(1)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=SlowClient(),
+        deadline_seconds=0.02, circuit_failure_threshold=1,
+    )
+    for _ in range(2):
+        assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["batch_timeouts"] == 2
+    assert reranker.get_stats()["circuit_open_skips"] == 0
+
+
+@pytest.mark.asyncio
+async def test_timeouts_do_not_reset_hard_failure_count() -> None:
+    class AlternatingClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def ask(self, state: dict, questions: dict) -> dict[str, JevAnswer]:
+            self.calls += 1
+            raise JevAPIError("timeout" if self.calls == 2 else "http_500")
+
+    incoming = results(1)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=AlternatingClient(),
+        circuit_failure_threshold=2,
+    )
+    for _ in range(3):
+        assert await reranker.rerank("q", incoming) is incoming
+    assert reranker.get_stats()["timeout_batches"] == 1
     assert await reranker.rerank("q", incoming) is incoming
     assert reranker.get_stats()["circuit_open_skips"] == 1
 
