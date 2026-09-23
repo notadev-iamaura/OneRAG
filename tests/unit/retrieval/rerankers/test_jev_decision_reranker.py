@@ -22,6 +22,16 @@ def results(count: int) -> list[SearchResult]:
     return [SearchResult(str(i), f"passage {i}", 0.9 - i * 0.1, {"source": str(i)}) for i in range(count)]
 
 
+def results_with_metadata_score() -> list[SearchResult]:
+    incoming = [
+        SearchResult(str(i), f"passage {i}", 0.0, {"score": 0.1, "source": str(i)})
+        for i in range(2)
+    ]
+    for item in incoming:
+        item.score = 0.95
+    return incoming
+
+
 class FakeClient:
     def __init__(self, probabilities: list[float | None], error_kind: str = "timeout") -> None:
         self.probabilities = probabilities
@@ -107,6 +117,38 @@ async def test_enforce_filters_and_copies_without_score_change() -> None:
     assert incoming == original
     assert all("jev" not in item.metadata for item in incoming)
     assert reranker.get_recent_decisions()[0].applied is True
+
+
+@pytest.mark.asyncio
+async def test_enforce_preserves_score_when_metadata_has_score() -> None:
+    incoming = results_with_metadata_score()
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.9, 0.9])
+    )
+    output = await reranker.rerank("q", incoming)
+    assert len(output) == 2
+    for original, copied in zip(incoming, output, strict=True):
+        assert copied is not original
+        assert copied.score == original.score == 0.95
+        assert copied.metadata["score"] == original.metadata["score"] == 0.1
+        assert copied.metadata["jev"]["keep"] is True
+        assert getattr(copied, "jev") is copied.metadata["jev"]
+        assert "jev" not in original.metadata
+
+
+@pytest.mark.asyncio
+async def test_backfilled_result_preserves_score_when_metadata_has_score() -> None:
+    incoming = results_with_metadata_score()
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.1, 0.1]), min_keep=1
+    )
+    output = await reranker.rerank("q", incoming)
+    assert [item.id for item in output] == ["0"]
+    assert output[0].score == incoming[0].score == 0.95
+    assert output[0].metadata["score"] == 0.1
+    assert output[0].metadata["jev"]["keep"] is False
+    assert getattr(output[0], "jev") is output[0].metadata["jev"]
+    assert all("jev" not in item.metadata and item.score == 0.95 for item in incoming)
 
 
 @pytest.mark.asyncio
