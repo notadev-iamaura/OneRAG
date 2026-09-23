@@ -392,6 +392,8 @@ class GenerationResult:
     # Self-RAG 품질 게이트 필드
     refusal_reason: str | None = None  # "quality_too_low" | None
     quality_score: float | None = None  # 0.0-1.0
+    quality_status: str | None = None
+    source_documents: list[Any] | None = None
 
     def __post_init__(self) -> None:
         if not self.text:

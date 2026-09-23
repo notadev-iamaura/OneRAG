@@ -16,7 +16,8 @@ self_rag:
   # 3. 품질 평가 설정
   quality_threshold: 0.8  # 0.8 미만 시 재생성 트리거 (lenient 설정)
   # 평가 차원: relevance(관련성), grounding(근거성), completeness(완전성), confidence(신뢰도)
-  # 각 차원 0.0-1.0 점수 → 평균으로 최종 품질 점수 계산
+  # 각 차원 0.0-1.0 점수 → 가중합(0.35/0.30/0.25/0.10)으로 최종 품질 점수 계산
+  # 평가 실패/타임아웃/평가기 미사용 시 점수 없음: 재생성하지 않고 품질 게이트도 적용하지 않음.
 
   # ⭐ 품질 게이트 설정 (저품질 답변 거부)
   min_quality_to_answer: 0.6  # 최소 품질 임계값 (0.6 미만 시 답변 거부)
@@ -31,9 +32,12 @@ self_rag:
   low_quality_reject_text: null
 
   # 4. 재생성 제어 설정
-  max_iterations: 1  # 최대 재생성 횟수 (1회로 제한하여 비용 통제)
-  enable_rollback: true  # 재생성 품질 저하 시 원본 답변 반환
-  rollback_threshold: -0.1  # 재생성 품질이 원본보다 0.1 이상 낮으면 롤백
+  initial_top_k: 5
+  retry_top_k: 15
+  max_retries: 1
+  max_iterations: 1  # 현재 미배선; 실제 재시도 설정은 DI의 max_retries
+  enable_rollback: true  # DI에서 전달: 재생성 품질 저하 시 원본 답변 반환
+  rollback_threshold: -0.1  # DI에서 전달: 재생성 품질이 원본보다 0.1 이상 낮으면 롤백
 
   # 5. 평가 모듈 설정
   # ✅ P1 안정성 패치: 기본 provider를 Google로 변경
@@ -45,7 +49,7 @@ self_rag:
 
     # 경량 평가 모델 (비용 효율적)
     # Gemini 2.0 Flash - 빠르고 비용 효율적인 평가
-    model: "gemini-2.0-flash"
+    model: "gemini-2.0-flash"  # DI에서 평가기로 전달
 
     # API 키 설정 (GOOGLE_API_KEY 재사용, 이미 필수 환경변수)
     api_key: "${GOOGLE_API_KEY}"
@@ -58,7 +62,7 @@ self_rag:
     # 평가 요청 파라미터
     temperature: 0.0  # 일관성을 위해 0으로 고정
     max_tokens: 500  # 평가 응답은 짧으므로 500 토큰 충분
-    timeout: 10  # 평가 타임아웃 (초)
+    timeout: 10  # DI에서 평가기로 전달하는 평가 타임아웃 (초)
 
     # 재시도 설정 (Exponential Backoff)
     max_retries: 3  # 최대 재시도 횟수
