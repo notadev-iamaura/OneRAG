@@ -1259,6 +1259,38 @@ class RAGPipeline:
 
         return RuleBasedRouter(enabled=True)
 
+    _DEFAULT_BLOCKED_ANSWER = "죄송합니다. 해당 질문은 처리할 수 없습니다."
+
+    def _build_blocked_decision(
+        self,
+        message: str,
+        start_time: float,
+        routing_metadata: dict[str, Any],
+        answer: str | None,
+        provider: str,
+    ) -> RouteDecision:
+        # topic 추출 실패가 규칙 차단 try를 깨뜨려 fail-open 되지 않게 한다.
+        try:
+            topic = self.extract_topic_func(message)
+        except Exception:
+            topic = "general"
+        immediate_response = {
+            "answer": answer or self._DEFAULT_BLOCKED_ANSWER,
+            "sources": [],
+            "tokens_used": 0,
+            "topic": topic,
+            "processing_time": time.time() - start_time,
+            "search_count": 0,
+            "ranked_count": 0,
+            "model_info": {"provider": provider, "model": "N/A"},
+            "routing_metadata": routing_metadata,
+        }
+        return RouteDecision(
+            should_continue=False,
+            immediate_response=cast(RAGResultDict, immediate_response),
+            metadata=routing_metadata,
+        )
+
     def _create_fallback_response(
         self, message: str, start_time: float, routing_metadata: dict[str, Any]
     ) -> RAGResultDict:
@@ -2919,11 +2951,6 @@ class RAGPipeline:
         enable_debug_trace = options.get("enable_debug_trace", False)
         debug_trace_data: dict[str, Any] = {} if enable_debug_trace else {}
 
-        use_agent = options.get("use_agent", False)
-        if use_agent and self.agent_orchestrator:
-            logger.info("Agent 모드 활성화", extra={"orchestrator": "AgentOrchestrator"})
-            return await self._execute_agent_mode(message, session_id, start_time)
-
         tracker = PipelineTracker()
         tracker.start_pipeline()
         tracker.start_stage("route_query")
@@ -2940,6 +2967,11 @@ class RAGPipeline:
                 logger.error("immediate_response가 None입니다. 완전한 기본 응답 반환")
                 return self._create_fallback_response(message, start_time, route_decision.metadata)
             return route_decision.immediate_response
+
+        use_agent = options.get("use_agent", False)
+        if use_agent and self.agent_orchestrator:
+            logger.info("Agent 모드 활성화", extra={"orchestrator": "AgentOrchestrator"})
+            return await self._execute_agent_mode(message, session_id, start_time)
 
         if enable_debug_trace:
             debug_trace_data["original_query"] = message
@@ -3230,6 +3262,15 @@ class RAGPipeline:
                         immediate_response=cast(RAGResultDict, immediate_response),
                         metadata=routing_metadata,
                     )
+                if rule_match.route == "blocked":
+                    logger.warning(
+                        "[차단] 규칙 기반 차단",
+                        extra={"rule_name": rule_match.rule_name},
+                    )
+                    return self._build_blocked_decision(
+                        message, start_time, routing_metadata,
+                        rule_match.direct_answer, "rule_based",
+                    )
                 return RouteDecision(
                     should_continue=True, immediate_response=None, metadata=routing_metadata
                 )
@@ -3272,26 +3313,13 @@ class RAGPipeline:
                 }
             )
             if routing.primary_route == "blocked":
-                processing_time = time.time() - start_time
-                immediate_response = {
-                    "answer": "죄송합니다. 해당 질문은 처리할 수 없습니다.",
-                    "sources": [],
-                    "tokens_used": 0,
-                    "topic": self.extract_topic_func(message),
-                    "processing_time": processing_time,
-                    "search_count": 0,
-                    "ranked_count": 0,
-                    "model_info": {"provider": "query_router", "model": "N/A"},
-                    "routing_metadata": routing_metadata,
-                }
                 logger.warning(
                     "[차단] 쿼리가 차단됨",
                     extra={"reason": routing.notes}
                 )
-                return RouteDecision(
-                    should_continue=False,
-                    immediate_response=cast(RAGResultDict, immediate_response),
-                    metadata=routing_metadata,
+                return self._build_blocked_decision(
+                    message, start_time, routing_metadata,
+                    getattr(routing, "direct_answer", None), "query_router",
                 )
         except Exception as llm_error:
             logger.warning(

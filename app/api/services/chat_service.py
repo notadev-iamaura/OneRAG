@@ -596,6 +596,46 @@ class ChatService:
                 if not final_session_id:
                     final_session_id = str(uuid.uuid4())
 
+            route_decision = await self.rag_pipeline.route_query(
+                message, final_session_id or "", start_time
+            )
+            if not route_decision.should_continue:
+                immediate = route_decision.immediate_response or {}
+                answer = str(immediate.get("answer") or "")
+                route = route_decision.metadata.get("route") or route_decision.metadata.get(
+                    "llm_route"
+                )
+                yield {
+                    "event": "metadata",
+                    "data": {
+                        "session_id": final_session_id,
+                        "search_results": 0,
+                        "ranked_results": 0,
+                        "reranking_applied": False,
+                        "message_id": message_id,
+                        "sources": [],
+                        "route": route,
+                        "timestamp": datetime.now().isoformat(),
+                    },
+                }
+                if answer:
+                    yield {"event": "chunk", "data": answer, "chunk_index": 0}
+                yield {
+                    "event": "done",
+                    "data": {
+                        "session_id": final_session_id,
+                        "message_id": message_id,
+                        "total_chunks": 1 if answer else 0,
+                        "processing_time": time.time() - start_time,
+                        "tokens_used": 0,
+                        "sources": [],
+                        "route": route,
+                        "model_info": immediate.get("model_info", {}),
+                        "token_estimation": "routing_short_circuit",
+                    },
+                }
+                return
+
             # 3. 문서 검색 (비스트리밍)
             retrieval_module = self.modules.get("retrieval")
             # 일부 DI 구성에서 retrieval 모듈이 코루틴/Future로 지연 제공되므로 해소한다

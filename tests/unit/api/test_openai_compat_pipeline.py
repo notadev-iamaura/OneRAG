@@ -8,6 +8,7 @@
 - 파이프라인 검색이 실패하면 단순 검색으로 폴백한다.
 """
 
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -157,3 +158,80 @@ def test_streaming_reuses_pipeline_when_chat_service_present(mock_modules_with_c
     pipeline = mock_modules_with_chat_service["_pipeline"]
     pipeline.retrieve_documents.assert_awaited()
     pipeline.rerank_documents.assert_awaited()
+
+
+@pytest.mark.parametrize("answer", ["차단 답변", None])
+def test_v1_blocked_returns_refusal_without_llm_or_search(
+    mock_modules_with_chat_service, answer
+):
+    modules = mock_modules_with_chat_service
+    pipeline = modules["_pipeline"]
+    pipeline.route_query.return_value = SimpleNamespace(
+        should_continue=False,
+        immediate_response={"answer": answer} if answer else None,
+        metadata={"route": "blocked"},
+    )
+
+    response = _client(modules).post(
+        "/v1/chat/completions",
+        json={"model": "gemini", "messages": [{"role": "user", "content": "차단 질문"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["message"]["content"] == (
+        answer or "죄송합니다. 해당 질문은 처리할 수 없습니다."
+    )
+    pipeline.prepare_context.assert_not_awaited()
+    pipeline.retrieve_documents.assert_not_awaited()
+    modules["_retriever"].search.assert_not_awaited()
+    modules["llm_factory"].get_client.assert_not_called()
+
+
+def test_v1_stream_blocked_returns_refusal_chunk(mock_modules_with_chat_service):
+    modules = mock_modules_with_chat_service
+    pipeline = modules["_pipeline"]
+    pipeline.route_query.return_value = SimpleNamespace(
+        should_continue=False,
+        immediate_response={"answer": "차단 답변"},
+        metadata={"route": "blocked"},
+    )
+
+    response = _client(modules).post(
+        "/v1/chat/completions",
+        json={
+            "model": "gemini",
+            "messages": [{"role": "user", "content": "차단 질문"}],
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200
+    data = [line.removeprefix("data: ") for line in response.text.splitlines() if line]
+    assert json.loads(data[0])["choices"][0]["delta"]["content"] == "차단 답변"
+    assert json.loads(data[1])["choices"][0]["finish_reason"] == "stop"
+    assert data[2] == "[DONE]"
+    pipeline.prepare_context.assert_not_awaited()
+    modules["_retriever"].search.assert_not_awaited()
+    modules["llm_factory"].get_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_v1_blocked_does_not_fall_back_to_retriever(mock_modules_with_chat_service):
+    from app.api.routers.openai_compat_router import (
+        _QueryBlockedError,
+        _rag_search,
+        set_modules,
+    )
+
+    modules = mock_modules_with_chat_service
+    modules["_pipeline"].route_query.return_value = SimpleNamespace(
+        should_continue=False,
+        immediate_response={"answer": "차단 답변"},
+        metadata={"route": "blocked"},
+    )
+    set_modules(modules)
+
+    with pytest.raises(_QueryBlockedError, match="차단 답변"):
+        await _rag_search("차단 질문")
+
+    modules["_retriever"].search.assert_not_awaited()
