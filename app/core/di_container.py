@@ -80,6 +80,7 @@ from app.modules.core.routing.complexity_calculator import ComplexityCalculator
 from app.modules.core.routing.llm_query_router import LLMQueryRouter
 from app.modules.core.self_rag.evaluator import LLMQualityEvaluator
 from app.modules.core.self_rag.orchestrator import SelfRAGOrchestrator
+from app.modules.core.self_rag.precheck import build_self_rag_evaluator
 from app.modules.core.sql_search import SQLSearchService
 
 # Phase 4: Tools 모듈 (Tool Use / Function Calling)
@@ -2040,10 +2041,17 @@ class AppContainer(containers.DeclarativeContainer):
         document_label_template=config.self_rag.evaluation.document_label_template,
     )
 
+    # off에서는 answer_evaluator와 동일한 인스턴스 반환 (provider/HTTP 생성 없음).
+    self_rag_evaluator = providers.Singleton(
+        build_self_rag_evaluator,
+        base_evaluator=answer_evaluator,
+        precheck_config=config.self_rag.precheck,
+    )
+
     self_rag = providers.Singleton(
         SelfRAGOrchestrator,
         complexity_calculator=complexity_calculator,
-        evaluator=answer_evaluator,
+        evaluator=self_rag_evaluator,
         # retrieval Factory는 async이므로, Singleton인 retrieval_orchestrator 사용
         retrieval_module=retrieval_orchestrator,
         generation_module=generation,

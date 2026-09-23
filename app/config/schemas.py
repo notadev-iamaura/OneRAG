@@ -7,7 +7,7 @@ import logging
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +297,41 @@ class SelfRAGDevelopmentConfig(BaseModel):
     max_history_entries: int = Field(default=1000, ge=1)
 
 
+class SelfRAGPrecheckConfig(BaseModel):
+    """선택적 Jev 근거성 사전 판정 설정. 기본 off, 알 수 없는 모드는 비활성화."""
+
+    mode: Literal["off", "shadow", "enforce"] = "off"
+    provider: Literal["jev", "mock"] = "jev"
+    instructions: str = "Is the answer fully supported by the provided context?"
+    threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+    timeout_ms: int = Field(default=500, ge=1, le=10000)
+    max_context_chars: int = Field(default=8000, ge=1)
+    api_base: str = "https://api.typesafe.ai"
+    systemone_path: str = "/v1/systemone"
+    model: str = "jev-latest"
+    api_key: str | None = Field(default=None, repr=False)
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def normalize_mode(cls, value: Any) -> str:
+        """YAML 1.1의 off=false 및 알 수 없는 모드를 안전하게 처리한다."""
+        if value is False or value is None:
+            return "off"
+        if isinstance(value, str) and value in ("off", "shadow", "enforce"):
+            return value
+        logger.warning("self_rag_precheck_unknown_mode: disabling precheck")
+        return "off"
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_provider(cls, value: Any) -> Any:
+        """알 수 없는 provider가 기존 Self-RAG 설정 로딩을 막지 않게 한다."""
+        if isinstance(value, dict) and value.get("provider", "jev") not in ("jev", "mock"):
+            logger.warning("self_rag_precheck_unknown_provider: disabling precheck")
+            return {**value, "mode": "off", "provider": "jev"}
+        return value
+
+
 class SelfRAGConfig(BaseModel):
     """Self-RAG 통합 설정"""
 
@@ -322,6 +357,7 @@ class SelfRAGConfig(BaseModel):
     monitoring: SelfRAGMonitoringConfig
     cost_control: SelfRAGCostControlConfig
     development: SelfRAGDevelopmentConfig
+    precheck: SelfRAGPrecheckConfig = Field(default_factory=SelfRAGPrecheckConfig)
 
 
 # ========================================
