@@ -16,6 +16,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api.services.blocked_response import DEFAULT_BLOCKED_ANSWER
+
 
 def _build_pipeline_mock() -> MagicMock:
     """RAGPipeline 4단계 stage를 모두 구현한 Mock을 만든다."""
@@ -233,5 +235,70 @@ async def test_v1_blocked_does_not_fall_back_to_retriever(mock_modules_with_chat
 
     with pytest.raises(_QueryBlockedError, match="차단 답변"):
         await _rag_search("차단 질문")
+
+    modules["_retriever"].search.assert_not_awaited()
+
+
+def test_v1_route_query_exception_returns_default_refusal(mock_modules_with_chat_service):
+    modules = mock_modules_with_chat_service
+    pipeline = modules["_pipeline"]
+    pipeline.route_query = AsyncMock(side_effect=RuntimeError("route failed"))
+
+    response = _client(modules).post(
+        "/v1/chat/completions",
+        json={"model": "gemini", "messages": [{"role": "user", "content": "질문"}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["choices"][0]["message"]["content"] == DEFAULT_BLOCKED_ANSWER
+    pipeline.prepare_context.assert_not_awaited()
+    pipeline.retrieve_documents.assert_not_awaited()
+    modules["_retriever"].search.assert_not_awaited()
+    modules["llm_factory"].get_client.assert_not_called()
+
+
+def test_v1_stream_route_query_exception_returns_refusal_chunk(
+    mock_modules_with_chat_service,
+):
+    modules = mock_modules_with_chat_service
+    pipeline = modules["_pipeline"]
+    pipeline.route_query = AsyncMock(side_effect=RuntimeError("route failed"))
+
+    response = _client(modules).post(
+        "/v1/chat/completions",
+        json={
+            "model": "gemini",
+            "messages": [{"role": "user", "content": "질문"}],
+            "stream": True,
+        },
+    )
+
+    assert response.status_code == 200
+    data = [line.removeprefix("data: ") for line in response.text.splitlines() if line]
+    assert json.loads(data[0])["choices"][0]["delta"]["content"] == DEFAULT_BLOCKED_ANSWER
+    assert json.loads(data[1])["choices"][0]["finish_reason"] == "stop"
+    assert data[2] == "[DONE]"
+    pipeline.prepare_context.assert_not_awaited()
+    pipeline.retrieve_documents.assert_not_awaited()
+    modules["_retriever"].search.assert_not_awaited()
+    modules["llm_factory"].get_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_v1_route_query_exception_does_not_fall_back_to_retriever(
+    mock_modules_with_chat_service,
+):
+    from app.api.routers.openai_compat_router import (
+        _QueryBlockedError,
+        _rag_search,
+        set_modules,
+    )
+
+    modules = mock_modules_with_chat_service
+    modules["_pipeline"].route_query = AsyncMock(side_effect=RuntimeError("route failed"))
+    set_modules(modules)
+
+    with pytest.raises(_QueryBlockedError, match=DEFAULT_BLOCKED_ANSWER):
+        await _rag_search("질문")
 
     modules["_retriever"].search.assert_not_awaited()

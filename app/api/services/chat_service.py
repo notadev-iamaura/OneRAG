@@ -25,6 +25,7 @@ from ...lib.logger import get_logger
 from ...lib.metrics import CostTracker, PerformanceMetrics
 from ...lib.topic_extractor import extract_topic
 from ...lib.types import RAGResultDict, SessionInfoDict, SessionResult, StatsDict
+from .blocked_response import DEFAULT_BLOCKED_ANSWER
 from .rag_pipeline import RAGPipeline
 
 # LangSmith 트레이싱 import
@@ -601,9 +602,12 @@ class ChatService:
             )
             if not route_decision.should_continue:
                 immediate = route_decision.immediate_response or {}
-                answer = str(immediate.get("answer") or "")
                 route = route_decision.metadata.get("route") or route_decision.metadata.get(
                     "llm_route"
+                )
+                answer = str(
+                    immediate.get("answer")
+                    or (DEFAULT_BLOCKED_ANSWER if route == "blocked" else "")
                 )
                 yield {
                     "event": "metadata",
@@ -620,13 +624,36 @@ class ChatService:
                 }
                 if answer:
                     yield {"event": "chunk", "data": answer, "chunk_index": 0}
+                processing_time = time.time() - start_time
+                if final_session_id and answer:
+                    try:
+                        await self.add_conversation_to_session(
+                            final_session_id,
+                            message,
+                            answer,
+                            {
+                                "tokens_used": 0,
+                                "processing_time": processing_time,
+                                "sources": [],
+                                "topic": immediate.get("topic") or self.extract_topic(message),
+                                "model_info": immediate.get("model_info", {}),
+                                "message_id": message_id,
+                                "route": route,
+                                "can_evaluate": False,
+                            },
+                        )
+                    except Exception as persist_error:  # noqa: BLE001 - 스트리밍 저장 실패는 비치명적
+                        logger.warning(
+                            "스트리밍 단락 응답 저장 실패",
+                            extra={"session_id": final_session_id, "error": str(persist_error)},
+                        )
                 yield {
                     "event": "done",
                     "data": {
                         "session_id": final_session_id,
                         "message_id": message_id,
                         "total_chunks": 1 if answer else 0,
-                        "processing_time": time.time() - start_time,
+                        "processing_time": processing_time,
                         "tokens_used": 0,
                         "sources": [],
                         "route": route,

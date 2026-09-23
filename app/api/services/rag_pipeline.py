@@ -37,6 +37,7 @@ from ...lib.prompt_sanitizer import contains_output_leakage, validate_document
 from ...lib.score_normalizer import RRFScoreNormalizer  # RRF 점수 정규화
 from ...lib.types import RAGResultDict
 from ...modules.core.retrieval.interfaces import IMultiQueryRetriever, SearchResult
+from .blocked_response import DEFAULT_BLOCKED_ANSWER
 from .source_contract import normalize_citation_source_payload, normalize_source_payload
 
 if TYPE_CHECKING:
@@ -1259,7 +1260,7 @@ class RAGPipeline:
 
         return RuleBasedRouter(enabled=True)
 
-    _DEFAULT_BLOCKED_ANSWER = "죄송합니다. 해당 질문은 처리할 수 없습니다."
+    _DEFAULT_BLOCKED_ANSWER = DEFAULT_BLOCKED_ANSWER
 
     def _build_blocked_decision(
         self,
