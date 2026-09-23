@@ -219,7 +219,7 @@ class JevDecisionReranker:
                         "instructions": self.instructions,
                     }
                     if self.question_type == "score":
-                        question["criteria"] = "0 = unrelated, 1 = directly answers the query"
+                        question["criteria"] = ["unrelated", "directly answers the query"]  # TypeSafe ScoreQuestion: array of levels
                     answer = (await self._client.ask(
                         {"query": query, "passage": passage}, {"relevant": question}
                     ))["relevant"]
