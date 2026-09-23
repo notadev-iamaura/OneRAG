@@ -15,7 +15,7 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, cast
 
 DEFAULT_AI_SETTINGS_DB_FILE = Path("./uploads/admin_ai_settings.sqlite3")
 DEFAULT_PROVIDER = "google"
@@ -233,7 +233,7 @@ class SQLiteAdminAISettingsStore:
     def _get_key_row(self, provider: str) -> sqlite3.Row | None:
         with self._connect() as connection:
             self._ensure_schema(connection)
-            return connection.execute(
+            row = connection.execute(
                 """
                 SELECT provider, encrypted_key, key_last4, storage, updated_at
                 FROM ai_provider_keys
@@ -241,6 +241,7 @@ class SQLiteAdminAISettingsStore:
                 """,
                 (canonical_provider(provider),),
             ).fetchone()
+            return cast(sqlite3.Row | None, row)
 
     def _connect(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -297,7 +298,7 @@ def _encrypt_secret(value: str) -> str | None:
     fernet = _get_fernet()
     if fernet is None:
         return None
-    return fernet.encrypt(value.encode("utf-8")).decode("utf-8")
+    return cast(str, fernet.encrypt(value.encode("utf-8")).decode("utf-8"))
 
 
 def _decrypt_secret(value: str) -> str | None:
@@ -305,7 +306,7 @@ def _decrypt_secret(value: str) -> str | None:
     if fernet is None:
         return None
     try:
-        return fernet.decrypt(value.encode("utf-8")).decode("utf-8")
+        return cast(str, fernet.decrypt(value.encode("utf-8")).decode("utf-8"))
     except Exception:
         return None
 

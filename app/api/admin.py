@@ -14,13 +14,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from ..lib.auth import get_api_key, get_api_key_auth
-from ..lib.logger import get_logger
-from .admin_ai_settings_store import (
+from ..lib.admin_ai_settings_store import (
     can_persist_provider_keys,
     canonical_provider,
     get_admin_ai_settings_store,
 )
+from ..lib.auth import get_api_key, get_api_key_auth
+from ..lib.logger import get_logger
 from .analytics_event_store import get_analytics_event_store
 from .services.openai_model_resolver import list_available_models, parse_model, resolve_model_config
 

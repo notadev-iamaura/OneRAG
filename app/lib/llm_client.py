@@ -1528,7 +1528,7 @@ class LLMClientFactory:
     @staticmethod
     def _load_admin_provider_key(provider: str) -> str | None:
         try:
-            from app.api.admin_ai_settings_store import get_admin_ai_settings_store
+            from app.lib.admin_ai_settings_store import get_admin_ai_settings_store
 
             return get_admin_ai_settings_store().get_provider_key(provider)
         except Exception:

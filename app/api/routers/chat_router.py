@@ -24,6 +24,7 @@ from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from ...lib.admin_ai_settings_store import get_active_generation_override
 from ...lib.auth import (
     create_upload_access_token,
     create_websocket_session_token,
@@ -41,7 +42,6 @@ from ...lib.errors import (
     wrap_exception,
 )
 from ...lib.logger import get_logger
-from ..admin_ai_settings_store import get_active_generation_override
 from ..analytics_event_store import get_analytics_event_store
 from ..schemas.chat_schemas import (
     ChatHistoryResponse,

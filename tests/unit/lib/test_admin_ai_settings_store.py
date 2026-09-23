@@ -1,4 +1,4 @@
-from app.api.admin_ai_settings_store import (
+from app.lib.admin_ai_settings_store import (
     SQLiteAdminAISettingsStore,
     get_active_generation_override,
 )
@@ -43,7 +43,7 @@ def test_active_generation_override_is_empty_until_admin_setting_saved(
 ) -> None:
     store = SQLiteAdminAISettingsStore(tmp_path / "ai-settings.sqlite3")
     monkeypatch.setattr(
-        "app.api.admin_ai_settings_store.get_admin_ai_settings_store",
+        "app.lib.admin_ai_settings_store.get_admin_ai_settings_store",
         lambda: store,
     )
 
