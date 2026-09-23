@@ -35,12 +35,15 @@ Self-RAG (Self-Reflective Retrieval-Augmented Generation) 시스템:
     print(f"최종 품질: {result.final_quality}")
 """
 
-from .evaluator import LLMQualityEvaluator, QualityScore
-from .orchestrator import SelfRAGOrchestrator, SelfRAGResult
+from .evaluator import EvalStatus, LLMQualityEvaluator, QualityEvaluation, QualityScore
+from .orchestrator import SelfRAGOrchestrator, SelfRAGOutcome, SelfRAGResult
 
 __all__ = [
     "SelfRAGOrchestrator",
     "SelfRAGResult",
     "LLMQualityEvaluator",
     "QualityScore",
+    "EvalStatus",
+    "QualityEvaluation",
+    "SelfRAGOutcome",
 ]

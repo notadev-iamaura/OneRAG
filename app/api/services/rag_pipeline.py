@@ -3091,15 +3091,19 @@ class RAGPipeline:
             ),
             remaining_budget=self._remaining_total_budget(start_time),
         )
+        source_documents = getattr(generation_result, "source_documents", None)
+        evidence_documents = (
+            source_documents if isinstance(source_documents, list) else context_documents
+        )
         # 환각 방지 게이트(GAP C, 기본 OFF): 질문 기간과 문서 기간이 완전 불일치하면
         # 최종 답변을 '확인 불가'로 교체한다. self_rag_verify 이후 최종 답변 기준 1회.
         generation_result = self._apply_hallucination_gate(
-            message, generation_result, context_documents, options
+            message, generation_result, evidence_documents, options
         )
         tracker.end_stage("self_rag_verify")
 
         tracker.start_stage("format_sources")
-        formatted_sources = self.format_sources(context_documents, sql_search_result)
+        formatted_sources = self.format_sources(evidence_documents, sql_search_result)
         tracker.end_stage("format_sources")
 
         tracker.start_stage("build_result")
@@ -3115,7 +3119,7 @@ class RAGPipeline:
             # 아니므로 카운트에서 제외(#4, GAP #1)
             ranked_count=sum(
                 1
-                for doc in context_documents
+                for doc in evidence_documents
                 if not _document_metadata(doc).get("context_expanded")
                 and not _document_metadata(doc).get("_generation_only")
             ),
@@ -4145,23 +4149,25 @@ class RAGPipeline:
                 )
 
                 # ⭐ Self-RAG 평가 추적
-                if debug_trace_data is not None:
+                if (debug_trace_data is not None
+                        and self_rag_result.initial_quality is not None
+                        and self_rag_result.final_quality is not None):
                     debug_trace_data["self_rag_evaluation"] = {
-                        "initial_quality": self_rag_result.initial_quality.overall if self_rag_result.initial_quality else 0.0,
+                        "initial_quality": self_rag_result.initial_quality.overall,
                         "regenerated": self_rag_result.regenerated,
-                        "final_quality": self_rag_result.final_quality.overall if self_rag_result.final_quality else 0.0,
-                        "reason": self_rag_result.initial_quality.reasoning if self_rag_result.initial_quality else None,
+                        "final_quality": self_rag_result.final_quality.overall,
+                        "reason": self_rag_result.initial_quality.reasoning,
                     }
 
                 # ⭐ 품질 게이트 적용
                 min_quality = self_rag_config.get("min_quality_to_answer", 0.6)
                 final_quality_score = (
                     self_rag_result.final_quality.overall
-                    if self_rag_result.final_quality
-                    else 0.0
+                    if self_rag_result.final_quality is not None
+                    else None
                 )
 
-                if final_quality_score < min_quality:
+                if final_quality_score is not None and final_quality_score < min_quality:
                     logger.warning(
                         "저품질 답변 감지 - 답변 거부",
                         extra={
@@ -4180,6 +4186,31 @@ class RAGPipeline:
                         generation_time=generation_result.generation_time,
                         refusal_reason="quality_too_low",  # ⭐ 신규 필드
                         quality_score=final_quality_score,  # ⭐ 신규 필드
+                        quality_status=self_rag_result.outcome.value,
+                        source_documents=None,
+                        _model_info_override={
+                            **generation_result.model_info,
+                            "self_rag_applied": True,
+                            "self_rag_regenerated": self_rag_result.regenerated,
+                            "self_rag_outcome": self_rag_result.outcome.value,
+                            "self_rag_eval_status": (
+                                self_rag_result.initial_eval_status.value
+                                if self_rag_result.initial_eval_status is not None
+                                else None
+                            ),
+                            "self_rag_final_eval_status": (
+                                self_rag_result.final_eval_status.value
+                                if self_rag_result.final_eval_status is not None
+                                else None
+                            ),
+                            "self_rag_rollback_reason": self_rag_result.rollback_reason,
+                            "self_rag_skip_reason": None,
+                        },
+                    )
+                if final_quality_score is None:
+                    logger.warning(
+                        "self_rag_quality_unavailable",
+                        outcome=self_rag_result.outcome.value,
                     )
 
                 # 품질 점수 로깅 및 Langfuse Score 기록
@@ -4248,6 +4279,8 @@ class RAGPipeline:
                     generation_time=generation_result.generation_time,
                     model_config=generation_result.model_config,
                     quality_score=final_quality_score,  # ⭐ 신규 필드
+                    quality_status=self_rag_result.outcome.value,
+                    source_documents=self_rag_result.selected_documents,
                     _model_info_override={
                         **generation_result.model_info,
                         "self_rag_applied": True,
@@ -4263,12 +4296,28 @@ class RAGPipeline:
                             if self_rag_result.final_quality
                             else None
                         ),
+                        "self_rag_outcome": self_rag_result.outcome.value,
+                        "self_rag_eval_status": (
+                            self_rag_result.initial_eval_status.value
+                            if self_rag_result.initial_eval_status is not None
+                            else None
+                        ),
+                        "self_rag_final_eval_status": (
+                            self_rag_result.final_eval_status.value
+                            if self_rag_result.final_eval_status is not None
+                            else None
+                        ),
+                        "self_rag_rollback_reason": self_rag_result.rollback_reason,
+                        "self_rag_skip_reason": None,
                     },
                 )
             else:
                 logger.info(
-                    "Self-RAG 미적용 (복잡도 낮음) - 기존 답변 사용",
-                    extra={"complexity": self_rag_result.complexity.score}
+                    "Self-RAG 미적용 - 기존 답변 사용",
+                    extra={
+                        "complexity": self_rag_result.complexity.score,
+                        "reason": self_rag_result.metadata.get("reason"),
+                    }
                 )
                 # Self-RAG 미적용 시에도 메타데이터 추가 (API 응답 완전성 보장)
                 return GenerationResult(
@@ -4283,6 +4332,14 @@ class RAGPipeline:
                         **generation_result.model_info,
                         "self_rag_applied": False,
                         "complexity_score": self_rag_result.complexity.score,
+                        "self_rag_outcome": self_rag_result.outcome.value,
+                        "self_rag_final_eval_status": (
+                            self_rag_result.final_eval_status.value
+                            if self_rag_result.final_eval_status is not None
+                            else None
+                        ),
+                        "self_rag_rollback_reason": self_rag_result.rollback_reason,
+                        "self_rag_skip_reason": self_rag_result.metadata.get("reason"),
                     },
                 )
 

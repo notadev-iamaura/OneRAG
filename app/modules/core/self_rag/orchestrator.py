@@ -6,14 +6,25 @@ Self-RAG 오케스트레이터
 
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 import structlog
 
 from ..routing import ComplexityCalculator, ComplexityResult
-from .evaluator import LLMQualityEvaluator, QualityScore
+from .evaluator import EvalStatus, LLMQualityEvaluator, QualityScore
 
 logger = structlog.get_logger(__name__)
+MAX_REGEN_CONTEXT_DOCS = 20  # Match the generator's maximum prompt document count.
+
+
+class SelfRAGOutcome(str, Enum):
+    SKIPPED = "skipped"
+    OK = "ok"
+    EVAL_FAILED = "eval_failed"
+    EVAL_TIMEOUT = "eval_timeout"
+    REGENERATED = "regenerated"
+    ROLLED_BACK = "rolled_back"
 
 
 @dataclass
@@ -31,6 +42,12 @@ class SelfRAGResult:
         default_factory=dict
     )  # 기본값 추가 (dataclass 필드 순서 문제 해결)
     tokens_used: int = 0  # 재생성 시 토큰 수 추적
+    outcome: SelfRAGOutcome = SelfRAGOutcome.SKIPPED
+    initial_eval_status: EvalStatus | None = None
+    final_eval_status: EvalStatus | None = None
+    retry_quality: QualityScore | None = None
+    selected_documents: list[Any] | None = None
+    rollback_reason: str | None = None
 
 
 class SelfRAGOrchestrator:
@@ -42,29 +59,30 @@ class SelfRAGOrchestrator:
         evaluator: LLMQualityEvaluator,
         retrieval_module: Any,
         generation_module: Any,
-        initial_top_k: int = 5,
-        retry_top_k: int = 15,
-        max_retries: int = 1,
+        initial_top_k: int | None = 5,
+        retry_top_k: int | None = 15,
+        max_retries: int | None = 1,
         enabled: bool = True,
+        enable_rollback: bool = True,
+        rollback_threshold: float = -0.1,
     ):
         self.complexity_calculator = complexity_calculator
         self.evaluator = evaluator
         self.retrieval_module = retrieval_module
         self.generation_module = generation_module
-        self.initial_top_k = initial_top_k
-        self.retry_top_k = retry_top_k
-        self.max_retries = max_retries
+        self.initial_top_k = initial_top_k if initial_top_k is not None else 5
+        self.retry_top_k = retry_top_k if retry_top_k is not None else 15
+        self.max_retries = max_retries if max_retries is not None else 1
         self.enabled = enabled
 
-        # Rollback 설정 (config에서 가져와야 하지만 일단 기본값)
-        self.enable_rollback = True
-        self.rollback_threshold = -0.1
+        self.enable_rollback = enable_rollback
+        self.rollback_threshold = rollback_threshold
 
         logger.info(
             "self_rag_orchestrator_initialized",
-            initial_top_k=initial_top_k,
-            retry_top_k=retry_top_k,
-            max_retries=max_retries,
+            initial_top_k=self.initial_top_k,
+            retry_top_k=self.retry_top_k,
+            max_retries=self.max_retries,
             enabled=enabled,
         )
 
@@ -105,73 +123,8 @@ class SelfRAGOrchestrator:
         )
         initial_answer = generation_result.answer  # GenerationResult에서 answer 추출
 
-        initial_quality = await self.evaluator.evaluate(
-            query=query, answer=initial_answer, context=[doc.content for doc in initial_docs]
-        )
-
-        if not self.evaluator.requires_regeneration(initial_quality):
-            logger.info(
-                "initial_quality_sufficient",
-                score=initial_quality.overall,
-                threshold=self.evaluator.quality_threshold,
-            )
-            processing_time = time.time() - start_time
-            return SelfRAGResult(
-                answer=initial_answer,
-                used_self_rag=True,
-                complexity=complexity,
-                initial_quality=initial_quality,
-                final_quality=initial_quality,
-                regenerated=False,
-                processing_time=processing_time,
-                metadata={"initial_top_k": self.initial_top_k, "docs_retrieved": len(initial_docs)},
-            )
-
-        logger.warning(
-            "quality_insufficient_regenerating",
-            score=initial_quality.overall,
-            threshold=self.evaluator.quality_threshold,
-        )
-
-        retry_search_options = {**base_options, "limit": self.retry_top_k}
-        retry_docs = await self.retrieval_module.search(query, retry_search_options)
-
-        # generate_answer 메서드 사용 (generate 아님)
-        final_generation_result = await self.generation_module.generate_answer(
-            query=query, context_documents=retry_docs, options=base_options
-        )
-        final_answer = final_generation_result.answer  # GenerationResult에서 answer 추출
-        final_tokens = final_generation_result.tokens_used  # 재생성 시 토큰 수 추적
-
-        final_quality = await self.evaluator.evaluate(
-            query=query, answer=final_answer, context=[doc.content for doc in retry_docs]
-        )
-
-        processing_time = time.time() - start_time
-
-        logger.info(
-            "self_rag_completed",
-            initial_quality=initial_quality.overall,
-            final_quality=final_quality.overall,
-            regenerated=True,
-            processing_time=processing_time,
-        )
-
-        return SelfRAGResult(
-            answer=final_answer,
-            used_self_rag=True,
-            complexity=complexity,
-            initial_quality=initial_quality,
-            final_quality=final_quality,
-            regenerated=True,
-            processing_time=processing_time,
-            tokens_used=final_tokens,  # 재생성 시 토큰 수 저장
-            metadata={
-                "initial_top_k": self.initial_top_k,
-                "retry_top_k": self.retry_top_k,
-                "initial_docs": len(initial_docs),
-                "retry_docs": len(retry_docs),
-            },
+        return await self.verify_existing_answer(
+            query, initial_answer, initial_docs, session_id, options=base_options
         )
 
     async def verify_existing_answer(
@@ -240,9 +193,21 @@ class SelfRAGOrchestrator:
 
         logger.info("self_rag_verify_mode", complexity=complexity.score)
 
+        if not self.evaluator.is_available:
+            return SelfRAGResult(
+                answer=existing_answer,
+                used_self_rag=False,
+                complexity=complexity,
+                initial_quality=None,
+                final_quality=None,
+                regenerated=False,
+                processing_time=time.time() - start_time,
+                metadata={"reason": "evaluator_unavailable"},
+            )
+
         # 3. 기존 답변 품질 평가 (검색/생성 없이 평가만!)
         try:
-            initial_quality = await self.evaluator.evaluate(
+            initial_evaluation = await self.evaluator.evaluate(
                 query=query,
                 answer=existing_answer,
                 context=[
@@ -251,15 +216,6 @@ class SelfRAGOrchestrator:
                 ],
             )
 
-            logger.info(
-                "existing_answer_quality_evaluated",
-                quality=initial_quality.overall,
-                threshold=self.evaluator.quality_threshold,
-                relevance=initial_quality.relevance,
-                grounding=initial_quality.grounding,
-                completeness=initial_quality.completeness,
-                confidence=initial_quality.confidence,
-            )
         except Exception as e:
             logger.error(f"quality_evaluation_failed: {e}, using existing answer")
             return SelfRAGResult(
@@ -271,7 +227,30 @@ class SelfRAGOrchestrator:
                 regenerated=False,
                 processing_time=time.time() - start_time,
                 metadata={"reason": "evaluation_error", "error": str(e)},
+                outcome=SelfRAGOutcome.EVAL_FAILED,
+                initial_eval_status=EvalStatus.FAILED,
             )
+
+        if initial_evaluation.status is not EvalStatus.OK or initial_evaluation.score is None:
+            outcome = (
+                SelfRAGOutcome.EVAL_TIMEOUT
+                if initial_evaluation.status is EvalStatus.TIMEOUT
+                else SelfRAGOutcome.EVAL_FAILED
+            )
+            return SelfRAGResult(
+                answer=existing_answer,
+                used_self_rag=True,
+                complexity=complexity,
+                initial_quality=None,
+                final_quality=None,
+                regenerated=False,
+                processing_time=time.time() - start_time,
+                metadata={"reason": outcome.value, "error": initial_evaluation.error},
+                outcome=outcome,
+                initial_eval_status=initial_evaluation.status,
+            )
+
+        initial_quality = initial_evaluation.score
 
         # 4. 품질이 충분하면 기존 답변 사용 (재생성 불필요)
         if not self.evaluator.requires_regeneration(initial_quality):
@@ -290,6 +269,8 @@ class SelfRAGOrchestrator:
                 regenerated=False,
                 processing_time=processing_time,
                 metadata={"reason": "quality_sufficient", "existing_docs": len(existing_docs)},
+                outcome=SelfRAGOutcome.OK,
+                initial_eval_status=EvalStatus.OK,
             )
 
         # 5. 품질이 낮으면 재검색 및 재생성
@@ -305,24 +286,51 @@ class SelfRAGOrchestrator:
             retry_docs = await self.retrieval_module.search(query, retry_search_options)
 
             logger.info("retry_search_completed", docs_count=len(retry_docs))
+            prompt_docs = retry_docs[:min(self.retry_top_k, MAX_REGEN_CONTEXT_DOCS)]
 
             # 재생성 — 사용자 옵션(응답 언어/모델 등) 보존
+            regen_options = {
+                **base_options,
+                "max_context_documents": min(self.retry_top_k, MAX_REGEN_CONTEXT_DOCS),
+            }
             final_generation_result = await self.generation_module.generate_answer(
-                query=query, context_documents=retry_docs, options=base_options
+                query=query, context_documents=prompt_docs, options=regen_options
             )
             final_answer = final_generation_result.answer
             final_tokens = final_generation_result.tokens_used  # 재생성 시 토큰 수 추적
 
             # 재생성 품질 평가
-            final_quality = await self.evaluator.evaluate(
+            final_evaluation = await self.evaluator.evaluate(
                 query=query,
                 answer=final_answer,
                 context=[
                     doc.page_content if hasattr(doc, "page_content") else doc.content
-                    for doc in retry_docs
+                    for doc in prompt_docs
                 ],
             )
 
+            if final_evaluation.status is not EvalStatus.OK or final_evaluation.score is None:
+                reason = (
+                    "final_eval_timeout"
+                    if final_evaluation.status is EvalStatus.TIMEOUT
+                    else "final_eval_failed"
+                )
+                return SelfRAGResult(
+                    answer=existing_answer,
+                    used_self_rag=True,
+                    complexity=complexity,
+                    initial_quality=initial_quality,
+                    final_quality=initial_quality,
+                    regenerated=False,
+                    processing_time=time.time() - start_time,
+                    outcome=SelfRAGOutcome.ROLLED_BACK,
+                    initial_eval_status=EvalStatus.OK,
+                    final_eval_status=final_evaluation.status,
+                    rollback_reason=reason,
+                    metadata={"reason": reason, "retry_docs": len(retry_docs)},
+                )
+
+            final_quality = final_evaluation.score
             logger.info(
                 "regeneration_completed",
                 initial_quality=initial_quality.overall,
@@ -347,7 +355,7 @@ class SelfRAGOrchestrator:
                     used_self_rag=True,
                     complexity=complexity,
                     initial_quality=initial_quality,
-                    final_quality=final_quality,
+                    final_quality=initial_quality,
                     regenerated=False,  # 재생성 시도했으나 롤백
                     processing_time=processing_time,
                     tokens_used=0,  # 롤백 시 초기 토큰 수는 0 (기존 답변은 이미 추적됨)
@@ -356,6 +364,11 @@ class SelfRAGOrchestrator:
                         "regeneration_attempted": True,
                         "retry_docs": len(retry_docs),
                     },
+                    outcome=SelfRAGOutcome.ROLLED_BACK,
+                    initial_eval_status=EvalStatus.OK,
+                    final_eval_status=EvalStatus.OK,
+                    retry_quality=final_quality,
+                    rollback_reason="quality_degraded",
                 )
 
             # 7. 재생성 답변 사용
@@ -373,6 +386,10 @@ class SelfRAGOrchestrator:
                     "retry_docs": len(retry_docs),
                     "improvement": final_quality.overall - initial_quality.overall,
                 },
+                outcome=SelfRAGOutcome.REGENERATED,
+                initial_eval_status=EvalStatus.OK,
+                final_eval_status=EvalStatus.OK,
+                selected_documents=prompt_docs,
             )
 
         except Exception as e:
@@ -383,10 +400,13 @@ class SelfRAGOrchestrator:
                 used_self_rag=True,
                 complexity=complexity,
                 initial_quality=initial_quality,
-                final_quality=None,
+                final_quality=initial_quality,
                 regenerated=False,
                 processing_time=processing_time,
                 metadata={"reason": "regeneration_error", "error": str(e)},
+                outcome=SelfRAGOutcome.ROLLED_BACK,
+                initial_eval_status=EvalStatus.OK,
+                rollback_reason="regeneration_error",
             )
 
     async def _regular_flow(
