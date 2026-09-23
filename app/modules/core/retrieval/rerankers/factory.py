@@ -51,6 +51,10 @@ APPROACH_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "로컬 모델 리랭커 (API 키 불필요, sentence-transformers / BGE 다국어)",
         "providers": ["sentence-transformers", "bge"],
     },
+    "decision": {
+        "description": "TypeSafe Jev relevance decision filter",
+        "providers": ["typesafe"],
+    },
 }
 
 PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
@@ -147,6 +151,26 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
             "device": None,
         },
     },
+    "typesafe": {
+        "class": "JevDecisionReranker",
+        "api_key_env": "TYPESAFE_API_KEY",
+        "default_config": {
+            "model": "jev-1.13.0",
+            "endpoint": "https://api.typesafe.ai/v1/systemone",
+            "mode": "shadow",
+            "question_type": "noul",
+            "min_relevance": 0.5,
+            "min_keep": 1,
+            "max_documents": 20,
+            "max_passage_chars": 2000,
+            "timeout": 3.0,
+            "deadline_seconds": 5.0,
+            "concurrency": 4,
+            "shadow_background": True,
+            "circuit_failure_threshold": 5,
+            "circuit_cooldown_seconds": 30.0,
+        },
+    },
 }
 
 
@@ -218,8 +242,22 @@ class RerankerFactoryV2:
             )
         elif approach == "local":
             return RerankerFactoryV2._create_local_reranker(provider, reranking_config)
+        elif approach == "decision":
+            return RerankerFactoryV2._create_decision_reranker(provider, reranking_config)
         else:
             raise ValueError(f"알 수 없는 approach: {approach}")
+
+    @staticmethod
+    def _create_decision_reranker(provider: str, config: dict[str, Any]) -> IReranker:
+        """Create a standalone Jev filter; a missing key leaves it pass-through."""
+        from .jev_decision_reranker import JevDecisionReranker
+
+        defaults = PROVIDER_REGISTRY[provider]["default_config"]
+        options = {**defaults, **(config.get(provider) or {})}
+        return JevDecisionReranker(
+            api_key=os.getenv(PROVIDER_REGISTRY[provider]["api_key_env"]),
+            **options,
+        )
 
     @staticmethod
     def _create_llm_reranker(provider: str, config: dict[str, Any]) -> IReranker:

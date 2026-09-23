@@ -271,12 +271,34 @@ class VertexRankingProviderConfig(BaseConfig):
 # 메인 설정 스키마
 # ========================================
 
+
+class TypeSafeProviderConfig(BaseConfig):
+    """TypeSafe Jev decision filter settings."""
+
+    model: str = "jev-1.13.0"
+    endpoint: str = "https://api.typesafe.ai/v1/systemone"
+    mode: Literal["off", "shadow", "enforce"] = "shadow"
+    question_type: Literal["noul", "score"] = "noul"
+    instructions: str | None = None
+    min_relevance: float = Field(default=0.5, ge=0, le=1)
+    min_keep: int = Field(default=1, ge=1)
+    max_documents: int = Field(default=20, ge=1, le=100)
+    max_passage_chars: int = Field(default=2000, ge=1)
+    score_scale_max: float = Field(default=1.0, gt=0)
+    timeout: float = Field(default=3.0, gt=0, le=30)
+    deadline_seconds: float = Field(default=5.0, gt=0, le=30)
+    concurrency: int = Field(default=4, ge=1, le=32)
+    shadow_background: bool = True
+    circuit_failure_threshold: int = Field(default=5, ge=1)
+    circuit_cooldown_seconds: float = Field(default=30.0, ge=0)
+
 # approach-provider 유효 조합 정의
 VALID_APPROACH_PROVIDERS: dict[str, list[str]] = {
     "llm": ["google", "openai", "openrouter"],
     "cross-encoder": ["jina", "cohere", "vertex"],
     "late-interaction": ["jina"],
     "local": ["sentence-transformers", "bge"],
+    "decision": ["typesafe"],
 }
 
 
@@ -299,7 +321,7 @@ class RerankingConfigV2(BaseConfig):
         description="리랭킹 활성화 여부",
     )
 
-    approach: Literal["llm", "cross-encoder", "late-interaction", "local"] = Field(
+    approach: Literal["llm", "cross-encoder", "late-interaction", "local", "decision"] = Field(
         default="cross-encoder",
         description="리랭킹 기술 방식",
     )
@@ -313,6 +335,7 @@ class RerankingConfigV2(BaseConfig):
         "openrouter",
         "sentence-transformers",
         "bge",
+        "typesafe",
     ] = Field(
         default="jina",
         description="서비스 제공자",
@@ -352,6 +375,7 @@ class RerankingConfigV2(BaseConfig):
         default=None,
         description="BGE 다국어 로컬 리랭커 설정 (API 키 불필요)",
     )
+    typesafe: TypeSafeProviderConfig | None = Field(default=None)
 
     @model_validator(mode="after")
     def validate_approach_provider_combination(self) -> "RerankingConfigV2":

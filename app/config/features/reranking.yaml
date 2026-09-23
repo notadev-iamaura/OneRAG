@@ -8,6 +8,7 @@
 # ║  - cross-encoder:    전용 리랭커 API (쿼리+문서 쌍 인코딩)            ║
 # ║  - late-interaction: ColBERT 방식 (토큰 레벨 상호작용)                ║
 # ║  - local:            로컬 모델 (API 키 불필요, 오프라인 사용 가능)     ║
+# ║  - decision:         Jev 관련성 판단 필터                            ║
 # ╠═══════════════════════════════════════════════════════════════════════╣
 # ║  provider (서비스 제공자)                                              ║
 # ╠═══════════════════════════════════════════════════════════════════════╣
@@ -15,6 +16,7 @@
 # ║  cross-encoder:    jina, cohere, vertex                               ║
 # ║  late-interaction: jina                                               ║
 # ║  local:            sentence-transformers, bge                         ║
+# ║  decision:         typesafe                                           ║
 # ╚═══════════════════════════════════════════════════════════════════════╝
 
 reranking:
@@ -42,7 +44,7 @@ reranking:
   # ========================================
   # 출하 기본값: GOOGLE_API_KEY만으로 동작하는 조합 (quickstart 호환)
   # GOOGLE_API_KEY 부재 시에도 graceful degradation으로 리랭킹 없이 동작합니다.
-  approach: "llm"     # llm | cross-encoder | late-interaction | local
+  approach: "llm"     # llm | cross-encoder | late-interaction | local | decision
   provider: "google"  # approach에 따라 유효한 provider 선택
 
   # (선택) 더 빠른 토큰 레벨 리랭킹을 원하면 아래 조합으로 변경하세요.
@@ -169,6 +171,28 @@ reranking:
     #   동시 요청 폭주 시 이벤트 루프 점유/워커 고갈을 막으려면 30초 권장.
     timeout: 30
 
+  # ⚠️ decision은 기존 리랭커를 대체합니다 (inner 래핑 없음).
+  # shadow = 리랭킹 없이 검색 순서 유지 + 판정 기록; llm/jina 위에 겹쳐 실행되지 않습니다.
+  # WARNING: decision replaces the existing reranker (no inner wrap).
+  # shadow keeps retrieval order and records judgments; it does not layer on llm/jina.
+  # A missing API key keeps retrieval order. Passage text is sent to TypeSafe.
+  # approach: "decision"
+  # provider: "typesafe"
+  typesafe:
+    model: "${TYPESAFE_JEV_MODEL:-jev-1.13.0}"
+    mode: "${TYPESAFE_JEV_MODE:-shadow}"  # off | shadow | enforce
+    question_type: "noul"
+    min_relevance: 0.5
+    min_keep: 1
+    max_documents: 20
+    max_passage_chars: 2000
+    timeout: 3.0
+    deadline_seconds: 5.0  # enforce 배치 전체 제한 / enforce batch deadline
+    concurrency: 4
+    shadow_background: true
+    circuit_failure_threshold: 5
+    circuit_cooldown_seconds: 30
+
 # ========================================
 # approach 선택 가이드
 # ========================================
@@ -197,3 +221,8 @@ reranking:
 #   → approach: local, provider: bge
 #   → BAAI/bge-reranker-v2-m3, 한국어/일본어 등 다국어 품질 우수
 #   → torch + transformers 필요 (uv sync --extra local-embedding)
+#
+# 🧪 Jev 판단 기록 실험:
+#   → approach: decision, provider: typesafe, mode: shadow
+#   → 기존 리랭커 대체; 검색 순서 유지 + 판정 기록 (llm/jina와 중첩되지 않음)
+#   → Replaces the existing reranker; keeps retrieval order + records judgments (no llm/jina layering)
