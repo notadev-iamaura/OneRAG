@@ -528,7 +528,7 @@ class GenerationModule:
     def _load_admin_runtime_settings() -> dict[str, Any]:
         """Load admin-selected provider/model without making generation depend on FastAPI."""
         try:
-            from app.api.admin_ai_settings_store import get_active_generation_override
+            from app.lib.admin_ai_settings_store import get_active_generation_override
 
             settings = get_active_generation_override()
             return settings if isinstance(settings, dict) else {}
@@ -539,7 +539,7 @@ class GenerationModule:
     def _load_admin_provider_key(provider: str) -> str | None:
         """Load server-side provider key replacement when configured."""
         try:
-            from app.api.admin_ai_settings_store import get_admin_ai_settings_store
+            from app.lib.admin_ai_settings_store import get_admin_ai_settings_store
 
             return get_admin_ai_settings_store().get_provider_key(provider)
         except Exception:

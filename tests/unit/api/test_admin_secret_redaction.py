@@ -64,7 +64,7 @@ async def test_update_ai_settings_preserves_key_restart_requirement(monkeypatch,
         provider = "google"
         default_model = "gemini-2.0-flash"
 
-    from app.api.admin_ai_settings_store import SQLiteAdminAISettingsStore
+    from app.lib.admin_ai_settings_store import SQLiteAdminAISettingsStore
 
     monkeypatch.setenv("ONERAG_SETTINGS_SECRET", "test-secret")
     store = SQLiteAdminAISettingsStore(tmp_path / "ai-settings.sqlite3")
