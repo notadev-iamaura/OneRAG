@@ -136,6 +136,33 @@ async def test_min_keep_prevents_empty() -> None:
 
 
 @pytest.mark.asyncio
+async def test_min_keep_never_exceeds_top_n() -> None:
+    incoming = results(3)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.1] * 3), min_keep=3
+    )
+    assert [item.id for item in await reranker.rerank("q", incoming, top_n=2)] == ["0", "1"]
+
+
+@pytest.mark.asyncio
+async def test_all_kept_still_respects_top_n() -> None:
+    incoming = results(3)
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.9] * 3), min_keep=1
+    )
+    assert len(await reranker.rerank("q", incoming, top_n=2)) == 2
+    assert len(await reranker.rerank("q", incoming, top_n=None)) == 3
+
+
+@pytest.mark.asyncio
+async def test_enforce_top_n_zero_returns_empty() -> None:
+    reranker = JevDecisionReranker(
+        "key", mode="enforce", client=FakeClient([0.9, 0.9])
+    )
+    assert await reranker.rerank("q", results(2), top_n=0) == []
+
+
+@pytest.mark.asyncio
 async def test_all_errors_fail_open() -> None:
     incoming = results(2)
     reranker = JevDecisionReranker(

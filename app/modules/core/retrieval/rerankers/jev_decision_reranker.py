@@ -52,7 +52,7 @@ DecisionSink = Callable[[JevDecisionBatch], Awaitable[None] | None]
 
 
 class JevDecisionReranker:
-    """Judge incoming results without changing them in shadow mode."""
+    """Judge results without shadow mutation; min_keep stays within top_n."""
 
     name = "jev-decision"
     enabled = True
@@ -179,9 +179,11 @@ class JevDecisionReranker:
             self.stats["fail_open_count"] += 1
             await self._record(batch)
             return self._passthrough(base, top_n)
+        limit = len(base) if top_n is None else min(top_n, len(base))
+        keep_floor = min(self.min_keep, limit)
         keep_positions = {d.position for d in batch.decisions if d.keep}
-        if len(keep_positions) < min(self.min_keep, len(base)):
-            keep_positions.update(range(min(self.min_keep, len(base))))
+        if len(keep_positions) < keep_floor:
+            keep_positions.update(range(keep_floor))
         selected = [
             self._copy_with_decision(result, decision)
             for result, decision in zip(base, batch.decisions, strict=True)
@@ -189,7 +191,7 @@ class JevDecisionReranker:
         ]
         self.stats["docs_dropped"] += len(base) - len(selected)
         await self._record(replace(batch, applied=len(selected) != len(base)))
-        return selected[: max(top_n, self.min_keep)] if top_n is not None else selected
+        return selected[:limit]
 
     def _passthrough(
         self, results: list[SearchResult], top_n: int | None
