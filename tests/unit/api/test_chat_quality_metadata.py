@@ -4,9 +4,13 @@ Chat API 품질 메타데이터 응답 테스트
 Self-RAG 품질 게이트의 품질 점수가 API 응답에 제대로 노출되는지 검증합니다.
 """
 
-import pytest
+from unittest.mock import AsyncMock, MagicMock
 
-from app.api.routers.chat_router import _get_confidence_level
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.api.routers.chat_router import _get_confidence_level, router, set_chat_service
 from app.api.schemas.chat_schemas import ChatResponse
 
 
@@ -228,3 +232,63 @@ class TestGetConfidenceLevel:
         assert _get_confidence_level(0.8) == "high"
         assert _get_confidence_level(0.9) == "high"
         assert _get_confidence_level(1.0) == "high"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("applied", "outcome", "final_status", "rollback_reason"),
+    [
+        (True, "regenerated", "ok", None),
+        (True, "rolled_back", "failed", "final_eval_failed"),
+        (False, "skipped", None, None),
+    ],
+)
+def test_chat_exposes_self_rag_status(
+    applied: bool,
+    outcome: str,
+    final_status: str | None,
+    rollback_reason: str | None,
+) -> None:
+    model_info = {
+        "provider": "test",
+        "model": "test-model",
+        "self_rag_applied": applied,
+        "self_rag_outcome": outcome,
+        "self_rag_eval_status": "ok" if applied else None,
+        "self_rag_final_eval_status": final_status,
+        "self_rag_rollback_reason": rollback_reason,
+        "self_rag_skip_reason": None if applied else "evaluator_unavailable",
+    }
+    rag_result = {
+        "answer": "답변",
+        "sources": [],
+        "tokens_used": 10,
+        "topic": "test",
+        "model_info": model_info,
+    }
+    if applied:
+        rag_result["quality_score"] = 0.8
+
+    service = MagicMock()
+    service.handle_session = AsyncMock(return_value={"success": True, "session_id": "session"})
+    service.execute_rag_pipeline = AsyncMock(return_value=rag_result)
+    service.add_conversation_to_session = AsyncMock()
+    app = FastAPI()
+    app.include_router(router)
+    set_chat_service(service)
+    try:
+        response = TestClient(app).post("/chat", json={"message": "질문"})
+    finally:
+        set_chat_service(None)  # type: ignore[arg-type]
+
+    assert response.status_code == 200
+    payload = response.json()
+    if applied:
+        assert payload["self_rag_metadata"]["outcome"] == outcome
+        assert payload["self_rag_metadata"]["eval_status"] == "ok"
+        assert payload["self_rag_metadata"]["final_eval_status"] == final_status
+        assert payload["self_rag_metadata"]["rollback_reason"] == rollback_reason
+        assert payload["metadata"]["quality"]["status"] == outcome
+    else:
+        assert payload["self_rag_metadata"] is None
+        assert payload["model_info"]["self_rag_skip_reason"] == "evaluator_unavailable"

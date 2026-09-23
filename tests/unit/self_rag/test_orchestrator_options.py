@@ -186,3 +186,23 @@ async def test_verify_existing_answer_accepts_and_uses_options() -> None:
     assert generation.generate_calls[0]["response_language"] == "en"
     # 호출자 dict 미오염
     assert user_options == {"response_language": "en"}
+
+
+@pytest.mark.asyncio
+async def test_verify_existing_answer_retry_preserves_filters_and_min_score() -> None:
+    orchestrator, retrieval, _ = _make_orchestrator(requires_regen=True)
+    filters = {"doc_type": "table"}
+    options = {"filters": filters, "min_score": 0.3}
+
+    await orchestrator.verify_existing_answer(
+        "복잡한 질문",
+        "기존 답변",
+        [_FakeDoc("기존 문서")],
+        "session-1",
+        options=options,
+    )
+
+    assert retrieval.search_calls[0]["filters"] == filters
+    assert retrieval.search_calls[0]["min_score"] == 0.3
+    assert retrieval.search_calls[0]["limit"] == orchestrator.retry_top_k
+    assert options == {"filters": filters, "min_score": 0.3}

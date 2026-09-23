@@ -55,3 +55,48 @@ def test_build_result_omits_quality_when_none() -> None:
     )
     assert "quality_score" not in result
     assert "refusal_reason" not in result
+
+
+def test_build_result_keeps_self_rag_status_fields() -> None:
+    result = _make_pipeline().build_result(
+        answer="답변",
+        sources=[],
+        tokens_used=10,
+        topic="t",
+        processing_time=0.1,
+        search_count=1,
+        ranked_count=1,
+        model_info={
+            "provider": "google",
+            "model": "x",
+            "self_rag_outcome": "rolled_back",
+            "self_rag_eval_status": "ok",
+            "self_rag_final_eval_status": "failed",
+            "self_rag_rollback_reason": "final_eval_failed",
+            "self_rag_skip_reason": None,
+        },
+        routing_metadata=None,
+    )
+
+    model_info = result["model_info"]
+    assert model_info["self_rag_outcome"] == "rolled_back"
+    assert model_info["self_rag_eval_status"] == "ok"
+    assert model_info["self_rag_final_eval_status"] == "failed"
+    assert model_info["self_rag_rollback_reason"] == "final_eval_failed"
+    assert "self_rag_skip_reason" not in model_info
+
+
+def test_build_result_omits_absent_self_rag_status() -> None:
+    result = _make_pipeline().build_result(
+        answer="답변",
+        sources=[],
+        tokens_used=10,
+        topic="t",
+        processing_time=0.1,
+        search_count=1,
+        ranked_count=1,
+        model_info={"provider": "google", "model": "x"},
+        routing_metadata=None,
+    )
+
+    assert "self_rag_outcome" not in result["model_info"]

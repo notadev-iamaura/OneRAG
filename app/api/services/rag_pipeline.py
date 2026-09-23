@@ -4150,14 +4150,16 @@ class RAGPipeline:
 
             # ✅ 최적화: verify_existing_answer 메서드 사용 (중복 제거)
             # RAGPipeline이 이미 생성한 답변과 문서를 전달
-            # 재생성 시 사용자 옵션(응답 언어/모델/스타일 등)이 소실되지 않도록
-            # options를 그대로 전달한다. 단, 파이프라인 내부 전용 키
-            # (_debug_trace_data)는 생성 옵션이 아니므로 제외한다.
+            # 재생성 시 사용자 옵션(응답 언어/모델/스타일 등)을 보존한다.
+            # 파이프라인 내부 전용 키(_debug_trace_data)는 제외한다.
             verify_options = {
                 key: value
                 for key, value in options.items()
                 if key != "_debug_trace_data"
             }
+            # Match the main retrieval path's data_source mapping and score option.
+            verify_options["filters"] = self._build_retrieval_filters(options)
+            verify_options.setdefault("min_score", self.min_score)
             self_rag_result = await self_rag_module.verify_existing_answer(
                 query=message,
                 existing_answer=generation_result.answer,  # ✅ 기존 답변 전달
@@ -4653,6 +4655,11 @@ class RAGPipeline:
                 "initial_quality",
                 "final_quality",
                 "self_rag_regenerated",
+                "self_rag_outcome",
+                "self_rag_eval_status",
+                "self_rag_final_eval_status",
+                "self_rag_rollback_reason",
+                "self_rag_skip_reason",
                 "mode",
                 "tool_usage",
                 "citations_count",
