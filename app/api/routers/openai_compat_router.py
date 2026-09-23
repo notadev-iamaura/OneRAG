@@ -312,6 +312,8 @@ async def _pipeline_rag_search(
         [{"content": str}, ...] 형태의 문서 리스트. 결과가 없으면 빈 리스트.
 
     Raises:
+        _QueryBlockedError: 차단 결정 또는 route_query 실패 시 기본 거절 응답을 반환한다.
+            호출측은 HTTP 200의 OpenAI 형식 완료/스트림으로 변환하며 검색과 LLM을 건너뛴다.
         Exception: prepare_context/retrieve 실패는 호출측이 잡아 단순 검색으로 폴백한다.
     """
     pipeline = chat_service.rag_pipeline
@@ -320,19 +322,20 @@ async def _pipeline_rag_search(
     start_time = time.time()
     options: dict[str, Any] = {"limit": _MAX_SEARCH_RESULTS}
 
-    # 라우팅으로 data_source(namespace) 재판단(통짜 경로와 일관화). 실패는 비치명적.
-    route_decision = None
+    # 라우팅 실패 시 차단 검사를 우회하지 않도록 기본 거절 응답으로 종료한다.
     try:
         route_decision = await pipeline.route_query(user_message, session_id, start_time)
-        data_source = route_decision.metadata.get("data_source")
-        if data_source is not None:
-            options["data_source"] = data_source
-    except Exception as e:  # noqa: BLE001 - 라우팅 실패는 비치명적
-        logger.warning(f"/v1 라우팅 실패(무시): {e}")
+    except Exception as e:  # noqa: BLE001 - 보안 경로: 라우팅 실패 시 fail-closed(거절 응답)
+        logger.warning(f"/v1 라우팅 실패 → 기본 거절 응답(fail-closed): {e}")
+        raise _QueryBlockedError(DEFAULT_BLOCKED_ANSWER) from e
 
-    if route_decision is not None and not route_decision.should_continue:
+    if not route_decision.should_continue:
         immediate = route_decision.immediate_response or {}
         raise _QueryBlockedError(immediate.get("answer") or DEFAULT_BLOCKED_ANSWER)
+
+    data_source = route_decision.metadata.get("data_source")
+    if data_source is not None:
+        options["data_source"] = data_source
 
     # standalone rewrite + 멀티쿼리 확장(적재된 ephemeral 세션 맥락 참조)
     prepared = await pipeline.prepare_context(user_message, session_id)
