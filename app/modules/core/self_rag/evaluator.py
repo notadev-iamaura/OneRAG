@@ -10,8 +10,10 @@ Self-RAG 시스템에서 답변 재생성 여부를 판단하는 데 사용됩�
 - 품질 임계값 기반 재생성 필요 여부 판단
 """
 
+import asyncio
 import json
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 import structlog
@@ -92,6 +94,20 @@ class QualityScore:
     raw_response: dict  # LLM 원본 응답
 
 
+class EvalStatus(str, Enum):
+    OK = "ok"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass
+class QualityEvaluation:
+    status: EvalStatus
+    score: QualityScore | None
+    error: str | None = None
+
+
 class LLMQualityEvaluator:
     """
     LLM 기반 답변 품질 평가기
@@ -112,6 +128,7 @@ class LLMQualityEvaluator:
         confidence_weight: float = 0.10,
         evaluation_prompt_template: str | None = None,
         document_label_template: str | None = None,
+        timeout_seconds: float = 10.0,
     ):
         """
         Args:
@@ -127,6 +144,7 @@ class LLMQualityEvaluator:
         self.grounding_weight = grounding_weight
         self.completeness_weight = completeness_weight
         self.confidence_weight = confidence_weight
+        self.timeout_seconds = timeout_seconds
         # 평가 프롬프트 템플릿: config 오버라이드 없으면 코드 내장 한국어 기본값.
         self.evaluation_prompt_template: str = (
             evaluation_prompt_template or DEFAULT_EVALUATION_PROMPT_TEMPLATE
@@ -146,7 +164,7 @@ class LLMQualityEvaluator:
                     reason=(
                         "Self-RAG evaluator에 API 키가 제공되지 않았습니다. "
                         "GOOGLE_API_KEY 환경변수를 설정하면 Self-RAG 품질 평가가 활성화됩니다. "
-                        "현재는 Self-RAG 없이 기본 점수(0.5)로 진행합니다."
+                        "Self-RAG 평가를 건너뜁니다."
                     ),
                 )
                 return
@@ -173,7 +191,7 @@ class LLMQualityEvaluator:
                     reason=(
                         "Self-RAG 평가기 초기화 실패. "
                         "API 키 형식, 네트워크, 모델명을 확인하세요. "
-                        "현재는 Self-RAG 없이 기본 점수(0.5)로 진행합니다."
+                        "Self-RAG 평가를 건너뜁니다."
                     ),
                 )
                 # self.llm은 None 상태로 유지 (Graceful Degradation)
@@ -182,13 +200,17 @@ class LLMQualityEvaluator:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")
 
 
+    @property
+    def is_available(self) -> bool:
+        return self.llm is not None
+
     @observe(
         as_type="generation",
         name="Self-RAG Evaluation",
         capture_input=False,
         capture_output=False,
     )
-    async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityScore:
+    async def evaluate(self, query: str, answer: str, context: list[str]) -> QualityEvaluation:
         """
         답변 품질 평가
 
@@ -198,20 +220,19 @@ class LLMQualityEvaluator:
             context: 검색된 문서 리스트
 
         Returns:
-            QualityScore: 품질 평가 결과
+            QualityEvaluation: 평가 상태와 검증된 점수
         """
         # Self-RAG 비활성화 상태 확인 (Graceful Degradation)
         if self.llm is None:
             logger.debug("self_rag_disabled_skip_evaluation")
-            # MVP Phase 1: Self-RAG 없이 기본 점수 반환
-            return self._default_quality_score()
+            return QualityEvaluation(EvalStatus.UNAVAILABLE, None)
 
         # 평가 프롬프트 생성
         prompt = self._build_evaluation_prompt(query, answer, context)
 
         # LLM 평가 수행
         try:
-            response = await self.llm.ainvoke(prompt)
+            response = await asyncio.wait_for(self.llm.ainvoke(prompt), self.timeout_seconds)
             # LLM 호출별 토큰/비용을 Langfuse generation으로 기록한다(LangChain은
             # AIMessage.usage_metadata에 input/output/total 토큰을 제공).
             um = getattr(response, "usage_metadata", None)
@@ -227,12 +248,27 @@ class LLMQualityEvaluator:
                 response.content if isinstance(response.content, str) else str(response.content)
             )
             raw_response = self._parse_llm_response(content)
+            if raw_response is None:
+                return QualityEvaluation(EvalStatus.FAILED, None, "Invalid JSON response")
 
             # 점수 추출
-            relevance = raw_response.get("relevance", 0.5)
-            grounding = raw_response.get("grounding", 0.5)
-            completeness = raw_response.get("completeness", 0.5)
-            confidence = raw_response.get("confidence", 0.5)
+            dimensions = ("relevance", "grounding", "completeness", "confidence")
+            if any(
+                key not in raw_response
+                or isinstance(raw_response[key], bool)
+                or not isinstance(raw_response[key], (int, float))
+                or not 0.0 <= raw_response[key] <= 1.0
+                for key in dimensions
+            ):
+                logger.warning(
+                    "evaluation_invalid_dimensions",
+                    raw={key: raw_response.get(key) for key in dimensions},
+                )
+                return QualityEvaluation(EvalStatus.FAILED, None, "Invalid quality dimensions")
+            relevance = float(raw_response["relevance"])
+            grounding = float(raw_response["grounding"])
+            completeness = float(raw_response["completeness"])
+            confidence = float(raw_response["confidence"])
             reasoning = raw_response.get("reasoning", "")
 
             # 종합 점수 계산
@@ -263,12 +299,14 @@ class LLMQualityEvaluator:
                 requires_regeneration=overall < self.quality_threshold,
             )
 
-            return quality_score
+            return QualityEvaluation(EvalStatus.OK, quality_score)
 
+        except TimeoutError:
+            logger.warning("evaluation_timeout", timeout_seconds=self.timeout_seconds)
+            return QualityEvaluation(EvalStatus.TIMEOUT, None, "Evaluation timed out")
         except Exception as e:
             logger.error("evaluation_failed", error=str(e))
-            # 평가 실패 시 중립 점수 반환
-            return self._default_quality_score()
+            return QualityEvaluation(EvalStatus.FAILED, None, str(e))
 
     def requires_regeneration(self, quality: QualityScore) -> bool:
         """재생성 필요 여부 판단"""
@@ -289,7 +327,7 @@ class LLMQualityEvaluator:
             answer=answer,
         )
 
-    def _parse_llm_response(self, content: str) -> dict:
+    def _parse_llm_response(self, content: str) -> dict[str, Any] | None:
         """LLM 응답 파싱"""
         try:
             # JSON 블록 추출 (```json ... ``` 형식 처리)
@@ -302,26 +340,10 @@ class LLMQualityEvaluator:
                 end = content.find("```", start)
                 content = content[start:end].strip()
 
-            result: dict[str, Any] = json.loads(content)
+            result = json.loads(content)
+            if not isinstance(result, dict):
+                return None
             return result
         except Exception as e:
             logger.warning("llm_response_parse_failed", error=str(e), content=content[:200])
-            return {
-                "relevance": 0.5,
-                "grounding": 0.5,
-                "completeness": 0.5,
-                "confidence": 0.5,
-                "reasoning": "평가 파싱 실패",
-            }
-
-    def _default_quality_score(self) -> QualityScore:
-        """기본 품질 점수 (평가 실패 시)"""
-        return QualityScore(
-            relevance=0.5,
-            grounding=0.5,
-            completeness=0.5,
-            confidence=0.5,
-            overall=0.5,
-            reasoning="평가 실패로 인한 기본 점수",
-            raw_response={},
-        )
+            return None

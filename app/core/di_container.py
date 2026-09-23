@@ -2025,6 +2025,8 @@ class AppContainer(containers.DeclarativeContainer):
     answer_evaluator = providers.Singleton(
         LLMQualityEvaluator,
         api_key=providers.Callable(lambda: os.getenv("GOOGLE_API_KEY")),
+        model_name=config.self_rag.evaluation.model,
+        timeout_seconds=config.self_rag.evaluation.timeout,
         quality_threshold=config.self_rag.quality_threshold,
         relevance_weight=0.35,
         grounding_weight=0.30,
@@ -2049,6 +2051,8 @@ class AppContainer(containers.DeclarativeContainer):
         retry_top_k=config.self_rag.retry_top_k,
         max_retries=config.self_rag.max_retries,
         enabled=config.self_rag.enabled,
+        enable_rollback=config.self_rag.enable_rollback,
+        rollback_threshold=config.self_rag.rollback_threshold,
     )
 
     # ----------------------------------------
