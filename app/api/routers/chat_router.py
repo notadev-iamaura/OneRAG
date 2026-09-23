@@ -312,14 +312,19 @@ async def chat(
             processing_time=time.time() - start_time,
         )
         # Self-RAG 메타데이터는 model_info에 포함되어 있음
+        model_info = rag_result.get("model_info") or {}
         self_rag_metadata = None
-        if rag_result.get("model_info", {}).get("self_rag_applied"):
+        if model_info.get("self_rag_applied"):
             self_rag_metadata = {
                 "used_self_rag": True,
-                "complexity_score": rag_result["model_info"].get("complexity_score"),
-                "initial_quality": rag_result["model_info"].get("initial_quality"),
-                "final_quality": rag_result["model_info"].get("final_quality"),
-                "regenerated": rag_result["model_info"].get("self_rag_regenerated", False),
+                "complexity_score": model_info.get("complexity_score"),
+                "initial_quality": model_info.get("initial_quality"),
+                "final_quality": model_info.get("final_quality"),
+                "regenerated": model_info.get("self_rag_regenerated", False),
+                "outcome": model_info.get("self_rag_outcome"),
+                "eval_status": model_info.get("self_rag_eval_status"),
+                "final_eval_status": model_info.get("self_rag_final_eval_status"),
+                "rollback_reason": model_info.get("self_rag_rollback_reason"),
             }
 
         # ⭐ 품질 메타데이터 구성 (Self-RAG Phase 3.1)
@@ -331,10 +336,11 @@ async def chat(
             quality_metadata = {
                 "score": round(quality_score, 2),
                 "confidence": _get_confidence_level(quality_score),
-                "self_rag_applied": rag_result.get("model_info", {}).get(
-                    "self_rag_applied", False
-                ),
+                "self_rag_applied": model_info.get("self_rag_applied", False),
             }
+            outcome = model_info.get("self_rag_outcome")
+            if outcome:
+                quality_metadata["status"] = outcome
 
             # 저품질 거부 사유가 있으면 추가
             refusal_reason = rag_result.get("refusal_reason")
