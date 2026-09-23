@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.api.services.blocked_response import DEFAULT_BLOCKED_ANSWER
 from app.api.services.rag_pipeline import RAGPipeline, RouteDecision
 
 
@@ -58,7 +59,7 @@ class TestChatServiceStreaming:
     async def test_stream_short_circuits_without_search(
         self, guarded_stream_service, route, answer
     ):
-        service, session, retrieval, generation = guarded_stream_service
+        service, _, retrieval, generation = guarded_stream_service
         service.rag_pipeline.route_query = AsyncMock(
             return_value=RouteDecision(
                 should_continue=False,
@@ -84,8 +85,87 @@ class TestChatServiceStreaming:
         )
         retrieval.search.assert_not_awaited()
         generation.stream_answer.assert_not_called()
-        service.add_conversation_to_session.assert_not_awaited()
-        session.add_conversation.assert_not_awaited()
+        service.add_conversation_to_session.assert_awaited_once()
+        session_id, user_message, stored_answer, metadata = (
+            service.add_conversation_to_session.await_args.args
+        )
+        assert (session_id, user_message, stored_answer) == (
+            "test-session", "질문", answer
+        )
+        assert metadata["tokens_used"] == 0
+        assert metadata["sources"] == []
+        assert metadata["route"] == route
+        assert metadata["message_id"] == events[0]["data"]["message_id"]
+        assert metadata["can_evaluate"] is False
+
+    @pytest.mark.asyncio
+    async def test_stream_short_circuit_persist_before_done(self, guarded_stream_service):
+        service, _, _, _ = guarded_stream_service
+        service.rag_pipeline.route_query = AsyncMock(
+            return_value=RouteDecision(
+                should_continue=False,
+                immediate_response={"answer": "차단 답변"},
+                metadata={"route": "blocked"},
+            )
+        )
+        order = []
+
+        async def persist(*args):
+            order.append("persist")
+
+        service.add_conversation_to_session.side_effect = persist
+        stream = service.stream_rag_pipeline("질문", "test-session")
+        assert (await anext(stream))["event"] == "metadata"
+        assert (await anext(stream))["event"] == "chunk"
+        assert service.add_conversation_to_session.await_count == 0
+        assert (await anext(stream))["event"] == "done"
+        order.append("done")
+        assert order == ["persist", "done"]
+        await stream.aclose()
+
+    @pytest.mark.asyncio
+    async def test_stream_short_circuit_persist_failure_still_completes(
+        self, guarded_stream_service
+    ):
+        service, _, retrieval, generation = guarded_stream_service
+        service.rag_pipeline.route_query = AsyncMock(
+            return_value=RouteDecision(
+                should_continue=False,
+                immediate_response={"answer": "차단 답변"},
+                metadata={"route": "blocked"},
+            )
+        )
+        service.add_conversation_to_session.side_effect = RuntimeError("store failed")
+
+        events = [
+            event async for event in service.stream_rag_pipeline("질문", "test-session")
+        ]
+
+        assert [event["event"] for event in events] == ["metadata", "chunk", "done"]
+        retrieval.search.assert_not_awaited()
+        generation.stream_answer.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stream_blocked_empty_answer_uses_default(self, guarded_stream_service):
+        service, _, retrieval, generation = guarded_stream_service
+        service.rag_pipeline.route_query = AsyncMock(
+            return_value=RouteDecision(
+                should_continue=False,
+                immediate_response={"answer": None},
+                metadata={"route": "blocked"},
+            )
+        )
+
+        events = [
+            event async for event in service.stream_rag_pipeline("질문", "test-session")
+        ]
+
+        assert [event["event"] for event in events] == ["metadata", "chunk", "done"]
+        assert events[1]["data"] == DEFAULT_BLOCKED_ANSWER
+        assert events[2]["data"]["total_chunks"] == 1
+        assert service.add_conversation_to_session.await_args.args[2] == DEFAULT_BLOCKED_ANSWER
+        retrieval.search.assert_not_awaited()
+        generation.stream_answer.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_stream_route_query_called_before_search(self, guarded_stream_service):
