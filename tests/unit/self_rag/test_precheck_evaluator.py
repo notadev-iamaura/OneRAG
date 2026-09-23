@@ -2,7 +2,7 @@
 
 import asyncio
 from dataclasses import dataclass, replace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -53,6 +53,17 @@ def test_off_identity_and_no_provider_creation(monkeypatch, config):
     base = _RecordingEvaluator()
     assert build_self_rag_evaluator(base, config) is base
     factory.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_aclose_delegates_and_off_has_no_close() -> None:
+    provider = MockDecisionProvider()
+    provider.aclose = AsyncMock()
+    base = _RecordingEvaluator()
+    evaluator = PrecheckQualityEvaluator(base, provider, PrecheckSettings(mode="shadow"))
+    await evaluator.aclose()
+    provider.aclose.assert_awaited_once()
+    assert not hasattr(build_self_rag_evaluator(base, {"mode": "off"}), "aclose")
 
 
 def test_provider_initialization_error_returns_base(monkeypatch):

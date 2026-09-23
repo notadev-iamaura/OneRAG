@@ -99,6 +99,10 @@ class PrecheckQualityEvaluator:
     def requires_regeneration(self, quality: QualityScore) -> bool:
         return self.base_evaluator.requires_regeneration(quality)
 
+    async def aclose(self) -> None:
+        """공유 provider의 HTTP 클라이언트를 정리한다."""
+        await self.provider.aclose()
+
     def __getattr__(self, name: str) -> Any:
         if name == "base_evaluator":
             raise AttributeError(name)

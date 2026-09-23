@@ -3,6 +3,7 @@
 import asyncio
 import time
 from copy import deepcopy
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -102,6 +103,38 @@ async def test_shadow_background_returns_before_judgment() -> None:
 
 
 @pytest.mark.asyncio
+async def test_close_is_idempotent_and_drains_bounded() -> None:
+    class WaitingClient:
+        def __init__(self) -> None:
+            self.aclose = AsyncMock()
+
+        async def ask(self, state: dict, questions: dict) -> dict[str, JevAnswer]:
+            await asyncio.sleep(10)
+            return {"relevant": JevAnswer(0.8)}
+
+    injected = WaitingClient()
+    reranker = JevDecisionReranker(
+        "key", client=injected, deadline_seconds=0.05
+    )
+    await reranker.rerank("q", results(1))
+    await asyncio.sleep(0)
+    started = time.monotonic()
+    await reranker.close()
+    assert time.monotonic() - started < 0.5
+    assert not reranker._pending or all(task.cancelled() for task in reranker._pending)
+    await reranker.close()
+    injected.aclose.assert_not_awaited()
+
+    owned = JevDecisionReranker("key", deadline_seconds=0.05)
+    assert owned._client is not None
+    client = owned._client
+    client.aclose = AsyncMock(wraps=client.aclose)
+    await owned.close()
+    await owned.close()
+    client.aclose.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_enforce_filters_and_copies_without_score_change() -> None:
     incoming = results(3)
     original = deepcopy(incoming)
@@ -132,7 +165,7 @@ async def test_enforce_preserves_score_when_metadata_has_score() -> None:
         assert copied.score == original.score == 0.95
         assert copied.metadata["score"] == original.metadata["score"] == 0.1
         assert copied.metadata["jev"]["keep"] is True
-        assert getattr(copied, "jev") is copied.metadata["jev"]
+        assert copied.__dict__["jev"] is copied.metadata["jev"]
         assert "jev" not in original.metadata
 
 
@@ -147,7 +180,7 @@ async def test_backfilled_result_preserves_score_when_metadata_has_score() -> No
     assert output[0].score == incoming[0].score == 0.95
     assert output[0].metadata["score"] == 0.1
     assert output[0].metadata["jev"]["keep"] is False
-    assert getattr(output[0], "jev") is output[0].metadata["jev"]
+    assert output[0].__dict__["jev"] is output[0].metadata["jev"]
     assert all("jev" not in item.metadata and item.score == 0.95 for item in incoming)
 
 

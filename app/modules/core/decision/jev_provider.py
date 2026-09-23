@@ -93,5 +93,6 @@ class JevDecisionProvider:
 
     async def aclose(self) -> None:
         """생성된 HTTP 클라이언트를 정리한다."""
-        if self._client is not None:
+        if self._client is not None and not self._client.is_closed:
             await self._client.aclose()
+        self._client = None

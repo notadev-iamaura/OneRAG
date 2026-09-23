@@ -115,6 +115,7 @@ class JevDecisionReranker:
         self._sem = asyncio.Semaphore(concurrency)
         self._max_pending = concurrency * 4
         self._pending: set[asyncio.Task[None]] = set()
+        self._closed = False
         self._recent: deque[JevDecisionBatch] = deque(maxlen=recent_maxlen)
         self._decision_sink = decision_sink
         self._circuit_failure_threshold = circuit_failure_threshold
@@ -313,14 +314,23 @@ class JevDecisionReranker:
     async def initialize(self) -> None:
         """No initialization is needed for the HTTP client."""
 
-    async def drain(self) -> None:
-        if self._pending:
-            await asyncio.gather(*tuple(self._pending), return_exceptions=True)
+    async def drain(self, timeout: float | None = None) -> None:
+        pending = set(self._pending)
+        if pending:
+            _, stragglers = await asyncio.wait(pending, timeout=timeout)
+            for task in stragglers:
+                task.cancel()
+            await asyncio.gather(*stragglers, return_exceptions=True)
+            self._pending.difference_update(pending)
 
     async def close(self) -> None:
-        await self.drain()
+        if self._closed:
+            return
+        await self.drain(timeout=self.deadline_seconds)
         if self._client is not None and self._owns_client:
             await self._client.aclose()
+            self._client = None
+        self._closed = True
 
     def get_stats(self) -> dict[str, Any]:
         return {**self.stats, "disabled_reason": self._disabled_reason}

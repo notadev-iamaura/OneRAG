@@ -2436,9 +2436,10 @@ async def cleanup_resources(container: AppContainer) -> None:
     3. Document Processor - 문서 처리 리소스 정리
     4. Graph Store (Neo4j) - 그래프 DB 연결 종료
     5. Retrieval Orchestrator - 캐시 및 검색 리소스 정리
-    6. Vector Store (Weaviate) - 벡터 DB 연결 종료
-    7. Metadata Store (PostgreSQL) - 메타데이터 DB 연결 종료
-    8. 싱글톤 클라이언트 (Weaviate, MongoDB) - main.py에서 별도 처리
+    6. Self-RAG precheck provider - HTTP 클라이언트 정리
+    7. Vector Store (Weaviate) - 벡터 DB 연결 종료
+    8. Metadata Store (PostgreSQL) - 메타데이터 DB 연결 종료
+    9. 싱글톤 클라이언트 (Weaviate, MongoDB) - main.py에서 별도 처리
     """
     logger.info("애플리케이션 리소스 정리 시작")
     cleanup_errors: list[str] = []
@@ -2499,6 +2500,25 @@ async def cleanup_resources(container: AppContainer) -> None:
         cleanup_errors.append(f"Retrieval Orchestrator: {e}")
         logger.error(
             "Retrieval Orchestrator 종료 실패",
+            extra={"error": str(e)},
+            exc_info=True
+        )
+
+    # 4a. Self-RAG precheck provider (off일 때 싱글톤 체인을 만들지 않음)
+    try:
+        mode = container.config.self_rag.precheck.mode()
+        if isinstance(mode, dict):
+            mode = mode.get("mode")
+        if mode and mode != "off":
+            evaluator = container.self_rag_evaluator()
+            if hasattr(evaluator, "aclose"):
+                logger.info("Self-RAG precheck provider 종료 중")
+                await evaluator.aclose()
+                logger.info("Self-RAG precheck provider 종료 완료")
+    except Exception as e:
+        cleanup_errors.append(f"Self-RAG precheck provider: {e}")
+        logger.error(
+            "Self-RAG precheck provider 종료 실패",
             extra={"error": str(e)},
             exc_info=True
         )
