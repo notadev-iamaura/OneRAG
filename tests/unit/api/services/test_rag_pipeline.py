@@ -801,6 +801,55 @@ class TestRouteQuery:
         assert decision.metadata.get("llm_route") == "blocked"
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("answer", "should_continue"),
+        [("안녕하세요!", False), ("", True)],
+        ids=["answer-skips-rag", "empty-answer-fails-open"],
+    )
+    async def test_route_llm_direct_answer(
+        self, pipeline: RAGPipeline, answer: str, should_continue: bool
+    ) -> None:
+        from app.modules.core.routing.llm_query_router import (
+            QueryComplexity,
+            QueryProfile,
+            RoutingDecision,
+            SearchIntent,
+        )
+
+        profile = QueryProfile(
+            original_query="안녕",
+            intent=SearchIntent.CHITCHAT,
+            domain="chitchat",
+            complexity=QueryComplexity.SIMPLE,
+        )
+        routing = RoutingDecision(
+            primary_route="direct_answer",
+            confidence=0.95,
+            should_call_rag=False,
+            should_block=False,
+            direct_answer=answer,
+        )
+        pipeline.rule_based_router = MagicMock()
+        pipeline.rule_based_router.check_rules = AsyncMock(return_value=None)
+        pipeline.query_router.enabled = True
+        pipeline.query_router.analyze_and_route = AsyncMock(
+            return_value=(profile, routing)
+        )
+
+        decision = await pipeline.route_query("안녕", "test", time.time())
+
+        pipeline.query_router.analyze_and_route.assert_awaited_once()
+        assert decision.should_continue is should_continue
+        assert decision.metadata["llm_route"] == "direct_answer"
+        if should_continue:
+            assert decision.immediate_response is None
+        else:
+            assert decision.immediate_response is not None
+            assert decision.immediate_response["answer"] == answer
+            assert decision.immediate_response["search_count"] == 0
+            assert decision.immediate_response["model_info"]["provider"] == "query_router"
+
+    @pytest.mark.asyncio
     async def test_route_lazy_creates_router_via_shared_helper(
         self, mock_config, mock_modules
     ) -> None:
