@@ -25,6 +25,7 @@ import pytest
 
 import app.lib.llm_client as llm_client_mod
 from app.lib.llm_client import AnthropicLLMClient, BaseLLMClient, OllamaLLMClient
+from app.lib.request_cost import bind_request_cost_ledger, get_current_ledger
 
 
 class _SpyContext:
@@ -62,6 +63,18 @@ class TestUsageExtractors:
 
 class TestEmitGeneration:
     """_emit_generation 공통 헬퍼."""
+
+    def test_records_usage_in_bound_ledger(self) -> None:
+        client = OllamaLLMClient(config={})
+        client._emit_generation(model="m1", total_tokens=3)
+        assert get_current_ledger() is None
+
+        with bind_request_cost_ledger() as ledger:
+            client._emit_generation(
+                model="m1", prompt_tokens=10, completion_tokens=20, total_tokens=30
+            )
+            assert ledger.total_tokens == 30
+            assert ledger.call_count == 1
 
     def test_records_usage_and_params(self, monkeypatch: pytest.MonkeyPatch) -> None:
         spy = _SpyContext()

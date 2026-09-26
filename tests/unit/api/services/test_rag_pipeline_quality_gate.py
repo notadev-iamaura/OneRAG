@@ -485,6 +485,28 @@ def _generation(answer: str = "original") -> GenerationResult:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+@pytest.mark.parametrize("final_score,rejected", [(0.9, False), (0.5, True)])
+async def test_regeneration_adds_tokens_to_initial_generation(
+    final_score: float, rejected: bool
+) -> None:
+    result = SelfRAGResult(
+        "retry", True, MagicMock(score=0.8), _quality(0.7),
+        _quality(final_score), True, 1.0,
+        tokens_used=50,
+        outcome=SelfRAGOutcome.REGENERATED,
+    )
+    generation = GenerationResult("original", "original", 100, "test-model", "test", 1.0)
+
+    verified = await _quality_pipeline(result).self_rag_verify(
+        "question", "session", generation, [], {}
+    )
+
+    assert verified.tokens_used == 150
+    assert (verified.refusal_reason == "quality_too_low") is rejected
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status,outcome", [
     (EvalStatus.FAILED, SelfRAGOutcome.EVAL_FAILED),
     (EvalStatus.TIMEOUT, SelfRAGOutcome.EVAL_TIMEOUT),

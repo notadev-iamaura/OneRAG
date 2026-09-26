@@ -16,6 +16,7 @@ from openai import OpenAI
 
 from .langfuse_client import langfuse_context, observe
 from .logger import get_logger
+from .request_cost import get_current_ledger
 
 logger = get_logger(__name__)
 
@@ -66,6 +67,17 @@ class BaseLLMClient(ABC):
         LANGFUSE 비활성(ENVIRONMENT=test 등) 시 langfuse_context는 더미 no-op이며,
         기록 실패가 LLM 호출을 깨뜨리지 않도록 예외를 흡수한다(graceful degradation).
         """
+        ledger = get_current_ledger()
+        if ledger is not None:
+            try:
+                ledger.add(
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                )
+            except Exception as e:  # noqa: BLE001 - 계측 실패는 비치명적
+                logger.debug(f"Cost ledger 기록 건너뜀: {e}")
+
         try:
             usage: dict[str, Any] | None = None
             if total_tokens or prompt_tokens or completion_tokens:
