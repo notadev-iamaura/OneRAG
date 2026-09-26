@@ -3322,6 +3322,30 @@ class RAGPipeline:
                     message, start_time, routing_metadata,
                     getattr(routing, "direct_answer", None), "query_router",
                 )
+            if routing.primary_route == "direct_answer" and getattr(
+                routing, "direct_answer", ""
+            ):
+                processing_time = time.time() - start_time
+                immediate_response = {
+                    "answer": routing.direct_answer,
+                    "sources": [],
+                    "tokens_used": 0,
+                    "topic": self.extract_topic_func(message),
+                    "processing_time": processing_time,
+                    "search_count": 0,
+                    "ranked_count": 0,
+                    "model_info": {"provider": "query_router", "model": "N/A"},
+                    "routing_metadata": routing_metadata,
+                }
+                logger.info(
+                    "[즉시 응답] LLM 라우터 direct_answer 반환",
+                    extra={"processing_time": processing_time},
+                )
+                return RouteDecision(
+                    should_continue=False,
+                    immediate_response=cast(RAGResultDict, immediate_response),
+                    metadata=routing_metadata,
+                )
         except Exception as llm_error:
             logger.warning(
                 "[LLM 라우터] 오류",
