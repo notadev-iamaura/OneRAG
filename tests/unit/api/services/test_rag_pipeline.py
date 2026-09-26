@@ -30,6 +30,7 @@ from app.api.services.rag_pipeline import (
     RetrievalResults,
     RouteDecision,
 )
+from app.lib.request_cost import get_current_ledger
 from app.lib.types import RAGResultDict
 from app.modules.core.generation.generator import GenerationResult
 from app.modules.core.retrieval.interfaces import SearchResult
@@ -2316,6 +2317,33 @@ class TestBuildResult:
 
 class TestExecuteAgentMode:
     """_execute_agent_mode 메서드 테스트"""
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_mode_reports_real_tokens(
+        self, mock_config, mock_modules
+    ) -> None:
+        mock_agent_result = MagicMock(
+            success=True,
+            answer="Agent answer",
+            sources=[],
+            steps_taken=1,
+            tools_used=[],
+            total_time=0.1,
+        )
+
+        async def run_agent(**_kwargs: Any) -> MagicMock:
+            ledger = get_current_ledger()
+            assert ledger is not None
+            ledger.add(total_tokens=42)
+            return mock_agent_result
+
+        mock_modules["agent_orchestrator"] = MagicMock(run=AsyncMock(side_effect=run_agent))
+        pipeline = RAGPipeline(config=mock_config, **mock_modules)
+
+        result = await pipeline._execute_agent_mode("question", "session", time.time())
+
+        assert result["tokens_used"] == 42
+        assert get_current_ledger() is None
 
     @pytest.mark.asyncio
     async def test_execute_agent_mode_success(
