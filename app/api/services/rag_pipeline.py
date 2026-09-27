@@ -34,6 +34,7 @@ from ...lib.langfuse_client import langfuse_context, observe  # Langfuse 트레�
 from ...lib.logger import get_logger
 from ...lib.metrics import CostTracker, PerformanceMetrics
 from ...lib.prompt_sanitizer import contains_output_leakage, validate_document
+from ...lib.request_cost import bind_request_cost_ledger
 from ...lib.score_normalizer import RRFScoreNormalizer  # RRF 점수 정규화
 from ...lib.types import RAGResultDict
 from ...modules.core.retrieval.interfaces import IMultiQueryRetriever, SearchResult
@@ -4235,7 +4236,7 @@ class RAGPipeline:
                     return GenerationResult(
                         answer=self.self_rag_low_quality_reject_message,
                         text=self.self_rag_low_quality_reject_text,
-                        tokens_used=generation_result.tokens_used,
+                        tokens_used=generation_result.tokens_used + self_rag_result.tokens_used,
                         model_used=generation_result.model_used,
                         provider=generation_result.provider,
                         generation_time=generation_result.generation_time,
@@ -4324,11 +4325,7 @@ class RAGPipeline:
                 return GenerationResult(
                     answer=answer,
                     text=answer,
-                    tokens_used=(
-                        self_rag_result.tokens_used
-                        if self_rag_result.regenerated
-                        else generation_result.tokens_used
-                    ),
+                    tokens_used=generation_result.tokens_used + self_rag_result.tokens_used,
                     model_used=generation_result.model_used,
                     provider=generation_result.provider,
                     generation_time=generation_result.generation_time,
@@ -4839,10 +4836,11 @@ class RAGPipeline:
 
         try:
             # AgentOrchestrator 실행
-            agent_result = await self.agent_orchestrator.run(
-                query=message,
-                session_context=session_context,
-            )
+            with bind_request_cost_ledger() as request_ledger:
+                agent_result = await self.agent_orchestrator.run(
+                    query=message,
+                    session_context=session_context,
+                )
 
             # Agent 결과를 RAGResultDict 형식으로 변환
             processing_time = time.time() - start_time
@@ -4873,7 +4871,7 @@ class RAGPipeline:
                 {
                     "answer": agent_result.answer,
                     "sources": formatted_sources,
-                    "tokens_used": 0,  # Agent 모드에서는 개별 추적 어려움
+                    "tokens_used": request_ledger.total_tokens,
                     "topic": self.extract_topic_func(message),
                     "processing_time": processing_time,
                     "search_results": len(agent_result.sources or []),
