@@ -1,3 +1,4 @@
+import hashlib
 from unittest.mock import AsyncMock
 
 import pytest
@@ -209,3 +210,100 @@ def test_procedural_keywords_empty_falls_back_to_default() -> None:
     assert (
         router_bad.procedural_intent_keywords == _DEFAULT_PROCEDURAL_INTENT_KEYWORDS
     )
+
+
+def _make_cache_router(cache_ttl: int | None = None) -> LLMQueryRouter:
+    llm_factory = type("Factory", (), {"_clients": {"openrouter": object()}})()
+    routing_config = {
+        "llm_router": {"enabled": True, "provider": "openrouter"},
+    }
+    if cache_ttl is not None:
+        routing_config["cache_ttl"] = cache_ttl
+
+    router = LLMQueryRouter(
+        config={"query_routing": routing_config},
+        llm_factory=llm_factory,
+    )
+    router._call_llm_router = AsyncMock(
+        return_value={
+            "is_greeting": False,
+            "is_harmful": False,
+            "is_attack": False,
+            "is_out_of_scope": False,
+            "needs_rag": True,
+            "reasoning": "test",
+        }
+    )
+    return router
+
+
+@pytest.mark.parametrize("cache_ttl, expected", [(None, 3600), (123, 123)])
+def test_router_cache_ttl_uses_config_or_default(cache_ttl, expected) -> None:
+    router = _make_cache_router(cache_ttl)
+
+    assert router.routing_cache.ttl == expected
+    assert router.routing_cache.maxsize == 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "first_context, second_context",
+    [
+        ("User: 안녕\nAssistant: 안녕하세요", "User: 안녕\nAssistant: 반갑습니다"),
+        ("ctx A", "ctx B"),
+    ],
+)
+async def test_different_session_contexts_miss_separate_cache_entries(
+    first_context: str, second_context: str
+) -> None:
+    router = _make_cache_router()
+
+    await router.analyze_and_route("환불 절차", session_context=first_context)
+    await router.analyze_and_route("환불 절차", session_context=second_context)
+
+    assert router._call_llm_router.call_count == 2
+    assert router.stats["cache_misses"] == 2
+    assert len(router.routing_cache) == 2
+    assert set(router.routing_cache) == {
+        f"환불 절차::ctx:{hashlib.sha256(context.encode('utf-8')).hexdigest()[:16]}"
+        for context in (first_context, second_context)
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "session_context",
+    [None, "", "   ", "User: 이전 질문\nAssistant: 이전 답변"],
+)
+async def test_same_session_context_hits_cache(session_context: str | None) -> None:
+    router = _make_cache_router()
+
+    first = await router.analyze_and_route("안녕하세요", session_context=session_context)
+    second = await router.analyze_and_route("안녕하세요", session_context=session_context)
+
+    assert router._call_llm_router.call_count == 1
+    assert router.stats["cache_hits"] == 1
+    assert first == second
+
+
+@pytest.mark.asyncio
+async def test_empty_none_and_whitespace_contexts_share_query_only_key() -> None:
+    router = _make_cache_router()
+
+    for session_context in (None, "", "\n\t "):
+        await router.analyze_and_route(" 배송 문의 ", session_context=session_context)
+
+    assert router._call_llm_router.call_count == 1
+    assert list(router.routing_cache) == ["배송 문의"]
+
+
+@pytest.mark.asyncio
+async def test_session_context_hash_uses_stripped_text() -> None:
+    router = _make_cache_router()
+
+    await router.analyze_and_route("배송 문의", session_context="  이전 대화  ")
+    await router.analyze_and_route("배송 문의", session_context="이전 대화")
+
+    expected_hash = hashlib.sha256("이전 대화".encode()).hexdigest()[:16]
+    assert router._call_llm_router.call_count == 1
+    assert list(router.routing_cache) == [f"배송 문의::ctx:{expected_hash}"]

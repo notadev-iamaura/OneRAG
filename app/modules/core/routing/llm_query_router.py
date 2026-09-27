@@ -7,6 +7,7 @@ LLM Query Router Module
 """
 
 import asyncio
+import hashlib
 import json
 import os
 from dataclasses import dataclass, field
@@ -181,9 +182,11 @@ class LLMQueryRouter:
             else _DEFAULT_PROCEDURAL_INTENT_KEYWORDS
         )
 
-        # 캐싱 설정 (TTL 1시간, 최대 500개)
-        self.routing_cache: TTLCache = TTLCache(maxsize=500, ttl=3600)  # 1시간
-        logger.info("라우팅 캐시 초기화: maxsize=500, ttl=3600초 (1시간)")
+        # TTLCache는 삽입 시각 기준으로 만료된다 (expire-after-write).
+        # 캐시 히트는 만료 시각을 갱신하지 않는다.
+        cache_ttl = router_config.get("cache_ttl", 3600)
+        self.routing_cache: TTLCache = TTLCache(maxsize=500, ttl=cache_ttl)
+        logger.info(f"라우팅 캐시 초기화: maxsize=500, ttl={cache_ttl}초")
 
         # 통계
         self.stats = {
@@ -512,8 +515,14 @@ Return response in JSON format.
             logger.debug("LLM Router disabled, using legacy routing")
             return await self._create_legacy_route(query)
 
-        # 캐시 키 생성 (쿼리 정규화)
-        cache_key = query.strip().lower()
+        # 빈 컨텍스트는 기존 쿼리 전용 키를 유지한다.
+        normalized_query = query.strip().lower()
+        normalized_context = (session_context or "").strip()
+        if normalized_context:
+            context_hash = hashlib.sha256(normalized_context.encode("utf-8")).hexdigest()[:16]
+            cache_key = f"{normalized_query}::ctx:{context_hash}"
+        else:
+            cache_key = normalized_query
 
         # 캐시 확인
         if cache_key in self.routing_cache:
