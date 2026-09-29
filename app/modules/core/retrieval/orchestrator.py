@@ -207,6 +207,11 @@ class RetrievalOrchestrator:
         """
         self.retriever = retriever
         self.reranker = reranker
+        self._rerank_mode = (
+            "disabled" if reranker is None else
+            f"jev:{reranker.model}" if getattr(reranker, "name", None) == "jev-decision" else
+            f"legacy:{type(reranker).__name__}"
+        )
         self.cache = cache
         self.query_expansion = query_expansion
         self.graph_store = graph_store
@@ -371,24 +376,21 @@ class RetrievalOrchestrator:
 
     async def close(self) -> None:
         """모든 구성요소 리소스 정리"""
-        try:
-            if hasattr(self.retriever, "close"):
-                await self.retriever.close()
+        for component in (self.retriever, self.reranker, self.cache):
+            try:
+                if component is not None and hasattr(component, "close"):
+                    await component.close()
+            except Exception:
+                logger.error("RetrievalOrchestrator 구성요소 종료 실패", exc_info=True)
+        logger.info("RetrievalOrchestrator 종료 완료")
 
-            if self.reranker and hasattr(self.reranker, "close"):
-                await self.reranker.close()
-
-            if self.cache and hasattr(self.cache, "close"):
-                await self.cache.close()
-
-            logger.info("RetrievalOrchestrator 종료 완료")
-
-        except Exception as e:
-            logger.error(
-                "RetrievalOrchestrator 종료 실패",
-                extra={"error": str(e)},
-                exc_info=True
-            )
+    @staticmethod
+    def _bounded_fallback(
+        results: list[SearchResult], top_k: int | None
+    ) -> list[SearchResult]:
+        if top_k is not None and top_k < 0:
+            raise ValueError("top_k must be non-negative")
+        return results if top_k is None else results[:top_k]
 
     async def search_and_rerank(
         self,
@@ -436,6 +438,10 @@ class RetrievalOrchestrator:
                 부분 실패는 degradation(가능한 결과/빈 결과 반환)으로 처리되지만,
                 전면 장애는 상위 CircuitBreaker가 감지할 수 있도록 전파된다.
         """
+        if top_k < 0:
+            raise ValueError("top_k must be non-negative")
+        if top_k == 0:
+            return []
         self.stats["total_requests"] += 1
 
         # 🆕 use_graph 자동 결정
@@ -453,6 +459,7 @@ class RetrievalOrchestrator:
                     #  리랭킹 안 된 결과나 벡터 전용 결과가 잘못 반환될 수 있음)
                     cache_filters = dict(filters or {})
                     cache_filters["_rerank_enabled"] = rerank_enabled
+                    cache_filters["_rerank_mode"] = self._rerank_mode
                     cache_filters["_use_graph"] = effective_use_graph
                     cache_key = self.cache.generate_cache_key(query, top_k, cache_filters)  # type: ignore[attr-defined]
                     cached_results = await self.cache.get(cache_key)
@@ -640,6 +647,7 @@ class RetrievalOrchestrator:
                         )
                     else:
                         logger.warning("리랭킹 결과 없음, 원본 검색 결과 사용")
+                        final_results = self._bounded_fallback(search_results, top_k)
                 except Exception as e:
                     logger.error(
                         f"리랭킹 실패: {e}, 원본 검색 결과 사용",
@@ -647,6 +655,7 @@ class RetrievalOrchestrator:
                         extra={"query": query[:100]}
                     )
                     # 리랭킹 실패 시 원본 결과로 fallback
+                    final_results = self._bounded_fallback(search_results, top_k)
 
             # Step 4: 캐시 저장 (선택적)
             if self.cache and cache_key:
@@ -693,7 +702,7 @@ class RetrievalOrchestrator:
         self,
         query: str,
         results: list[SearchResult],
-        top_k: int = 15,
+        top_k: int | None = 15,
     ) -> list[SearchResult]:
         """
         리랭킹만 수행하는 내부 메서드 (검색 없음)
@@ -706,9 +715,12 @@ class RetrievalOrchestrator:
         Returns:
             리랭킹된 결과 리스트
         """
+        fallback = self._bounded_fallback(results, top_k)
+        if top_k == 0:
+            return []
         if not self.reranker:
             logger.warning("Reranker가 설정되지 않았습니다. 원본 결과 반환")
-            return results
+            return fallback
 
         try:
             reranked = await self.reranker.rerank(query, results, top_k)
@@ -721,7 +733,7 @@ class RetrievalOrchestrator:
                 exc_info=True,
                 extra={"query": query[:100]}
             )
-            return results
+            return fallback
 
     async def health_check(self) -> HealthCheckDict:
         """
@@ -883,6 +895,8 @@ class RetrievalOrchestrator:
         Note:
             _rerank_results() 내부 메서드로 위임
         """
+        if top_n is not None and top_n < 0:
+            raise ValueError("top_n must be non-negative")
         if not results:
             logger.debug("[Adapter] rerank() 호출: 결과 없음")
             return []
@@ -898,7 +912,7 @@ class RetrievalOrchestrator:
 
         # 내부 리랭킹 메서드 호출
         reranked = await self._rerank_only(
-            query=query, results=results, top_k=top_n if top_n else 15
+            query=query, results=results, top_k=top_n
         )
 
         logger.debug(

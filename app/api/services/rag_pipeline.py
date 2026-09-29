@@ -3836,6 +3836,11 @@ class RAGPipeline:
             RerankResults: 리랭킹된 문서 리스트 (reranked=True/False)
         """
         logger.debug("[5단계] 리랭킹 시작")
+        top_n = options.get("top_n", self.rerank_top_n)
+        if top_n is not None and top_n < 0:
+            raise ValueError("top_n must be non-negative")
+        if top_n == 0:
+            return RerankResults(documents=[], count=0, reranked=False)
         if not search_results:
             logger.debug("검색 결과 없음, 리랭킹 스킵")
             return RerankResults(documents=[], count=0, reranked=False)
@@ -3868,7 +3873,7 @@ class RAGPipeline:
             ranked_results = await retrieval_module.rerank(
                 query=search_query,
                 results=search_results,
-                top_n=options.get("top_n", self.rerank_top_n),
+                top_n=top_n,
             )
             if _is_noop_rerank(original_snapshot, ranked_results):
                 _annotate_rerank_scores(original_snapshot, ranked_results, reranked=False)
@@ -3914,9 +3919,8 @@ class RAGPipeline:
                 extra={"error": str(e)},
                 exc_info=True
             )
-            return RerankResults(
-                documents=search_results, count=len(search_results), reranked=False
-            )
+            fallback = search_results if top_n is None else search_results[:top_n]
+            return RerankResults(documents=fallback, count=len(fallback), reranked=False)
 
     @observe(name="Answer Generation (LLM)", capture_input=False, capture_output=False)
     async def generate_answer(
