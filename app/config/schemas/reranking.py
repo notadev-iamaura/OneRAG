@@ -13,9 +13,14 @@ approach-provider 유효 조합:
 - local: sentence-transformers, bge (로컬 모델, API 키 불필요)
 """
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
+
+from app.modules.core.retrieval.rerankers.mode import (
+    RerankerModeConfigError,
+    normalize_mode_value,
+)
 
 from .base import BaseConfig
 
@@ -277,7 +282,9 @@ class TypeSafeProviderConfig(BaseConfig):
 
     model: str = "jev-1.13.0"
     endpoint: str = "https://api.typesafe.ai/v1/systemone"
-    mode: Literal["off", "shadow", "enforce"] = "shadow"
+    mode: Literal["off", "shadow", "enforce"] | None = Field(
+        default=None, deprecated=True, description="Deprecated: use RERANK_MODE=legacy|jev",
+    )
     question_type: Literal["noul", "score"] = "noul"
     instructions: str | None = None
     min_relevance: float = Field(default=0.5, ge=0, le=1)
@@ -288,7 +295,9 @@ class TypeSafeProviderConfig(BaseConfig):
     timeout: float = Field(default=3.0, gt=0, le=30)
     deadline_seconds: float = Field(default=5.0, gt=0, le=30)
     concurrency: int = Field(default=4, ge=1, le=32)
-    shadow_background: bool = True
+    shadow_background: bool | None = Field(
+        default=None, deprecated=True, description="Deprecated: ignored by the reranker factory",
+    )
     circuit_failure_threshold: int = Field(default=5, ge=1)
     circuit_cooldown_seconds: float = Field(default=30.0, ge=0)
 
@@ -321,22 +330,25 @@ class RerankingConfigV2(BaseConfig):
         description="리랭킹 활성화 여부",
     )
 
-    approach: Literal["llm", "cross-encoder", "late-interaction", "local", "decision"] = Field(
+    mode: str | None = Field(
+        default=None, description="리랭킹 단계만 제어: legacy | jev (미지정 시 legacy)",
+    )
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def normalize_mode(cls, value: Any) -> str | None:
+        try:
+            return normalize_mode_value(value)
+        except RerankerModeConfigError as exc:
+            raise ValueError(str(exc)) from exc
+
+    # Validate the legacy selection together, after mode normalization. Jev ignores it.
+    approach: str = Field(
         default="cross-encoder",
         description="리랭킹 기술 방식",
     )
 
-    provider: Literal[
-        "google",
-        "openai",
-        "jina",
-        "cohere",
-        "vertex",
-        "openrouter",
-        "sentence-transformers",
-        "bge",
-        "typesafe",
-    ] = Field(
+    provider: str = Field(
         default="jina",
         description="서비스 제공자",
     )
@@ -380,6 +392,11 @@ class RerankingConfigV2(BaseConfig):
     @model_validator(mode="after")
     def validate_approach_provider_combination(self) -> "RerankingConfigV2":
         """approach-provider 조합 유효성 검증"""
+        if self.mode == "jev" or self.approach == "decision":
+            # Only the resolver decides compatibility/migration and decision → llm/google.
+            return self
+        if self.approach not in VALID_APPROACH_PROVIDERS:
+            raise ValueError("지원하지 않는 reranking approach 입니다")
         valid_providers = VALID_APPROACH_PROVIDERS.get(self.approach, [])
         if self.provider not in valid_providers:
             raise ValueError(

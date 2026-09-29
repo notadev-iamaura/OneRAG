@@ -46,6 +46,8 @@ class JevDecisionBatch:
     latency_ms: float
     applied: bool
     error: str | None
+    outcome: Literal["judged", "fallback"] = "judged"
+    fallback_reason: str | None = None
 
 
 DecisionSink = Callable[[JevDecisionBatch], Awaitable[None] | None]
@@ -122,6 +124,8 @@ class JevDecisionReranker:
         self._circuit_cooldown_seconds = circuit_cooldown_seconds
         self._consecutive_failures = 0
         self._circuit_open_until = 0.0
+        self._circuit_generation = 0
+        self._probe_in_flight = False
         self.stats: dict[str, int] = {
             "total_calls": 0,
             "jev_requests": 0,
@@ -131,6 +135,7 @@ class JevDecisionReranker:
             "fail_open_count": 0,
             "batch_timeouts": 0,
             "timeout_batches": 0,
+            "partial_error_batches": 0,
             "circuit_open_skips": 0,
             "shadow_tasks_dropped": 0,
         }
@@ -138,16 +143,14 @@ class JevDecisionReranker:
     async def rerank(
         self, query: str, results: list[SearchResult], top_n: int | None = None
     ) -> list[SearchResult]:
-        if not results:
+        if top_n is not None and top_n < 0:
+            raise ValueError("top_n must be non-negative")
+        if not results or top_n == 0:
             return self._passthrough(results, top_n)
         self.stats["total_calls"] += 1
         base = results
         if self.mode == "off" or self._client is None:
             return self._passthrough(base, top_n)
-        if time.monotonic() < self._circuit_open_until:
-            self.stats["circuit_open_skips"] += 1
-            return self._passthrough(base, top_n)
-
         if self.mode == "shadow":
             base = self._passthrough(base, top_n)
 
@@ -168,20 +171,10 @@ class JevDecisionReranker:
                 await self._judge_and_record(query, snapshot, doc_ids)
             return self._passthrough(base, top_n)
 
-        try:
-            batch = await asyncio.wait_for(
-                self._judge(query, snapshot, doc_ids), timeout=self.deadline_seconds
-            )
-        except TimeoutError:
-            # Cancellation skips _judge's circuit accounting.
-            self.stats["batch_timeouts"] += 1
-            self.stats["fail_open_count"] += 1
-            return self._passthrough(base, top_n)
-        judged = [d for d in batch.decisions if d.status != "skipped_cap"]
-        if judged and all(d.status == "error" for d in judged):
-            self.stats["fail_open_count"] += 1
+        batch = await self._run_batch(query, snapshot, doc_ids)
+        if batch.fallback_reason is not None:
             await self._record(batch)
-            return self._passthrough(base, top_n)
+            return self._fallback(base, top_n, batch.fallback_reason)
         limit = len(base) if top_n is None else min(top_n, len(base))
         keep_floor = min(self.min_keep, limit)
         keep_positions = {d.position for d in batch.decisions if d.keep}
@@ -203,19 +196,120 @@ class JevDecisionReranker:
             return results
         return results[:top_n]
 
+    def _fallback(
+        self, results: list[SearchResult], top_n: int | None, reason: str
+    ) -> list[SearchResult]:
+        if self.mode != "enforce":
+            return self._passthrough(results, top_n)
+        output = []
+        for result in self._passthrough(results, top_n):
+            copied = copy.copy(result)
+            copied.metadata = dict(result.metadata)
+            copied.metadata.pop("rerank_method", None)
+            copied.metadata.update(jev_outcome="fallback", jev_fallback_reason=reason)
+            output.append(copied)
+        return output
+
     async def _judge_and_record(
         self, query: str, snapshot: tuple[tuple[str, str], ...], doc_ids: tuple[str, ...]
     ) -> None:
-        batch = await self._judge(query, snapshot, doc_ids)
+        batch = await self._run_batch(query, snapshot, doc_ids)
         await self._record(batch)
 
-    async def _judge(
+    def _circuit_state(self) -> str:
+        if self._probe_in_flight:
+            return "half_open"
+        if self._circuit_open_until:
+            return "open" if time.monotonic() < self._circuit_open_until else "half_open"
+        return "closed"
+
+    async def _run_batch(
         self, query: str, snapshot: tuple[tuple[str, str], ...], doc_ids: tuple[str, ...]
+    ) -> JevDecisionBatch:
+        started = time.monotonic()
+
+        def failed_batch(reason: str) -> JevDecisionBatch:
+            return JevDecisionBatch(
+                hashlib.sha256(query.encode()).hexdigest()[:16], self.mode, self.model,
+                tuple(JevDecision(doc_id, i, None, None, True,
+                                  "error" if i < len(snapshot) else "skipped_cap",
+                                  reason if i < len(snapshot) else None)
+                      for i, doc_id in enumerate(doc_ids)),
+                (time.monotonic() - started) * 1000, False, reason, "fallback", reason,
+            )
+
+        # Admission and state changes have no await: one probe per event loop.
+        if started < self._circuit_open_until or self._probe_in_flight:
+            self.stats["circuit_open_skips"] += 1
+            return failed_batch("circuit_open")
+        generation = self._circuit_generation
+        probe = bool(self._circuit_open_until)
+        if probe:
+            self._probe_in_flight = True
+        try:
+            try:
+                batch = await asyncio.wait_for(
+                    self._judge(query, snapshot, doc_ids, generation, probe),
+                    timeout=self.deadline_seconds,
+                )
+            except TimeoutError:
+                batch = failed_batch("batch_deadline")
+            # CancelledError deliberately propagates without any accounting.
+            return self._classify_and_account(batch, generation, probe)
+        finally:
+            if probe and generation == self._circuit_generation:
+                self._probe_in_flight = False
+
+    def _classify_and_account(
+        self, batch: JevDecisionBatch, generation: int, probe: bool
+    ) -> JevDecisionBatch:
+        """Classify once per admitted batch; stale batches cannot change the circuit."""
+        judged = [d for d in batch.decisions if d.status != "skipped_cap"]
+        errors = [d for d in judged if d.status == "error"]
+        reason = batch.fallback_reason
+        if reason == "batch_deadline":
+            self.stats["batch_timeouts"] += 1
+        elif judged and len(errors) == len(judged):
+            reason = "all_error"
+            if all(d.error_kind == "timeout" for d in errors):
+                self.stats["timeout_batches"] += 1
+        elif errors:
+            self.stats["partial_error_batches"] += 1
+        if reason is not None and self.mode == "enforce":
+            self.stats["fail_open_count"] += 1
+
+        if generation == self._circuit_generation:
+            if reason is None:
+                self._consecutive_failures = 0
+                if probe:
+                    self._circuit_open_until = 0.0
+                    logger.info("jev_circuit_closed")
+            else:
+                self._consecutive_failures += 1
+                if probe or self._consecutive_failures >= self._circuit_failure_threshold:
+                    self._circuit_open_until = time.monotonic() + self._circuit_cooldown_seconds
+                    self._circuit_generation += 1
+                    self._probe_in_flight = False
+                    logger.warning("jev_circuit_open", extra={
+                        "cooldown": self._circuit_cooldown_seconds,
+                        "threshold": self._circuit_failure_threshold,
+                        "reason": reason,
+                    })
+        return replace(batch, outcome="fallback" if reason else "judged", fallback_reason=reason)
+
+    async def _judge(
+        self, query: str, snapshot: tuple[tuple[str, str], ...], doc_ids: tuple[str, ...],
+        generation: int, probe: bool,
     ) -> JevDecisionBatch:
         started = time.monotonic()
 
         async def judge_one(position: int, doc_id: str, passage: str) -> JevDecision:
             async with self._sem:
+                # Already-sent requests finish, but queued documents must recheck.
+                if (generation != self._circuit_generation
+                        or time.monotonic() < self._circuit_open_until
+                        or (self._probe_in_flight and not probe)):
+                    return JevDecision(doc_id, position, None, None, True, "error", "circuit_open")
                 self.stats["jev_requests"] += 1
                 try:
                     assert self._client is not None
@@ -243,17 +337,6 @@ class JevDecisionReranker:
         judged = await asyncio.gather(
             *(judge_one(i, doc_id, passage) for i, (doc_id, passage) in enumerate(snapshot))
         )
-        errors = [decision for decision in judged if decision.status == "error"]
-        all_failed = bool(judged) and len(errors) == len(judged)
-        hard = [decision for decision in errors if decision.error_kind != "timeout"]
-        if not all_failed:
-            self._consecutive_failures = 0
-        elif hard:
-            self._consecutive_failures += 1
-            if self._consecutive_failures >= self._circuit_failure_threshold:
-                self._circuit_open_until = time.monotonic() + self._circuit_cooldown_seconds
-        else:
-            self.stats["timeout_batches"] += 1
         decisions = (*judged, *(
             JevDecision(doc_ids[i], i, None, None, True, "skipped_cap")
             for i in range(len(snapshot), len(doc_ids))
@@ -289,6 +372,9 @@ class JevDecisionReranker:
                     d.error_kind for d in batch.decisions if d.error_kind is not None
                 }),
                 "latency_ms": batch.latency_ms,
+                "outcome": batch.outcome,
+                "fallback_reason": batch.fallback_reason,
+                "circuit_state": self._circuit_state(),
             },
         )
 
@@ -304,7 +390,10 @@ class JevDecisionReranker:
             "model": self.model,
             "status": decision.status,
         }
-        copied.metadata = {**result.metadata, "jev": jev_meta}
+        copied.metadata = {
+            **result.metadata, "jev": jev_meta, "rerank_method": "jev", "jev_outcome": "judged"
+        }
+        copied.metadata.pop("jev_fallback_reason", None)
         copied.__dict__["jev"] = jev_meta  # dynamic attr; avoids mypy attr-defined + ruff B010
         return copied
 
@@ -333,7 +422,10 @@ class JevDecisionReranker:
         self._closed = True
 
     def get_stats(self) -> dict[str, Any]:
-        return {**self.stats, "disabled_reason": self._disabled_reason}
+        return {
+            **self.stats, "disabled_reason": self._disabled_reason, "mode": self.mode,
+            "circuit_state": self._circuit_state(), "circuit_generation": self._circuit_generation,
+        }
 
     def get_recent_decisions(self) -> list[JevDecisionBatch]:
         return list(self._recent)

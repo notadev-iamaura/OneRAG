@@ -52,6 +52,10 @@ services:
       LLM_PROVIDER: "${LLM_PROVIDER:-google}"
       LLM_MODEL: "${LLM_MODEL:-gemini-2.0-flash}"
       GENERATION_PROVIDER: "${GENERATION_PROVIDER:-google}"
+      # Pass through without a default: unset and explicitly empty have different meanings.
+      RERANK_MODE:
+      TYPESAFE_API_KEY: "${TYPESAFE_API_KEY:-}"
+      TYPESAFE_JEV_MODEL: "${TYPESAFE_JEV_MODEL:-jev-1.13.0}"
       GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"

@@ -87,6 +87,10 @@ from app.lib.config_loader import ConfigLoader
 from app.lib.env_validator import EnvValidator, validate_all_env, validate_provider_env
 from app.lib.environment import is_production_environment
 from app.lib.logger import get_logger
+from app.modules.core.retrieval.rerankers.mode import (
+    RerankerModeConfigError,
+    preflight_rerank_mode,
+)
 
 # Phase 1.3: 신규 Retrieval Architecture (Orchestrator Pattern)
 
@@ -145,6 +149,9 @@ class RAGChatbotApp:
                 raise_on_validation_error=is_development,  # 개발 환경에서만 에러 발생
             )
 
+            # Both standard and graceful startup must fail before resource creation.
+            preflight_rerank_mode(self.config, os.environ)
+
             provider_validation_strict = (
                 is_production_environment()
                 or os.getenv("STRICT_PROVIDER_VALIDATION", "false").lower() == "true"
@@ -185,6 +192,12 @@ class RAGChatbotApp:
             logger.info(f"⏱️  Total time: {total_time:.2f}s")
             logger.info("=" * 60)
 
+        except RerankerModeConfigError as e:
+            health.set_startup_state(False, "failed", {"error": str(e)})
+            # Constructor causes may contain credentials; retain the chain for callers,
+            # but never serialize it into startup logs.
+            logger.error(f"reranker_mode_config_error: {e}")
+            raise
         except Exception as e:
             health.set_startup_state(False, "failed", {"error": str(e)})
             logger.error(f"❌ Module initialization failed: {e}", exc_info=True)

@@ -14,6 +14,7 @@ Provider 타입:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -73,6 +74,10 @@ from app.modules.core.retrieval.cache.semantic_cache import (
 from app.modules.core.retrieval.grok_answer_provider import GrokAnswerProvider
 from app.modules.core.retrieval.orchestrator import RetrievalOrchestrator
 from app.modules.core.retrieval.query_expansion.gpt5_engine import GPT5QueryExpansionEngine
+from app.modules.core.retrieval.rerankers.mode import (
+    RerankerModeConfigError,
+    resolve_rerank_mode,
+)
 
 # Retriever Factory (다중 벡터 DB 지원 - Factory 패턴 적용)
 from app.modules.core.retrieval.retrievers.factory import RetrieverFactory
@@ -96,6 +101,7 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from app.lib.llm_client import LLMClientFactory
+    from app.modules.core.retrieval.interfaces import IReranker
     from app.modules.core.retrieval.rerankers.colbert_reranker import (
         JinaColBERTReranker,
     )
@@ -323,12 +329,12 @@ def build_extract_topic_func(config: dict) -> Callable[[object], str]:
 
 async def create_reranker_instance_v2(
     config: dict, llm_factory: LLMClientFactory | None = None
-) -> GeminiFlashReranker | JinaReranker | JinaColBERTReranker | None:
+) -> IReranker | None:
     """
     Reranker 인스턴스 생성 (v2 - 새로운 설정 구조)
 
     approach/provider/model 3단계 구조 지원.
-    API 키 누락 시 None 반환 (graceful degradation).
+    Legacy API 키 누락 시 None 반환. Jev 설정 오류는 시작 실패로 전파.
 
     Args:
         config: 설정 딕셔너리
@@ -341,37 +347,42 @@ async def create_reranker_instance_v2(
 
     reranking_config = config.get("reranking", {})
 
-    # enabled 체크
-    if not reranking_config.get("enabled", True):
-        logger.info("Reranker 비활성화 (enabled=false)")
+    resolved = resolve_rerank_mode(reranking_config, os.environ)
+    if resolved.effective == "disabled":
+        logger.info("Reranker 비활성화 (enabled=false)", extra={"effective": "disabled"})
         return None
 
-    approach = reranking_config.get("approach", "cross-encoder")
-    provider = reranking_config.get("provider", "jina")
-
-    logger.info(
-        "Reranker v2 초기화",
-        extra={"approach": approach, "provider": provider}
-    )
+    details = {"effective": resolved.effective, "source": resolved.source}
+    if resolved.effective == "legacy":
+        details.update(approach=resolved.legacy_approach, provider=resolved.legacy_provider)
+    logger.info("Reranker v2 초기화", extra=details)
 
     try:
         reranker = RerankerFactoryV2.create(config)
         logger.info(
             f"{reranker.__class__.__name__} 초기화 성공",
-            extra={"approach": approach, "provider": provider}
+            extra=details,
         )
         return reranker
+    except RerankerModeConfigError:
+        logger.error("reranker_mode_config_error", extra=details)
+        raise
     except ValueError as e:
+        if resolved.effective == "jev":
+            raise RerankerModeConfigError("Jev reranker initialization failed") from e
         # API 키 누락 등 설정 오류
         logger.warning(
             "Reranker v2 초기화 실패",
-            extra={"error": str(e), "status": "proceeding_without_reranker"}
+            extra={"error_type": type(e).__name__, "status": "proceeding_without_reranker",
+                   "effective_reranker": "none"},
         )
         return None
     except Exception as e:
+        if resolved.effective == "jev":
+            raise RerankerModeConfigError("Jev reranker initialization failed") from e
         logger.error(
             "Reranker v2 초기화 중 예외 발생",
-            extra={"error": str(e), "error_type": type(e).__name__}
+            extra={"error_type": type(e).__name__, "effective_reranker": "none"},
         )
         return None
 
@@ -548,6 +559,8 @@ async def create_reranker_chain_instance(
     config: dict,
     colbert_reranker: JinaColBERTReranker | None = None,
     llm_reranker: GeminiFlashReranker | JinaReranker | None = None,
+    colbert_reranker_provider: Callable[[], Any] | None = None,
+    llm_reranker_provider: Callable[[], Any] | None = None,
 ) -> RerankerChain | None:
     """
     RerankerChain 인스턴스 생성 헬퍼 함수
@@ -567,6 +580,12 @@ async def create_reranker_chain_instance(
     - 다중 리랭커 체인 (순차 실행)
     - 각 리랭커 독립적 활성화/비활성화
     """
+    resolved = resolve_rerank_mode(config.get("reranking", {}), os.environ)
+    if resolved.effective == "jev":
+        logger.warning("RerankerChain 은 jev 모드에서 사용 안 함")
+        return None
+    if resolved.effective == "disabled":
+        return None
     chain_config = config.get("reranking", {}).get("chain", {})
 
     # 비활성화 체크
@@ -576,6 +595,16 @@ async def create_reranker_chain_instance(
             extra={"config_key": "reranking.chain.enabled", "value": False}
         )
         return None
+
+    # Resolve deferred DI providers only after the mode and chain gates.
+    if colbert_reranker_provider is not None:
+        colbert_reranker = colbert_reranker_provider()
+        if inspect.isawaitable(colbert_reranker):
+            colbert_reranker = await colbert_reranker
+    if llm_reranker_provider is not None:
+        llm_reranker = llm_reranker_provider()
+        if inspect.isawaitable(llm_reranker):
+            llm_reranker = await llm_reranker
 
     # 활성화된 리랭커 수집
     rerankers = []
@@ -1799,8 +1828,8 @@ class AppContainer(containers.DeclarativeContainer):
     reranker_chain = providers.Singleton(
         create_reranker_chain_instance,
         config=config,
-        colbert_reranker=colbert_reranker,
-        llm_reranker=base_reranker,
+        colbert_reranker_provider=colbert_reranker.provider,
+        llm_reranker_provider=base_reranker.provider,
     )
 
     # Reranker 선택 로직: chain이 활성화되면 chain 사용, 아니면 base_reranker
@@ -2503,6 +2532,19 @@ async def cleanup_resources(container: AppContainer) -> None:
             extra={"error": str(e)},
             exc_info=True
         )
+
+    # The reranker singleton may be a Future. Close independently even if retrieval
+    # cleanup failed before reaching it; Jev.close is idempotent and honors ownership.
+    try:
+        reranker_provider = getattr(container, "reranker", None)
+        reranker = reranker_provider() if reranker_provider is not None else None
+        if inspect.isawaitable(reranker):
+            reranker = await reranker
+        if reranker is not None and hasattr(reranker, "close"):
+            await reranker.close()
+    except Exception as e:
+        cleanup_errors.append(f"Reranker: {type(e).__name__}")
+        logger.error("Reranker 종료 실패", extra={"error_type": type(e).__name__})
 
     # 4a. Self-RAG precheck provider (off일 때 싱글톤 체인을 만들지 않음)
     try:

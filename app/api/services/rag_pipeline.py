@@ -3836,13 +3836,18 @@ class RAGPipeline:
             RerankResults: 리랭킹된 문서 리스트 (reranked=True/False)
         """
         logger.debug("[5단계] 리랭킹 시작")
+        top_n = options.get("top_n", self.rerank_top_n)
+        if top_n is not None and top_n < 0:
+            raise ValueError("top_n must be non-negative")
+        if top_n == 0:
+            return RerankResults(documents=[], count=0, reranked=False)
         if not search_results:
             logger.debug("검색 결과 없음, 리랭킹 스킵")
             return RerankResults(documents=[], count=0, reranked=False)
         reranking_config = self.config.get("reranking", {})
         retrieval_config = self.config.get("retrieval", {})
-        reranking_enabled = reranking_config.get("enabled", False) or retrieval_config.get(
-            "enable_reranking", False
+        reranking_enabled = reranking_config.get(
+            "enabled", retrieval_config.get("enable_reranking", False)
         )
         if not reranking_enabled:
             logger.debug("리랭킹 비활성화 - 원본 사용")
@@ -3868,9 +3873,13 @@ class RAGPipeline:
             ranked_results = await retrieval_module.rerank(
                 query=search_query,
                 results=search_results,
-                top_n=options.get("top_n", self.rerank_top_n),
+                top_n=top_n,
             )
-            if _is_noop_rerank(original_snapshot, ranked_results):
+            outcome = _document_metadata(ranked_results[0]).get("jev_outcome") if ranked_results else None
+            if outcome == "fallback":
+                fallback = ranked_results if top_n is None else ranked_results[:top_n]
+                return RerankResults(documents=fallback, count=len(fallback), reranked=False)
+            if outcome != "judged" and _is_noop_rerank(original_snapshot, ranked_results):
                 _annotate_rerank_scores(original_snapshot, ranked_results, reranked=False)
                 logger.warning(
                     "[5단계] 리랭커가 원본 결과를 그대로 반환 - 리랭킹 미수행 처리",
@@ -3886,7 +3895,7 @@ class RAGPipeline:
 
             # 리랭킹 후 min_score 필터링
             min_score = reranking_config.get("min_score", 0.05)
-            if min_score > 0:
+            if outcome != "judged" and min_score > 0:
                 before_count = len(ranked_results)
                 ranked_results = [
                     doc
@@ -3914,9 +3923,8 @@ class RAGPipeline:
                 extra={"error": str(e)},
                 exc_info=True
             )
-            return RerankResults(
-                documents=search_results, count=len(search_results), reranked=False
-            )
+            fallback = search_results if top_n is None else search_results[:top_n]
+            return RerankResults(documents=fallback, count=len(fallback), reranked=False)
 
     @observe(name="Answer Generation (LLM)", capture_input=False, capture_output=False)
     async def generate_answer(

@@ -24,9 +24,18 @@ __all__ = [
     "SUPPORTED_RERANKERS",
     "LocalReranker",
     "JevDecisionReranker",
+    "RerankerModeConfigError",
+    "ResolvedRerankMode",
+    "normalize_mode_value",
+    "resolve_rerank_mode",
+    "preflight_rerank_mode",
 ]
 
 _EXPORTS = {
+    **{name: ("app.modules.core.retrieval.rerankers.mode", name) for name in (
+        "RerankerModeConfigError", "ResolvedRerankMode", "normalize_mode_value",
+        "resolve_rerank_mode", "preflight_rerank_mode",
+    )},
     "IReranker": ("app.modules.core.retrieval.interfaces", "IReranker"),
     "JinaReranker": ("app.modules.core.retrieval.rerankers.jina_reranker", "JinaReranker"),
     "JinaColBERTReranker": (

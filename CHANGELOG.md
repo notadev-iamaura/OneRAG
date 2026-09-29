@@ -6,6 +6,16 @@
 
 ## [Unreleased]
 
+### Breaking changes
+- `RERANK_MODE=legacy|jev`로 리랭킹 모드를 선택합니다(미지정 시 legacy).
+  새 모드 없이 옛 `approach=decision` + shadow/off/미지정 설정을 사용하면
+  **migration error로 시작이 중단됩니다**. Gemini로 조용히 전환하지 않습니다.
+  옛 `TYPESAFE_JEV_MODE=enforce`는 경고와 함께 호환되지만 키 누락 시 시작 실패합니다.
+- legacy 예외 폴백도 검색 순서 `top_n` 이내로 제한됩니다. 정상 경로는 동일합니다.
+- Jev 판정 성공 시 검색 `min_score` 대신 `min_relevance`를 사용합니다.
+  Self-RAG precheck와 답변 생성 LLM은 이 스위치와 별개입니다.
+  켜는 법, 배포 전 검사와 롤링/rollback 절차: [Rerank mode guide](docs/RERANK_MODE.md).
+
 ### 추가됨
 - 운영 안정성 smoke 게이트 추가: `make test-operational-smoke` 및 GitHub Actions `Runtime Smoke` job
 - `/ready` readiness 엔드포인트 추가 및 Docker API healthcheck를 `/ready`로 전환
