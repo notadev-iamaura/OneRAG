@@ -28,8 +28,10 @@ Keep `reranking.enabled=true`. Jev requires a nonblank key or startup fails.
 Document passages are sent to TypeSafe. Jev ignores the legacy `approach/provider`
 selection and runs in enforce mode. It filters relevance while preserving retrieval
 order and scores, retaining at least `min_keep` within `top_n`. A successful Jev
-judgment uses `min_relevance` instead of the downstream retrieval `min_score` filter;
-rerank fusion is bypassed. Compare retrieval and answer quality before production use.
+judgment skips the retrieval `min_score` filter (`min_relevance` already filtered).
+If `reranking.fusion.enabled` is on, fusion may reorder **within** the Jev-selected
+documents; it never adds documents Jev dropped. Fallback results skip both `min_score`
+and fusion. Compare retrieval and answer quality before production use.
 
 On errors, batch deadlines, or an open circuit, Jev returns retrieval order bounded
 by `top_n`, marked as fallback, without calling an existing reranker. Repeated failed
