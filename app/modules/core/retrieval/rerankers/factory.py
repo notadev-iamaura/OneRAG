@@ -22,12 +22,19 @@ approach별 설명:
 """
 
 import os
+from collections.abc import Mapping
 from typing import Any
 
 from .....lib.logger import get_logger
 from ..interfaces import IReranker
+from .mode import (
+    RerankerModeConfigError,
+    _require_typesafe_key,
+    resolve_rerank_mode,
+)
 
 logger = get_logger(__name__)
+_mode_warnings_logged: set[str] = set()
 
 
 # ========================================
@@ -52,7 +59,7 @@ APPROACH_REGISTRY: dict[str, dict[str, Any]] = {
         "providers": ["sentence-transformers", "bge"],
     },
     "decision": {
-        "description": "TypeSafe Jev relevance decision filter",
+        "description": "TypeSafe Jev relevance decision filter (deprecated: RERANK_MODE=jev)",
         "providers": ["typesafe"],
     },
 }
@@ -157,7 +164,7 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
         "default_config": {
             "model": "jev-1.13.0",
             "endpoint": "https://api.typesafe.ai/v1/systemone",
-            "mode": "shadow",
+            "mode": "enforce",
             "question_type": "noul",
             "min_relevance": 0.5,
             "min_keep": 1,
@@ -166,7 +173,6 @@ PROVIDER_REGISTRY: dict[str, dict[str, Any]] = {
             "timeout": 3.0,
             "deadline_seconds": 5.0,
             "concurrency": 4,
-            "shadow_background": True,
             "circuit_failure_threshold": 5,
             "circuit_cooldown_seconds": 30.0,
         },
@@ -188,7 +194,7 @@ class RerankerFactoryV2:
     """
 
     @staticmethod
-    def create(config: dict[str, Any]) -> IReranker:
+    def create(config: dict[str, Any], env: Mapping[str, str] | None = None) -> IReranker | None:
         """
         설정 기반 리랭커 인스턴스 생성
 
@@ -202,8 +208,33 @@ class RerankerFactoryV2:
             ValueError: 유효하지 않은 approach-provider 조합 또는 API 키 누락
         """
         reranking_config = config.get("reranking", {})
-        approach = reranking_config.get("approach", "cross-encoder")
-        provider = reranking_config.get("provider", "jina")
+        env = os.environ if env is None else env
+        resolved = resolve_rerank_mode(reranking_config, env)
+        for warning in resolved.warnings:
+            if warning not in _mode_warnings_logged:
+                logger.warning(warning)
+                _mode_warnings_logged.add(warning)
+        details: dict[str, Any] = {
+            "effective": resolved.effective, "source": resolved.source, "pid": os.getpid(),
+        }
+        if resolved.effective == "disabled":
+            logger.info("reranker_mode_resolved", extra={**details, "reranker_class": None})
+            return None
+        if resolved.effective == "jev":
+            reranker = RerankerFactoryV2._create_jev_reranker(reranking_config, env)
+            options = {**PROVIDER_REGISTRY["typesafe"]["default_config"],
+                       **(reranking_config.get("typesafe") or {})}
+            details.update({key: options[key] for key in (
+                "model", "min_keep", "max_documents", "deadline_seconds", "circuit_failure_threshold",
+            )})
+            logger.info("reranker_mode_resolved", extra={
+                **details, "reranker_class": type(reranker).__name__,
+            })
+            return reranker
+        approach, provider = resolved.legacy_approach, resolved.legacy_provider
+        if approach == "decision":
+            raise RerankerModeConfigError("Unresolved decision approach in legacy mode")
+        assert approach is not None and provider is not None
 
         logger.info(f"🔄 RerankerFactoryV2: approach={approach}, provider={provider}")
 
@@ -231,39 +262,54 @@ class RerankerFactoryV2:
 
         # 리랭커 생성
         if approach == "llm":
-            return RerankerFactoryV2._create_llm_reranker(provider, reranking_config)
+            reranker = RerankerFactoryV2._create_llm_reranker(provider, reranking_config, env)
         elif approach == "cross-encoder":
-            return RerankerFactoryV2._create_cross_encoder_reranker(
-                provider, reranking_config
+            reranker = RerankerFactoryV2._create_cross_encoder_reranker(
+                provider, reranking_config, env
             )
         elif approach == "late-interaction":
-            return RerankerFactoryV2._create_late_interaction_reranker(
-                provider, reranking_config
+            reranker = RerankerFactoryV2._create_late_interaction_reranker(
+                provider, reranking_config, env
             )
         elif approach == "local":
-            return RerankerFactoryV2._create_local_reranker(provider, reranking_config)
-        elif approach == "decision":
-            return RerankerFactoryV2._create_decision_reranker(provider, reranking_config)
+            reranker = RerankerFactoryV2._create_local_reranker(provider, reranking_config)
         else:
             raise ValueError(f"알 수 없는 approach: {approach}")
+        provider_config = reranking_config.get(provider) or {}
+        defaults = PROVIDER_REGISTRY[provider]["default_config"]
+        if approach == "late-interaction":
+            defaults = PROVIDER_REGISTRY[provider].get("default_config_colbert", defaults)
+        if approach == "local" and provider == "sentence-transformers":
+            provider_config = reranking_config.get(provider, reranking_config.get("local", {}))
+        logger.info("reranker_mode_resolved", extra={
+            **details, "reranker_class": type(reranker).__name__,
+            "approach": approach, "provider": provider,
+            "model": provider_config.get("model", defaults.get("model")),
+        })
+        return reranker
 
     @staticmethod
-    def _create_decision_reranker(provider: str, config: dict[str, Any]) -> IReranker:
-        """Create a standalone Jev filter; a missing key leaves it pass-through."""
+    def _create_jev_reranker(config: dict[str, Any], env: Mapping[str, str]) -> IReranker:
+        """Create only an enforcing Jev filter; invalid configuration is fatal."""
+        api_key = _require_typesafe_key(env)
         from .jev_decision_reranker import JevDecisionReranker
 
-        defaults = PROVIDER_REGISTRY[provider]["default_config"]
-        options = {**defaults, **(config.get(provider) or {})}
-        return JevDecisionReranker(
-            api_key=os.getenv(PROVIDER_REGISTRY[provider]["api_key_env"]),
-            **options,
-        )
+        defaults = PROVIDER_REGISTRY["typesafe"]["default_config"]
+        options = {**defaults, **(config.get("typesafe") or {})}
+        options.pop("mode", None)
+        options.pop("shadow_background", None)
+        try:
+            return JevDecisionReranker(api_key=api_key, mode="enforce", **options)
+        except ValueError as exc:
+            raise RerankerModeConfigError("Invalid Jev reranker configuration") from exc
 
     @staticmethod
-    def _create_llm_reranker(provider: str, config: dict[str, Any]) -> IReranker:
+    def _create_llm_reranker(
+        provider: str, config: dict[str, Any], env: Mapping[str, str] | None = None,
+    ) -> IReranker:
         """LLM approach 리랭커 생성"""
         provider_info = PROVIDER_REGISTRY[provider]
-        api_key = os.getenv(provider_info["api_key_env"])
+        api_key = (os.environ if env is None else env).get(provider_info["api_key_env"])
 
         if not api_key:
             raise ValueError(
@@ -329,13 +375,13 @@ class RerankerFactoryV2:
 
     @staticmethod
     def _create_cross_encoder_reranker(
-        provider: str, config: dict[str, Any]
+        provider: str, config: dict[str, Any], env: Mapping[str, str] | None = None,
     ) -> IReranker:
         """Cross-encoder approach 리랭커 생성"""
         provider_info = PROVIDER_REGISTRY[provider]
         # api_key_env가 None인 provider(vertex 등)는 ADC 인증이라 API 키를 강제하지 않는다.
         api_key_env = provider_info["api_key_env"]
-        api_key = os.getenv(api_key_env) if api_key_env else None
+        api_key = (os.environ if env is None else env).get(api_key_env) if api_key_env else None
 
         if api_key_env and not api_key:
             raise ValueError(
@@ -401,11 +447,11 @@ class RerankerFactoryV2:
 
     @staticmethod
     def _create_late_interaction_reranker(
-        provider: str, config: dict[str, Any]
+        provider: str, config: dict[str, Any], env: Mapping[str, str] | None = None,
     ) -> IReranker:
         """Late-interaction approach 리랭커 생성"""
         provider_info = PROVIDER_REGISTRY[provider]
-        api_key = os.getenv(provider_info["api_key_env"])
+        api_key = (os.environ if env is None else env).get(provider_info["api_key_env"])
 
         if not api_key:
             raise ValueError(
@@ -620,7 +666,7 @@ class RerankerFactory:
     """
 
     @staticmethod
-    def create(config: dict[str, Any]) -> IReranker:
+    def create(config: dict[str, Any], env: Mapping[str, str] | None = None) -> IReranker | None:
         """
         레거시 설정 기반 리랭커 생성
 
@@ -631,10 +677,14 @@ class RerankerFactory:
             IReranker 인스턴스
         """
         reranking_config = config.get("reranking", {})
+        env = os.environ if env is None else env
+        resolved = resolve_rerank_mode(reranking_config, env)
+        if resolved.effective in ("jev", "disabled"):
+            return RerankerFactoryV2.create(config, env=env)
 
         # 새 설정 구조(approach/provider)가 있으면 v2 팩토리 사용
         if "approach" in reranking_config:
-            return RerankerFactoryV2.create(config)
+            return RerankerFactoryV2.create(config, env=env)
 
         # 레거시 설정 구조 처리 (default_provider 또는 provider 필드)
         # 레거시 기본값은 gemini-flash였음
@@ -668,7 +718,7 @@ class RerankerFactory:
                     "openai": openai_config if openai_config else None,
                 }
             }
-            return RerankerFactoryV2.create(new_config)
+            return RerankerFactoryV2.create(new_config, env=env)
 
         raise ValueError(f"지원하지 않는 리랭커: {default_provider}")
 

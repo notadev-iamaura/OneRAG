@@ -342,16 +342,12 @@ class TestDecisionFactory:
     @patch.dict("os.environ", {}, clear=True)
     def test_create_decision_without_key(self):
         from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
-        from app.modules.core.retrieval.rerankers.jev_decision_reranker import (
-            JevDecisionReranker,
-        )
+        from app.modules.core.retrieval.rerankers.mode import RerankerModeConfigError
 
-        reranker = RerankerFactoryV2.create(
-            {"reranking": {"approach": "decision", "provider": "typesafe"}}
-        )
-        assert isinstance(reranker, JevDecisionReranker)
-        assert reranker.mode == "shadow"
-        assert reranker.get_stats()["disabled_reason"] == "missing_api_key"
+        with pytest.raises(RerankerModeConfigError, match="RERANK_MODE 를 명시"):
+            RerankerFactoryV2.create(
+                {"reranking": {"approach": "decision", "provider": "typesafe"}}
+            )
 
     @patch.dict("os.environ", {"TYPESAFE_API_KEY": "test-key"}, clear=True)
     def test_create_decision_with_key_and_mode(self):
@@ -373,22 +369,64 @@ class TestDecisionFactory:
     @patch.dict("os.environ", {}, clear=True)
     def test_create_decision_with_empty_typesafe_config(self):
         from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
-        from app.modules.core.retrieval.rerankers.jev_decision_reranker import (
-            JevDecisionReranker,
-        )
+        from app.modules.core.retrieval.rerankers.mode import RerankerModeConfigError
 
-        reranker = RerankerFactoryV2.create(
-            {"reranking": {
-                "approach": "decision", "provider": "typesafe", "typesafe": None,
-            }}
-        )
-        assert isinstance(reranker, JevDecisionReranker)
-        assert reranker.deadline_seconds == 5.0
+        with pytest.raises(RerankerModeConfigError, match="RERANK_MODE 를 명시"):
+            RerankerFactoryV2.create(
+                {"reranking": {
+                    "approach": "decision", "provider": "typesafe", "typesafe": None,
+                }}
+            )
 
     def test_invalid_decision_provider(self):
         from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+        from app.modules.core.retrieval.rerankers.mode import RerankerModeConfigError
 
-        with pytest.raises(ValueError, match="provider"):
+        with pytest.raises(RerankerModeConfigError, match="RERANK_MODE 를 명시"):
             RerankerFactoryV2.create(
-                {"reranking": {"approach": "decision", "provider": "google"}}
+                {"reranking": {"approach": "decision", "provider": "google"}}, env={}
             )
+
+
+class TestJevModeFactory:
+    @pytest.mark.parametrize("key", [None, "", "  "])
+    @pytest.mark.parametrize("compat", [False, True])
+    def test_missing_key_is_fatal(self, key, compat):
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+        from app.modules.core.retrieval.rerankers.mode import RerankerModeConfigError
+
+        rc = {"approach": "decision", "typesafe": {"mode": "enforce"}} if compat else {"mode": "jev"}
+        env = {} if key is None else {"TYPESAFE_API_KEY": key}
+        with pytest.raises(RerankerModeConfigError, match="TYPESAFE_API_KEY"):
+            RerankerFactoryV2.create({"reranking": rc}, env=env)
+
+    @pytest.mark.parametrize("old_mode", [None, "shadow", "off"])
+    def test_strip_deprecated_options_and_ignore_stale_provider(self, old_mode):
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+
+        with patch("app.modules.core.retrieval.rerankers.jev_decision_reranker.JevDecisionReranker") as ctor:
+            RerankerFactoryV2.create({"reranking": {
+                "approach": "invalid", "provider": "stale",
+                "typesafe": {"mode": old_mode, "shadow_background": None},
+            }}, env={"RERANK_MODE": "jev", "TYPESAFE_API_KEY": "test-key"})
+        assert ctor.call_args.kwargs["mode"] == "enforce"
+        assert "shadow_background" not in ctor.call_args.kwargs
+
+    def test_bad_deadline_is_fatal(self):
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+        from app.modules.core.retrieval.rerankers.mode import RerankerModeConfigError
+
+        with pytest.raises(RerankerModeConfigError) as error:
+            RerankerFactoryV2.create({"reranking": {"typesafe": {"deadline_seconds": 0}}},
+                                    env={"RERANK_MODE": "jev", "TYPESAFE_API_KEY": "test-key"})
+        assert isinstance(error.value.__cause__, ValueError)
+
+    def test_constructor_value_error_retains_cause(self):
+        from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
+        from app.modules.core.retrieval.rerankers.mode import RerankerModeConfigError
+
+        cause = ValueError("invalid options")
+        with patch("app.modules.core.retrieval.rerankers.jev_decision_reranker.JevDecisionReranker",
+                   side_effect=cause), pytest.raises(RerankerModeConfigError) as error:
+            RerankerFactoryV2.create({}, env={"RERANK_MODE": "jev", "TYPESAFE_API_KEY": "test-key"})
+        assert error.value.__cause__ is cause
