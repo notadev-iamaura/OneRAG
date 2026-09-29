@@ -3846,8 +3846,8 @@ class RAGPipeline:
             return RerankResults(documents=[], count=0, reranked=False)
         reranking_config = self.config.get("reranking", {})
         retrieval_config = self.config.get("retrieval", {})
-        reranking_enabled = reranking_config.get("enabled", False) or retrieval_config.get(
-            "enable_reranking", False
+        reranking_enabled = reranking_config.get(
+            "enabled", retrieval_config.get("enable_reranking", False)
         )
         if not reranking_enabled:
             logger.debug("리랭킹 비활성화 - 원본 사용")

@@ -26,7 +26,12 @@ async def test_search_fallback_is_bounded(mode, failure):
         reranker.rerank.side_effect = RuntimeError("unavailable")
     orchestrator = RetrievalOrchestrator(AsyncMock(search=AsyncMock(return_value=incoming)), reranker)
     output = await orchestrator.search_and_rerank("q", top_k=2)
-    assert output == incoming[:2]
+    assert [doc.id for doc in output] == [doc.id for doc in incoming[:2]]
+    if mode == "jev":
+        assert all(doc.metadata["jev_outcome"] == "fallback" for doc in output)
+        assert all(doc.metadata == {} for doc in incoming)
+    else:
+        assert output == incoming[:2]
 
 
 @pytest.mark.asyncio

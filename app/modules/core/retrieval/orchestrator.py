@@ -109,6 +109,7 @@ Facade 패턴으로 재구성한 것입니다.
 ⚠️ 주의: 기존 검증된 워크플로우를 재사용합니다. 새로 작성하지 않았습니다.
 """
 
+import copy
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -209,7 +210,7 @@ class RetrievalOrchestrator:
         self.reranker = reranker
         self._rerank_mode = (
             "disabled" if reranker is None else
-            f"jev:{reranker.model}" if getattr(reranker, "name", None) == "jev-decision" else
+            f"jev:{getattr(reranker, 'model', '')}" if getattr(reranker, "name", None) == "jev-decision" else
             f"legacy:{type(reranker).__name__}"
         )
         self.cache = cache
@@ -384,13 +385,22 @@ class RetrievalOrchestrator:
                 logger.error("RetrievalOrchestrator 구성요소 종료 실패", exc_info=True)
         logger.info("RetrievalOrchestrator 종료 완료")
 
-    @staticmethod
     def _bounded_fallback(
-        results: list[SearchResult], top_k: int | None
+        self, results: list[SearchResult], top_k: int | None
     ) -> list[SearchResult]:
         if top_k is not None and top_k < 0:
             raise ValueError("top_k must be non-negative")
-        return results if top_k is None else results[:top_k]
+        bounded = results if top_k is None else results[:top_k]
+        if not self._rerank_mode.startswith("jev:"):
+            return bounded
+        output = []
+        for result in bounded:
+            copied = copy.copy(result)
+            copied.metadata = dict(result.metadata)
+            copied.metadata.pop("rerank_method", None)
+            copied.metadata.update(jev_outcome="fallback", jev_fallback_reason="all_error")
+            output.append(copied)
+        return output
 
     async def search_and_rerank(
         self,
@@ -629,6 +639,7 @@ class RetrievalOrchestrator:
 
             # Step 3: 리랭킹 실행 (선택적)
             final_results = search_results
+            rerank_applied = False
 
             if rerank_enabled and self.reranker and search_results:
                 logger.info(
@@ -641,6 +652,7 @@ class RetrievalOrchestrator:
 
                     if reranked_results:
                         final_results = reranked_results
+                        rerank_applied = final_results[0].metadata.get("jev_outcome") != "fallback"
                         logger.info(
                             "리랭킹 완료",
                             extra={"result_count": len(final_results)}
@@ -678,7 +690,7 @@ class RetrievalOrchestrator:
                 extra={
                     "query": query[:50],
                     "result_count": len(final_results),
-                    "reranked": rerank_enabled and self.reranker is not None
+                    "reranked": rerank_applied
                 }
             )
 
@@ -715,12 +727,13 @@ class RetrievalOrchestrator:
         Returns:
             리랭킹된 결과 리스트
         """
-        fallback = self._bounded_fallback(results, top_k)
+        if top_k is not None and top_k < 0:
+            raise ValueError("top_k must be non-negative")
         if top_k == 0:
             return []
         if not self.reranker:
             logger.warning("Reranker가 설정되지 않았습니다. 원본 결과 반환")
-            return fallback
+            return results
 
         try:
             reranked = await self.reranker.rerank(query, results, top_k)
@@ -733,7 +746,7 @@ class RetrievalOrchestrator:
                 exc_info=True,
                 extra={"query": query[:100]}
             )
-            return fallback
+            return self._bounded_fallback(results, top_k)
 
     async def health_check(self) -> HealthCheckDict:
         """

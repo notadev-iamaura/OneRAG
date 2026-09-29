@@ -70,6 +70,7 @@ async def test_pipeline_rejects_negative_limit():
 @pytest.mark.parametrize("mode,scenario", [
     ("legacy", "keep"), ("jev", "keep"), ("jev", "drop"), ("jev", "select"),
     ("jev", "deadline"), ("jev", "all_error"), ("jev", "circuit_open"),
+    ("jev", "exception"), ("jev", "repeated_deadline"),
 ])
 @pytest.mark.parametrize("fusion", [False, True])
 async def test_di_to_pipeline_isolation_and_outcome(monkeypatch, mode, scenario, fusion):
@@ -79,14 +80,14 @@ async def test_di_to_pipeline_isolation_and_outcome(monkeypatch, mode, scenario,
     monkeypatch.delenv("TYPESAFE_JEV_MODE", raising=False)
     config = {"reranking": {
         "enabled": True, "approach": "llm", "provider": "google", "min_score": 0.05,
-        "typesafe": {"deadline_seconds": 0.02, "min_keep": 1},
+        "typesafe": {"deadline_seconds": 0.02, "min_keep": 1, "circuit_failure_threshold": 2},
         "fusion": {"enabled": fusion},
     }}
     incoming = documents()
     original = deepcopy(incoming)
 
     async def ask(state, questions):
-        if scenario == "deadline":
+        if scenario in ("deadline", "repeated_deadline"):
             await asyncio.Event().wait()
         if scenario == "all_error":
             raise JevAPIError("http_503")
@@ -103,7 +104,7 @@ async def test_di_to_pipeline_isolation_and_outcome(monkeypatch, mode, scenario,
                                                wraps=TypeSafeJevClient))
         jev_call = stack.enter_context(patch.object(TypeSafeJevClient, "ask", side_effect=ask))
         jev_rerank = stack.enter_context(patch.object(JevDecisionReranker, "rerank", autospec=True,
-                                                     side_effect=JevDecisionReranker.rerank))
+            side_effect=RuntimeError("unavailable") if scenario == "exception" else JevDecisionReranker.rerank))
         llm_ctor = stack.enter_context(patch(PREFIX + "gemini_reranker.GeminiFlashReranker",
                                             wraps=GeminiFlashReranker))
         llm_rerank = stack.enter_context(patch.object(GeminiFlashReranker, "rerank", autospec=True,
@@ -150,12 +151,15 @@ async def test_di_to_pipeline_isolation_and_outcome(monkeypatch, mode, scenario,
 
         stack.enter_context(patch.object(pipeline, "rerank_documents", side_effect=capture))
         try:
-            await pipeline.execute("q", "session", {"top_n": 3})
-            result = outcomes[0]
+            attempts = 3 if scenario == "repeated_deadline" else 1
+            for _ in range(attempts):
+                await pipeline.execute("q", "session", {"top_n": 3})
+            result = outcomes[-1]
             output = generate.call_args.args[1]
             assert len(output) <= 3
             assert {doc.id for doc in output} <= {doc.id for doc in result.documents}
-            fallback = scenario in ("deadline", "all_error", "circuit_open")
+            fallback = scenario in ("deadline", "all_error", "circuit_open", "exception", "repeated_deadline")
+            assert all(outcome.reranked is not fallback for outcome in outcomes)
             assert result.reranked is not fallback
             assert fuse.call_count == (0 if fallback else 1)
             if mode == "jev":
@@ -170,9 +174,13 @@ async def test_di_to_pipeline_isolation_and_outcome(monkeypatch, mode, scenario,
                 elif scenario == "select":
                     assert {doc.id for doc in output} == {"0", "2", "3"}
                 assert all(doc.score == 0.01 for doc in output)
-                assert jev_ctor.call_count == client_ctor.call_count == jev_rerank.call_count == 1
-                expected_calls = {"circuit_open": 0, "deadline": 4}.get(scenario, 5)
+                assert jev_ctor.call_count == client_ctor.call_count == 1
+                assert jev_rerank.call_count == attempts
+                expected_calls = {"circuit_open": 0, "exception": 0, "deadline": 4, "repeated_deadline": 8}.get(scenario, 5)
                 assert jev_call.await_count == expected_calls
+                if scenario == "repeated_deadline":
+                    assert reranker.get_stats()["circuit_state"] == "open"
+                    assert reranker.get_stats()["circuit_open_skips"] == 1
                 llm_ctor.assert_not_called()
                 llm_rerank.assert_not_called()
                 google_call.assert_not_called()
@@ -185,3 +193,29 @@ async def test_di_to_pipeline_isolation_and_outcome(monkeypatch, mode, scenario,
             network.assert_not_called()
         finally:
             await (reranker.cleanup() if mode == "legacy" else reranker.close())
+
+
+@pytest.mark.asyncio
+async def test_jev_all_keep_unchanged_ids_and_scores_is_not_noop():
+    incoming = documents()
+    reranker = JevDecisionReranker("test-key", mode="enforce",
+        client=AsyncMock(ask=AsyncMock(return_value={"relevant": JevAnswer(0.9)})))
+    pipeline = pipeline_for(RetrievalOrchestrator(AsyncMock(), reranker),
+                            {"reranking": {"enabled": True, "min_score": 0.05}})
+    result = await pipeline.rerank_documents("q", incoming, {"top_n": None})
+    assert result.reranked is True
+    assert [(doc.id, doc.score) for doc in result.documents] == [(doc.id, doc.score) for doc in incoming]
+    assert all(doc.metadata["rerank_method"] == "jev" for doc in result.documents)
+
+
+@pytest.mark.asyncio
+async def test_disabled_with_retrieval_flag_never_judges(monkeypatch):
+    monkeypatch.setenv("RERANK_MODE", "jev")
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    config = {"reranking": {"enabled": False}, "retrieval": {"enable_reranking": True}}
+    with patch(PREFIX + "factory.RerankerFactoryV2.create") as factory:
+        reranker = await create_reranker_instance_v2(config)
+        pipeline = pipeline_for(RetrievalOrchestrator(AsyncMock(), reranker), config)
+        result = await pipeline.rerank_documents("q", documents(), {"top_n": 2})
+        assert result.reranked is False
+        factory.assert_not_called()
