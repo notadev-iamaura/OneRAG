@@ -146,7 +146,7 @@ class JevDecisionReranker:
             return self._passthrough(base, top_n)
         if time.monotonic() < self._circuit_open_until:
             self.stats["circuit_open_skips"] += 1
-            return self._passthrough(base, top_n)
+            return self._fallback(base, top_n, "circuit_open")
 
         if self.mode == "shadow":
             base = self._passthrough(base, top_n)
@@ -176,12 +176,12 @@ class JevDecisionReranker:
             # Cancellation skips _judge's circuit accounting.
             self.stats["batch_timeouts"] += 1
             self.stats["fail_open_count"] += 1
-            return self._passthrough(base, top_n)
+            return self._fallback(base, top_n, "batch_deadline")
         judged = [d for d in batch.decisions if d.status != "skipped_cap"]
         if judged and all(d.status == "error" for d in judged):
             self.stats["fail_open_count"] += 1
             await self._record(batch)
-            return self._passthrough(base, top_n)
+            return self._fallback(base, top_n, "all_error")
         limit = len(base) if top_n is None else min(top_n, len(base))
         keep_floor = min(self.min_keep, limit)
         keep_positions = {d.position for d in batch.decisions if d.keep}
@@ -202,6 +202,20 @@ class JevDecisionReranker:
         if top_n is None or top_n >= len(results):
             return results
         return results[:top_n]
+
+    def _fallback(
+        self, results: list[SearchResult], top_n: int | None, reason: str
+    ) -> list[SearchResult]:
+        if self.mode != "enforce":
+            return self._passthrough(results, top_n)
+        output = []
+        for result in self._passthrough(results, top_n):
+            copied = copy.copy(result)
+            copied.metadata = dict(result.metadata)
+            copied.metadata.pop("rerank_method", None)
+            copied.metadata.update(jev_outcome="fallback", jev_fallback_reason=reason)
+            output.append(copied)
+        return output
 
     async def _judge_and_record(
         self, query: str, snapshot: tuple[tuple[str, str], ...], doc_ids: tuple[str, ...]
@@ -304,7 +318,10 @@ class JevDecisionReranker:
             "model": self.model,
             "status": decision.status,
         }
-        copied.metadata = {**result.metadata, "jev": jev_meta}
+        copied.metadata = {
+            **result.metadata, "jev": jev_meta, "rerank_method": "jev", "jev_outcome": "judged"
+        }
+        copied.metadata.pop("jev_fallback_reason", None)
         copied.__dict__["jev"] = jev_meta  # dynamic attr; avoids mypy attr-defined + ruff B010
         return copied
 

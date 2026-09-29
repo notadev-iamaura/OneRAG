@@ -3875,7 +3875,11 @@ class RAGPipeline:
                 results=search_results,
                 top_n=top_n,
             )
-            if _is_noop_rerank(original_snapshot, ranked_results):
+            outcome = _document_metadata(ranked_results[0]).get("jev_outcome") if ranked_results else None
+            if outcome == "fallback":
+                fallback = ranked_results if top_n is None else ranked_results[:top_n]
+                return RerankResults(documents=fallback, count=len(fallback), reranked=False)
+            if outcome != "judged" and _is_noop_rerank(original_snapshot, ranked_results):
                 _annotate_rerank_scores(original_snapshot, ranked_results, reranked=False)
                 logger.warning(
                     "[5단계] 리랭커가 원본 결과를 그대로 반환 - 리랭킹 미수행 처리",
@@ -3891,7 +3895,7 @@ class RAGPipeline:
 
             # 리랭킹 후 min_score 필터링
             min_score = reranking_config.get("min_score", 0.05)
-            if min_score > 0:
+            if outcome != "judged" and min_score > 0:
                 before_count = len(ranked_results)
                 ranked_results = [
                     doc

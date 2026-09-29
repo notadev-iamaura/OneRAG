@@ -23,6 +23,17 @@ def results(count: int) -> list[SearchResult]:
     return [SearchResult(str(i), f"passage {i}", 0.9 - i * 0.1, {"source": str(i)}) for i in range(count)]
 
 
+def assert_fallback(output, incoming):
+    assert [doc.id for doc in output] == [doc.id for doc in incoming]
+    for copied, original in zip(output, incoming, strict=True):
+        assert copied is not original
+        assert copied.metadata is not original.metadata
+        assert copied.score == original.score
+        assert copied.metadata["jev_outcome"] == "fallback"
+        assert "rerank_method" not in copied.metadata
+        assert "jev_outcome" not in original.metadata
+
+
 def results_with_metadata_score() -> list[SearchResult]:
     incoming = [
         SearchResult(str(i), f"passage {i}", 0.0, {"score": 0.1, "source": str(i)})
@@ -245,9 +256,9 @@ async def test_all_errors_fail_open() -> None:
         "key", mode="enforce", client=FakeClient([None, None], error_kind="http_500"),
         circuit_failure_threshold=1,
     )
-    assert await reranker.rerank("q", incoming) is incoming
+    assert_fallback(await reranker.rerank("q", incoming), incoming)
     assert reranker.get_stats()["fail_open_count"] == 1
-    assert await reranker.rerank("q", incoming) is incoming
+    assert_fallback(await reranker.rerank("q", incoming), incoming)
     assert reranker.get_stats()["circuit_open_skips"] == 1
 
 
@@ -259,7 +270,7 @@ async def test_all_timeouts_do_not_open_circuit() -> None:
         circuit_failure_threshold=1,
     )
     for _ in range(3):
-        assert await reranker.rerank("q", incoming) is incoming
+        assert_fallback(await reranker.rerank("q", incoming), incoming)
     assert reranker.get_stats()["circuit_open_skips"] == 0
     assert reranker.get_stats()["jev_requests"] == 6
     assert reranker.get_stats()["timeout_batches"] == 3
@@ -278,7 +289,7 @@ async def test_batch_deadline_does_not_feed_circuit() -> None:
         deadline_seconds=0.02, circuit_failure_threshold=1,
     )
     for _ in range(2):
-        assert await reranker.rerank("q", incoming) is incoming
+        assert_fallback(await reranker.rerank("q", incoming), incoming)
     assert reranker.get_stats()["batch_timeouts"] == 2
     assert reranker.get_stats()["circuit_open_skips"] == 0
 
@@ -299,9 +310,9 @@ async def test_timeouts_do_not_reset_hard_failure_count() -> None:
         circuit_failure_threshold=2,
     )
     for _ in range(3):
-        assert await reranker.rerank("q", incoming) is incoming
+        assert_fallback(await reranker.rerank("q", incoming), incoming)
     assert reranker.get_stats()["timeout_batches"] == 1
-    assert await reranker.rerank("q", incoming) is incoming
+    assert_fallback(await reranker.rerank("q", incoming), incoming)
     assert reranker.get_stats()["circuit_open_skips"] == 1
 
 
@@ -320,7 +331,7 @@ async def test_enforce_deadline_fails_open_with_top_n() -> None:
     output = await reranker.rerank("q", incoming, top_n=2)
     assert time.monotonic() - started < 0.5
     assert len(output) == 2
-    assert all(output[i] is incoming[i] for i in range(2))
+    assert_fallback(output, incoming[:2])
     assert reranker.get_stats()["fail_open_count"] == 1
     assert reranker.get_stats()["batch_timeouts"] == 1
 
@@ -334,7 +345,7 @@ async def test_http_and_parse_failure_fail_open(response: httpx.Response) -> Non
         client = TypeSafeJevClient("test-key", client=http)
         incoming = results(1)
         reranker = JevDecisionReranker("test-key", mode="enforce", client=client)
-        assert await reranker.rerank("q", incoming) is incoming
+        assert_fallback(await reranker.rerank("q", incoming), incoming)
 
 
 @pytest.mark.asyncio
@@ -371,13 +382,13 @@ async def test_passthrough_paths_respect_top_n() -> None:
     for reranker in rerankers:
         output = await reranker.rerank("q", incoming, top_n=2)
         assert len(output) == 2
-        assert all(output[i] is incoming[i] for i in range(2))
+        assert [doc.id for doc in output] == [doc.id for doc in incoming[:2]]
 
     circuit = rerankers[-1]
     circuit._circuit_open_until = time.monotonic() + 1
     output = await circuit.rerank("q", incoming, top_n=1)
     assert len(output) == 1
-    assert output[0] is incoming[0]
+    assert_fallback(output, incoming[:1])
 
     shadow = JevDecisionReranker("key", client=FakeClient([0.9] * 3))
     shadow._max_pending = 0

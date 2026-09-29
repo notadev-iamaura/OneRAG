@@ -106,7 +106,9 @@ async def test_jev_failure_never_constructs_or_calls_llm(failure):
         try:
             docs = [SearchResult(id="a", content="passage", score=0.5, metadata={})]
             for _ in range(3):
-                assert await reranker.rerank("query", docs, top_n=1) == docs
+                output = await reranker.rerank("query", docs, top_n=1)
+                assert [doc.id for doc in output] == [doc.id for doc in docs]
+                assert output[0].metadata["jev_outcome"] == "fallback"
             assert ask.await_count == (0 if failure == "circuit_open" else 3)
             assert all(not ctor.called for ctor in ctors)
         finally:
