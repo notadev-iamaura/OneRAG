@@ -1,5 +1,5 @@
 # 리랭킹 설정 v2.1
-# 3단계 계층 구조: approach → provider → model
+# legacy 모드의 3단계 계층 구조: approach → provider → model
 #
 # ╔═══════════════════════════════════════════════════════════════════════╗
 # ║  approach (기술 방식)                                                  ║
@@ -8,7 +8,6 @@
 # ║  - cross-encoder:    전용 리랭커 API (쿼리+문서 쌍 인코딩)            ║
 # ║  - late-interaction: ColBERT 방식 (토큰 레벨 상호작용)                ║
 # ║  - local:            로컬 모델 (API 키 불필요, 오프라인 사용 가능)     ║
-# ║  - decision:         Jev 관련성 판단 필터                            ║
 # ╠═══════════════════════════════════════════════════════════════════════╣
 # ║  provider (서비스 제공자)                                              ║
 # ╠═══════════════════════════════════════════════════════════════════════╣
@@ -16,11 +15,17 @@
 # ║  cross-encoder:    jina, cohere, vertex                               ║
 # ║  late-interaction: jina                                               ║
 # ║  local:            sentence-transformers, bge                         ║
-# ║  decision:         typesafe                                           ║
 # ╚═══════════════════════════════════════════════════════════════════════╝
 
 reranking:
   enabled: true
+  # 리랭크 모드: legacy | jev (미지정 시 legacy, 명시적 빈 env 값은 오류)
+  # legacy 에서는 리랭킹 단계의 Jev 생성·호출이 0이다.
+  # jev 에서는 리랭킹 단계의 기존 리랭커 생성·호출이 0이다.
+  # jev: TYPESAFE_API_KEY 필수(없으면 시작 실패). 문서 본문이 TypeSafe로 전송됨.
+  # Jev 장애 시 검색 순서 top_n으로 응답 (기존 리랭커로 자동 전환 안 함).
+  # Self-RAG precheck(TypeSafe)와 답변 생성 LLM은 이 값과 별개입니다.
+  mode: "${RERANK_MODE:-}"
   min_score: 0.0  # 기본값 (환경별 설정: environments/*.yaml에서 오버라이드)
 
   # ========================================
@@ -44,8 +49,8 @@ reranking:
   # ========================================
   # 출하 기본값: GOOGLE_API_KEY만으로 동작하는 조합 (quickstart 호환)
   # GOOGLE_API_KEY 부재 시에도 graceful degradation으로 리랭킹 없이 동작합니다.
-  approach: "llm"     # llm | cross-encoder | late-interaction | local | decision
-  provider: "google"  # approach에 따라 유효한 provider 선택
+  approach: "llm"     # legacy 전용: llm | cross-encoder | late-interaction | local
+  provider: "google"  # legacy 전용: approach에 따라 유효한 provider 선택
 
   # (선택) 더 빠른 토큰 레벨 리랭킹을 원하면 아래 조합으로 변경하세요.
   # 단, JINA_API_KEY 환경변수가 반드시 필요합니다 (https://jina.ai/).
@@ -171,16 +176,9 @@ reranking:
     #   동시 요청 폭주 시 이벤트 루프 점유/워커 고갈을 막으려면 30초 권장.
     timeout: 30
 
-  # ⚠️ decision은 기존 리랭커를 대체합니다 (inner 래핑 없음).
-  # shadow = 리랭킹 없이 검색 순서 유지 + 판정 기록; llm/jina 위에 겹쳐 실행되지 않습니다.
-  # WARNING: decision replaces the existing reranker (no inner wrap).
-  # shadow keeps retrieval order and records judgments; it does not layer on llm/jina.
-  # A missing API key keeps retrieval order. Passage text is sent to TypeSafe.
-  # approach: "decision"
-  # provider: "typesafe"
+  # RERANK_MODE=jev 전용. factory는 항상 enforce로 생성합니다.
   typesafe:
     model: "${TYPESAFE_JEV_MODEL:-jev-1.13.0}"
-    mode: "${TYPESAFE_JEV_MODE:-shadow}"  # off | shadow | enforce
     question_type: "noul"
     min_relevance: 0.5
     min_keep: 1  # enforce에서 top_n 범위 내 최소 보존 수 / floor within top_n
@@ -189,12 +187,11 @@ reranking:
     timeout: 3.0
     deadline_seconds: 5.0  # enforce 배치 전체 제한 / enforce batch deadline
     concurrency: 4
-    shadow_background: true
     circuit_failure_threshold: 5
     circuit_cooldown_seconds: 30
 
 # ========================================
-# approach 선택 가이드
+# legacy 모드 approach 선택 가이드
 # ========================================
 #
 # 🎯 빠른 응답 필요 (실시간 채팅):
@@ -222,7 +219,8 @@ reranking:
 #   → BAAI/bge-reranker-v2-m3, 한국어/일본어 등 다국어 품질 우수
 #   → torch + transformers 필요 (uv sync --extra local-embedding)
 #
-# 🧪 Jev 판단 기록 실험:
-#   → approach: decision, provider: typesafe, mode: shadow
-#   → 기존 리랭커 대체; 검색 순서 유지 + 판정 기록 (llm/jina와 중첩되지 않음)
-#   → Replaces the existing reranker; keeps retrieval order + records judgments (no llm/jina layering)
+# Jev 켜기:
+#   → RERANK_MODE=jev + TYPESAFE_API_KEY 설정 후 워커 재시작
+#   → 리랭킹 단계의 기존 리랭커 OFF, Jev 관련성 필터 ON
+#   → 되돌리기: RERANK_MODE=legacy를 명시한 뒤 재시작
+#   → 마이그레이션/롤링 절차: docs/RERANK_MODE.md
