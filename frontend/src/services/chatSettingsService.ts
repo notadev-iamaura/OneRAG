@@ -11,8 +11,7 @@
  *
  * localStorage는 더 이상 원본(source of truth)이 아니라 **오프라인/즉시 렌더용 캐시**로만
  * 사용합니다. 서버 미응답 시 캐시→기본값으로 graceful 폴백합니다.
- * 관리자 X-API-Key는 운영 설정(operatorSettings.adminApiKey) 또는 배포 주입
- * (RUNTIME_CONFIG.ADMIN_API_KEY)에서 읽습니다.
+ * 관리자 X-API-Key는 운영 설정(operatorSettings.adminApiKey)에서만 읽습니다.
  */
 
 import { ChatEmptyStateSettings, ChatEmptyStateSettingsUpdateRequest } from '../types';

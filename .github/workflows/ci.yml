@@ -124,6 +124,63 @@ jobs:
         run: uv run lint-imports
 
   # ============================================
+  # 의존성 취약점 감사 (pip-audit)
+  # ------------------------------------------------------------------
+  # 런타임 의존성(uv export --no-dev)만 감사한다. docs/security/dependency-triage.md의
+  # "Current Baseline" 목록이 비기 전까지는 비차단(continue-on-error)으로 운용하고,
+  # 결과는 잡 요약(Step Summary)과 아티팩트로 남긴다. 기준선이 0이 되면
+  # continue-on-error를 제거해 차단 게이트로 전환한다.
+  # ============================================
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Export runtime requirements
+        run: >
+          uv export --frozen --no-dev --no-emit-project
+          --format requirements.txt --no-hashes
+          --output-file requirements-audit.txt
+
+      - name: Run pip-audit
+        run: |
+          python -m pip install --quiet pip-audit
+          set +e
+          pip-audit -r requirements-audit.txt --no-deps --strict --desc=off \
+            --format=markdown --output=pip-audit-report.md
+          status=$?
+          set -e
+          {
+            echo "## pip-audit (runtime dependencies)"
+            echo
+            if [ -s pip-audit-report.md ]; then cat pip-audit-report.md; else echo "No known vulnerabilities found."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.md
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ============================================
   # 테스트 및 커버리지 (Pytest) - 30분 타임아웃
   # ============================================
   test:

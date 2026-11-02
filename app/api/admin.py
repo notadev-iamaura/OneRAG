@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import re
+import secrets
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -1638,7 +1639,13 @@ async def websocket_endpoint(websocket: WebSocket):
     api_key = websocket.query_params.get("api_key") or websocket.headers.get("X-API-Key")
     auth = get_api_key_auth()
 
-    if auth.api_key and (not api_key or not __import__("secrets").compare_digest(api_key, auth.api_key)):
+    # fail-closed: 서버 키가 없으면 관리자 WebSocket은 누구에게도 열지 않는다.
+    if not auth.api_key:
+        await websocket.close(code=4001, reason="서버 인증 미구성: FASTAPI_AUTH_KEY를 설정하세요")
+        logger.warning("Admin WebSocket 연결 거부: FASTAPI_AUTH_KEY 미설정(fail-closed)")
+        return
+
+    if not api_key or not secrets.compare_digest(api_key, auth.api_key):
         await websocket.close(code=4001, reason="인증 실패: 유효한 API Key가 필요합니다")
         logger.warning("Admin WebSocket 인증 실패: API Key 없음 또는 불일치")
         return

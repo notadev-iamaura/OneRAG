@@ -33,7 +33,7 @@ keywords = [
 
 dependencies = [
     # FastAPI and ASGI Server
-    "fastapi==0.104.1",
+    "fastapi>=0.115.0,<1",
     "uvicorn[standard]==0.24.0",
     "python-multipart==0.0.32",
     # HTTP Client (requests 제거, httpx만 사용)
@@ -61,7 +61,7 @@ dependencies = [
     "pandas>=2.2.0",
     "beautifulsoup4==4.12.2",
     "markdown==3.10.2",
-    "Pillow>=10.0.0,<12", # 이미지 처리 (image_chat.py에서 필요)
+    "Pillow>=10.0.0,<14", # 이미지 처리 (image_chat.py에서 필요)
     # BM25 하이브리드 검색 (한국어 토크나이저 + BM25 인덱스)
     "kiwipiepy>=0.18.0",
     "rank-bm25>=0.2.2",
@@ -105,7 +105,7 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "playwright==1.59.0",
     "apscheduler==3.10.4",
-    "lxml==5.3.0",
+    "lxml>=5.3.0,<7",
     # Korean NLP for PII Detection (spaCy)
     "spacy>=3.7.0",
     # ko_core_news_sm: PyPI 정책상 직접 URL 의존성 불가 → 설치 후 별도 다운로드 필요

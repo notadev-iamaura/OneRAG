@@ -91,9 +91,6 @@ describe('chatSettingsService', () => {
     // @ts-expect-error - 테스트 격리를 위해 내부 메모리 캐시를 강제 초기화한다.
     chatSettingsService.memoryCache = null;
     mockReadOperatorSettings.mockReturnValue({ adminApiKey: '' });
-    if (window.RUNTIME_CONFIG) {
-      delete window.RUNTIME_CONFIG.ADMIN_API_KEY;
-    }
   });
 
   afterEach(() => {
@@ -199,21 +196,19 @@ describe('chatSettingsService', () => {
       expect(result.mainMessage).toBe('저장된 메인');
     });
 
-    it('RUNTIME_CONFIG.ADMIN_API_KEY 주입 시에도 키를 사용한다', async () => {
-      window.RUNTIME_CONFIG = { ...(window.RUNTIME_CONFIG || {}), ADMIN_API_KEY: 'injected-key' };
-      const def = { mainMessage: '기본 메인', subMessage: '기본 보조', suggestions: ['q1'] };
-      const fetchMock = vi.fn(async () => okResponse(def));
+    it('RUNTIME_CONFIG에 키가 있어도 더 이상 사용하지 않는다(공개 config.js 노출 차단)', async () => {
+      // RuntimeConfig 타입에서 ADMIN_API_KEY가 제거되었으므로 "과거 배포가 남긴 값"을 흉내낸다.
+      (window as unknown as { RUNTIME_CONFIG: Record<string, unknown> }).RUNTIME_CONFIG = {
+        ...(window.RUNTIME_CONFIG || {}),
+        ADMIN_API_KEY: 'injected-key',
+      };
+      const fetchMock = vi.fn(async () => okResponse({}));
       vi.stubGlobal('fetch', fetchMock);
 
-      await chatSettingsService.resetSettings('en');
-
-      expect(fetchMock).toHaveBeenCalledWith(
-        'http://test-host/api/admin/chat-empty-state/en',
-        expect.objectContaining({
-          method: 'DELETE',
-          headers: expect.objectContaining({ 'X-API-Key': 'injected-key' }),
-        })
+      await expect(chatSettingsService.resetSettings('en')).rejects.toBeInstanceOf(
+        MissingAdminKeyError,
       );
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('hasAdminKey는 키 유무를 정확히 반영한다', () => {

@@ -6,7 +6,9 @@
 #      - API_BASE_URL / WS_BASE_URL: 비우면 프론트가 same-origin으로 동작(nginx 프록시 사용).
 #      - FEATURES: features.ts(loadFeaturesFromRuntime)가 최우선으로 읽는 Feature Flag.
 #      - EMBED_ALLOWED_ORIGINS: useEmbedBridge가 부모 origin 화이트리스트로 사용.
-#      - ADMIN_API_KEY: 관리자 쓰기 API(X-API-Key) 자동 주입(비우면 미주입).
+#      - 관리자 API 키(X-API-Key)는 주입하지 않는다. config.js는 모든 방문자에게 공개되는
+#        정적 파일이라 키를 넣으면 관리자 권한이 그대로 노출된다. 운영자는 설정 화면에서
+#        키를 직접 입력하고, 값은 브라우저 localStorage에만 저장된다.
 #   2) nginx default.conf에 API_PROXY_PASS / FRAME_ANCESTORS / FRAME_OPTIONS_HEADER를 envsubst로 치환한다.
 #
 # 멀티테넌시(company_id) 등은 OneRAG OSS 범위 밖이므로 주입하지 않는다.
@@ -17,8 +19,10 @@ WS_BASE_URL="${VITE_WS_BASE_URL:-${WS_BASE_URL:-}}"
 # same-origin 모드에서 nginx가 /api, /chat-ws 등을 프록시할 백엔드 주소(말미 슬래시 제거)
 API_PROXY_PASS="${API_PROXY_PASS:-${BACKEND_URL:-http://backend:8000}}"
 API_PROXY_PASS="${API_PROXY_PASS%/}"
-# 관리자 쓰기 API에 사용하는 X-API-Key(비우면 미주입 — 운영자가 수동 입력)
-ADMIN_API_KEY="${VITE_ADMIN_API_KEY:-${ADMIN_API_KEY:-}}"
+# 관리자 API 키는 의도적으로 읽지 않는다(공개 config.js에 비밀값 노출 금지).
+if [ -n "${VITE_ADMIN_API_KEY:-}${ADMIN_API_KEY:-}" ]; then
+  echo "[entrypoint] WARNING: ADMIN_API_KEY/VITE_ADMIN_API_KEY is set but ignored. The admin key is never written to config.js; enter it in the operator settings page instead." >&2
+fi
 # 관리자 페이지 접근 코드(UX 진입 장벽). 비우면 프론트 기본 코드 사용.
 ACCESS_CODE="${VITE_ACCESS_CODE:-${ACCESS_CODE:-1127}}"
 # 임베드 허용 부모 origin 화이트리스트(콤마 구분). 비우면 same-origin만 허용.
@@ -55,7 +59,6 @@ feature_value() {
 # 일반 값 이스케이프
 API_BASE_URL_JS=$(js_string "$API_BASE_URL")
 WS_BASE_URL_JS=$(js_string "$WS_BASE_URL")
-ADMIN_API_KEY_JS=$(js_string "$ADMIN_API_KEY")
 ACCESS_CODE_JS=$(js_string "$ACCESS_CODE")
 EMBED_ALLOWED_ORIGINS_JS=$(js_string "$EMBED_ALLOWED_ORIGINS")
 NODE_ENV_JS=$(js_string "$NODE_ENV")
@@ -92,7 +95,7 @@ FEATURE_PRIVACY_MASK_PHONE_JS=$(feature_value FEATURE_PRIVACY_MASK_PHONE)
 
 # config.js 생성
 # - parseBool/parseEmbedAllowedOrigins는 브라우저에서 실행되며, 기본값은 features.ts의 DEFAULT_FEATURES와 일치시킨다.
-# - ADMIN_API_KEY는 값이 있을 때만 RUNTIME_CONFIG에 포함한다(빈 키 노출 방지).
+# - 관리자 API 키는 어떤 경우에도 포함하지 않는다(공개 파일).
 cat > /usr/share/nginx/html/config.js << EOF
 // 런타임 설정 (자동 생성됨 — 직접 수정하지 말 것)
 window.RUNTIME_CONFIG = (() => {
@@ -160,12 +163,6 @@ window.RUNTIME_CONFIG = (() => {
       }
     }
   };
-
-  // 관리자 키는 주입된 경우에만 포함한다(빈 값 노출 방지).
-  const adminApiKey = "${ADMIN_API_KEY_JS}";
-  if (adminApiKey) {
-    config.ADMIN_API_KEY = adminApiKey;
-  }
 
   return config;
 })();

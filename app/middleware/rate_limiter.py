@@ -16,6 +16,7 @@ from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.lib.client_ip import TrustedProxyPolicy, get_trusted_proxy_policy, resolve_client_ip
 from app.lib.errors import ErrorCode, get_error_message
 from app.lib.logger import get_logger
 
@@ -352,9 +353,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     특정 경로에 대해 Rate Limiting을 적용합니다.
     """
 
-    def __init__(self, app, rate_limiter: RateLimiter, excluded_paths: list[str] | None = None):
+    def __init__(
+        self,
+        app,
+        rate_limiter: RateLimiter,
+        excluded_paths: list[str] | None = None,
+        trusted_proxy_policy: TrustedProxyPolicy | None = None,
+    ):
         super().__init__(app)
         self.rate_limiter = rate_limiter
+        # None이면 TRUSTED_PROXY_IPS 환경변수 정책을 지연 로드한다(테스트는 명시 주입).
+        self._trusted_proxy_policy = trusted_proxy_policy
 
         # Rate Limiting에서 제외할 경로 (Health Check 등)
         self.excluded_paths = excluded_paths or [
@@ -370,12 +379,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def _get_client_ip(self, request: Request) -> str | None:
         """
-        클라이언트 IP 주소 추출
+        클라이언트 IP 주소 추출 (신뢰 프록시 정책 적용)
 
-        우선순위:
-        1. X-Forwarded-For 헤더 (프록시 환경)
-        2. X-Real-IP 헤더
-        3. request.client.host (직접 연결)
+        직접 연결된 peer(request.client.host)가 TRUSTED_PROXY_IPS 정책상 신뢰 프록시일
+        때만 X-Forwarded-For / X-Real-IP를 읽고, 아니면 peer IP를 그대로 쓴다.
+        (예전에는 헤더를 무조건 믿어 헤더만 바꾸면 IP 제한을 우회할 수 있었다.)
 
         Args:
             request: FastAPI Request 객체
@@ -383,22 +391,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         Returns:
             Optional[str]: 클라이언트 IP 주소 (없으면 None)
         """
-        # X-Forwarded-For 헤더 체크 (프록시 환경)
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            # 여러 프록시를 거친 경우 첫 번째 IP 사용
-            return forwarded_for.split(",")[0].strip()
-
-        # X-Real-IP 헤더 체크
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
-
-        # 직접 연결된 클라이언트 IP
-        if request.client:
-            return request.client.host
-
-        return None
+        policy = self._trusted_proxy_policy or get_trusted_proxy_policy()
+        peer_host = request.client.host if request.client else None
+        return resolve_client_ip(peer_host, request.headers, policy)
 
     @staticmethod
     def _restore_request_body(request: Request, body: bytes) -> None:
@@ -564,11 +559,13 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
         rate_limiter: RateLimiter,
         ip_limit: int = 20,
         session_limit: int = 10,
+        trusted_proxy_policy: TrustedProxyPolicy | None = None,
     ):
         super().__init__(app)
         self.rate_limiter = rate_limiter
         self.ip_limit = ip_limit
         self.session_limit = session_limit
+        self._trusted_proxy_policy = trusted_proxy_policy
 
         logger.info(
             f"ChatRateLimitMiddleware 초기화: "
@@ -577,19 +574,10 @@ class ChatRateLimitMiddleware(BaseHTTPMiddleware):
         )
 
     def _get_client_ip(self, request: Request) -> str | None:
-        """클라이언트 IP 주소 추출 (X-Forwarded-For → X-Real-IP → client.host)"""
-        forwarded_for = request.headers.get("X-Forwarded-For")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
-
-        if request.client:
-            return request.client.host
-
-        return None
+        """클라이언트 IP 주소 추출 (신뢰 프록시 정책 적용, RateLimitMiddleware와 동일 규칙)"""
+        policy = self._trusted_proxy_policy or get_trusted_proxy_policy()
+        peer_host = request.client.host if request.client else None
+        return resolve_client_ip(peer_host, request.headers, policy)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """

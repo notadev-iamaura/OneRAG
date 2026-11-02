@@ -215,6 +215,16 @@ lint-imports: install-dev
 	@echo "🔍 Checking import dependencies..."
 	uv run lint-imports
 
+# 런타임 의존성 취약점 감사 (pip-audit)
+# uv 가상환경에는 ensurepip가 없어 pip-audit가 임시 venv를 만들지 못하므로,
+# lock을 requirements로 export한 뒤 --no-deps로 고정 버전만 검사한다.
+# (python3는 ensurepip가 포함된 시스템/pyenv 인터프리터여야 한다.)
+.PHONY: audit
+audit:
+	@echo "🔎 Auditing runtime dependencies with pip-audit..."
+	uv export --frozen --no-dev --no-emit-project --format requirements.txt --no-hashes --output-file .pip-audit-requirements.txt
+	@uvx --python python3 pip-audit -r .pip-audit-requirements.txt --no-deps --desc=off; status=$$?; rm -f .pip-audit-requirements.txt; exit $$status
+
 repair-venv-scripts: check-uv
 	@echo "🔧 Reinstalling console scripts for moved workspaces..."
 	uv sync --reinstall-package import-linter --reinstall-package mypy --reinstall-package pytest

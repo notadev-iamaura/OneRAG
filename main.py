@@ -486,6 +486,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         chat_service_instance = ChatService(modules_dict, rag_app.config)
         websocket_router.set_chat_service(chat_service_instance)
         logger.info("✅ WebSocket 라우터에 ChatService 주입 완료")
+        # WebSocket 메시지는 HTTP 미들웨어가 보지 못하므로 같은 한도를 라우터에 직접 주입한다.
+        websocket_router.set_rate_limiter(
+            rate_limiter,
+            ip_limit=CHAT_RATE_LIMIT_IP,
+            session_limit=CHAT_RATE_LIMIT_SESSION,
+        )
 
         # OpenAI 호환 API에 모듈 주입
         # chat_service를 주입해야 /v1이 메인 채팅과 동일한 RAG 체인을 재사용하고

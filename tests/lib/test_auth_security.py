@@ -4,7 +4,8 @@ API Key 인증 보안 테스트 (TDD)
 테스트 시나리오:
 1. 프로덕션 환경에서 인증 우회 차단
 2. 환경 변수 조작 공격 차단
-3. 개발 환경에서 인증 스킵 허용
+3. 개발 환경에서도 보호 경로는 fail-closed(키 미설정 시 거부)
+4. 자리표시자/짧은 키는 프로덕션 기동 거부
 """
 
 import os
@@ -54,8 +55,8 @@ class TestProductionAuthBypass:
         assert auth is not None
 
     @pytest.mark.asyncio
-    async def test_allow_auth_skip_in_development(self) -> None:
-        """개발 환경에서 인증 스킵 허용"""
+    async def test_unprotected_paths_pass_without_key_in_development(self) -> None:
+        """개발 환경에서 키가 없어도 보호 경로가 아닌 요청(브라우저 채팅 등)은 통과"""
         from app.lib.auth import APIKeyAuth
 
         # 개발 환경 설정
@@ -73,9 +74,101 @@ class TestProductionAuthBypass:
         async def mock_call_next(req: Request) -> AsyncMock:
             return AsyncMock(status_code=200)
 
-        # 인증 스킵되어 정상 처리
+        # 보호 경로가 아니므로 정상 처리
         response = await auth.authenticate_request(request, mock_call_next)
         assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_protected_paths_are_fail_closed_without_key_in_development(self) -> None:
+        """키가 없으면 개발 환경이라도 보호 경로(/v1)는 401이어야 한다(fail-closed).
+
+        예전에는 개발 환경이면 인증을 통째로 건너뛰어, ENVIRONMENT만 development로
+        바꾸면 보호 경로가 열리는 구조였다.
+        """
+        from app.lib.auth import APIKeyAuth
+
+        os.environ["ENVIRONMENT"] = "development"
+        auth = APIKeyAuth(api_key=None)
+
+        request = AsyncMock(spec=Request)
+        request.url.path = "/v1/models"
+        request.method = "GET"
+        request.headers = {"X-API-Key": "anything"}
+        request.client = None
+
+        async def mock_call_next(req: Request) -> AsyncMock:
+            return AsyncMock(status_code=200)
+
+        response = await auth.authenticate_request(request, mock_call_next)
+        assert response.status_code == 401
+
+    def test_get_api_key_rejects_any_header_when_server_key_missing(self) -> None:
+        """서버 키가 없으면 get_api_key는 어떤 X-API-Key 값도 통과시키지 않는다."""
+        from fastapi import HTTPException
+
+        import app.lib.auth as auth_module
+        from app.lib.auth import APIKeyAuth, get_api_key
+
+        os.environ["ENVIRONMENT"] = "development"
+        original = auth_module._auth_instance
+        auth_module._auth_instance = APIKeyAuth(api_key=None)
+        try:
+            request = AsyncMock(spec=Request)
+            request.url.path = "/api/admin/stats"
+            request.headers = {"X-API-Key": "whatever"}
+            with pytest.raises(HTTPException) as exc_info:
+                get_api_key(request)
+            assert exc_info.value.status_code == 401
+            assert exc_info.value.detail["error"] == "서버 인증 미구성"
+        finally:
+            auth_module._auth_instance = original
+
+
+class TestWeakApiKeyValidation:
+    """자리표시자/짧은 키 검증 테스트"""
+
+    def setup_method(self) -> None:
+        for key in ["ENVIRONMENT", "NODE_ENV", "WEAVIATE_URL", "FASTAPI_AUTH_KEY"]:
+            os.environ.pop(key, None)
+
+    def test_validate_api_key_strength_flags_placeholders_and_short_keys(self) -> None:
+        from app.lib.auth import validate_api_key_strength
+
+        assert "placeholder" in validate_api_key_strength("your_api_auth_key_here")
+        assert "placeholder" in validate_api_key_strength("local-dev-only-change-me")
+        assert "placeholder" in validate_api_key_strength("ChangeMe")
+        assert validate_api_key_strength("abc") == ["too_short"]
+        assert validate_api_key_strength("a-strong-random-key-0123456789") == []
+        assert validate_api_key_strength(None) == []
+
+    def test_placeholder_key_refuses_to_start_in_production(self) -> None:
+        from app.lib.auth import APIKeyAuth
+
+        os.environ["ENVIRONMENT"] = "production"
+        with pytest.raises(RuntimeError, match="안전하지 않습니다"):
+            APIKeyAuth(api_key="your_api_auth_key_here")
+
+    def test_short_key_refuses_to_start_in_production(self) -> None:
+        from app.lib.auth import APIKeyAuth
+
+        os.environ["ENVIRONMENT"] = "production"
+        with pytest.raises(RuntimeError, match="too_short"):
+            APIKeyAuth(api_key="short")
+
+    def test_weak_key_only_warns_in_development(self) -> None:
+        """개발 환경에서는 퀵스타트 템플릿 키로도 기동할 수 있어야 한다(경고만)."""
+        from app.lib.auth import APIKeyAuth
+
+        os.environ["ENVIRONMENT"] = "development"
+        auth = APIKeyAuth(api_key="local-dev-only-change-me")
+        assert auth.api_key == "local-dev-only-change-me"
+
+    def test_strong_key_starts_in_production(self) -> None:
+        from app.lib.auth import APIKeyAuth
+
+        os.environ["ENVIRONMENT"] = "production"
+        auth = APIKeyAuth(api_key="a-strong-random-key-0123456789abcdef")
+        assert auth.api_key
 
     def test_v1_paths_are_protected_without_blocking_browser_chat_by_default(self) -> None:
         """OpenAI-compatible /v1 경로는 보호하되 브라우저 채팅 경로는 전역 차단하지 않음"""

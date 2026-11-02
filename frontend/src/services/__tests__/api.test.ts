@@ -355,9 +355,14 @@ describe('api.ts', () => {
             expect(config.headers['X-Session-Id']).toBe('session-123');
         });
 
-        it('관리자 보호 API에는 런타임 admin key를 첨부해야 함', async () => {
+        it('관리자 보호 API에는 운영자 설정의 admin key를 첨부해야 함', async () => {
             vi.resetModules();
-            window.RUNTIME_CONFIG = { ADMIN_API_KEY: 'admin-key' };
+            // 키는 운영자 설정(localStorage)에서만 읽는다. RUNTIME_CONFIG 주입은 더 이상 지원하지 않는다.
+            window.RUNTIME_CONFIG = {};
+            window.localStorage.setItem(
+                'onerag_operator_settings',
+                JSON.stringify({ adminApiKey: 'admin-key' }),
+            );
 
             vi.doMock('axios', () => {
                 const mainInstance = {

@@ -44,6 +44,61 @@ logger = get_logger(__name__)
 DEFAULT_UPLOAD_TOKEN_TTL_SECONDS = 900  # 15분
 MAX_UPLOAD_TOKEN_TTL_SECONDS = 86400  # 24시간
 
+# API Key 최소 길이. 이보다 짧은 키는 무차별 대입에 취약하므로 약한 키로 분류한다.
+MIN_API_KEY_LENGTH = 16
+
+# 템플릿(.env.example, quickstart)에 적힌 자리표시자 키 목록.
+# 이 값이 그대로 운영에 배포되면 공개된 키로 관리자 API가 열리므로 프로덕션에서는 거부한다.
+PLACEHOLDER_API_KEYS: frozenset[str] = frozenset(
+    {
+        "your_api_auth_key_here",
+        "your-api-auth-key-here",
+        "your_secure_random_key_here_at_least_32_chars",
+        "local-dev-only-change-me",
+        "change-me",
+        "changeme",
+        "secret",
+        "password",
+        "test",
+        "dev",
+        "admin",
+    }
+)
+
+# 인증 미구성(키 미설정) 상태에서 보호 리소스 요청 시 돌려주는 응답 본문.
+# fail-closed: 키가 없으면 "누구나 통과"가 아니라 "아무도 통과 못 함"이 안전한 기본값이다.
+AUTH_NOT_CONFIGURED_DETAIL: dict[str, str] = {
+    "error": "서버 인증 미구성",
+    "message": "FASTAPI_AUTH_KEY가 설정되지 않아 보호된 API를 사용할 수 없습니다",
+    "suggestion": (
+        "관리자: FASTAPI_AUTH_KEY 환경 변수를 설정한 뒤 서버를 재시작하세요 "
+        "(안전한 키 생성: openssl rand -hex 32)"
+    ),
+    "docs": "https://github.com/notadev-iamaura/OneRAG#authentication",
+}
+
+
+def validate_api_key_strength(api_key: str | None) -> list[str]:
+    """API Key가 운영에 쓰기에 충분히 강한지 검사한다.
+
+    Args:
+        api_key: 검사할 키. None/빈 문자열이면 검사하지 않는다(미설정은 별도 처리).
+
+    Returns:
+        발견된 문제 목록(빈 리스트면 통과). 문제 종류:
+        - "placeholder": 템플릿 자리표시자 값을 그대로 사용
+        - "too_short": MIN_API_KEY_LENGTH 미만
+    """
+    if not api_key:
+        return []
+
+    problems: list[str] = []
+    if api_key.strip().lower() in PLACEHOLDER_API_KEYS:
+        problems.append("placeholder")
+    if len(api_key) < MIN_API_KEY_LENGTH:
+        problems.append("too_short")
+    return problems
+
 
 def get_upload_token_ttl_seconds() -> int:
     """브라우저 업로드 토큰 TTL(초)을 환경변수에서 해석한다.
@@ -139,18 +194,48 @@ class APIKeyAuth:
                 logger.critical(suggestion_msg)
                 raise RuntimeError(f"{error_msg}\n{suggestion_msg}")
             else:
-                # 개발 환경: 경고만 출력
+                # 개발 환경: 서버는 뜨지만 보호 리소스(관리자/업로드//v1)는 fail-closed로 거부된다.
                 logger.warning(
-                    "FASTAPI_AUTH_KEY가 설정되지 않았습니다. 인증이 비활성화됩니다.",
+                    "FASTAPI_AUTH_KEY가 설정되지 않았습니다. "
+                    "보호된 API(관리자/업로드/v1)는 모든 요청을 거부합니다(fail-closed).",
                     extra={
                         "environment": "개발",
                         "suggestion": (
-                            "프로덕션 환경에서는 반드시 FASTAPI_AUTH_KEY를 설정하세요. "
+                            "브라우저 채팅(/api/chat)은 계속 동작합니다. "
+                            "관리자/업로드 API를 쓰려면 FASTAPI_AUTH_KEY를 설정하세요. "
                             "안전한 키 생성: openssl rand -hex 32"
                         ),
                     },
                 )
         else:
+            # 약한 키(자리표시자/짧은 키) 검증: 프로덕션은 시작 거부, 개발은 경고
+            key_problems = validate_api_key_strength(self.api_key)
+            if key_problems:
+                problem_desc = ", ".join(key_problems)
+                if is_production:
+                    error_msg = (
+                        f"FASTAPI_AUTH_KEY가 안전하지 않습니다({problem_desc}). "
+                        "프로덕션 환경에서는 템플릿 자리표시자 키나 "
+                        f"{MIN_API_KEY_LENGTH}자 미만의 키를 사용할 수 없습니다."
+                    )
+                    suggestion_msg = (
+                        "해결 방법:\n"
+                        "1. 안전한 API Key 생성: openssl rand -hex 32\n"
+                        "2. .env 또는 배포 환경 변수의 FASTAPI_AUTH_KEY를 생성된 키로 교체\n"
+                        "3. 서버 재시작"
+                    )
+                    logger.critical(error_msg)
+                    logger.critical(suggestion_msg)
+                    raise RuntimeError(f"{error_msg}\n{suggestion_msg}")
+                logger.warning(
+                    "FASTAPI_AUTH_KEY가 약한 키입니다. 프로덕션에서는 시작이 거부됩니다.",
+                    extra={
+                        "problems": key_problems,
+                        "environment": "개발",
+                        "suggestion": "안전한 키 생성: openssl rand -hex 32",
+                    },
+                )
+
             # API Key 설정 완료
             logger.info(
                 "API Key 인증 활성화",
@@ -246,47 +331,52 @@ class APIKeyAuth:
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # 2. API Key가 설정되지 않았으면 인증 스킵 (개발 환경만 허용)
+        # 2. API Key가 설정되지 않았으면 보호 경로는 fail-closed로 거부
+        #    (예전에는 개발 환경에서 인증을 통째로 건너뛰었다. 그 경우 환경 감지만 속이면
+        #     보호 경로가 그대로 열리므로, 환경과 무관하게 거부하는 것이 안전한 기본값이다.)
         if not self.api_key:
-            # ✅ 다층 환경 감지로 우회 차단
-            from .environment import is_production_environment
+            if self.is_protected_path(path):
+                from .environment import is_production_environment
 
-            if is_production_environment():
-                # 프로덕션 환경에서는 절대 허용하지 않음
-                logger.critical(
-                    "프로덕션 환경에서 API Key 누락 감지",
+                if is_production_environment():
+                    # 프로덕션 지표가 있는데 키가 없으면 설정 오류로 취급해 500을 돌려준다.
+                    logger.critical(
+                        "프로덕션 환경에서 API Key 누락 감지",
+                        extra={
+                            "path": path,
+                            "suggestion": (
+                                "프로덕션 지표가 존재하지만 FASTAPI_AUTH_KEY가 설정되지 않았습니다. "
+                                "즉시 FASTAPI_AUTH_KEY를 설정하세요."
+                            ),
+                        },
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail={
+                            "error": "서버 인증 설정 오류",
+                            "message": "프로덕션 환경에서 API 인증이 구성되지 않았습니다",
+                            "suggestion": (
+                                "시스템 관리자에게 문의하세요. "
+                                "관리자: FASTAPI_AUTH_KEY 환경 변수를 설정해야 합니다 "
+                                "(안전한 키 생성: openssl rand -hex 32)"
+                            ),
+                            "docs": "https://github.com/notadev-iamaura/OneRAG#authentication",
+                        },
+                    )
+
+                logger.warning(
+                    "FASTAPI_AUTH_KEY 미설정 상태에서 보호 경로 요청 거부(fail-closed)",
                     extra={
                         "path": path,
-                        "suggestion": (
-                            "환경 변수 조작 공격이 감지되었습니다. "
-                            "프로덕션 지표가 존재하지만 FASTAPI_AUTH_KEY가 설정되지 않았습니다. "
-                            "즉시 FASTAPI_AUTH_KEY를 설정하세요."
-                        ),
+                        "suggestion": "FASTAPI_AUTH_KEY를 설정하면 이 경로를 사용할 수 있습니다.",
                     },
                 )
-                raise HTTPException(
-                    status_code=500,
-                    detail={
-                        "error": "서버 인증 설정 오류",
-                        "message": "프로덕션 환경에서 API 인증이 구성되지 않았습니다",
-                        "suggestion": (
-                            "시스템 관리자에게 문의하세요. "
-                            "관리자: FASTAPI_AUTH_KEY 환경 변수를 설정해야 합니다 "
-                            "(안전한 키 생성: openssl rand -hex 32)"
-                        ),
-                        "docs": "https://github.com/youngouk/RAG_Standard#authentication",
-                    },
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": dict(AUTH_NOT_CONFIGURED_DETAIL)},
                 )
 
-            # 개발 환경에서만 허용
-            logger.warning(
-                "FASTAPI_AUTH_KEY 미설정으로 인증 스킵",
-                extra={
-                    "path": path,
-                    "environment": "개발",
-                    "suggestion": "개발 환경에서만 허용되는 동작입니다. 프로덕션에서는 차단됩니다.",
-                },
-            )
+            # 보호 경로가 아니면(브라우저 채팅 등) 그대로 통과
             return await call_next(request)
 
         # 3. 보호 경로는 API Key 검증
@@ -606,6 +696,19 @@ def get_api_key(request: Request) -> str:
     # 전역 auth 인스턴스 가져오기
     auth = get_api_key_auth()
 
+    # 서버에 키가 없으면 fail-closed: 어떤 헤더 값도 통과시키지 않는다.
+    # (예전에는 아무 값이나 통과시켜 관리자 API가 사실상 무인증이었다.)
+    if not auth.api_key:
+        logger.warning(
+            "FASTAPI_AUTH_KEY 미설정 상태에서 보호 리소스 요청 거부(fail-closed)",
+            extra={"path": request.url.path},
+        )
+        raise HTTPException(
+            status_code=401,
+            detail=dict(AUTH_NOT_CONFIGURED_DETAIL),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # API Key 추출
     api_key = request.headers.get("X-API-Key")
 
@@ -623,10 +726,6 @@ def get_api_key(request: Request) -> str:
             },
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    # API Key가 설정되지 않았으면 (개발 환경) 검증 스킵
-    if not auth.api_key:
-        return str(api_key)  # 개발 환경용
 
     # API Key 검증 (타이밍 공격 방지)
     if not secrets.compare_digest(api_key, auth.api_key):

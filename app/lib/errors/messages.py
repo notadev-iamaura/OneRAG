@@ -535,6 +535,10 @@ ERROR_MESSAGES: dict[str, dict[str, str]] = {
         "ko": "채팅 서비스가 초기화되지 않았습니다.",
         "en": "The chat service is not initialized.",
     },
+    "WS-004-RATE_LIMITED": {
+        "ko": "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.",
+        "en": "Too many requests. Please try again shortly.",
+    },
     "WS-999-INTERNAL_ERROR": {
         "ko": "스트리밍 처리 중 오류가 발생했습니다.",
         "en": "An error occurred while processing the stream.",
@@ -2122,6 +2126,16 @@ ERROR_SOLUTIONS: dict[str, dict[str, list[str]]] = {
         ],
         "en": [
             "Please contact the server administrator.",
+        ],
+    },
+    "WS-004-RATE_LIMITED": {
+        "ko": [
+            "1분 정도 기다린 뒤 다시 메시지를 보내주세요.",
+            "짧은 시간에 너무 많은 메시지를 보내면 일시적으로 차단됩니다.",
+        ],
+        "en": [
+            "Wait about a minute and send your message again.",
+            "Sending too many messages in a short time triggers a temporary block.",
         ],
     },
     "WS-999-INTERNAL_ERROR": {

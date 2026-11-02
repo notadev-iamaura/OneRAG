@@ -160,12 +160,9 @@ export function getUploadAccessHeaders(sessionId?: string | null): Record<string
 }
 
 export function getAdminApiKey(): string {
-  const fromSettings = (readOperatorSettings().adminApiKey || '').trim();
-  if (fromSettings) return fromSettings;
-  if (typeof window !== 'undefined') {
-    return (window.RUNTIME_CONFIG?.ADMIN_API_KEY || '').trim();
-  }
-  return '';
+  // 운영자 설정(localStorage)만 신뢰한다. 과거에는 RUNTIME_CONFIG.ADMIN_API_KEY 폴백이
+  // 있었지만, config.js는 모든 방문자가 내려받는 공개 파일이라 관리자 키 노출 경로였다.
+  return (readOperatorSettings().adminApiKey || '').trim();
 }
 
 export function hasAdminApiKey(): boolean {

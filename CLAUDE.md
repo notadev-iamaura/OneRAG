@@ -94,6 +94,9 @@ make lint-imports       # 아키텍처 계층 검증 (Import Linter)
 ### 2. 통합 보안 (Unified Security)
 - **PII Facade**: `PIIProcessor`가 단순 마스킹과 고도화된 AI 리뷰(`PIIReviewProcessor`)를 통합 관리.
 - **Admin Auth**: `/api/admin` 하위의 모든 엔드포인트에 `X-API-Key` 인증 전역 적용.
+- **Fail-closed 인증**: `FASTAPI_AUTH_KEY`가 없으면 관리자/업로드/`/v1`/관리자 WS는 환경과 무관하게 401. 자리표시자·16자 미만 키는 프로덕션 기동 거부. 브라우저 채팅만 무인증 허용.
+- **업로드 토큰 범위**: 세션 발급 토큰은 업로드/조회/자기 작업 취소·재시도만 가능. 삭제 계열은 `require_upload_admin_access`(API 키)로 제한.
+- **신뢰 프록시**: 레이트리밋 IP는 `app/lib/client_ip.py`의 `TRUSTED_PROXY_IPS` 정책으로 해석(기본 private). WebSocket 메시지도 같은 한도.
 
 ### 3. 운영 유연성 (Dynamic Config)
 - **YAML Routing**: `routing_rules_v2.yaml`에서 서비스 핵심 키워드를 관리. 코드 수정 없이 복합 쿼리 판단 로직 변경 가능.

@@ -16,6 +16,31 @@
   Self-RAG precheck와 답변 생성 LLM은 이 스위치와 별개입니다.
   켜는 법, 배포 전 검사와 롤링/rollback 절차: [Rerank mode guide](docs/RERANK_MODE.md).
 
+### 보안
+- **업로드 토큰 권한 범위 제한**: 세션 생성(`POST /api/chat/session`)만으로 발급되는 단기 업로드
+  토큰으로는 더 이상 문서 삭제(`DELETE /api/upload/documents/{id}`, `bulk-delete`)를 할 수 없습니다
+  (403, 서버 API 키 필요). 취소/재시도는 토큰이 바인딩된 세션이 만든 작업에만 허용되며,
+  업로드 작업 레코드에 `owner_session_id`가 기록됩니다. 조회/다운로드/업로드는 기존대로 동작합니다.
+- **인증 fail-closed**: `FASTAPI_AUTH_KEY`가 비어 있으면 환경(development 포함)과 무관하게
+  관리자 API, 업로드 API, `/v1`, 관리자 WebSocket이 401로 거부됩니다. 예전에는 개발 환경으로
+  감지되면 인증을 통째로 건너뛰어 `docker-compose.yml`의 `ENVIRONMENT=development` 고정값만으로도
+  관리자 API가 열렸습니다. 브라우저 채팅(`/api/chat`, `/chat-ws`)은 영향 없습니다.
+- **약한 키 거부**: 템플릿 자리표시자(`your_api_auth_key_here`, `local-dev-only-change-me` 등)나
+  16자 미만의 `FASTAPI_AUTH_KEY`는 프로덕션에서 서버 시작이 거부되고, 개발 환경에서는 경고만 출력됩니다.
+- **레이트리밋 스푸핑 차단**: `X-Forwarded-For`/`X-Real-IP`는 직접 연결 상대가 `TRUSTED_PROXY_IPS`
+  (기본 private: loopback + 사설망) 범위일 때만 신뢰합니다. 헤더만 바꿔 IP 한도를 우회하던 경로를 막습니다.
+  WebSocket 채팅(`/chat-ws`) 메시지에도 HTTP 채팅과 같은 IP/세션 한도가 적용되며 초과 시
+  `WS-004-RATE_LIMITED` 에러 이벤트를 받습니다.
+- **프론트엔드 관리자 키 노출 제거**: `frontend/entrypoint.sh`가 `ADMIN_API_KEY`를 공개 정적 파일
+  `config.js`에 기록하던 동작을 제거했습니다. `RUNTIME_CONFIG.ADMIN_API_KEY` 폴백도 삭제되어 관리자
+  키는 운영자 설정 화면(localStorage)에서만 읽습니다. 배포 환경변수에 값이 있으면 무시하고 경고를 남깁니다.
+- **의존성 취약점 정리**: FastAPI 0.104.1/Starlette 0.27.0(알려진 multipart DoS 등)을 현재
+  Starlette 1.x 라인으로 올리고, pypdf·pillow·aiohttp·anyio·cryptography·urllib3·requests·lxml·nltk·
+  pymongo 등 28개 전이 의존성을 갱신했습니다(pip-audit 409건 → 32건). 남은 항목과 사유는
+  `docs/security/dependency-triage.md`의 Current Baseline 표를 참고하세요.
+- **pip-audit 게이트 추가**: `make audit` 타깃과 GitHub Actions `Security Audit` 잡(기준선이 비기
+  전까지 비차단)을 추가했습니다.
+
 ### 추가됨
 - 운영 안정성 smoke 게이트 추가: `make test-operational-smoke` 및 GitHub Actions `Runtime Smoke` job
 - `/ready` readiness 엔드포인트 추가 및 Docker API healthcheck를 `/ready`로 전환

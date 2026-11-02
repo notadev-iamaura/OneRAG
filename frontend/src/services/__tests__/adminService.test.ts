@@ -31,7 +31,6 @@ describe('adminService 런타임 URL 계약', () => {
     });
     delete window.RUNTIME_CONFIG?.API_BASE_URL;
     delete window.RUNTIME_CONFIG?.WS_BASE_URL;
-    delete window.RUNTIME_CONFIG?.ADMIN_API_KEY;
     mockReadOperatorSettings.mockReturnValue({ adminApiKey: 'admin-key' });
   });
 

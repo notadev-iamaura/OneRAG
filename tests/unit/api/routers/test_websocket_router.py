@@ -834,3 +834,84 @@ class TestWebSocketErrorBilingualRouting:
             lang="en",
         )
         assert sent["message"] == "forwarded message"
+
+
+class TestWebSocketRateLimit:
+    """WebSocket 메시지 레이트리밋: HTTP 미들웨어가 못 보는 프레임에도 한도를 적용한다."""
+
+    @pytest.fixture
+    def app(self):
+        app = FastAPI()
+        app.include_router(router)
+        return app
+
+    @pytest.fixture(autouse=True)
+    def _reset_rate_limiter(self):
+        yield
+        websocket_router.set_rate_limiter(None)
+
+    def test_set_rate_limiter_injection(self):
+        limiter = MagicMock()
+        websocket_router.set_rate_limiter(limiter, ip_limit=3, session_limit=2)
+        assert websocket_router._rate_limiter is limiter
+        assert websocket_router._rate_limit_ip == 3
+        assert websocket_router._rate_limit_session == 2
+
+    def test_messages_over_limit_get_rate_limited_error(self, app):
+        """한도를 넘긴 메시지는 WS-004-RATE_LIMITED 에러를 받고 파이프라인은 호출되지 않는다."""
+        from app.middleware.rate_limiter import RateLimiter
+
+        # IP 기준 분당 1건만 허용
+        limiter = RateLimiter(ip_limit=1, session_limit=100, window_seconds=60)
+        websocket_router.set_rate_limiter(limiter)
+
+        service = MagicMock()
+
+        async def mock_stream():
+            yield {"event": "metadata", "data": {"session_id": "rl-session", "search_results": 0}}
+            yield {"event": "done", "data": {"session_id": "rl-session", "total_chunks": 0}}
+
+        service.stream_rag_pipeline = MagicMock(side_effect=lambda *a, **k: mock_stream())
+        set_chat_service(service)
+
+        message = {
+            "type": "message",
+            "message_id": "msg-rl",
+            "content": "안녕하세요",
+            "session_id": "rl-session",
+        }
+        try:
+            with TestClient(app) as client:
+                with client.websocket_connect("/chat-ws?session_id=rl-session") as websocket:
+                    # 1건째: 정상 처리(stream_start로 시작)
+                    websocket.send_json(message)
+                    first = websocket.receive_json()
+                    assert first["type"] == "stream_start"
+                    # 스트림 종료까지 소비
+                    while websocket.receive_json()["type"] != "stream_end":
+                        pass
+
+                    # 2건째: 한도 초과 → 에러 이벤트
+                    websocket.send_json({**message, "message_id": "msg-rl-2"})
+                    second = websocket.receive_json()
+                    assert second["type"] == "stream_error"
+                    assert second["error_code"] == "WS-004-RATE_LIMITED"
+                    assert second["message_id"] == "msg-rl-2"
+            assert service.stream_rag_pipeline.call_count == 1
+        finally:
+            set_chat_service(None)
+
+    def test_without_rate_limiter_messages_are_not_limited(self, app):
+        """리미터가 주입되지 않은 환경(단위 테스트 등)에서는 기존 동작을 유지한다."""
+        websocket_router.set_rate_limiter(None)
+        service = MagicMock()
+        set_chat_service(service)
+        try:
+            with TestClient(app) as client:
+                with client.websocket_connect("/chat-ws?session_id=s") as websocket:
+                    websocket.send_json({"type": "message", "message_id": "m", "session_id": "s"})
+                    response = websocket.receive_json()
+                    # content 누락 → 검증 에러(레이트리밋 에러가 아님)
+                    assert response["error_code"] == "WS-002-VALIDATION_ERROR"
+        finally:
+            set_chat_service(None)

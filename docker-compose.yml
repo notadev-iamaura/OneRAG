@@ -57,8 +57,10 @@ services:
       WEAVIATE_URL: "http://weaviate:8080"
       WEAVIATE_GRPC_HOST: "weaviate"
       WEAVIATE_GRPC_PORT: "50051"
-      # 개발 환경
-      ENVIRONMENT: "development"
+      # 환경 모드. .env의 ENVIRONMENT가 있으면 그 값을 쓰고, 없으면 development.
+      # (예전처럼 "development"를 고정하면 .env의 production 설정이 무시되어
+      #  인증 보호가 약해지므로 치환 가능하게 둔다.)
+      ENVIRONMENT: "${ENVIRONMENT:-development}"
       RETRIEVAL_STARTUP_POLICY: "${RETRIEVAL_STARTUP_POLICY:-degraded}"
       # 기본은 가벼운 원격 임베딩 provider. 로컬 임베딩은 INSTALL_LOCAL_EMBEDDING_DEPS=true와 함께 opt-in.
       EMBEDDINGS_PROVIDER: "${EMBEDDINGS_PROVIDER:-openrouter}"
