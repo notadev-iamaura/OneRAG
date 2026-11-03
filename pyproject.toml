@@ -322,8 +322,28 @@ module = [
     "tests.*",
     # 배치 처리 모듈 - 크롤러 관련 (외부 라이브러리 의존)
     "app.batch.*",
-    # API 라우터 - FastAPI 엔드포인트 (FastAPI 타입 추론 복잡)
-    "app.api.*",
+    # API 라우터/엔드포인트 (FastAPI 타입 추론 복잡). app.api.services 는 2026-11 부터 검사 대상.
+    "app.api.routers.*",
+    "app.api.schemas.*",
+    "app.api.demo.*",
+    "app.api.admin",
+    "app.api.upload",
+    "app.api.analytics",
+    "app.api.chat",
+    "app.api.documents",
+    "app.api.evaluations",
+    "app.api.health",
+    "app.api.image_chat",
+    "app.api.ingest",
+    "app.api.langsmith_logs",
+    "app.api.monitoring",
+    "app.api.prompts",
+    "app.api.upload_job_store",
+    "app.api.document_ledger_store",
+    "app.api.original_file_storage",
+    "app.api.analytics_event_store",
+    "app.api.audit_event_store",
+    "app.api.container_registry",
     # 미들웨어 (FastAPI/Starlette 의존)
     "app.middleware.*",
     # 데이터베이스 레이어 (SQLAlchemy/Motor 의존)
@@ -332,8 +352,6 @@ module = [
     "app.config.*",
     # 모델 정의 - Pydantic 기반 (이미 타입 안전)
     "app.models.*",
-    # DI 컨테이너 (dependency-injector 라이브러리 의존)
-    "app.core.*",
     # 세션 관리 (MongoDB/Redis 의존)
     "app.modules.core.session.*",
     # enrichment (외부 LLM 의존)

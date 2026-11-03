@@ -15,9 +15,9 @@ Phase 3.2: chat.py에서 추출한 검증된 비즈니스 로직
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 from ...lib.errors import ErrorCode, SessionError
 from ...lib.langfuse_client import langfuse_context, observe
@@ -36,11 +36,13 @@ try:
 except ImportError:
     LANGSMITH_AVAILABLE = False
 
-    def traceable(*args, **kwargs):  # type: ignore[no-redef]
-        def decorator(func):
+    def _noop_traceable(*args: Any, **kwargs: Any) -> Callable[[Any], Any]:
+        def decorator(func: Any) -> Any:
             return func
 
         return decorator
+
+    traceable = _noop_traceable
 
 
 logger = get_logger(__name__)
@@ -293,7 +295,7 @@ class ChatService:
         라벨이라 검색/라우팅 동작에는 영향을 주지 않는다.
         """
         topic_keywords = self.config.get("routing", {}).get("topic_keywords")
-        return extract_topic(message, topic_keywords)
+        return str(extract_topic(message, topic_keywords))
 
     @traceable(
         name="RAGPipeline",
@@ -385,7 +387,7 @@ class ChatService:
 
     def get_stats(self) -> StatsDict:
         """현재 통계 반환"""
-        return self.stats.copy()  # type: ignore[return-value]
+        return cast(StatsDict, dict(self.stats))
 
     async def get_session_info(self, session_id: str) -> SessionInfoDict:
         """
@@ -531,6 +533,19 @@ class ChatService:
         return chunks
 
     @observe(name="RAG Pipeline (Streaming)", capture_input=False, capture_output=False)
+    def _stream_hallucination_gate_triggered(self, message: str, documents: list[Any]) -> bool:
+        """비스트리밍 환각 게이트와 같은 조건(활성 + 기간 일치 요구 + 불일치)인지 판정한다."""
+        pipeline = self.rag_pipeline
+        if not getattr(pipeline, "hallucination_gate_enabled", False):
+            return False
+        if not getattr(pipeline, "hallucination_gate_require_period_match", False):
+            return False
+        try:
+            return bool(pipeline._hallucination_gate_period_mismatch(message, documents))
+        except Exception as gate_error:  # noqa: BLE001 - 판정 실패는 비치명적
+            logger.debug("스트리밍 환각 게이트 판정 실패(무시)", extra={"error": str(gate_error)})
+            return False
+
     async def stream_rag_pipeline(
         self, message: str, session_id: str | None, options: dict[str, Any] | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -664,73 +679,38 @@ class ChatService:
                 return
 
             # 3. 문서 검색 (비스트리밍)
-            retrieval_module = self.modules.get("retrieval")
-            # 일부 DI 구성에서 retrieval 모듈이 코루틴/Future로 지연 제공되므로 해소한다
-            # ('_asyncio.Future' object has no attribute 'search' 방지).
-            if asyncio.iscoroutine(retrieval_module) or isinstance(
-                retrieval_module, asyncio.Future
-            ):
-                retrieval_module = await retrieval_module
-            search_results = []
-
-            if retrieval_module:
-                try:
-                    search_results = await retrieval_module.search(message, {
-                        "limit": options.get("limit", 8),
-                        "min_score": options.get("min_score", 0.05),
-                    })
-                    logger.debug(f"스트리밍: 검색 완료 - {len(search_results)}개 문서")
-                except Exception as e:
-                    logger.warning(f"스트리밍: 검색 실패 - {e}")
-
-            # 4. 리랭킹 (비스트리밍) — 통짜 rerank_documents 재사용.
-            #    no-op 리랭커 감지(_is_noop_rerank), min_score 필터, 점수 주석은
-            #    모두 RAGPipeline.rerank_documents 내부에서 통짜(execute)와 동일하게
-            #    처리된다. 스트리밍이 인라인으로 중복 구현하면 no-op 폴백 리랭커가
-            #    전체 문서를 잘못 필터링해 검색 0건처럼 보이는 회귀가 발생한다(#2).
-            reranked_documents = search_results  # 기본값: 원본 검색 결과
+            # 검색 국면은 비스트리밍 execute()와 같은 run_retrieval_phase를 공유한다.
+            # (세션 컨텍스트, 멀티턴 재작성, 쿼리 확장, 정확 식별자/문서명 구출, 리랭크 융합·
+            #  안정화, 앵커 부스트, 컨텍스트 확장이 스트리밍에서도 동일하게 적용된다.)
+            search_results: list[Any] = []
+            reranked_documents: list[Any] = []
             reranking_applied = False
-
-            if search_results:
-                try:
-                    rerank_results = await self.rag_pipeline.rerank_documents(
-                        message,
-                        search_results,
-                        options,
-                    )
-                    reranked_documents = rerank_results.documents
-                    reranking_applied = rerank_results.reranked
-                    logger.debug(
-                        f"스트리밍: 리랭킹 단계 완료 - {len(reranked_documents)}개 문서 "
-                        f"(reranked={reranking_applied})"
-                    )
-                except Exception as e:
-                    # rerank_documents는 내부에서 대부분의 실패를 흡수하지만,
-                    # 방어적으로 원본 검색 결과로 graceful 진행한다.
-                    logger.warning(f"스트리밍: 리랭킹 실패, 원본 사용 - {e}")
-                    reranked_documents = search_results
-                    reranking_applied = False
-
-            # 4-1. 인접 청크 컨텍스트 확장 (opt-in) — 통짜(execute)와 동일하게
-            #     expand_context_documents를 호출해 SSE에서도 동일하게 동작시킨다.
-            #     기본값 off: config(rag.context_expansion.enabled) 또는 옵션
-            #     (expand_adjacent_chunks/context_expansion_enabled)이 켜졌을 때만
-            #     인접 청크를 추가한다. 미지원/메타데이터 부재 시 원본을 반환한다(#9).
             context_expanded_grew = False
-            if reranked_documents:
-                pre_expand_count = len(reranked_documents)
-                try:
-                    reranked_documents = await self.rag_pipeline.expand_context_documents(
-                        reranked_documents, options
-                    )
-                    context_expanded_grew = len(reranked_documents) > pre_expand_count
-                except Exception as e:
-                    # 확장 실패는 비치명적 — 리랭킹 결과 그대로 진행.
-                    logger.warning(f"스트리밍: 컨텍스트 확장 실패, 원본 사용 - {e}")
-
-            # Langfuse trace에 세션 ID를 기록해 대시보드에서 세션별 그룹핑/필터를
-            # 가능하게 한다. LANGFUSE 비활성 시 langfuse_context는 더미 no-op이며,
-            # 관측 실패가 스트리밍을 깨뜨리지 않도록 예외를 흡수한다(graceful degradation).
+            sql_search_result = None
+            try:
+                phase = await self.rag_pipeline.run_retrieval_phase(
+                    message,
+                    final_session_id or "",
+                    options,
+                    start_time=start_time,
+                    budget=lambda: self.rag_pipeline._remaining_stream_budget(start_time),
+                )
+                search_results = list(phase.retrieval_results.documents)
+                reranked_documents = list(phase.context_documents)
+                reranking_applied = phase.rerank_results.reranked
+                context_expanded_grew = len(phase.context_documents) > len(
+                    phase.rerank_results.documents
+                )
+                sql_search_result = phase.sql_search_result
+                if phase.prepared_context.session_context:
+                    session_context = phase.prepared_context.session_context
+                logger.debug(
+                    f"스트리밍: 검색 국면 완료 - 검색 {len(search_results)}개, "
+                    f"컨텍스트 {len(reranked_documents)}개 (reranked={reranking_applied})"
+                )
+            except Exception as e:
+                # 검색 실패는 비치명적: 문서 없음 경로(canned no-answer)로 계속 진행한다.
+                logger.warning(f"스트리밍: 검색 국면 실패, 빈 컨텍스트로 진행 - {e}")
             try:
                 langfuse_context.update_current_trace(session_id=final_session_id)
             except Exception:  # noqa: BLE001 - 관측 실패는 파이프라인에 비치명적
@@ -785,6 +765,8 @@ class ChatService:
                 # 실제 히트가 이웃 청크에 밀려나지 않게 한다(비스트리밍 execute와 정합)(#3).
                 if context_expanded_grew:
                     generation_options.setdefault("max_context_documents", 20)
+                if sql_search_result is not None and getattr(sql_search_result, "used", False):
+                    generation_options["sql_context"] = sql_search_result.formatted_context
 
                 # 스트리밍 호출
                 # 첫 청크(first-chunk) 타임아웃 + 청크 간(inter-chunk) 타임아웃.
@@ -984,7 +966,7 @@ class ChatService:
             if persisted_real_answer:
                 try:
                     await self.add_conversation_to_session(
-                        final_session_id,
+                        str(final_session_id),
                         message,
                         answer_text,
                         {
@@ -1015,7 +997,7 @@ class ChatService:
                 }
             )
 
-            done_event = {
+            done_event: dict[str, Any] = {
                 "event": "done",
                 "data": {
                     "session_id": final_session_id,
@@ -1028,6 +1010,11 @@ class ChatService:
                     "token_estimation": "estimated_from_stream",
                 },
             }
+            # 환각 게이트(기간 불일치)는 전체 답변을 본 뒤 판정하므로 스트리밍 텍스트를 바꾸지는
+            # 않고, 비스트리밍과 같은 기준의 판정 결과를 done 이벤트에 실어 클라이언트가 안내할 수
+            # 있게 한다.
+            if self._stream_hallucination_gate_triggered(message, reranked_documents):
+                done_event["data"]["hallucination_gate"] = "period_mismatch"
             yield done_event
 
             logger.info(

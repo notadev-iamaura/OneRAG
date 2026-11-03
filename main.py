@@ -416,7 +416,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     if os.getenv("WEAVIATE_AUTO_INDEX", "false").lower() == "true":
                         logger.info("📊 데이터 자동 인덱싱 시작...")
 
-                        from scripts.index_all_data import index_all_data
+                        from app.modules.ingestion.bulk_index import index_all_data
 
                         result = await index_all_data()
                         logger.info(

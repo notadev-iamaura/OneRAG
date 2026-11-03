@@ -41,6 +41,37 @@
 - **pip-audit 게이트 추가**: `make audit` 타깃과 GitHub Actions `Security Audit` 잡(기준선이 비기
   전까지 비차단)을 추가했습니다.
 
+### 구조 개선 (P2)
+- **RAG 파이프라인 분리**: 4,900줄짜리 `rag_pipeline.py`의 `RAGPipeline`을 단계별 믹스인 패키지
+  `app/api/services/pipeline/`(routing, retrieval, rerank, generation, verification, output + models,
+  document_utils, base)로 나눴습니다. 공개/비공개 메서드 이름과 동작, 예전 import 경로
+  (`app.api.services.rag_pipeline.X`)는 그대로 유지됩니다. 오케스트레이션(`execute`,
+  `run_retrieval_phase`, 타임아웃 예산)만 `rag_pipeline.py`에 남습니다.
+- **스트리밍 경로 통합**: `ChatService.stream_rag_pipeline`이 `retrieval_module.search`를 직접 부르는 대신
+  비스트리밍과 같은 `RAGPipeline.run_retrieval_phase`를 호출합니다. 이제 스트리밍에서도 세션 컨텍스트,
+  멀티턴 재작성, 쿼리 확장, 정확 식별자·문서명 구출, 리랭크 융합·안정화, 앵커 부스트, SQL 컨텍스트가
+  동일하게 적용됩니다. 기간 불일치 환각 게이트는 스트리밍 텍스트를 바꾸지 않고 `done` 이벤트의
+  `hallucination_gate` 필드로 신호를 보냅니다(Self-RAG 재생성은 스트리밍 성격상 미적용).
+- **DI 컨테이너 정리**: provider별 Retriever 설정 매핑(227줄)을
+  `app/modules/core/retrieval/retrievers/wiring.py`로 옮기고 컨테이너는 위임만 합니다. 표준/graceful
+  두 기동 함수가 따로 들고 있던 모듈 그래프를 `_build_startup_modules` 하나로 합쳤습니다
+  (프로파일은 타임아웃/재시도만 다름). `scripts/index_all_data.py`에 있던 인덱싱 로직은
+  `app/modules/ingestion/bulk_index.py`로 옮겨 운영 코드가 `scripts/`를 import 하지 않습니다.
+- **계층 계약 확장**: import-linter 계약을 3개에서 6개로 늘렸습니다(DI 컨테이너를 하위 계층이 import
+  금지, config → api/core 금지, modules → batch 금지(기존 2건은 명시 예외)). 네임스페이스 패키지라
+  검사에서 빠져 있던 11개 디렉터리에 `__init__.py`를 추가해 **기존 3개 계약도 실제로 전체 모듈을
+  검사**하게 됐고, 그 과정에서 드러난 `app.config.schemas.reranking → app.modules…rerankers.mode`
+  역의존은 `mode.py`를 `app/lib/rerank_mode.py`로 옮겨 해소했습니다(예전 경로는 재노출 모듈).
+- **mypy 범위 확대**: `app.core.*`와 `app.api.services.*`(파이프라인, 채팅 서비스, DI 컨테이너)가
+  `ignore_errors` 목록에서 빠져 타입 검사를 받습니다. 그 과정에서 실제 버그 3건을 잡았습니다:
+  (1) 평가기용 LLM 래퍼와 GraphRAG 추출기용 LLM 래퍼가 존재하지 않는 `client.generate`를 호출
+  (`generate_text`로 수정), (2) 존재하지 않는 `ErrorCode.GENERATION_INVALID_RESPONSE` 참조
+  (`GENERATION_REQUEST_FAILED`로 수정), (3) Circuit Breaker 팩토리 미주입 시 검색이 AttributeError로
+  실패하던 경로(선택 의존성으로 처리).
+- **중복 제거 / 죽은 코드**: Qdrant·Pinecone 리트리버 공통 베이스 추출, 수제 재시도 루프와 환경변수
+  파서를 공용 헬퍼로 통일, 로깅 스타일을 `app.lib.logger.get_logger` 하나로 통일, 가려져 있던
+  `app/config/schemas.py`·레거시 `RerankerFactory`·V1 리랭킹 스키마·미사용 `Base*` ABC 제거.
+
 ### 품질 게이트 / 정확성 (P1)
 - **GraphRAG 엔티티 임베딩 복구**: `NetworkXGraphStore`가 동기 `embed_query`를 `await` 해
   매번 TypeError가 나고 광범위 except가 이를 삼켜, 운영에서는 엔티티 임베딩이 한 번도 생성되지

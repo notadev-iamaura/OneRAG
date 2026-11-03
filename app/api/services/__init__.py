@@ -1,6 +1,7 @@
 """API Services - 비즈니스 로직 레이어."""
 
 from importlib import import_module
+from typing import Any
 
 __all__ = ["ChatService"]
 
@@ -9,7 +10,7 @@ _LAZY_EXPORTS = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name not in _LAZY_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

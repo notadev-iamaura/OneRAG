@@ -136,7 +136,7 @@ class GracefulInitializer:
         results = await initializer.initialize_all()
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """GracefulInitializer 초기화"""
         self.modules: dict[str, ModuleConfig] = {}
         self.statuses: dict[str, ModuleStatus] = {}

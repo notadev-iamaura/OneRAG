@@ -60,7 +60,10 @@ The GitHub Actions CI pipeline currently covers:
 
 - `Lint`: `uv run ruff check .`
 - `Type Check`: `uv run mypy .`
-- `Architecture`: `uv run lint-imports`
+- `Architecture`: `uv run lint-imports` (6 contracts: layered architecture,
+  services-use-orchestrators, lib-no-modules, composition-root-not-imported,
+  config-no-upper-layers, modules-no-batch). Every directory under `app/` is a
+  regular package now, so the graph covers all modules.
 - `Test + Coverage`: backend pytest (unit plus every `tests/integration` file
   that runs without external services, selected with `-m "not live"`) with a
   coverage floor (`fail_under` in `pyproject.toml`) and coverage artifacts.

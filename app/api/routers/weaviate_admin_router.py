@@ -196,7 +196,7 @@ async def index_all_data():
         logger.info("데이터 수동 인덱싱 시작")
 
         # index_all_data 스크립트 실행
-        from scripts.index_all_data import index_all_data
+        from app.modules.ingestion.bulk_index import index_all_data
 
         result = await index_all_data()
 
