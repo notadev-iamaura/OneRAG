@@ -135,7 +135,6 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -156,7 +155,10 @@ jobs:
           --format requirements.txt --no-hashes
           --output-file requirements-audit.txt
 
+      # 비차단: 기준선(docs/security/dependency-triage.md)이 비기 전까지는 스텝 실패를
+      # 경고로만 남긴다(잡/체크는 초록). 기준선이 0이 되면 continue-on-error 를 제거한다.
       - name: Run pip-audit
+        continue-on-error: true
         run: |
           python -m pip install --quiet pip-audit
           set +e
