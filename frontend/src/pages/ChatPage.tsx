@@ -1,4 +1,3 @@
-import React from 'react';
 import { ChatTab } from '../components/ChatTab';
 import { useToast } from '@/hooks/use-toast';
 import { ToastMessage } from '../types';

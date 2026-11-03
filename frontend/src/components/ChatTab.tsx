@@ -1,8 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ToastMessage,
   SourceAdditionalMetadata,
   ApiLog,
+  ChatMessage,
+  SessionInfo,
 } from '../types';
 
 // Custom Hooks
@@ -36,20 +38,25 @@ interface ChatTabProps {
 export const ChatTab: React.FC<ChatTabProps> = ({ showToast, embedMode = false }) => {
   const { messages: t } = useMenuMessages();
   // API Logs State
-  const [apiLogs, setApiLogs] = React.useState<ApiLog[]>([]);
+  const [apiLogs, setApiLogs] = useState<ApiLog[]>([]);
+  // 세션 정보(DevTools 표시용). 세션 훅이 전환/초기화 시 null로 리셋하고, 메시지 훅이 폴백으로 채운다.
+  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
+  // 세션 훅이 로드한 히스토리(세션 복원/전환). useChatMessages가 이 값을 messages 상태로 동기화한다.
+  const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([]);
   const { isOnline } = useOfflineDetection();
 
   // 1. Session Logic Hook
   const {
     sessionId,
-    sessionInfo,
-    setSessionInfo,
-    initialMessages,
     handleNewSession,
     switchSession,
     synchronizeSessionId,
-    refreshSessionInfo
-  } = useChatSession({ showToast, setApiLogs });
+  } = useChatSession({
+    showToast,
+    setApiLogs,
+    setMessages: setInitialMessages,
+    setSessionInfo,
+  });
 
   // 2. Message Logic Hook
   const {
@@ -68,7 +75,6 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast, embedMode = false }
     sessionId,
     initialMessages,
     synchronizeSessionId,
-    refreshSessionInfo,
     setSessionInfo,
     showToast,
     setApiLogs

@@ -13,7 +13,7 @@ export interface PdfCitationBox {
     topPct: number;
     widthPct: number;
     heightPct: number;
-    confidence?: number | null;
+    confidence?: number | null | undefined;
 }
 
 // 렌더된 캔버스 크기 기준 px(절대) 좌표를 포함한 박스.

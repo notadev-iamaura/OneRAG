@@ -333,6 +333,30 @@ export const getColor = (
 
 
 /**
+ * light/dark 모드별 색상 쌍
+ */
+export interface ColorPair {
+  light: string;
+  dark: string;
+}
+
+/**
+ * 브랜드 색상 (프리셋에서만 제공되는 선택 항목)
+ */
+export interface BrandColors {
+  primary: ColorPair;
+  secondary: ColorPair;
+  accent: ColorPair;
+}
+
+/** `as const` 리터럴 색상 값을 일반 string으로 넓힌다(프리셋/런타임 오버라이드 허용). */
+type WidenColorValues<T> = T extends string
+  ? string
+  : { -readonly [K in keyof T]: WidenColorValues<T[K]> };
+
+/**
  * ColorConfig 타입 정의 (프리셋 시스템에서 사용)
  */
-export type ColorConfig = typeof COLORS;
+export type ColorConfig = WidenColorValues<typeof COLORS> & {
+  brand?: BrandColors;
+};

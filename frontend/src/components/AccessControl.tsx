@@ -19,7 +19,7 @@ interface AccessControlProps {
   isOpen: boolean;
   onAccessGranted: () => void;
   onCancel: () => void;
-  title?: string;
+  title?: string | undefined;
 }
 
 // 하위 호환용 기본 접근 코드 (런타임/환경변수 미설정 시 사용)

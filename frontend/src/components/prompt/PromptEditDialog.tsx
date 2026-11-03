@@ -135,7 +135,7 @@ export const PromptEditDialog: React.FC<PromptEditDialogProps> = ({
                 <Label className="text-sm font-bold">{messages.promptEdit.categoryLabel}</Label>
                 <Select
                   value={editingPrompt.category || 'custom'}
-                  onValueChange={(val) => onEditingPromptChange({ ...editingPrompt, category: val as 'system' | 'assistant' | 'user' | 'custom' })}
+                  onValueChange={(val) => onEditingPromptChange({ ...editingPrompt, category: val as 'system' | 'style' | 'custom' })}
                   disabled={isEditMode && selectedPrompt?.category === 'system'}
                 >
                   <SelectTrigger className="rounded-xl border-border/60">

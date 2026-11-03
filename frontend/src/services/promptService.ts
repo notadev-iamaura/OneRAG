@@ -108,7 +108,7 @@ class PromptService {
       description: `${original.description} (복사본)`,
       category: original.category === 'system' ? 'custom' : original.category,
       is_active: false, // 복사본은 기본적으로 비활성화
-      metadata: original.metadata,
+      ...(original.metadata !== undefined ? { metadata: original.metadata } : {}),
     });
   }
 

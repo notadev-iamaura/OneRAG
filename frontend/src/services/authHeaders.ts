@@ -13,9 +13,9 @@ interface UploadAccessTokenRecord {
 
 export interface UploadAccessTokenInput {
   sessionId: string;
-  token?: string | null;
-  expiresAt?: number | null;
-  ttlSeconds?: number | null;
+  token?: string | null | undefined;
+  expiresAt?: number | null | undefined;
+  ttlSeconds?: number | null | undefined;
 }
 
 /** 관리자 API 키 미설정 시 던지는 에러 (호출 측에서 안내 메시지 표시). */

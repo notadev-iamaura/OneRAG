@@ -113,7 +113,7 @@ interface UploadFile {
   originalFileName?: string; // 원본 파일명 보존
   status: 'selected' | 'ready' | 'uploading' | 'processing' | 'completed' | 'failed';
   progress: number;
-  error?: string;
+  error?: string | undefined;
   documentId?: string;
   settings?: UploadSettings;
   processingDetails?: {

@@ -94,7 +94,7 @@ describe('menu locale storage', () => {
     window.removeEventListener(MENU_LOCALE_CHANGE_EVENT, listener);
 
     expect(listener).toHaveBeenCalledTimes(1);
-    const event = listener.mock.calls[0][0] as CustomEvent;
+    const event = listener.mock.calls[0]?.[0] as CustomEvent;
     expect(event.detail).toBe('en');
   });
 

@@ -50,6 +50,7 @@ interface AISettingsResponse {
   settings: {
     provider: string;
     model: string;
+    configured?: boolean;
     restartRequired?: boolean;
   };
   running?: {

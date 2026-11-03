@@ -1,7 +1,7 @@
 /**
  * XSS 방어를 위한 입력 sanitization 유틸리티
  */
-import DOMPurify from 'dompurify';
+import DOMPurify, { type Config as DOMPurifyConfig } from 'dompurify';
 
 /**
  * 사용자 입력을 sanitize하여 XSS 공격 방어
@@ -9,7 +9,7 @@ import DOMPurify from 'dompurify';
  * @param options - DOMPurify 옵션
  * @returns Sanitized HTML 문자열
  */
-export const sanitizeHTML = (dirty: string, options?: DOMPurify.Config): string => {
+export const sanitizeHTML = (dirty: string, options?: DOMPurifyConfig): string => {
   return DOMPurify.sanitize(dirty, {
     ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br', 'ul', 'ol', 'li', 'code', 'pre'],
     ALLOWED_ATTR: ['href', 'title', 'target'],

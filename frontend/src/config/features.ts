@@ -5,6 +5,8 @@
  * 환경변수와 런타임 구성을 통해 기능의 활성화/비활성화를 제어할 수 있습니다.
  */
 
+import type { DeepPartial } from './deepPartial';
+
 /**
  * 챗봇 기능 설정
  */
@@ -135,7 +137,7 @@ function parseBooleanEnv(value: string | undefined, defaultValue: boolean): bool
 /**
  * 환경변수에서 Feature Flag 로드
  */
-function loadFeaturesFromEnv(): Partial<FeatureConfig> {
+function loadFeaturesFromEnv(): DeepPartial<FeatureConfig> {
   return {
     chatbot: {
       enabled: parseBooleanEnv(import.meta.env.VITE_FEATURE_CHATBOT, true),
@@ -181,34 +183,31 @@ function loadFeaturesFromEnv(): Partial<FeatureConfig> {
 /**
  * 런타임 구성에서 Feature Flag 로드
  */
-function loadFeaturesFromRuntime(): Partial<FeatureConfig> {
+function loadFeaturesFromRuntime(): DeepPartial<FeatureConfig> {
   // window.RUNTIME_CONFIG가 존재하지 않으면 빈 객체 반환
   if (typeof window === 'undefined' || !window.RUNTIME_CONFIG?.FEATURES) {
     return {};
   }
 
-  return window.RUNTIME_CONFIG.FEATURES as Partial<FeatureConfig>;
+  return window.RUNTIME_CONFIG.FEATURES;
 }
 
 /**
  * 깊은 병합 유틸리티 함수
  */
-function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial<T>): T {
-  const result = { ...target };
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
-  for (const key in source) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      const sourceValue = source[key];
+function deepMerge<T extends object>(target: T, source: DeepPartial<T>): T {
+  const result: Record<string, unknown> = { ...(target as object) };
+  const sourceRecord: Record<string, unknown> = source;
+
+  for (const key in sourceRecord) {
+    if (Object.prototype.hasOwnProperty.call(sourceRecord, key)) {
+      const sourceValue = sourceRecord[key];
       const targetValue = result[key];
 
-      if (
-        sourceValue &&
-        typeof sourceValue === 'object' &&
-        !Array.isArray(sourceValue) &&
-        targetValue &&
-        typeof targetValue === 'object' &&
-        !Array.isArray(targetValue)
-      ) {
+      if (isPlainObject(sourceValue) && isPlainObject(targetValue)) {
         result[key] = deepMerge(targetValue, sourceValue);
       } else if (sourceValue !== undefined) {
         result[key] = sourceValue;
@@ -216,7 +215,7 @@ function deepMerge<T extends Record<string, unknown>>(target: T, source: Partial
     }
   }
 
-  return result;
+  return result as T;
 }
 
 /**
@@ -252,6 +251,6 @@ export function isFeatureEnabled(
   module: keyof FeatureConfig,
   feature: string
 ): boolean {
-  const moduleConfig = config[module] as Record<string, boolean>;
-  return moduleConfig.enabled && moduleConfig[feature];
+  const moduleConfig: Record<string, boolean | undefined> = { ...config[module] };
+  return moduleConfig.enabled === true && moduleConfig[feature] === true;
 }

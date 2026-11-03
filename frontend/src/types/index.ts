@@ -29,17 +29,22 @@ export interface Document {
   mimeType: string;
   uploadedAt: string;
   status: 'processing' | 'completed' | 'failed';
-  chunks?: number;
+  chunks?: number | undefined;
   metadata?: {
     pageCount?: number;
     wordCount?: number;
   };
 }
 
+// 백엔드 /api/upload(및 chunked complete) 응답. 백엔드는 snake_case(job_id)를 반환하며,
+// 구버전 호환을 위해 camelCase(jobId)도 함께 허용한다.
 export interface UploadResponse {
-  success: boolean;
-  jobId: string;
-  message: string;
+  job_id?: string;
+  jobId?: string;
+  success?: boolean;
+  message?: string;
+  filename?: string;
+  error?: string;
 }
 
 export interface UploadStatus {
@@ -69,12 +74,12 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
-  sources?: Source[];
+  sources?: Source[] | undefined;
   // RAG Trace 메트릭(메시지별로 보존). 방 전환 시 이전 방 메트릭이 고정 표시되는 문제를
   // 해결하기 위해, 전역 로그가 아닌 메시지 자체에 트레이스를 부착한다.
-  processing_time?: number;
-  tokens_used?: number;
-  model_info?: ModelInfo;
+  processing_time?: number | undefined;
+  tokens_used?: number | undefined;
+  model_info?: ModelInfo | undefined;
 }
 
 export interface SourceAdditionalMetadata {
@@ -211,9 +216,10 @@ export interface ChatResponse {
 
 export interface ChatHistoryEntry {
   id?: string | number;
-  role?: 'user' | 'assistant';
+  // system 역할은 매퍼에서 인덱스 기반 폴백으로 처리된다.
+  role?: 'user' | 'assistant' | 'system';
   // 백엔드 히스토리 API는 role 대신 type 필드를 사용할 수 있으므로 함께 받는다.
-  type?: 'user' | 'assistant';
+  type?: 'user' | 'assistant' | 'system';
   message?: string;
   question?: string;
   prompt?: string;
@@ -313,3 +319,6 @@ export type {
   ChatAPISearchSource,
 } from './chatAPI';
 export { defaultChatAPIConfig } from './chatAPI';
+
+// 채팅 디버그(API 로그) 타입
+export type { ApiLog } from './chat';

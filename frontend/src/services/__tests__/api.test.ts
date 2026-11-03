@@ -143,7 +143,7 @@ describe('api.ts', () => {
 
             await import('../../services/api');
 
-            expect(create.mock.calls[0][0].baseURL).toBe('https://runtime.example.com');
+            expect(create.mock.calls[0]?.[0].baseURL).toBe('https://runtime.example.com');
         });
 
         it('runtime config의 빈 API_BASE_URL은 무시되고 빌드 타임 VITE 값이 우선해야 함 (#15)', async () => {
@@ -173,7 +173,7 @@ describe('api.ts', () => {
 
             await import('../../services/api');
 
-            expect(create.mock.calls[0][0].baseURL).toBe('https://build.example.com');
+            expect(create.mock.calls[0]?.[0].baseURL).toBe('https://build.example.com');
         });
     });
 
@@ -342,7 +342,7 @@ describe('api.ts', () => {
             await import('../../services/api');
             const axios = await import('axios');
             const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { request: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
-            const requestHandler = mainInstance.interceptors.request.use.mock.calls[0][0];
+            const requestHandler = mainInstance.interceptors.request.use.mock.calls[0]?.[0];
 
             const config = requestHandler({
                 url: '/api/upload/documents/doc-123/original',
@@ -403,7 +403,7 @@ describe('api.ts', () => {
             await import('../../services/api');
             const axios = await import('axios');
             const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { request: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
-            const requestHandler = mainInstance.interceptors.request.use.mock.calls[0][0];
+            const requestHandler = mainInstance.interceptors.request.use.mock.calls[0]?.[0];
 
             const config = requestHandler({
                 url: '/api/prompts',
@@ -474,7 +474,7 @@ describe('api.ts', () => {
             expect(responseInterceptorCall).toBeDefined();
 
             // 에러 핸들러는 두 번째 인자
-            const errorHandler = responseInterceptorCall[1];
+            const errorHandler = responseInterceptorCall?.[1];
 
             // 401 에러 시뮬레이션
             const authError = {
@@ -537,7 +537,7 @@ describe('api.ts', () => {
             const axios = await import('axios');
             const { logger } = await import('../../utils/logger');
             const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { response: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
-            const errorHandler = mainInstance.interceptors.response.use.mock.calls[0][1];
+            const errorHandler = mainInstance.interceptors.response.use.mock.calls[0]?.[1];
 
             const sessionError = {
                 message: 'session failed',
@@ -565,7 +565,7 @@ describe('api.ts', () => {
             await expect(errorHandler(sessionError)).rejects.toBe(sessionError);
 
             expect(logger.error).toHaveBeenCalledWith('세션 생성 응답 실패:', expect.any(Object));
-            const [, details] = (logger.error as ReturnType<typeof vi.fn>).mock.calls[0];
+            const details = (logger.error as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
             expect(details.requestHeaders).toEqual({
                 authorization: '설정됨',
                 apiKey: '없음',
@@ -629,7 +629,7 @@ describe('api.ts', () => {
             const axios = await import('axios');
             const { logger } = await import('../../utils/logger');
             const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { response: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
-            const errorHandler = mainInstance.interceptors.response.use.mock.calls[0][1];
+            const errorHandler = mainInstance.interceptors.response.use.mock.calls[0]?.[1];
 
             const networkError = {
                 message: 'Network Error',
@@ -652,7 +652,7 @@ describe('api.ts', () => {
             await expect(errorHandler(networkError)).rejects.toBe(networkError);
 
             expect(logger.warn).toHaveBeenCalledWith('CORS 오류 감지:', expect.any(Object));
-            const [, details] = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0];
+            const details = (logger.warn as ReturnType<typeof vi.fn>).mock.calls[0]?.[1];
             expect(details.config.headers).toEqual({
                 authorization: '설정됨',
                 apiKey: '없음',
@@ -716,7 +716,7 @@ describe('api.ts', () => {
             await import('../../services/api');
             const axios = await import('axios');
             const mainInstance = (axios as unknown as { __mainInstance: { interceptors: { response: { use: ReturnType<typeof vi.fn> } } } }).__mainInstance;
-            const successHandler = mainInstance.interceptors.response.use.mock.calls[0][0];
+            const successHandler = mainInstance.interceptors.response.use.mock.calls[0]?.[0];
 
             const blob = new Blob(['010-1234-5678']);
             const response = {

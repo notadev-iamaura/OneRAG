@@ -43,7 +43,7 @@ interface EmbedOutboundMessage {
   source: typeof EMBED_MESSAGE_SOURCE;
   version: typeof EMBED_MESSAGE_VERSION;
   type: EmbedOutboundType;
-  requestId?: string;
+  requestId?: string | undefined;
   height?: number;
   route?: string;
   loading?: boolean;

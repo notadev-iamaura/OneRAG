@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, ReactNode } from 'react';
-import { APP_CONFIG, mergeConfig } from '../config';
+import { APP_CONFIG, mergeConfig, type AppConfig } from '../config';
 import { applyPreset } from '../config/presets';
 import { ConfigContext, type RuntimeConfig } from './ConfigContext';
 import { logger } from '../utils/logger';
@@ -46,14 +46,16 @@ export const ConfigProvider: React.FC<ConfigProviderProps> = ({ children }) => {
         }
 
         const parsed: RuntimeConfig = JSON.parse(saved);
-        const runtime = operatorRuntimeConfig
-          ? {
-              ...parsed,
-              operator: parsed.operator ?? operatorRuntimeConfig.operator,
-              brand: parsed.brand ?? operatorRuntimeConfig.brand,
-              features: parsed.features ?? operatorRuntimeConfig.features,
-            }
-          : parsed;
+        let runtime: RuntimeConfig = parsed;
+        if (operatorRuntimeConfig) {
+          const brand = parsed.brand ?? operatorRuntimeConfig.brand;
+          runtime = {
+            ...parsed,
+            operator: parsed.operator ?? operatorRuntimeConfig.operator,
+            ...(brand ? { brand } : {}),
+            features: parsed.features ?? operatorRuntimeConfig.features,
+          };
+        }
         logger.debug('[ConfigProvider] 저장된 설정 로드 완료');
 
         setRuntimeConfig(runtime);

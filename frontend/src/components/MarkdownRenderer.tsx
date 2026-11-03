@@ -14,9 +14,9 @@ const processCitations = (text: string, onCitationClick?: (index: number) => voi
   const parts = text.split(/(\[\d+\])/g);
 
   return parts.map((part, index) => {
-    const citationMatch = part.match(/^\[(\d+)\]$/);
-    if (citationMatch) {
-      const citationIndex = parseInt(citationMatch[1], 10);
+    const citationDigits = part.match(/^\[(\d+)\]$/)?.[1];
+    if (citationDigits !== undefined) {
+      const citationIndex = parseInt(citationDigits, 10);
       return (
         <span
           key={index}
@@ -47,7 +47,7 @@ const processChildrenWithCitations = (
       return processCitations(child, onCitationClick);
     }
     // React 요소: 자식을 재귀 처리
-    if (React.isValidElement(child) && child.props.children) {
+    if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.props.children) {
       return React.cloneElement(
         child as React.ReactElement<{ children?: React.ReactNode }>,
         {},

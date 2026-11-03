@@ -1,5 +1,6 @@
 // Feature Flag 설정 타입 (features.ts에서 import)
 import type { FeatureConfig } from '../config/features';
+import type { DeepPartial } from '../config/deepPartial';
 
 // Railway 런타임 설정 타입 정의
 interface RuntimeConfig {
@@ -12,7 +13,7 @@ interface RuntimeConfig {
   TIMESTAMP?: string;
   RAILWAY_ENVIRONMENT?: string | null;
   // Feature Flag 설정 추가
-  FEATURES?: Partial<FeatureConfig>;
+  FEATURES?: DeepPartial<FeatureConfig>;
   // 임베드(embed) 허용 부모 origin 화이트리스트.
   // 외부 사이트에 /embed/chat을 iframe으로 임베드할 때, postMessage 통신을 허용할 origin 목록이다.
   // 배열 또는 콤마 구분 문자열을 모두 허용하며, 와일드카드('*')는 지원하지 않는다(보안).

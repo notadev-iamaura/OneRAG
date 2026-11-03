@@ -1,6 +1,7 @@
 /**
  * MSW 서버 설정 (테스트 환경용)
  */
+import { afterAll, afterEach, beforeAll } from 'vitest';
 import { setupServer } from 'msw/node';
 import { handlers } from './handlers';
 

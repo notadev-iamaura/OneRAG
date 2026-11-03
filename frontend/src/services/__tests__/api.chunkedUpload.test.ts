@@ -156,7 +156,7 @@ describe('documentAPI.upload 분할 업로드 라우팅 (#7)', () => {
     expect(postUrls.some((u: string) => u.includes('/chunked/'))).toBe(false);
 
     // 단일 경로는 multipart/form-data 헤더와 onUploadProgress 콜백 구조를 유지해야 함.
-    const config = post.mock.calls[0][2] as {
+    const config = post.mock.calls[0]?.[2] as {
       headers: Record<string, string>;
       onUploadProgress: (e: { loaded: number; total: number }) => void;
     };
@@ -187,7 +187,7 @@ describe('documentAPI.upload 분할 업로드 라우팅 (#7)', () => {
     expect(urls).not.toContain('/api/upload');
 
     // 2) start 바디 계약 검증: filename/content_type/file_size/metadata, 멀티테넌트 필드 없음.
-    const startBody = calls[0][1] as Record<string, unknown>;
+    const startBody = calls[0]?.[1] as Record<string, unknown>;
     expect(startBody.filename).toBe('big.pdf');
     expect(startBody.content_type).toBe('application/pdf');
     expect(startBody.file_size).toBe(fileSize);
@@ -214,7 +214,7 @@ describe('documentAPI.upload 분할 업로드 라우팅 (#7)', () => {
     });
 
     // 4) complete 바디는 metadata만 포함(멀티테넌트 필드 없음).
-    const completeBody = calls[calls.length - 1][1] as Record<string, unknown>;
+    const completeBody = calls[calls.length - 1]?.[1] as Record<string, unknown>;
     expect(completeBody).toEqual({ metadata: { requested_upload_settings: settings } });
 
     // 5) 진행률: 마지막은 100%, 중간 값은 1~99% 범위.

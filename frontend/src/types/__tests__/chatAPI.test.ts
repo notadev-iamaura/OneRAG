@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type {
   IChatAPIService,
   ChatAPIConfig,
@@ -14,25 +15,30 @@ import type {
   ChatAPIHistoryEntry,
 } from '../chatAPI';
 
+/** 테스트용 AxiosResponse 래퍼: data만 지정하고 나머지 필드는 기본값으로 채운다. */
+const asAxiosResponse = <T,>(data: T): AxiosResponse<T> => ({
+  data,
+  status: 200,
+  statusText: 'OK',
+  headers: {},
+  config: {} as InternalAxiosRequestConfig,
+});
+
 describe('Chat API 타입 정의', () => {
   describe('IChatAPIService 인터페이스', () => {
     it('sendMessage 메서드 시그니처가 정의되어야 함', () => {
       const mockService: IChatAPIService = {
-        sendMessage: async () => ({
-          data: {
-            answer: '테스트 응답',
-            session_id: 'test-session',
-            sources: [],
-          },
+        sendMessage: async () => asAxiosResponse({
+          answer: '테스트 응답',
+          session_id: 'test-session',
+          sources: [],
         }),
-        getChatHistory: async () => ({ data: { messages: [] } }),
-        startNewSession: async () => ({ data: { session_id: 'new-session' } }),
-        getSessionInfo: async () => ({
-          data: {
-            session_id: 'test',
-            created_at: '2024-01-01',
-            message_count: 0,
-          },
+        getChatHistory: async () => asAxiosResponse({ messages: [] }),
+        startNewSession: async () => asAxiosResponse({ session_id: 'new-session' }),
+        getSessionInfo: async () => asAxiosResponse({
+          session_id: 'test',
+          created_at: '2024-01-01',
+          message_count: 0,
         }),
       };
 
@@ -42,14 +48,10 @@ describe('Chat API 타입 정의', () => {
 
     it('getChatHistory 메서드 시그니처가 정의되어야 함', () => {
       const mockService: IChatAPIService = {
-        sendMessage: async () => ({
-          data: { answer: '', session_id: '', sources: [] },
-        }),
-        getChatHistory: async () => ({ data: { messages: [] } }),
-        startNewSession: async () => ({ data: { session_id: '' } }),
-        getSessionInfo: async () => ({
-          data: { session_id: '', created_at: '', message_count: 0 },
-        }),
+        sendMessage: async () => asAxiosResponse({ answer: '', session_id: '', sources: [] }),
+        getChatHistory: async () => asAxiosResponse({ messages: [] }),
+        startNewSession: async () => asAxiosResponse({ session_id: '' }),
+        getSessionInfo: async () => asAxiosResponse({ session_id: '', created_at: '', message_count: 0 }),
       };
 
       expect(mockService.getChatHistory).toBeDefined();
@@ -58,14 +60,10 @@ describe('Chat API 타입 정의', () => {
 
     it('startNewSession 메서드 시그니처가 정의되어야 함', () => {
       const mockService: IChatAPIService = {
-        sendMessage: async () => ({
-          data: { answer: '', session_id: '', sources: [] },
-        }),
-        getChatHistory: async () => ({ data: { messages: [] } }),
-        startNewSession: async () => ({ data: { session_id: 'new' } }),
-        getSessionInfo: async () => ({
-          data: { session_id: '', created_at: '', message_count: 0 },
-        }),
+        sendMessage: async () => asAxiosResponse({ answer: '', session_id: '', sources: [] }),
+        getChatHistory: async () => asAxiosResponse({ messages: [] }),
+        startNewSession: async () => asAxiosResponse({ session_id: 'new' }),
+        getSessionInfo: async () => asAxiosResponse({ session_id: '', created_at: '', message_count: 0 }),
       };
 
       expect(mockService.startNewSession).toBeDefined();
@@ -74,17 +72,13 @@ describe('Chat API 타입 정의', () => {
 
     it('getSessionInfo 메서드 시그니처가 정의되어야 함', () => {
       const mockService: IChatAPIService = {
-        sendMessage: async () => ({
-          data: { answer: '', session_id: '', sources: [] },
-        }),
-        getChatHistory: async () => ({ data: { messages: [] } }),
-        startNewSession: async () => ({ data: { session_id: '' } }),
-        getSessionInfo: async () => ({
-          data: {
-            session_id: 'info',
-            created_at: '2024-01-01',
-            message_count: 5,
-          },
+        sendMessage: async () => asAxiosResponse({ answer: '', session_id: '', sources: [] }),
+        getChatHistory: async () => asAxiosResponse({ messages: [] }),
+        startNewSession: async () => asAxiosResponse({ session_id: '' }),
+        getSessionInfo: async () => asAxiosResponse({
+          session_id: 'info',
+          created_at: '2024-01-01',
+          message_count: 5,
         }),
       };
 
@@ -125,14 +119,10 @@ describe('Chat API 타입 정의', () => {
         expect(config.baseURL).toBeDefined();
 
         return {
-          sendMessage: async () => ({
-            data: { answer: '', session_id: '', sources: [] },
-          }),
-          getChatHistory: async () => ({ data: { messages: [] } }),
-          startNewSession: async () => ({ data: { session_id: '' } }),
-          getSessionInfo: async () => ({
-            data: { session_id: '', created_at: '', message_count: 0 },
-          }),
+          sendMessage: async () => asAxiosResponse({ answer: '', session_id: '', sources: [] }),
+          getChatHistory: async () => asAxiosResponse({ messages: [] }),
+          startNewSession: async () => asAxiosResponse({ session_id: '' }),
+          getSessionInfo: async () => asAxiosResponse({ session_id: '', created_at: '', message_count: 0 }),
         };
       };
 

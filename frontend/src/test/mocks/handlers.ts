@@ -3,7 +3,7 @@
  * API 엔드포인트 모킹을 위한 요청 핸들러 정의
  */
 import { http, HttpResponse } from 'msw';
-import type { Document, ChatResponse, HealthResponse } from '../../types';
+import type { Document, ChatResponse, HealthStatus, Source } from '../../types';
 
 const BASE_URL = 'http://localhost:8000';
 
@@ -12,27 +12,44 @@ const mockDocuments: Document[] = [
   {
     id: '1',
     filename: 'test-document.pdf',
+    originalName: 'test-document.pdf',
     size: 1024000,
+    mimeType: 'application/pdf',
     status: 'completed',
     uploadedAt: new Date('2025-01-01').toISOString(),
     chunks: 10,
-    metadata: { type: 'application/pdf' },
+    metadata: { pageCount: 3 },
   },
   {
     id: '2',
     filename: 'another-doc.txt',
+    originalName: 'another-doc.txt',
     size: 512000,
+    mimeType: 'text/plain',
     status: 'processing',
     uploadedAt: new Date('2025-01-02').toISOString(),
     chunks: 5,
-    metadata: { type: 'text/plain' },
+    metadata: { wordCount: 120 },
   },
 ];
 
+const mockSource: Source = {
+  id: 1,
+  document: 'test-document.pdf',
+  document_id: '1',
+  page: 1,
+  chunk: 0,
+  relevance: 0.9,
+  content_preview: '테스트 문서 내용',
+};
+
 const mockChatResponse: ChatResponse = {
-  response: '테스트 응답입니다.',
-  sources: [mockDocuments[0]],
-  sessionId: 'test-session-123',
+  answer: '테스트 응답입니다.',
+  sources: [mockSource],
+  session_id: 'test-session-123',
+  processing_time: 0.1,
+  tokens_used: 10,
+  timestamp: new Date('2025-01-01').toISOString(),
 };
 
 const mockChatEmptyStateSettings = {
@@ -91,9 +108,12 @@ const mockChatEmptyStateSettings = {
 export const handlers = [
   // Health Check
   http.get(`${BASE_URL}/health`, () => {
-    return HttpResponse.json<HealthResponse>({
+    return HttpResponse.json<HealthStatus>({
       status: 'healthy',
       timestamp: new Date().toISOString(),
+      uptime: 0,
+      version: 'test',
+      environment: 'test',
     });
   }),
 
@@ -107,11 +127,13 @@ export const handlers = [
     const newDocument: Document = {
       id: '3',
       filename: 'uploaded-file.pdf',
+      originalName: 'uploaded-file.pdf',
       size: 2048000,
+      mimeType: 'application/pdf',
       status: 'processing',
       uploadedAt: new Date().toISOString(),
       chunks: 0,
-      metadata: { type: 'application/pdf' },
+      metadata: {},
     };
     return HttpResponse.json(newDocument, { status: 201 });
   }),
@@ -141,7 +163,7 @@ export const handlers = [
 
     return HttpResponse.json<ChatResponse>({
       ...mockChatResponse,
-      response: `Echo: ${body.message}`,
+      answer: `Echo: ${body.message}`,
     });
   }),
 
@@ -220,7 +242,7 @@ export const delayedHandlers = [
     await new Promise(resolve => setTimeout(resolve, 3000));
     return HttpResponse.json({
       ...mockChatResponse,
-      response: `Delayed echo: ${(body as { message: string }).message}`,
+      answer: `Delayed echo: ${(body as { message: string }).message}`,
     });
   }),
 ];

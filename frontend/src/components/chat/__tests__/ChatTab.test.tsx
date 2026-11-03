@@ -20,20 +20,21 @@ const mockUseChatSession = {
     handleNewSession: vi.fn(),
 };
 
-const mockUseChatMessages = {
+const mockUseChatMessages: ReturnType<typeof useChatMessagesHook.useChatMessages> = {
     messages: [],
     setMessages: vi.fn(),
     input: '',
     setInput: vi.fn(),
     loading: false,
     setLoading: vi.fn(),
-    messageAnimations: new Set(),
-    setMessageAnimations: vi.fn(),
-    messagesEndRef: { current: null },
     handleSend: vi.fn(),
-    handleKeyPress: vi.fn(),
     handleStop: vi.fn(),
-    scrollToBottom: vi.fn(),
+    isStreaming: false,
+    streamingMessage: null,
+    isStreamingEnabled: false,
+    isStreamingConnected: false,
+    isSseStreaming: false,
+    ragProgress: { phase: 'idle', label: '' },
 };
 
 const mockUseChatDevTools = {
@@ -54,7 +55,7 @@ const mockUseChatDevTools = {
 describe('ChatTab Integration', () => {
     beforeEach(() => {
         vi.spyOn(useChatSessionHook, 'useChatSession').mockReturnValue(mockUseChatSession as ReturnType<typeof useChatSessionHook.useChatSession>);
-        vi.spyOn(useChatMessagesHook, 'useChatMessages').mockReturnValue(mockUseChatMessages as ReturnType<typeof useChatMessagesHook.useChatMessages>);
+        vi.spyOn(useChatMessagesHook, 'useChatMessages').mockReturnValue(mockUseChatMessages);
         vi.spyOn(useChatDevToolsHook, 'useChatDevTools').mockReturnValue(mockUseChatDevTools as ReturnType<typeof useChatDevToolsHook.useChatDevTools>);
     });
 

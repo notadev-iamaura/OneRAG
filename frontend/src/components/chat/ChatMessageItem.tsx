@@ -108,8 +108,9 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                         <MarkdownRenderer
                             content={message.content}
                             onCitationClick={(index) => {
-                                if (message.sources && message.sources[index - 1]) {
-                                    onChunkClick(message.sources[index - 1]);
+                                const citedSource = message.sources?.[index - 1];
+                                if (citedSource) {
+                                    onChunkClick(citedSource);
                                 }
                             }}
                             className="w-full"

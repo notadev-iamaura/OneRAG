@@ -80,17 +80,20 @@ export const memoize = <T extends (...args: unknown[]) => unknown>(
   return ((...args: Parameters<T>) => {
     const key = JSON.stringify(args);
     
-    if (cache.has(key)) {
-      return cache.get(key);
+    const cached = cache.get(key);
+    if (cached !== undefined || cache.has(key)) {
+      return cached as ReturnType<T>;
     }
     
-    const result = fn(...args);
+    const result = fn(...args) as ReturnType<T>;
     cache.set(key, result);
     
     // 캐시 크기 제한
     if (cache.size > maxSize) {
       const firstKey = cache.keys().next().value;
-      cache.delete(firstKey);
+      if (firstKey !== undefined) {
+        cache.delete(firstKey);
+      }
     }
     
     return result;

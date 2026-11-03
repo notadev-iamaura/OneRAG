@@ -7,6 +7,8 @@
 
 import { BRAND_CONFIG } from './brand';
 import { COLORS } from './colors';
+import type { ColorConfig } from './colors';
+import type { DeepPartial } from './deepPartial';
 import { DEFAULT_FEATURES } from './features';
 import { LAYOUT_CONFIG } from './layout';
 import { CHAT_EMPTY_STATE_SETTINGS } from './chatEmptyStateSettings';
@@ -18,7 +20,7 @@ export interface AppConfig {
   // 브랜드 설정
   brand: typeof BRAND_CONFIG;
   // 색상 시스템
-  colors: typeof COLORS;
+  colors: ColorConfig;
   // 기능 플래그
   features: typeof DEFAULT_FEATURES;
   // 레이아웃 설정
@@ -107,44 +109,42 @@ export async function loadCustomerConfig(customerId: string): Promise<Partial<Ap
  * @param source 오버라이드할 설정
  * @returns 병합된 설정
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export function mergeConfig<T extends Record<string, any>>(target: T, source: Partial<T>): T {
+export type { DeepPartial } from './deepPartial';
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export function mergeConfig<T extends object>(target: T, source: DeepPartial<T>): T {
   console.log('🔀 [mergeConfig] 병합 시작');
   console.log('📥 [mergeConfig] target:', target);
   console.log('📥 [mergeConfig] source:', source);
 
-  const result = { ...target };
+  const result: Record<string, unknown> = { ...(target as object) };
+  const sourceRecord: Record<string, unknown> = source;
 
-  for (const key in source) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
+  for (const key in sourceRecord) {
+    if (Object.prototype.hasOwnProperty.call(sourceRecord, key)) {
       const targetValue = result[key];
-      const sourceValue = source[key];
+      const sourceValue = sourceRecord[key];
 
       console.log(`🔑 [mergeConfig] 키 "${key}" 병합 중...`);
       console.log(`  - target값:`, targetValue);
       console.log(`  - source값:`, sourceValue);
 
-      if (
-        typeof targetValue === 'object' &&
-        targetValue !== null &&
-        typeof sourceValue === 'object' &&
-        sourceValue !== null &&
-        !Array.isArray(targetValue) &&
-        !Array.isArray(sourceValue)
-      ) {
+      if (isPlainObject(targetValue) && isPlainObject(sourceValue)) {
         // 객체는 재귀적으로 병합
         console.log(`  ↳ 재귀 병합 (객체)`);
         result[key] = mergeConfig(targetValue, sourceValue);
       } else {
         // 원시값, 배열은 덮어쓰기
         console.log(`  ↳ 덮어쓰기 (원시값/배열)`);
-        result[key] = sourceValue as T[Extract<keyof T, string>];
+        result[key] = sourceValue;
       }
     }
   }
 
   console.log('✅ [mergeConfig] 병합 완료:', result);
-  return result;
+  return result as T;
 }
 
 /**

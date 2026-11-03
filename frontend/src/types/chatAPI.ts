@@ -15,6 +15,7 @@
  */
 
 import type { AxiosResponse } from 'axios';
+import type { ChatHistoryEntry } from './index';
 import { getOperatorApiBaseUrl } from '../config/operatorSettings';
 
 // ============================================================================
@@ -76,15 +77,13 @@ export interface ChatAPISessionInfo {
  *
  * getChatHistory 호출 시 반환되는 개별 메시지 항목입니다.
  */
-export interface ChatAPIHistoryEntry {
+export interface ChatAPIHistoryEntry extends ChatHistoryEntry {
   /** 메시지 역할: user(사용자), assistant(AI), system(시스템) */
   role: 'user' | 'assistant' | 'system';
   /** 메시지 내용 */
   content: string;
   /** 메시지 생성 일시 (ISO 8601 형식) */
   timestamp: string;
-  /** 검색 결과 소스 (AI 응답 시, 선택) */
-  sources?: ChatAPISearchSource[];
 }
 
 export interface ChatAPISessionResponse {
@@ -138,7 +137,7 @@ export interface ChatAPIConfig {
    * API 키 (선택)
    * 인증이 필요한 경우 사용됩니다.
    */
-  apiKey?: string;
+  apiKey?: string | undefined;
 }
 
 // ============================================================================
@@ -283,7 +282,7 @@ function getChatAPIBaseURL(): string {
  * - retryDelay: 1000ms (서버 부하 방지)
  */
 export const defaultChatAPIConfig: Required<Omit<ChatAPIConfig, 'apiKey'>> & {
-  apiKey?: string;
+  apiKey?: string | undefined;
 } = {
   baseURL: getChatAPIBaseURL(),
   timeout: 30000,

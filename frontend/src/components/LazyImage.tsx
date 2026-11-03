@@ -11,11 +11,11 @@ interface LazyImageProps {
   src: string;
   alt: string;
   className?: string;
-  width?: string | number;
-  height?: string | number;
+  width?: string | number | undefined;
+  height?: string | number | undefined;
   placeholder?: string;
-  onLoad?: () => void;
-  onError?: () => void;
+  onLoad?: (() => void) | undefined;
+  onError?: (() => void) | undefined;
 }
 
 export const LazyImage: React.FC<LazyImageProps> = ({

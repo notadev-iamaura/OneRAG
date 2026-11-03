@@ -15,7 +15,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "build": "tsc -p tsconfig.app.json --noEmit && vite build",
     "build:warning-gate": "node scripts/fail-on-warning-output.mjs -- npm run build",
     "lint": "eslint .",
     "preview": "vite preview",
