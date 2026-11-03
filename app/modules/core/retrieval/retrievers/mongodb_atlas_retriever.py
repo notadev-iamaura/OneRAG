@@ -11,6 +11,7 @@ Note:
     Sparse(BM25) 하이브리드 검색이 필요하면 Weaviate나 Qdrant를 권장합니다.
 """
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -161,7 +162,8 @@ class MongoDBAtlasRetriever:
 
         try:
             # 1. 쿼리 임베딩
-            query_vector = self._embedder.embed_query(query)
+            # 동기 임베딩(HTTP/CPU)을 to_thread로 오프로딩해 이벤트 루프 블로킹을 막는다.
+            query_vector = await asyncio.to_thread(self._embedder.embed_query, query)
 
             # 2. MongoDB Atlas 검색 수행
             raw_results = await self._store.search(
@@ -197,7 +199,7 @@ class MongoDBAtlasRetriever:
         """
         try:
             # 더미 검색으로 연결 테스트
-            test_vector = self._embedder.embed_query("health check")
+            test_vector = await asyncio.to_thread(self._embedder.embed_query, "health check")
             await self._store.search(
                 collection=self._collection_name,
                 query_vector=test_vector,

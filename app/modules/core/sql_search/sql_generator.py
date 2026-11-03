@@ -100,6 +100,27 @@ class SQLGenerator:
             "HANDLER",
             "LOAD",
             "UNLOAD",
+            # SELECT 안에서도 파일/네트워크/세션에 닿는 PostgreSQL 함수·구문
+            "INTO",  # SELECT ... INTO (테이블 생성)
+            "COPY",
+            "PG_READ_FILE",
+            "PG_READ_BINARY_FILE",
+            "PG_LS_DIR",
+            "PG_STAT_FILE",
+            "PG_SLEEP",
+            "PG_SLEEP_FOR",
+            "PG_SLEEP_UNTIL",
+            "PG_TERMINATE_BACKEND",
+            "PG_CANCEL_BACKEND",
+            "PG_RELOAD_CONF",
+            "DBLINK",
+            "DBLINK_CONNECT",
+            "LO_IMPORT",
+            "LO_EXPORT",
+            "SET",  # SET role/session 변수 변경
+            "RESET",
+            "LISTEN",
+            "NOTIFY",
         ]
     )
 
@@ -356,18 +377,21 @@ class SQLGenerator:
             logger.warning(f"SQL이 SELECT로 시작하지 않음: {sql[:50]}")
             return False
 
+        # 문자열 리터럴('...')은 데이터이므로 키워드/세미콜론 검사 대상에서 제외한다.
+        # (예: WHERE note = 'pg_sleep is just text' 는 안전한 조회다)
+        sql_without_strings = re.sub(r"'[^']*'", "''", sql)
+        code_upper = sql_without_strings.upper()
+
         # 위험한 키워드 포함 여부 확인
         # 단어 경계를 확인하여 컬럼명과 구분
         for keyword in self.DANGEROUS_KEYWORDS:
             # 단어 경계를 포함한 패턴 (예: INSERT는 차단, INSERTED는 허용)
             pattern = rf"\b{keyword}\b"
-            if re.search(pattern, sql_upper):
+            if re.search(pattern, code_upper):
                 logger.warning(f"SQL에 위험한 키워드 포함: {keyword}")
                 return False
 
-        # 세미콜론 여러 개 (다중 쿼리) 차단
-        # 문자열 리터럴 내의 세미콜론은 제외
-        sql_without_strings = re.sub(r"'[^']*'", "", sql)
+        # 세미콜론 여러 개 (다중 쿼리) 차단 (문자열 리터럴 내의 세미콜론은 이미 제거됨)
         if sql_without_strings.count(";") > 1:
             logger.warning("SQL에 다중 쿼리 감지")
             return False

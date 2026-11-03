@@ -18,6 +18,7 @@ Note:
     hybrid_alpha 파라미터로 Dense/Sparse 가중치를 조절할 수 있습니다.
 """
 
+import asyncio
 from typing import Any, Protocol, runtime_checkable
 
 from app.lib.logger import get_logger
@@ -191,7 +192,8 @@ class QdrantRetriever:
 
             # 1. Dense 쿼리 벡터화 (원본 쿼리 - 의미 보존)
             logger.debug(f"쿼리 임베딩 생성 중: '{query[:50]}...'")
-            query_vector = self.embedder.embed_query(query)
+            # 동기 임베딩(HTTP/CPU)을 to_thread로 오프로딩해 이벤트 루프 블로킹을 막는다.
+            query_vector = await asyncio.to_thread(self.embedder.embed_query, query)
 
             # 2. Sparse 벡터 생성 (하이브리드 모드)
             sparse_vector = None

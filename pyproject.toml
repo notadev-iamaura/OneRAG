@@ -1,6 +1,6 @@
 [project]
 name = "onerag"
-version = "1.0.7"
+version = "1.2.1"
 description = "Production-ready modular RAG backend — swap Vector DB, LLM, Reranker with 1 line of config"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -392,6 +392,7 @@ markers = [
     "unit: marks tests as unit tests",
     "system: marks tests that require system Python environment",
     "e2e: marks tests as end-to-end tests with real APIs (costs money, slower)",
+    "live: marks tests that hit real network/paid APIs or external services; run only with ONERAG_RUN_LIVE_PROVIDER_TESTS=1",
     "eval: marks tests as evaluation tests for CI/CD quality gates",
     "performance: marks in-process concurrency/performance acceptance tests (mock-based, no external cost)",
 ]
@@ -421,14 +422,17 @@ omit = [
 ]
 
 [tool.coverage.report]
+# 커버리지 하한. 현재 수준(약 63%)에서 시작해 점진적으로 올린다. 내려가면 CI가 실패한다.
+fail_under = 61
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
     "raise AssertionError",
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
-    "pass",
-    "\\.\\.\\.",
+    # 앵커 없는 "pass"는 password/passport 같은 단어가 든 줄까지 제외시켰다(PII 마스킹 코드 등).
+    "^\\s*pass\\s*$",
+    "^\\s*\\.\\.\\.\\s*$",
 ]
 show_missing = true
 precision = 2

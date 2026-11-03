@@ -148,7 +148,8 @@ class SQLSearchService:
         from .sql_generator import SQLGenerator
 
         self.config = config
-        self.enabled: bool = bool(config.get("enabled", True))
+        # 기본 비활성화: LLM 생성 SQL 실행은 운영자가 명시적으로 켜야 한다.
+        self.enabled: bool = bool(config.get("enabled", False))
 
         # 컴포넌트 초기화
         self.generator = SQLGenerator(

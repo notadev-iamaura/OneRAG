@@ -3405,7 +3405,7 @@ wheels = [
 
 [[package]]
 name = "onerag"
-version = "1.0.7"
+version = "1.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

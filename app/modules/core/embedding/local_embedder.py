@@ -16,6 +16,7 @@ API 키 없이 동작하며, Quickstart 환경에서 사용됩니다.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -194,16 +195,17 @@ class LocalEmbedder(BaseEmbedder):
         비동기 문서 임베딩 (동기 메서드 래핑)
 
         Note:
-            sentence-transformers는 네이티브 비동기를 지원하지 않으므로
-            동기 메서드를 래핑합니다.
+            sentence-transformers는 네이티브 비동기를 지원하지 않으므로 동기 메서드를
+            asyncio.to_thread로 감싼다. CPU 작업을 이벤트 루프에서 직접 돌리면 그동안
+            다른 요청이 전부 멈추므로 반드시 스레드로 넘긴다.
         """
-        return self.embed_documents(texts)
+        return await asyncio.to_thread(self.embed_documents, texts)
 
     async def aembed_query(self, text: str) -> list[float]:
         """
-        비동기 쿼리 임베딩 (동기 메서드 래핑)
+        비동기 쿼리 임베딩 (동기 메서드를 to_thread로 오프로딩)
         """
-        return self.embed_query(text)
+        return await asyncio.to_thread(self.embed_query, text)
 
     def validate_embedding(self, embedding: list[float]) -> bool:
         """

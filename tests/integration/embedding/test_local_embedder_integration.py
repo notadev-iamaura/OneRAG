@@ -10,6 +10,10 @@ pytest -m integration tests/integration/embedding/ -v
 import numpy as np
 import pytest
 
+# sentence-transformers는 선택 의존성(extra: local-embedding)이다. 미설치 환경에서는
+# 모듈 전체를 건너뛰어 ERROR가 아닌 SKIP으로 보고한다.
+pytest.importorskip("sentence_transformers")
+
 
 @pytest.mark.integration
 class TestLocalEmbedderIntegration:

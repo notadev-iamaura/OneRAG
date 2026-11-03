@@ -2,8 +2,11 @@
 # LLM 기반 SQL 생성 및 PostgreSQL 메타데이터 검색 설정
 
 sql_search:
-  # 전체 활성화/비활성화
-  enabled: ${SQL_SEARCH_ENABLED:-true}
+  # 전체 활성화/비활성화 (기본 비활성화)
+  # LLM이 생성한 SQL을 실행하는 기능이므로, 읽기 전용 DB 역할과 스키마 제한을 갖춘 뒤
+  # SQL_SEARCH_ENABLED=true 로 명시적으로 켠다. 켜도 실행은 READ ONLY 트랜잭션 +
+  # statement_timeout 안에서만 이뤄진다(query_executor.py).
+  enabled: ${SQL_SEARCH_ENABLED:-false}
 
   # SQL Generator 설정 (LLM 기반 SQL 생성)
   generator:

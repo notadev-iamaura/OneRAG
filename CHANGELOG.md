@@ -41,6 +41,30 @@
 - **pip-audit 게이트 추가**: `make audit` 타깃과 GitHub Actions `Security Audit` 잡(기준선이 비기
   전까지 비차단)을 추가했습니다.
 
+### 품질 게이트 / 정확성 (P1)
+- **GraphRAG 엔티티 임베딩 복구**: `NetworkXGraphStore`가 동기 `embed_query`를 `await` 해
+  매번 TypeError가 나고 광범위 except가 이를 삼켜, 운영에서는 엔티티 임베딩이 한 번도 생성되지
+  않던 결함을 수정했습니다. 임베더가 동기/비동기 어느 쪽이든 처리하며(동기는 `to_thread`),
+  실제 동기 임베더로 회귀 테스트를 추가했습니다. pgvector/qdrant/pinecone/mongodb 리트리버와
+  로컬 임베더의 동기 임베딩 호출도 `asyncio.to_thread`로 통일해 이벤트 루프 블로킹을 없앴습니다.
+- **통합 테스트 게이트 편입**: 외부 서비스 없이 통과하는 `tests/integration` 전체가 CI PR 게이트와
+  `make test`에 포함됩니다(`-m "not live"`). 실제 네트워크·유료 LLM·외부 DB 테스트는 새 `live`
+  마커 + `ONERAG_RUN_LIVE_PROVIDER_TESTS=1` 가드로 분리했습니다(`make test-live`). 선택 의존성이
+  없는 환경에서 ERROR가 나던 로컬 임베더 통합 테스트는 `importorskip`으로 SKIP 처리합니다.
+  깨져 있던 `make test-basic`, `make test-cov` 타깃을 수리했습니다.
+- **커버리지 하한**: `fail_under = 61`을 설정해 커버리지가 내려가면 CI가 실패합니다. 앵커 없는
+  `"pass"` 제외 규칙이 `password`/`passport`가 들어간 줄(PII 마스킹 코드 등)까지 커버리지에서
+  빼던 문제를 `^\s*pass\s*$`로 교정했습니다.
+- **버전 단일화**: `pyproject.toml`이 유일한 버전 소스가 되었고 `app.__version__`, FastAPI `version`,
+  `/health`, `/api` 응답이 모두 여기서 읽습니다(이전에는 1.0.7 / 2.0.0 / 2.0.0 / 1.2.1 네 갈래).
+  CHANGELOG 최신 릴리스와 일치하는지 검사하는 테스트를 추가했습니다.
+- **SQL 검색 기본 비활성화 + 읽기 전용 강제**: `SQL_SEARCH_ENABLED` 기본값이 `false`가 되었습니다.
+  켜더라도 실행 전 `SET TRANSACTION READ ONLY`와 `statement_timeout`을 적용하고, 검증기는
+  `pg_sleep`, `pg_read_file`, `dblink`, `lo_import`, `SELECT ... INTO`, `SET` 등을 추가로 차단합니다.
+  문자열 리터럴 안의 단어는 검사에서 제외해 오탐을 줄였습니다.
+- **프론트엔드 타입체크 게이트**: `npm run typecheck`(tsc --noEmit)를 빌드와 CI에 추가하고
+  기존 타입 오류를 해소했습니다. 이로써 strict tsconfig와 i18n 키 동등성이 실제로 강제됩니다.
+
 ### 추가됨
 - 운영 안정성 smoke 게이트 추가: `make test-operational-smoke` 및 GitHub Actions `Runtime Smoke` job
 - `/ready` readiness 엔드포인트 추가 및 Docker API healthcheck를 `/ready`로 전환

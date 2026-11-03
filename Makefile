@@ -106,8 +106,13 @@ dev-fast: install-dev
 	uv run uvicorn main:app --reload --host 0.0.0.0 --port 8001 --log-level warning --reload-delay 0.25
 
 # 테스트 실행 (UV 환경)
+# 기본 테스트: live(실네트워크/유료 API/외부 서비스) 테스트는 제외한다.
 test: install-dev
-	uv run pytest
+	ENVIRONMENT=test uv run pytest -m "not live"
+
+# live 테스트: 실제 외부 서비스/유료 API 호출. ONERAG_RUN_LIVE_PROVIDER_TESTS=1 이 필요하다.
+test-live: install-dev
+	ENVIRONMENT=test ONERAG_RUN_LIVE_PROVIDER_TESTS=1 uv run pytest -m live
 
 # 테스트 실행 (시스템 Python 환경 - UV 문제 시 대안)
 test-system:
@@ -135,18 +140,15 @@ test-auto:
 	fi
 
 # 기본 테스트 (타임아웃 방지)
-test-basic:
+# 가장 빠른 기본 점검: 앱 기동 가드 + readiness 계약 (예전 tests/test_basic.py 등은 삭제됨)
+test-basic: install-dev
 	@echo "🧪 Running basic tests only..."
-	@if [ -d ".venv_system" ]; then \
-		source .venv_system/bin/activate && python -m pytest tests/test_basic.py tests/test_config_simple.py -v --tb=short; \
-	else \
-		./scripts/test-env-setup.sh --system --minimal && \
-		source .venv_system/bin/activate && python -m pytest tests/test_basic.py tests/test_config_simple.py -v --tb=short; \
-	fi
+	ENVIRONMENT=test uv run pytest tests/test_main_startup.py tests/unit/api/test_health_readiness.py -v --tb=short
 
 # 테스트 커버리지
+# pyproject addopts가 pytest_cov 플러그인을 끄므로(-p no:pytest_cov) 여기서 명시적으로 켠다.
 test-cov: install-dev
-	uv run pytest --cov=app --cov-report=html --cov-report=term
+	ENVIRONMENT=test uv run pytest -p pytest_cov --cov=app --cov-report=html --cov-report=term -m "not live"
 
 # 운영 안정성 smoke 테스트 (CI와 로컬에서 동일하게 사용)
 test-operational-smoke:

@@ -17,6 +17,7 @@ Note:
     하이브리드 검색이 필요한 경우 Weaviate, Pinecone, Qdrant를 사용하세요.
 """
 
+import asyncio
 from typing import Any, Protocol, runtime_checkable
 
 from app.lib.logger import get_logger
@@ -148,7 +149,8 @@ class PgVectorRetriever:
         try:
             # 1. Dense 쿼리 벡터화
             logger.debug(f"쿼리 임베딩 생성 중: '{query[:50]}...'")
-            query_vector = self.embedder.embed_query(query)
+            # 동기 임베딩(HTTP/CPU)을 to_thread로 오프로딩해 이벤트 루프 블로킹을 막는다.
+            query_vector = await asyncio.to_thread(self.embedder.embed_query, query)
 
             # 2. PgVectorStore에서 검색
             raw_results = await self.store.search(

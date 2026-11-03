@@ -82,6 +82,22 @@ class QueryExecutor:
 
         logger.info(f"QueryExecutor 초기화: timeout={self.timeout}s, max_rows={self.max_rows}")
 
+    async def _apply_read_only_guards(self, session: Any) -> None:
+        """현재 트랜잭션을 읽기 전용으로 고정하고 statement_timeout을 건다.
+
+        PostgreSQL 전용 구문이다. 다른 방언(테스트용 SQLite 등)에서는 조용히 건너뛰되,
+        어떤 가드가 적용되지 않았는지 로그로 남긴다.
+        """
+        timeout_ms = max(int(self.timeout * 1000), 1)
+        try:
+            await session.execute(text("SET TRANSACTION READ ONLY"))
+            await session.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
+        except Exception as guard_error:
+            logger.warning(
+                "SQL 읽기 전용 가드 적용 실패(비-PostgreSQL 방언이거나 트랜잭션 상태 문제)",
+                extra={"error": str(guard_error)},
+            )
+
     async def execute(self, sql_query: str) -> QueryResult:
         """
         SQL 쿼리를 실행하고 결과를 반환합니다.
@@ -109,6 +125,10 @@ class QueryExecutor:
             logger.info(f"SQL 실행: {sql_query[:100]}...")
 
             async with self.db_manager.get_session() as session:
+                # 심층 방어: 키워드 블랙리스트를 통과한 SQL이라도 DB 레벨에서 쓰기를 막고
+                # 실행 시간을 제한한다. READ ONLY 트랜잭션에서는 INSERT/UPDATE/DDL이 거부되고,
+                # statement_timeout은 pg_sleep 같은 지연 공격을 끊는다(SET LOCAL은 트랜잭션 범위).
+                await self._apply_read_only_guards(session)
                 # text()로 감싸서 raw SQL 실행
                 result = await session.execute(text(sql_query))
 

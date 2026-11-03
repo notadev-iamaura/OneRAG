@@ -7,6 +7,8 @@ DuckDuckGo는 API 키 불필요하므로 항상 테스트 가능합니다.
 
 주의: 이 테스트는 실제 네트워크 요청을 수행합니다.
 """
+import os
+
 import pytest
 
 from app.modules.core.tools.web_search import (
@@ -15,6 +17,16 @@ from app.modules.core.tools.web_search import (
     WebSearchService,
     web_search,
 )
+
+# 실제 네트워크(DuckDuckGo/Bing)에 나가는 테스트. 샌드박스/CI에서는 연결이 막혀 실패하므로
+# live 마커를 붙이고 ONERAG_RUN_LIVE_PROVIDER_TESTS=1 일 때만 실행한다.
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
+        os.getenv("ONERAG_RUN_LIVE_PROVIDER_TESTS") != "1",
+        reason="실제 네트워크 테스트는 ONERAG_RUN_LIVE_PROVIDER_TESTS=1 일 때만 실행",
+    ),
+]
 
 
 class TestWebSearchE2E:

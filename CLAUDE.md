@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 프로젝트 개요
 도메인 범용화된 오픈소스 RAG 시스템. FastAPI 백엔드, React/Vite 프론트엔드, 모듈형 검색/생성/평가 파이프라인을 하나의 코드베이스로 제공합니다.
 
-- **패키지 버전**: `pyproject.toml` 기준 1.0.7
+- **패키지 버전**: `pyproject.toml`이 단일 진실원. `app.__version__`, FastAPI `version`, `/health`가 모두 여기서 읽는다(CHANGELOG 최신 릴리스와 일치시킬 것).
 - **현재 운영 상태**: `docs/STATUS.md`를 기준으로 확인
 - **현재 CI 게이트**: Ruff, Mypy, Import Linter, backend pytest+coverage, Runtime Smoke, frontend build/lint/test
 - **주요 개선**: `/health` liveness와 `/ready` readiness 분리, retrieval startup policy, quickstart 데이터 안전화, runtime smoke CI
@@ -77,7 +77,7 @@ make test-cov           # 테스트 커버리지 리포트
 
 # 코드 품질 관리 (CI/CD 통과 필수)
 make lint               # ruff 린트 검사
-make type-check         # mypy 엄격 모드 타입 체크
+make type-check         # mypy 타입 체크 (핵심 모듈 엄격, api/core/config 등은 완화 — pyproject overrides 참조)
 make lint-imports       # 아키텍처 계층 검증 (Import Linter)
 ```
 
