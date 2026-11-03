@@ -42,7 +42,7 @@ def test_profiles_differ_only_in_timing() -> None:
     container = _container()
     standard = {m.name: m for m in di_container._build_startup_modules(container, retrieval_required=False, graceful=False)}
     graceful = {m.name: m for m in di_container._build_startup_modules(container, retrieval_required=False, graceful=True)}
-    assert standard["Session"].timeout == 30.0 and standard["Session"].retry_count == 1
+    assert standard["Session"].timeout == 120.0 and standard["Session"].retry_count == 1
     assert graceful["Session"].timeout == 10.0 and graceful["Session"].retry_count == 2
     assert standard["Session"].priority == graceful["Session"].priority
 
@@ -92,3 +92,49 @@ async def test_initialize_async_resources_delegates_to_shared_runner(monkeypatch
     await di_container.initialize_async_resources(MagicMock())
     await di_container.initialize_async_resources_graceful(MagicMock())
     assert calls == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_waits_for_weaviate_retriever_in_same_priority_group() -> None:
+    """같은 우선순위 그룹에서 동시에 실행되어도 오케스트레이터는 Weaviate 초기화 완료를 기다린다."""
+    import asyncio
+
+    container = MagicMock()
+    order: list[str] = []
+    signals = di_container._StartupSignals()
+
+    retriever = MagicMock()
+
+    async def slow_init():
+        await asyncio.sleep(0.05)
+        order.append("weaviate")
+
+    retriever.initialize = slow_init
+
+    async def retriever_provider():
+        return retriever
+
+    container.weaviate_retriever.return_value = retriever_provider()
+
+    async def reranker():
+        return None
+
+    async def cache():
+        return None
+
+    orchestrator = MagicMock()
+    orchestrator.initialize = AsyncMock(side_effect=lambda: order.append("orchestrator"))
+
+    async def orchestrator_provider():
+        return orchestrator
+
+    container.reranker.return_value = reranker()
+    container.cache.return_value = cache()
+    container.retrieval_orchestrator.return_value = orchestrator_provider()
+
+    # 오케스트레이터를 먼저 띄워도 Weaviate 완료 이후에 초기화된다
+    await asyncio.gather(
+        di_container._init_retrieval_orchestrator(container, signals),
+        di_container._init_weaviate_retriever(container, signals),
+    )
+    assert order == ["weaviate", "orchestrator"]

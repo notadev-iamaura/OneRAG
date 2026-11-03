@@ -456,3 +456,39 @@ def test_api_key_can_cancel_any_job(
 
     admin = _client(upload_app)
     assert admin.post(f"/api/upload/status/{job_id}/cancel").status_code == 200
+
+
+def test_chunked_upload_is_bound_to_owner_session(upload_app: FastAPI) -> None:
+    """분할 업로드의 조각 전송/완료는 작업을 시작한 세션만 할 수 있어야 한다."""
+    client = _client(upload_app, with_api_key=False)
+    start = client.post(
+        "/api/upload/chunked/start",
+        json={"filename": "doc.txt", "content_type": "text/plain", "file_size": 5},
+        headers=_token_headers("owner-sess"),
+    )
+    assert start.status_code == 200, start.text
+    job_id = start.json()["job_id"]
+
+    # 다른 세션이 조각을 밀어 넣거나 완료시키려 하면 403
+    intruder = client.post(
+        f"/api/upload/chunked/{job_id}/chunk",
+        files={"chunk": ("doc.txt", b"hello", "text/plain")},
+        data={"offset": "0"},
+        headers=_token_headers("other-sess"),
+    )
+    assert intruder.status_code == 403
+    complete = client.post(
+        f"/api/upload/chunked/{job_id}/complete",
+        json={},
+        headers=_token_headers("other-sess"),
+    )
+    assert complete.status_code == 403
+
+    # 소유 세션은 정상 진행
+    own = client.post(
+        f"/api/upload/chunked/{job_id}/chunk",
+        files={"chunk": ("doc.txt", b"hello", "text/plain")},
+        data={"offset": "0"},
+        headers=_token_headers("owner-sess"),
+    )
+    assert own.status_code == 200, own.text

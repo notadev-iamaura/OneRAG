@@ -85,18 +85,30 @@ class QueryExecutor:
     async def _apply_read_only_guards(self, session: Any) -> None:
         """현재 트랜잭션을 읽기 전용으로 고정하고 statement_timeout을 건다.
 
-        PostgreSQL 전용 구문이다. 다른 방언(테스트용 SQLite 등)에서는 조용히 건너뛰되,
-        어떤 가드가 적용되지 않았는지 로그로 남긴다.
+        PostgreSQL 전용 구문이다. 가드를 걸지 못하면 쿼리를 실행하지 않는다(fail-closed).
+        PostgreSQL 에서는 실패한 SET 이 트랜잭션을 abort 상태로 만들어 이어지는 쿼리가
+        엉뚱한 'current transaction is aborted' 오류를 내므로, 여기서 롤백하고 명확한
+        오류로 끝낸다.
+
+        Raises:
+            RuntimeError: 가드 적용 실패
         """
         timeout_ms = max(int(self.timeout * 1000), 1)
         try:
             await session.execute(text("SET TRANSACTION READ ONLY"))
             await session.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
         except Exception as guard_error:
-            logger.warning(
-                "SQL 읽기 전용 가드 적용 실패(비-PostgreSQL 방언이거나 트랜잭션 상태 문제)",
+            logger.error(
+                "SQL 읽기 전용 가드 적용 실패 — 쿼리를 실행하지 않습니다",
                 extra={"error": str(guard_error)},
             )
+            rollback = getattr(session, "rollback", None)
+            if callable(rollback):
+                try:
+                    await rollback()
+                except Exception as rollback_error:  # noqa: BLE001 - 정리 단계
+                    logger.debug("가드 실패 후 롤백 실패(무시)", extra={"error": str(rollback_error)})
+            raise RuntimeError(f"read-only guard failed: {guard_error}") from guard_error
 
     async def execute(self, sql_query: str) -> QueryResult:
         """

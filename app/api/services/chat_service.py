@@ -340,9 +340,10 @@ class ChatService:
         )
 
         # RAGPipeline.execute() 단일 호출 (8단계 오케스트레이션)
-        return await self.rag_pipeline.execute(
+        result = await self.rag_pipeline.execute(
             message=message, session_id=session_id, options=options
         )
+        return cast(RAGResultDict, result)
 
     async def add_conversation_to_session(
         self, session_id: str, user_message: str, assistant_answer: str, metadata: dict[str, Any]
@@ -532,7 +533,6 @@ class ChatService:
             chunks.append("".join(current))
         return chunks
 
-    @observe(name="RAG Pipeline (Streaming)", capture_input=False, capture_output=False)
     def _stream_hallucination_gate_triggered(self, message: str, documents: list[Any]) -> bool:
         """비스트리밍 환각 게이트와 같은 조건(활성 + 기간 일치 요구 + 불일치)인지 판정한다."""
         pipeline = self.rag_pipeline
@@ -546,6 +546,7 @@ class ChatService:
             logger.debug("스트리밍 환각 게이트 판정 실패(무시)", extra={"error": str(gate_error)})
             return False
 
+    @observe(name="RAG Pipeline (Streaming)", capture_input=False, capture_output=False)
     async def stream_rag_pipeline(
         self, message: str, session_id: str | None, options: dict[str, Any] | None = None
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -606,7 +607,8 @@ class ChatService:
                     logger.debug(f"스트리밍: 새 세션 생성 - {final_session_id}")
 
                 # 2. 세션 컨텍스트 조회 (비스트리밍)
-                session_context = await session_module.get_context_string(final_session_id)
+                # 세션 컨텍스트는 run_retrieval_phase(prepare_context)가 한 번만 읽는다(중복 I/O 제거).
+                session_context = ""
             else:
                 session_context = ""
                 if not final_session_id:
@@ -687,6 +689,10 @@ class ChatService:
             reranking_applied = False
             context_expanded_grew = False
             sql_search_result = None
+            # 비스트리밍 execute()와 동일하게 라우팅이 정한 data_source를 검색 옵션에 반영한다.
+            data_source = route_decision.metadata.get("data_source")
+            if data_source is not None:
+                options["data_source"] = data_source
             try:
                 phase = await self.rag_pipeline.run_retrieval_phase(
                     message,

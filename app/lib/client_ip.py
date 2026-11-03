@@ -212,6 +212,13 @@ def get_trusted_proxy_policy() -> TrustedProxyPolicy:
             "신뢰 프록시 정책 로드",
             extra={"source": _policy_cache.source, "trust_all": _policy_cache.trust_all},
         )
+        if _policy_cache.source == "private":
+            # 기본 정책은 사설망 peer 를 전부 프록시로 본다. 프록시 없이 LAN/VPN 에 직접 노출하면
+            # 같은 망의 클라이언트가 X-Forwarded-For 를 위조할 수 있으므로 명시 설정을 권한다.
+            logger.warning(
+                "TRUSTED_PROXY_IPS 미설정(기본 private). 리버스 프록시가 없는 직접 노출 환경이면 "
+                "TRUSTED_PROXY_IPS=none, 프록시가 있으면 그 IP/CIDR 로 명시하세요."
+            )
     return _policy_cache
 
 

@@ -2865,6 +2865,7 @@ async def upload_chunked_chunk(
     job_id: str,
     chunk: UploadFile = File(...),
     offset: int = Form(...),
+    principal: str = Depends(get_upload_access),
 ) -> ChunkedUploadChunkResponse:
     """파일 조각을 offset 위치에 기록한다 (#11).
 
@@ -2881,6 +2882,8 @@ async def upload_chunked_chunk(
             },
         )
     job = _get_chunked_receiving_job(job_id)
+    # 조각 전송/완료도 작업을 만든 세션만 할 수 있다(다른 세션의 임시 파일 변조 방지).
+    _assert_job_owner(job, principal, job_id)
     received_size = int(job.get("chunk_received_size") or 0)
     expected_size = int(job.get("file_size") or 0)
     if offset != received_size:
@@ -2970,6 +2973,7 @@ async def complete_chunked_upload(
     background_tasks: BackgroundTasks,
     job_id: str,
     payload: ChunkedUploadCompleteRequest,
+    principal: str = Depends(get_upload_access),
 ) -> UploadResponse:
     """분할 업로드를 완료하고 문서 처리를 시작한다 (#11).
 
@@ -2979,6 +2983,8 @@ async def complete_chunked_upload(
     """
     try:
         job = _get_chunked_receiving_job(job_id)
+        # 조각 전송/완료도 작업을 만든 세션만 할 수 있다(다른 세션의 임시 파일 변조 방지).
+        _assert_job_owner(job, principal, job_id)
         expected_size = int(job.get("file_size") or 0)
         received_size = int(job.get("chunk_received_size") or 0)
         file_path = Path(str(job["temp_file_path"]))

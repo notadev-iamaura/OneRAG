@@ -109,3 +109,20 @@ async def test_done_event_carries_hallucination_gate_signal(service):
 
     done = next(e for e in events if e["event"] == "done")
     assert done["data"]["hallucination_gate"] == "period_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_stream_passes_routing_data_source_to_retrieval(service, monkeypatch):
+    """라우팅이 정한 data_source 가 스트리밍 검색 옵션에도 반영되어야 한다(비스트리밍과 동일)."""
+    svc, _ = service
+    monkeypatch.setattr(
+        RAGPipeline, "route_query",
+        AsyncMock(return_value=RouteDecision(should_continue=True, metadata={"data_source": "faq"})),
+    )
+    svc.rag_pipeline.run_retrieval_phase = AsyncMock(return_value=_phase([]))
+
+    _ = [e async for e in svc.stream_rag_pipeline("질문", "sess", {"limit": 3})]
+
+    args, _kwargs = svc.rag_pipeline.run_retrieval_phase.await_args
+    assert args[2]["data_source"] == "faq"
+    assert args[2]["limit"] == 3

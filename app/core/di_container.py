@@ -1989,15 +1989,39 @@ async def _await_if_needed(value: Any) -> Any:
     return value
 
 
-async def _init_weaviate_retriever(container: AppContainer) -> None:
+class _StartupSignals:
+    """같은 우선순위 그룹 안에서의 의존 순서를 보장하는 이벤트 묶음.
+
+    GracefulInitializer 는 우선순위 그룹 단위로 asyncio.gather 로 동시에 초기화하므로
+    ModuleConfig.dependencies 는 순서 정렬에만 쓰이고 실제 대기는 하지 않는다. 검색
+    오케스트레이터는 Weaviate Retriever 초기화가 끝난 뒤에 붙어야 하므로 이벤트로 기다린다.
+    """
+
+    def __init__(self) -> None:
+        self.weaviate_retriever_done = asyncio.Event()
+
+
+async def _init_weaviate_retriever(
+    container: AppContainer, signals: _StartupSignals | None = None
+) -> None:
     """Weaviate Retriever 를 해결하고 initialize() 가 있으면 호출한다."""
-    instance = await _await_if_needed(container.weaviate_retriever())
-    if hasattr(instance, "initialize"):
-        await instance.initialize()
+    try:
+        instance = await _await_if_needed(container.weaviate_retriever())
+        if hasattr(instance, "initialize"):
+            await instance.initialize()
+    finally:
+        # 실패/타임아웃이어도 신호는 보낸다. 오케스트레이터가 영원히 기다리지 않도록.
+        if signals is not None:
+            signals.weaviate_retriever_done.set()
 
 
-async def _init_retrieval_orchestrator(container: AppContainer) -> None:
-    """Reranker/Cache(async 팩토리)를 먼저 해결한 뒤 Retrieval Orchestrator 를 초기화한다."""
+async def _init_retrieval_orchestrator(
+    container: AppContainer, signals: _StartupSignals | None = None
+) -> None:
+    """Weaviate Retriever 완료를 기다리고 Reranker/Cache(async 팩토리)를 해결한 뒤
+    Retrieval Orchestrator 를 초기화한다."""
+    if signals is not None:
+        await signals.weaviate_retriever_done.wait()
     await _await_if_needed(container.reranker())
     await _await_if_needed(container.cache())
     orchestrator = await _await_if_needed(container.retrieval_orchestrator())
@@ -2016,7 +2040,11 @@ async def _no_op_init() -> None:
 
 
 def _build_startup_modules(
-    container: AppContainer, *, retrieval_required: bool, graceful: bool
+    container: AppContainer,
+    *,
+    retrieval_required: bool,
+    graceful: bool,
+    signals: _StartupSignals | None = None,
 ) -> list[Any]:
     """두 기동 모드가 공유하는 모듈 그래프를 만든다.
 
@@ -2027,10 +2055,13 @@ def _build_startup_modules(
     """
     from app.core.graceful_initializer import ModuleConfig, ModulePriority
 
+    signals = signals or _StartupSignals()
+
     def timing(graceful_timeout: float, graceful_retry: int) -> dict[str, Any]:
         if graceful:
             return {"timeout": graceful_timeout, "retry_count": graceful_retry}
-        return {"timeout": 30.0, "retry_count": 1}
+        # 표준 모드는 예전처럼 느긋하게 기다린다(예전 경로에는 타임아웃이 없었다).
+        return {"timeout": 120.0, "retry_count": 1}
 
     orchestrator_priority = (
         ModulePriority.CRITICAL if retrieval_required else ModulePriority.IMPORTANT
@@ -2082,14 +2113,14 @@ def _build_startup_modules(
         ModuleConfig(
             name="WeaviateRetriever",
             priority=ModulePriority.CRITICAL if retrieval_required else ModulePriority.IMPORTANT,
-            initializer=lambda: _init_weaviate_retriever(container),
+            initializer=lambda: _init_weaviate_retriever(container, signals),
             dependencies=["DocumentProcessor"],
             **timing(8.0, 1),
         ),
         ModuleConfig(
             name="RetrievalOrchestrator",
             priority=orchestrator_priority,
-            initializer=lambda: _init_retrieval_orchestrator(container),
+            initializer=lambda: _init_retrieval_orchestrator(container, signals),
             dependencies=["WeaviateRetriever"],
             **timing(15.0, 1),
         ),

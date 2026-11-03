@@ -41,179 +41,133 @@ if TYPE_CHECKING:
 
 # 분리 전 rag_pipeline 모듈 경로로 import 하던 이름들을 그대로 제공한다(테스트/외부 코드 호환).
 from .pipeline.document_utils import (
-    _CALENDAR_YEAR_PATTERN as _CALENDAR_YEAR_PATTERN,
-)
-from .pipeline.document_utils import (
-    _CONTEXT_EXPANSION_MAX_WINDOW as _CONTEXT_EXPANSION_MAX_WINDOW,
-)
-from .pipeline.document_utils import (
-    _DOCUMENT_FILENAME_PATTERN as _DOCUMENT_FILENAME_PATTERN,
-)
-from .pipeline.document_utils import (
-    _EXACT_IDENTIFIER_PATTERN as _EXACT_IDENTIFIER_PATTERN,
-)
-from .pipeline.document_utils import (
-    _LATIN_PHRASE_PATTERN as _LATIN_PHRASE_PATTERN,
-)
-from .pipeline.document_utils import (
-    _NAMED_DOCUMENT_HIGH_VALUE_PATTERN as _NAMED_DOCUMENT_HIGH_VALUE_PATTERN,
-)
-from .pipeline.document_utils import (
-    _NAMED_DOCUMENT_LIST_PAGE_SIZE as _NAMED_DOCUMENT_LIST_PAGE_SIZE,
-)
-from .pipeline.document_utils import (
-    _NAMED_DOCUMENT_TOKEN_PATTERN as _NAMED_DOCUMENT_TOKEN_PATTERN,
-)
-from .pipeline.document_utils import (
-    _QUOTED_TEXT_PATTERN as _QUOTED_TEXT_PATTERN,
-)
-from .pipeline.document_utils import (
-    _RERANK_METADATA_KEYS as _RERANK_METADATA_KEYS,
-)
-from .pipeline.document_utils import (
-    DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE as DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
-)
-from .pipeline.document_utils import (
-    GENERATION_FALLBACK_NO_DOCS_MESSAGE as GENERATION_FALLBACK_NO_DOCS_MESSAGE,
-)
-from .pipeline.document_utils import (
-    GENERATION_FALLBACK_WITH_DOCS_MESSAGE as GENERATION_FALLBACK_WITH_DOCS_MESSAGE,
-)
-from .pipeline.document_utils import (
-    GENERATION_MODULE_MISSING_MESSAGE as GENERATION_MODULE_MISSING_MESSAGE,
-)
-from .pipeline.document_utils import (
-    GENERATION_TYPE_ERROR_MESSAGE as GENERATION_TYPE_ERROR_MESSAGE,
-)
-from .pipeline.document_utils import (
-    HALLUCINATION_GATE_NO_ANSWER_MESSAGE as HALLUCINATION_GATE_NO_ANSWER_MESSAGE,
-)
-from .pipeline.document_utils import (
-    PROMPT_LEAKAGE_BLOCKED_MESSAGE as PROMPT_LEAKAGE_BLOCKED_MESSAGE,
-)
-from .pipeline.document_utils import (
-    SELF_RAG_LOW_QUALITY_REJECT_MESSAGE as SELF_RAG_LOW_QUALITY_REJECT_MESSAGE,
-)
-from .pipeline.document_utils import (
-    SELF_RAG_LOW_QUALITY_REJECT_TEXT as SELF_RAG_LOW_QUALITY_REJECT_TEXT,
-)
-from .pipeline.document_utils import (
-    _annotate_rerank_scores as _annotate_rerank_scores,
-)
-from .pipeline.document_utils import (
-    _chunk_to_search_result as _chunk_to_search_result,
-)
-from .pipeline.document_utils import (
-    _coerce_bool as _coerce_bool,
-)
-from .pipeline.document_utils import (
-    _coerce_bounded_int as _coerce_bounded_int,
-)
-from .pipeline.document_utils import (
-    _coerce_optional_int as _coerce_optional_int,
-)
-from .pipeline.document_utils import (
-    _coerce_positive_int as _coerce_positive_int,
-)
-from .pipeline.document_utils import (
-    _context_chunk_identity as _context_chunk_identity,
-)
-from .pipeline.document_utils import (
-    _context_chunk_index as _context_chunk_index,
-)
-from .pipeline.document_utils import (
-    _context_document_id as _context_document_id,
-)
-from .pipeline.document_utils import (
-    _document_content as _document_content,
-)
-from .pipeline.document_utils import (
-    _document_identity as _document_identity,
-)
-from .pipeline.document_utils import (
-    _document_matches_requested_filename as _document_matches_requested_filename,
-)
-from .pipeline.document_utils import (
-    _document_metadata as _document_metadata,
-)
-from .pipeline.document_utils import (
-    _document_score as _document_score,
-)
-from .pipeline.document_utils import (
-    _document_text_for_exact_signals as _document_text_for_exact_signals,
-)
-from .pipeline.document_utils import (
-    _document_value as _document_value,
-)
-from .pipeline.document_utils import (
-    _ensure_document_metadata as _ensure_document_metadata,
-)
-from .pipeline.document_utils import (
-    _exact_identifier_terms as _exact_identifier_terms,
-)
-from .pipeline.document_utils import (
-    _extract_fallback_document_preview as _extract_fallback_document_preview,
-)
-from .pipeline.document_utils import (
-    _has_rerank_metadata as _has_rerank_metadata,
-)
-from .pipeline.document_utils import (
-    _is_noop_rerank as _is_noop_rerank,
-)
-from .pipeline.document_utils import (
-    _is_numeric_score as _is_numeric_score,
-)
-from .pipeline.document_utils import (
-    _latin_phrase_terms as _latin_phrase_terms,
-)
-from .pipeline.document_utils import (
-    _named_document_match_terms as _named_document_match_terms,
-)
-from .pipeline.document_utils import (
-    _normalize_exact_match_text as _normalize_exact_match_text,
-)
-from .pipeline.document_utils import (
-    _normalize_named_document_text as _normalize_named_document_text,
-)
-from .pipeline.document_utils import (
-    _quoted_content_hints as _quoted_content_hints,
-)
-from .pipeline.document_utils import (
-    _requested_document_filenames as _requested_document_filenames,
-)
-from .pipeline.document_utils import (
-    _resolve_generation_fallback_message as _resolve_generation_fallback_message,
-)
-from .pipeline.document_utils import (
-    _same_score as _same_score,
-)
-from .pipeline.document_utils import (
-    _snapshot_rerank_inputs as _snapshot_rerank_inputs,
+    _CALENDAR_YEAR_PATTERN,
+    _CONTEXT_EXPANSION_MAX_WINDOW,
+    _DOCUMENT_FILENAME_PATTERN,
+    _EXACT_IDENTIFIER_PATTERN,
+    _LATIN_PHRASE_PATTERN,
+    _NAMED_DOCUMENT_HIGH_VALUE_PATTERN,
+    _NAMED_DOCUMENT_LIST_PAGE_SIZE,
+    _NAMED_DOCUMENT_TOKEN_PATTERN,
+    _QUOTED_TEXT_PATTERN,
+    _RERANK_METADATA_KEYS,
+    DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE,
+    GENERATION_FALLBACK_NO_DOCS_MESSAGE,
+    GENERATION_FALLBACK_WITH_DOCS_MESSAGE,
+    GENERATION_MODULE_MISSING_MESSAGE,
+    GENERATION_TYPE_ERROR_MESSAGE,
+    HALLUCINATION_GATE_NO_ANSWER_MESSAGE,
+    PROMPT_LEAKAGE_BLOCKED_MESSAGE,
+    SELF_RAG_LOW_QUALITY_REJECT_MESSAGE,
+    SELF_RAG_LOW_QUALITY_REJECT_TEXT,
+    _annotate_rerank_scores,
+    _chunk_to_search_result,
+    _coerce_bool,
+    _coerce_bounded_int,
+    _coerce_optional_int,
+    _coerce_positive_int,
+    _context_chunk_identity,
+    _context_chunk_index,
+    _context_document_id,
+    _document_content,
+    _document_identity,
+    _document_matches_requested_filename,
+    _document_metadata,
+    _document_score,
+    _document_text_for_exact_signals,
+    _document_value,
+    _ensure_document_metadata,
+    _exact_identifier_terms,
+    _extract_fallback_document_preview,
+    _has_rerank_metadata,
+    _is_noop_rerank,
+    _is_numeric_score,
+    _latin_phrase_terms,
+    _named_document_match_terms,
+    _normalize_exact_match_text,
+    _normalize_named_document_text,
+    _quoted_content_hints,
+    _requested_document_filenames,
+    _resolve_generation_fallback_message,
+    _same_score,
+    _snapshot_rerank_inputs,
 )
 from .pipeline.generation_stage import GenerationStageMixin
 from .pipeline.models import (
-    FormattedSources as FormattedSources,
-)
-from .pipeline.models import (
-    PipelineTracker as PipelineTracker,
-)
-from .pipeline.models import (
-    PreparedContext as PreparedContext,
-)
-from .pipeline.models import (
-    RerankResults as RerankResults,
-)
-from .pipeline.models import (
-    RetrievalResults as RetrievalResults,
-)
-from .pipeline.models import (
-    RouteDecision as RouteDecision,
+    FormattedSources,
+    PipelineTracker,
+    PreparedContext,
+    RerankResults,
+    RetrievalResults,
+    RouteDecision,
 )
 from .pipeline.output_stage import OutputStageMixin
 from .pipeline.rerank_stage import RerankStageMixin
 from .pipeline.retrieval_stage import RetrievalStageMixin
 from .pipeline.routing_stage import RoutingStageMixin
 from .pipeline.verification_stage import VerificationStageMixin
+
+# 재노출 목록(분리 전 공개 경로 유지). ruff 가 미사용 import 로 지우지 않도록 __all__ 로 선언한다.
+__all__ = [
+    "RAGPipeline",
+    "RetrievalPhase",
+    "FormattedSources",
+    "PipelineTracker",
+    "PreparedContext",
+    "RerankResults",
+    "RetrievalResults",
+    "RouteDecision",
+    "DOCUMENT_PREVIEW_UNAVAILABLE_MESSAGE",
+    "GENERATION_FALLBACK_NO_DOCS_MESSAGE",
+    "GENERATION_FALLBACK_WITH_DOCS_MESSAGE",
+    "GENERATION_MODULE_MISSING_MESSAGE",
+    "GENERATION_TYPE_ERROR_MESSAGE",
+    "HALLUCINATION_GATE_NO_ANSWER_MESSAGE",
+    "PROMPT_LEAKAGE_BLOCKED_MESSAGE",
+    "SELF_RAG_LOW_QUALITY_REJECT_MESSAGE",
+    "SELF_RAG_LOW_QUALITY_REJECT_TEXT",
+    "_CALENDAR_YEAR_PATTERN",
+    "_CONTEXT_EXPANSION_MAX_WINDOW",
+    "_DOCUMENT_FILENAME_PATTERN",
+    "_EXACT_IDENTIFIER_PATTERN",
+    "_LATIN_PHRASE_PATTERN",
+    "_NAMED_DOCUMENT_HIGH_VALUE_PATTERN",
+    "_NAMED_DOCUMENT_LIST_PAGE_SIZE",
+    "_NAMED_DOCUMENT_TOKEN_PATTERN",
+    "_QUOTED_TEXT_PATTERN",
+    "_RERANK_METADATA_KEYS",
+    "_annotate_rerank_scores",
+    "_chunk_to_search_result",
+    "_coerce_bool",
+    "_coerce_bounded_int",
+    "_coerce_optional_int",
+    "_coerce_positive_int",
+    "_context_chunk_identity",
+    "_context_chunk_index",
+    "_context_document_id",
+    "_document_content",
+    "_document_identity",
+    "_document_matches_requested_filename",
+    "_document_metadata",
+    "_document_score",
+    "_document_text_for_exact_signals",
+    "_document_value",
+    "_ensure_document_metadata",
+    "_exact_identifier_terms",
+    "_extract_fallback_document_preview",
+    "_has_rerank_metadata",
+    "_is_noop_rerank",
+    "_is_numeric_score",
+    "_latin_phrase_terms",
+    "_named_document_match_terms",
+    "_normalize_exact_match_text",
+    "_normalize_named_document_text",
+    "_quoted_content_hints",
+    "_requested_document_filenames",
+    "_resolve_generation_fallback_message",
+    "_same_score",
+    "_snapshot_rerank_inputs",
+]
 
 _StageT = TypeVar("_StageT")
 
@@ -784,7 +738,6 @@ class RAGPipeline(
         return remaining if remaining > 0 else 0.0
 
 
-    @observe(name="RAG Pipeline", capture_input=False, capture_output=False)
     async def run_retrieval_phase(
         self,
         message: str,
@@ -928,6 +881,7 @@ class RAGPipeline(
             context_documents=context_documents,
         )
 
+    @observe(name="RAG Pipeline", capture_input=False, capture_output=False)
     async def execute(
         self, message: str, session_id: str, options: dict[str, Any] | None = None
     ) -> RAGResultDict:

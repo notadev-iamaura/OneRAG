@@ -32,3 +32,11 @@ def test_changelog_latest_release_matches_pyproject() -> None:
     match = re.search(r"^## \[(\d+\.\d+\.\d+)\]", changelog, re.M)
     assert match is not None, "CHANGELOG에 릴리스 헤더가 없습니다"
     assert match.group(1) == _pyproject_version()
+
+
+def test_version_prefers_pyproject_over_installed_metadata(monkeypatch) -> None:
+    """소스 체크아웃에서는 설치 메타데이터보다 pyproject.toml 값이 우선해야 한다."""
+    import app
+
+    monkeypatch.setattr(app, "_dist_version", lambda name: "9.9.9")
+    assert app._read_version() == _pyproject_version()

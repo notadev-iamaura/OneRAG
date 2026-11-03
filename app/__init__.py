@@ -16,16 +16,19 @@ _FALLBACK_VERSION = "0.0.0+unknown"
 
 
 def _read_version() -> str:
-    try:
-        return _dist_version("onerag")
-    except PackageNotFoundError:
-        pass
+    # 소스 체크아웃에서는 pyproject.toml 이 진실원이다(설치 메타데이터는 uv sync 시점에 고정되어
+    # 버전만 올리고 재설치하지 않으면 /health 가 옛 값을 보고한다). 배포된 휠처럼 pyproject 가
+    # 없을 때만 설치 메타데이터를 쓴다.
     pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
     try:
         with pyproject.open("rb") as handle:
             data = tomllib.load(handle)
         return str(data["project"]["version"])
-    except (OSError, KeyError, ValueError):
+    except (OSError, KeyError, ValueError, tomllib.TOMLDecodeError):
+        pass
+    try:
+        return _dist_version("onerag")
+    except PackageNotFoundError:
         return _FALLBACK_VERSION
 
 

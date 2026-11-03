@@ -106,3 +106,28 @@ class TestQueryExecutorReadOnlyGuards:
         result = await executor.execute("DELETE FROM metadata")
         assert result.success is False
         db_manager.get_session.assert_not_called()
+
+
+class TestQueryExecutorGuardFailure:
+    @pytest.mark.asyncio
+    async def test_guard_failure_rolls_back_and_does_not_run_query(self) -> None:
+        """가드(SET TRANSACTION ...)를 걸지 못하면 롤백하고 실제 쿼리를 실행하지 않는다."""
+        session = MagicMock()
+        session.execute = AsyncMock(side_effect=RuntimeError("SET TRANSACTION must be called before any query"))
+        session.rollback = AsyncMock()
+        db_manager = MagicMock()
+
+        @asynccontextmanager
+        async def _get_session():
+            yield session
+
+        db_manager.get_session = _get_session
+        executor = QueryExecutor(db_manager, config={"timeout": 3})
+        result = await executor.execute("SELECT 1")
+
+        assert result.success is False
+        assert "read-only guard failed" in (result.error or "")
+        session.rollback.assert_awaited_once()
+        # 첫 가드에서 실패했으므로 실제 SELECT 는 실행되지 않았다
+        executed = [str(c.args[0]) for c in session.execute.await_args_list]
+        assert executed == ["SET TRANSACTION READ ONLY"]
