@@ -7,7 +7,6 @@ Sitemap Connector Implementation
 - 2026-01-08: QA-001 대응 - encoding 모듈 import 추가 (향후 파일 처리 확장 대비)
 """
 import asyncio
-import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -15,10 +14,11 @@ import httpx
 from bs4 import BeautifulSoup
 from tenacity import RetryError
 
+from app.lib.logger import get_logger
 from app.lib.retry import DEFAULT_BACKOFF_JITTER_S, BackoffStrategy, RetryPolicy
 from app.modules.ingestion.interfaces import IIngestionConnector, StandardDocument
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class SitemapConnector(IIngestionConnector):
     def __init__(self, url: str, **kwargs: Any) -> None:

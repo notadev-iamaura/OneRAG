@@ -201,3 +201,60 @@ def test_openai_embedder_raises_instead_of_zero_vector(monkeypatch: pytest.Monke
 
     with pytest.raises(RuntimeError):
         embedder.embed_documents(["문서1", "문서2"])
+
+
+class _RateLimitedResponse:
+    """Retry-After 헤더를 가진 응답 흉내 (REST 임베더가 EmbeddingRetryableError에 실어 보냄)."""
+
+    status_code = 429
+    headers = {"Retry-After": "2.5"}
+
+
+def test_retry_embed_honors_retry_after_from_error_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """EmbeddingRetryableError.response의 Retry-After를 백오프보다 우선한다."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(retry_mod.time, "sleep", sleeps.append)
+    calls = {"n": 0}
+
+    def call() -> str:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise retry_mod.EmbeddingRetryableError(429, response=_RateLimitedResponse())
+        return "ok"
+
+    result = retry_mod.retry_embed(call, max_retries=2, base_seconds=0.5, max_seconds=10.0)
+
+    assert result == "ok"
+    assert calls["n"] == 2
+    assert sleeps == [2.5]
+
+
+def test_retry_embed_reraises_error_with_response_after_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(retry_mod.time, "sleep", lambda _s: None)
+    response = _RateLimitedResponse()
+
+    def call() -> str:
+        raise retry_mod.EmbeddingRetryableError(503, response=response)
+
+    with pytest.raises(retry_mod.EmbeddingRetryableError) as exc_info:
+        retry_mod.retry_embed(call, max_retries=1, base_seconds=0.1, max_seconds=1.0)
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.response is response
+
+
+def test_resolve_retry_settings_uses_lenient_env_parsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """잘못된/빈 환경변수는 기본값으로, 유효한 값은 그대로 해석한다 (공용 get_env_* 관대 모드)."""
+    monkeypatch.setenv("ONERAG_EMBEDDING_MAX_RETRIES", "abc")
+    monkeypatch.setenv("ONERAG_EMBEDDING_RETRY_BASE_SECONDS", "")
+    monkeypatch.setenv("ONERAG_EMBEDDING_RETRY_MAX_SECONDS", "12.5")
+
+    assert retry_mod.resolve_retry_settings() == (3, 1.0, 12.5)
+
+    monkeypatch.setenv("ONERAG_EMBEDDING_MAX_RETRIES", "5")
+    assert retry_mod.resolve_retry_settings()[0] == 5

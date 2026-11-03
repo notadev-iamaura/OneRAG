@@ -14,13 +14,13 @@ import json
 import re
 from typing import Any, TypedDict, cast
 
-import structlog
 from cachetools import TTLCache
 
 from app.lib.circuit_breaker import (
     CircuitBreakerConfig,
     CircuitBreakerFactory,
 )
+from app.lib.logger import get_logger
 
 from .interface import (
     ExpandedQuery,
@@ -29,7 +29,7 @@ from .interface import (
     SearchIntent,
 )
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 # 단순(키워드성) 쿼리 판정 임계값.
 # - _SIMPLE_QUERY_MAX_TOKENS: 공백 토큰이 이 값 이상이면 문장성으로 보아 복합 쿼리로 판정.

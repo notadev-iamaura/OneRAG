@@ -21,6 +21,7 @@ from typing import Any, cast
 from tenacity import (
     AsyncRetrying,
     RetryCallState,
+    RetryError,
     retry_if_exception_type,
     retry_if_result,
     stop_after_attempt,
@@ -33,6 +34,18 @@ from tenacity import (
 from tenacity.retry import retry_base
 from tenacity.stop import stop_base
 from tenacity.wait import wait_base
+
+# 호출처(before_sleep 콜백 타입, 결과 기반 재시도 소진 예외)가 tenacity를 직접
+# import하지 않도록 이 모듈의 공개 이름으로 재export한다.
+__all__ = [
+    "DEFAULT_BACKOFF_JITTER_S",
+    "BackoffStrategy",
+    "RetryCallState",
+    "RetryError",
+    "RetryPolicy",
+    "build_backoff_wait",
+    "calculate_backoff_delay",
+]
 
 # 재시도 폭주(thundering herd) 완화용 공용 jitter 기본값
 # base 지연에 [0, DEFAULT_BACKOFF_JITTER_S) 범위의 무작위 지연을 더합니다.

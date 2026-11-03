@@ -2,7 +2,7 @@
 인터페이스 일관성 검증 테스트
 
 Phase 3 R3.2: retrieval/interfaces.py 인터페이스 일관성 검증
-TDD - 구현체가 Protocol/ABC를 준수하는지 확인
+TDD - 구현체가 Protocol을 준수하는지 확인
 """
 
 import inspect
@@ -157,66 +157,3 @@ class TestSearchResultDataclass:
         assert result.source == "structured"
         assert result.page_id == "abc123"
 
-
-class TestProtocolVsABCConsistency:
-    """Protocol과 ABC가 동일한 인터페이스를 정의하는지 검증"""
-
-    def test_retriever_protocol_matches_abc(self) -> None:
-        """IRetriever Protocol과 BaseRetriever ABC가 동일한 메서드 정의"""
-        from app.modules.core.retrieval.interfaces import BaseRetriever, IRetriever
-
-        protocol_methods = {
-            name
-            for name, _ in inspect.getmembers(IRetriever, predicate=inspect.isfunction)
-            if not name.startswith("_")
-        }
-        abc_methods = {
-            name
-            for name, _ in inspect.getmembers(BaseRetriever, predicate=inspect.isfunction)
-            if not name.startswith("_")
-        }
-
-        # Protocol의 메서드가 ABC에도 있어야 함
-        assert protocol_methods == abc_methods, (
-            f"Protocol과 ABC 불일치: Protocol={protocol_methods}, ABC={abc_methods}"
-        )
-
-    def test_reranker_protocol_matches_abc(self) -> None:
-        """IReranker Protocol과 BaseReranker ABC가 동일한 메서드 정의"""
-        from app.modules.core.retrieval.interfaces import BaseReranker, IReranker
-
-        protocol_methods = {
-            name
-            for name, _ in inspect.getmembers(IReranker, predicate=inspect.isfunction)
-            if not name.startswith("_")
-        }
-        abc_methods = {
-            name
-            for name, _ in inspect.getmembers(BaseReranker, predicate=inspect.isfunction)
-            if not name.startswith("_")
-        }
-
-        assert protocol_methods == abc_methods, (
-            f"Protocol과 ABC 불일치: Protocol={protocol_methods}, ABC={abc_methods}"
-        )
-
-    def test_cache_manager_protocol_matches_abc(self) -> None:
-        """ICacheManager Protocol과 BaseCacheManager ABC가 동일한 메서드 정의"""
-        from app.modules.core.retrieval.interfaces import BaseCacheManager, ICacheManager
-
-        protocol_methods = {
-            name
-            for name, _ in inspect.getmembers(ICacheManager, predicate=inspect.isfunction)
-            if not name.startswith("_")
-        }
-        abc_methods = {
-            name
-            for name, _ in inspect.getmembers(
-                BaseCacheManager, predicate=inspect.isfunction
-            )
-            if not name.startswith("_")
-        }
-
-        assert protocol_methods == abc_methods, (
-            f"Protocol과 ABC 불일치: Protocol={protocol_methods}, ABC={abc_methods}"
-        )

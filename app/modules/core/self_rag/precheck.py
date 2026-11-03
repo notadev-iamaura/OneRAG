@@ -7,14 +7,14 @@ from collections import Counter
 from dataclasses import replace
 from typing import Any, Literal, Protocol
 
-import structlog
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
+from app.lib.logger import get_logger
 from app.modules.core.decision import DecisionProvider, NoulResult, create_decision_provider
 
 from .evaluator import EvalStatus, QualityEvaluation, QualityScore
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class PrecheckSettings(BaseModel):

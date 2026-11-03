@@ -9,10 +9,11 @@ Decorator 패턴으로 기존 파이프라인에 비침투적 통합 가능.
 
 from __future__ import annotations
 
-import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
+
+from app.lib.logger import get_logger
 
 from .audit import PIIAuditLogger
 from .detector import HybridPIIDetector
@@ -24,7 +25,7 @@ from .models import (
 )
 from .policy import PIIPolicyEngine
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PIIReviewError(Exception):

@@ -11,11 +11,12 @@ CSV 형식: 같은 행의 모든 단어는 동의어
 """
 
 import csv
-import logging
 import re
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from app.lib.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class SynonymManager:

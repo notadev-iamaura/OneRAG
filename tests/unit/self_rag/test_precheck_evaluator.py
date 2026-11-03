@@ -1,6 +1,7 @@
 """precheck 모드별 점수 보존, 단축 판정, fail-open 및 위임 검증."""
 
 import asyncio
+import logging
 from dataclasses import dataclass, replace
 from unittest.mock import AsyncMock, Mock
 
@@ -75,19 +76,28 @@ def test_provider_initialization_error_returns_base(monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["shadow", "enforce"])
-def test_missing_jev_key_warns_without_key_material(mode, capsys):
+def test_missing_jev_key_warns_without_key_material(mode, caplog):
     base = _RecordingEvaluator()
-    evaluator = build_self_rag_evaluator(base, {"mode": mode, "provider": "jev", "api_key": ""})
+    with caplog.at_level(logging.WARNING, logger="app.modules.core.self_rag.precheck"):
+        evaluator = build_self_rag_evaluator(
+            base, {"mode": mode, "provider": "jev", "api_key": ""}
+        )
     assert isinstance(evaluator, PrecheckQualityEvaluator)
-    output = capsys.readouterr().out
-    assert "self_rag_precheck_missing_api_key" in output
-    assert f"mode={mode}" in output
-    assert "has_key=False" in output
-    assert "api_key=" not in output
-    build_self_rag_evaluator(base, {"mode": mode, "provider": "jev", "api_key": "test-secret"})
-    output_with_key = capsys.readouterr().out
-    assert "self_rag_precheck_missing_api_key" not in output_with_key
-    assert "test-secret" not in output_with_key
+    records = [r for r in caplog.records if r.getMessage() == "self_rag_precheck_missing_api_key"]
+    assert len(records) == 1
+    # 구조화 필드(get_logger kwargs)는 record.structured 로 전달된다 — 키 재료는 포함하지 않음
+    fields = getattr(records[0], "structured", {})
+    assert fields.get("mode") == mode
+    assert fields.get("has_key") is False
+    assert "api_key" not in fields
+    assert "api_key=" not in caplog.text
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="app.modules.core.self_rag.precheck"):
+        build_self_rag_evaluator(
+            base, {"mode": mode, "provider": "jev", "api_key": "test-secret"}
+        )
+    assert "self_rag_precheck_missing_api_key" not in caplog.text
+    assert "test-secret" not in caplog.text
 
 
 @pytest.mark.asyncio

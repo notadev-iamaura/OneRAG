@@ -19,9 +19,7 @@ __all__ = [
     "OpenRouterReranker",
     "RerankerChain",
     "RerankerChainConfig",
-    "RerankerFactory",
     "RerankerFactoryV2",
-    "SUPPORTED_RERANKERS",
     "LocalReranker",
     "JevDecisionReranker",
     "RerankerModeConfigError",
@@ -70,12 +68,7 @@ _EXPORTS = {
         "app.modules.core.retrieval.rerankers.reranker_chain",
         "RerankerChainConfig",
     ),
-    "RerankerFactory": ("app.modules.core.retrieval.rerankers.factory", "RerankerFactory"),
     "RerankerFactoryV2": ("app.modules.core.retrieval.rerankers.factory", "RerankerFactoryV2"),
-    "SUPPORTED_RERANKERS": (
-        "app.modules.core.retrieval.rerankers.factory",
-        "SUPPORTED_RERANKERS",
-    ),
     "LocalReranker": (
         "app.modules.core.retrieval.rerankers.local_reranker",
         "LocalReranker",

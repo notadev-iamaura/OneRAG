@@ -5,7 +5,6 @@ Railway PostgreSQL과의 비동기 연결을 관리하고
 SQLAlchemy 세션을 제공합니다.
 """
 
-import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -20,8 +19,9 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import declarative_base
 
 from app.lib.errors import DatabaseError, ErrorCode
+from app.lib.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # SQLAlchemy Base 클래스
 convention = {

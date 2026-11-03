@@ -9,16 +9,17 @@ NetworkX 기반 인메모리 그래프 저장소
 """
 import asyncio
 import inspect
-import logging
 from collections import deque
 from collections.abc import Iterator
 from typing import Any, Literal, overload
+
+from app.lib.logger import get_logger
 
 from ...embedding.vector_ops import l2_norm
 from ..interfaces import IGraphStore
 from ..models import Entity, GraphSearchResult, Relation
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class _EdgeView:

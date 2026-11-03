@@ -243,7 +243,7 @@ reranking:
 
 **주요 변경 사항**:
 - `RerankerFactoryV2` 추가 (새 코드에서 사용 권장)
-- `RerankerFactory` 레거시 호환 유지 (기존 설정 자동 변환)
+- 레거시 `RerankerFactory`/`SUPPORTED_RERANKERS`/`schemas/_legacy` 제거 → `RerankerFactoryV2` 단일 진입점
 - Pydantic 기반 approach-provider 조합 검증
 - 62개 신규 테스트 추가 (v1.2.1)
 
@@ -256,11 +256,9 @@ reranking:
 **파일 구조**:
 ```
 app/config/schemas/reranking.py                         # RerankingConfigV2 + RerankingConfig 별칭
-app/modules/core/retrieval/rerankers/factory.py         # RerankerFactoryV2 + RerankerFactory (레거시)
+app/modules/core/retrieval/rerankers/factory.py         # RerankerFactoryV2
 app/modules/core/retrieval/rerankers/cohere_reranker.py # Cohere Reranker 구현
 app/modules/core/retrieval/rerankers/local_reranker.py  # Local Reranker 구현
-app/config/schemas/_legacy/                             # 레거시 스키마 보관
-app/modules/core/retrieval/rerankers/_legacy/           # 레거시 팩토리 보관
 ```
 
 ### 장기 (선택적)

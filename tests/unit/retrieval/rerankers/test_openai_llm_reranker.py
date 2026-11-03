@@ -4,7 +4,6 @@ OpenAILLMReranker 단위 테스트
 TDD 기반 개발:
 - GPT5NanoReranker를 OpenAILLMReranker로 리팩토링
 - 모델명 설정 가능 (기본값: gpt-5-nano)
-- RerankerFactory 통합 테스트
 """
 
 from unittest.mock import MagicMock, patch
@@ -142,61 +141,3 @@ class TestOpenAILLMRerankerStats:
             assert "successful_requests" in stats
             assert "failed_requests" in stats
 
-
-class TestRerankerFactoryOpenAILLM:
-    """RerankerFactory openai-llm 프로바이더 테스트"""
-
-    def test_openai_llm_in_supported_rerankers(self):
-        """openai-llm이 지원 리랭커 목록에 있는지 확인"""
-        from app.modules.core.retrieval.rerankers.factory import RerankerFactory
-
-        supported = RerankerFactory.get_supported_rerankers()
-        assert "openai-llm" in supported
-
-    def test_openai_llm_type_is_llm(self):
-        """openai-llm 타입이 llm인지 확인"""
-        from app.modules.core.retrieval.rerankers.factory import RerankerFactory
-
-        llm_rerankers = RerankerFactory.list_rerankers_by_type("llm")
-        assert "openai-llm" in llm_rerankers
-
-    def test_create_openai_llm_reranker(self, monkeypatch):
-        """Factory로 openai-llm 리랭커 생성"""
-        from app.modules.core.retrieval.rerankers.factory import RerankerFactory
-        from app.modules.core.retrieval.rerankers.openai_llm_reranker import (
-            OpenAILLMReranker,
-        )
-
-        monkeypatch.setenv("OPENAI_API_KEY", "test-api-key")
-
-        config = {
-            "reranking": {
-                "provider": "openai-llm",
-                "openai_llm": {
-                    "model": "gpt-4o-mini",
-                    "max_documents": 25,
-                    "timeout": 20,
-                },
-            }
-        }
-
-        with patch("openai.OpenAI"):
-            reranker = RerankerFactory.create(config)
-            assert isinstance(reranker, OpenAILLMReranker)
-            assert reranker.model == "gpt-4o-mini"
-            assert reranker.max_documents == 25
-
-    def test_create_openai_llm_reranker_missing_api_key(self, monkeypatch):
-        """API 키 없을 때 에러 발생"""
-        from app.modules.core.retrieval.rerankers.factory import RerankerFactory
-
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-        config = {
-            "reranking": {
-                "provider": "openai-llm",
-            }
-        }
-
-        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
-            RerankerFactory.create(config)

@@ -11,13 +11,13 @@ Weaviate/Qdrant 등 DB 내장 BM25가 없는 환경에서 사용됩니다.
 
 from __future__ import annotations
 
-import logging
 import math
 from typing import Any
 
+from app.lib.logger import get_logger
 from app.modules.core.retrieval.bm25_engine.tokenizer import Tokenizer
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class BM25Index:

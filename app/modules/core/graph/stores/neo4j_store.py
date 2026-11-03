@@ -24,6 +24,7 @@ from neo4j import AsyncDriver, AsyncGraphDatabase
 from neo4j.exceptions import ServiceUnavailable, TransientError
 
 from app.lib.logger import get_logger
+from app.lib.retry import RetryCallState, RetryPolicy
 from app.modules.core.graph.interfaces import IGraphStore
 from app.modules.core.graph.models import Entity, GraphSearchResult, Relation
 
@@ -231,7 +232,7 @@ class Neo4jGraphStore(IGraphStore):
         **kwargs: Any,
     ) -> T:
         """
-        지수 백오프를 적용한 재시도 로직
+        지수 백오프를 적용한 재시도 로직 (공용 ``app.lib.retry.RetryPolicy`` 사용)
 
         일시적인 Neo4j 오류(TransientError, ServiceUnavailable) 발생 시
         지정된 횟수만큼 재시도합니다. 재시도 간 대기 시간은
@@ -250,28 +251,31 @@ class Neo4jGraphStore(IGraphStore):
             ServiceUnavailable: 최대 재시도 횟수 초과 시
             Exception: 재시도 불가능한 오류는 즉시 발생
         """
-        last_error: Exception | None = None
+        max_retries = self._max_retries
 
-        for attempt in range(self._max_retries):
-            try:
+        def _log_retry(retry_state: RetryCallState) -> None:
+            """재시도 직전(before_sleep) 경고 로그"""
+            outcome = retry_state.outcome
+            error = outcome.exception() if outcome is not None else None
+            next_action = retry_state.next_action
+            delay = float(next_action.sleep) if next_action is not None else 0.0
+            logger.warning(
+                f"Neo4j 재시도 {retry_state.attempt_number}/{max_retries}, "
+                f"대기 {delay:.2f}초: {error}"
+            )
+
+        # 공용 RetryPolicy: 지수 백오프 delay * 2^attempt (jitter 없음, 상한 없음)
+        policy = RetryPolicy(
+            retry_exceptions=(TransientError, ServiceUnavailable),
+            max_attempts=max_retries,
+            initial_delay_s=self._retry_delay,
+            max_delay_s=float("inf"),
+            jitter_s=0.0,
+            before_sleep=_log_retry,
+        )
+        async for attempt in policy.build_async_retrying():
+            with attempt:
                 return await operation(*args, **kwargs)
-            except (TransientError, ServiceUnavailable) as e:
-                last_error = e
-                if attempt < self._max_retries - 1:
-                    # 지수 백오프: delay * 2^attempt
-                    delay = self._retry_delay * (2**attempt)
-                    logger.warning(
-                        f"Neo4j 재시도 {attempt + 1}/{self._max_retries}, "
-                        f"대기 {delay:.2f}초: {e}"
-                    )
-                    await asyncio.sleep(delay)
-            except Exception:
-                # 재시도 불가능한 오류는 즉시 발생
-                raise
-
-        # 모든 재시도 실패 시 마지막 오류 발생
-        if last_error is not None:
-            raise last_error
 
         # 이 지점에 도달하면 안 됨 (방어적 코드)
         raise RuntimeError("Unexpected state in retry logic")  # pragma: no cover

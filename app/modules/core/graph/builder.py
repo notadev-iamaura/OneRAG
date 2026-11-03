@@ -7,13 +7,14 @@
 """
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any
+
+from app.lib.logger import get_logger
 
 if TYPE_CHECKING:
     from .interfaces import IEntityExtractor, IGraphStore, IRelationExtractor
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class KnowledgeGraphBuilder:

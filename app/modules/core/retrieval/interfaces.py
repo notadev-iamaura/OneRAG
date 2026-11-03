@@ -5,7 +5,6 @@ Retrieval Module Interfaces
 이 파일은 Retriever, Reranker, CacheManager의 표준 인터페이스를 정의합니다.
 """
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -204,74 +203,3 @@ class ICacheManager(Protocol):
             캐시 히트율, 미스율 등의 통계 딕셔너리
         """
         ...
-
-
-# ========================================
-# Abstract Base Classes (선택적 사용)
-# ========================================
-# Protocol은 Duck Typing을 강제하지 않으므로,
-# 엄격한 타입 체킹이 필요한 경우 ABC를 함께 사용할 수 있습니다.
-
-
-class BaseRetriever(ABC):
-    """Retriever ABC (엄격한 타입 체킹용)"""
-
-    @abstractmethod
-    async def search(
-        self,
-        query: str,
-        top_k: int = 10,
-        filters: dict[str, Any] | None = None,
-        alpha: float | None = None,
-    ) -> list[SearchResult]:
-        pass
-
-    @abstractmethod
-    async def health_check(self) -> bool:
-        pass
-
-
-class BaseReranker(ABC):
-    """Reranker ABC (엄격한 타입 체킹용)"""
-
-    @abstractmethod
-    async def rerank(
-        self,
-        query: str,
-        results: list[SearchResult],
-        top_n: int | None = None,
-    ) -> list[SearchResult]:
-        pass
-
-    @abstractmethod
-    def supports_caching(self) -> bool:
-        pass
-
-
-class BaseCacheManager(ABC):
-    """CacheManager ABC (엄격한 타입 체킹용)"""
-
-    @abstractmethod
-    async def get(self, key: str) -> list[SearchResult] | None:
-        pass
-
-    @abstractmethod
-    async def set(
-        self,
-        key: str,
-        value: list[SearchResult],
-        ttl: int | None = None,
-    ) -> None:
-        pass
-
-    @abstractmethod
-    async def invalidate(self, key: str) -> None:
-        pass
-
-    @abstractmethod
-    async def clear(self) -> None:
-        pass
-
-    @abstractmethod
-    def get_stats(self) -> dict[str, Any]:
-        pass

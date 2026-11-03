@@ -139,7 +139,9 @@ class TestEvaluatorLLMClientWrapper:
 
         mock_factory = MagicMock()
         mock_llm_client = MagicMock()
-        mock_llm_client.generate = AsyncMock(return_value='{"result": "ok"}')
+        # BaseLLMClient 의 실제 API 는 generate_text 다(예전 테스트는 존재하지 않는 .generate 를
+        # mock 해 래퍼의 버그를 가렸다).
+        mock_llm_client.generate_text = AsyncMock(return_value='{"result": "ok"}')
         mock_factory.get_client.return_value = mock_llm_client
 
         eval_config = {
@@ -152,5 +154,7 @@ class TestEvaluatorLLMClientWrapper:
         result = await client.generate("test prompt")
 
         mock_factory.get_client.assert_called_once_with(provider="openrouter")
-        mock_llm_client.generate.assert_called_once()
+        mock_llm_client.generate_text.assert_awaited_once_with(
+            "test prompt", model="google/gemini-2.5-flash-lite"
+        )
         assert result == '{"result": "ok"}'

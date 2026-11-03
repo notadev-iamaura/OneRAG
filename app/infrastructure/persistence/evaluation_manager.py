@@ -12,13 +12,13 @@ FastAPI 평가 API (/api/evaluations)의 백엔드 데이터 계층입니다.
 """
 
 import json
-import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, asc, delete, desc, func, select
 
+from app.lib.logger import get_logger
 from app.models.evaluation import (
     EvaluationCreate,
     EvaluationFilter,
@@ -30,7 +30,7 @@ from app.models.evaluation import (
 from .connection import db_manager
 from .models import EvaluationModel
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _ensure_aware_utc(value: datetime) -> datetime:

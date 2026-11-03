@@ -10,13 +10,14 @@ IEntityExtractor 프로토콜을 구현하여 GraphRAGFactory와 호환됩니다
 from __future__ import annotations
 
 import json
-import logging
 import uuid
 from typing import Any
 
+from app.lib.logger import get_logger
+
 from ..models import Entity
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # 엔티티 추출 프롬프트 템플릿 (코드 내장 기본값=한국어)

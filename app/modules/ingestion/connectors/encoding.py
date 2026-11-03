@@ -6,7 +6,6 @@ chardet 라이브러리를 사용하여 CSV/XLSX/TXT 파일의 인코딩을 자�
 구현일: 2026-01-08
 이슈: QA-001
 """
-import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import IO, Any
@@ -14,7 +13,9 @@ from typing import IO, Any
 import chardet
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from app.lib.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def detect_file_encoding(

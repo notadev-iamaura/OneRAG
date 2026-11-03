@@ -18,11 +18,12 @@ PII 처리 Facade (PIIProcessor)
 
 from __future__ import annotations
 
-import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+
+from app.lib.logger import get_logger
 
 from .masker import MaskingResult, PrivacyMasker
 from .whitelist import WhitelistManager, get_whitelist_manager
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 
     from .review.processor import PIIReviewProcessor, ProcessResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ProcessMode(Enum):

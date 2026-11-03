@@ -21,6 +21,7 @@ from typing import Any
 from langchain_core.documents import Document
 from pypdf import PdfReader
 
+from .....lib.config_validator import get_env_float, get_env_int
 from .....lib.logger import get_logger
 from .base import DocumentLoaderStrategy
 
@@ -115,32 +116,6 @@ def _env_bool(name: str, *, default: bool) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _env_int(name: str, *, default: int, minimum: int) -> int:
-    """환경변수를 정수로 해석하되 하한을 강제한다."""
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    try:
-        value = int(raw_value)
-    except ValueError:
-        logger.warning("%s must be an integer; using default %s", name, default)
-        return default
-    return max(minimum, value)
-
-
-def _env_float(name: str, *, default: float, minimum: float, maximum: float) -> float:
-    """환경변수를 float 임계값으로 해석하되 범위를 강제한다."""
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    try:
-        value = float(raw_value)
-    except ValueError:
-        logger.warning("%s must be a float; using default %s", name, default)
-        return default
-    return max(minimum, min(maximum, value))
-
-
 def _quality_char_class(ch: str) -> str:
     """문자를 정상(CJK/ASCII) / 깨짐(PUA/그리스·키릴) / 기타로 분류한다.
 
@@ -220,16 +195,19 @@ def _assess_documents_quality(documents: list[Document]) -> dict[str, Any]:
     combined = "\n".join((document.page_content or "") for document in documents)
     chars = len(combined.strip())
     stats = _scan_text_quality(combined)
-    min_good = _env_float(
+    # 관대 모드(strict=False): 잘못된 값은 기본값, 범위 밖 값은 clamp (공용 헬퍼 재사용)
+    min_good = get_env_float(
         PDF_QUALITY_MIN_GOOD_RATIO_ENV,
         default=DEFAULT_PDF_QUALITY_MIN_GOOD_RATIO,
-        minimum=0.0,
-        maximum=1.0,
+        min_value=0.0,
+        max_value=1.0,
+        strict=False,
     )
-    min_chars = _env_int(
+    min_chars = get_env_int(
         PDF_QUALITY_MIN_CHARS_ENV,
         default=DEFAULT_PDF_QUALITY_MIN_CHARS,
-        minimum=0,
+        min_value=0,
+        strict=False,
     )
     good_ratio = float(stats["good_ratio"])
     bad_ratio = float(stats["bad_ratio"])

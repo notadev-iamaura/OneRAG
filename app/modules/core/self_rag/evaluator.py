@@ -16,12 +16,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-import structlog
 from langchain_google_genai import ChatGoogleGenerativeAI
+
+from app.lib.logger import get_logger
 
 from ....lib.langfuse_client import observe, record_generation
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 # Self-RAG 품질 평가 프롬프트 템플릿 (코드 내장 기본값=한국어)

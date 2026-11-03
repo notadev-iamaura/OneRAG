@@ -17,12 +17,12 @@ API 키 없이 동작하며, Quickstart 환경에서 사용됩니다.
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
+from app.lib.logger import get_logger
 from app.modules.core.embedding.interfaces import BaseEmbedder
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 SentenceTransformer: Any | None = None
 
 

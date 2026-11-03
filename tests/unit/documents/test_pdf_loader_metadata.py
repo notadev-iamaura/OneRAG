@@ -149,3 +149,29 @@ def test_quality_gate_hard_raises(
     docs = [Document(page_content="" * 100, metadata={})]
     with pytest.raises(ValueError, match="품질"):
         _apply_quality_gate(docs, tmp_path / "broken.pdf")
+
+
+def test_quality_thresholds_read_env_leniently(monkeypatch: pytest.MonkeyPatch) -> None:
+    """품질 임계값 환경변수는 공용 get_env_* 관대 모드로 해석된다.
+
+    - 잘못된 값 → 기본값(MIN_CHARS=50)으로 평가 진행
+    - 범위 밖 값 → clamp(MIN_GOOD_RATIO -3 → 0.0)
+    - 매우 큰 MIN_CHARS → 텍스트 길이 미달로 평가 생략(passed=True)
+    """
+    garbled = [Document(page_content="αβγδεζηθ " * 20)]  # 그리스 문자 → 깨짐 신호
+
+    monkeypatch.setenv("ONERAG_PDF_QUALITY_MIN_CHARS", "not-an-int")
+    monkeypatch.delenv("ONERAG_PDF_QUALITY_MIN_GOOD_RATIO", raising=False)
+    result = pdf_loader._assess_documents_quality(garbled)
+    assert result["chars"] >= 50
+    assert result["passed"] is False
+    assert pdf_loader.QUALITY_GATE_WARNING_LOW_GOOD_RATIO in result["reasons"]
+
+    monkeypatch.setenv("ONERAG_PDF_QUALITY_MIN_GOOD_RATIO", "-3")
+    result = pdf_loader._assess_documents_quality(garbled)
+    assert pdf_loader.QUALITY_GATE_WARNING_LOW_GOOD_RATIO not in result["reasons"]
+
+    monkeypatch.setenv("ONERAG_PDF_QUALITY_MIN_CHARS", "1000000")
+    result = pdf_loader._assess_documents_quality(garbled)
+    assert result["passed"] is True
+    assert result["reasons"] == []

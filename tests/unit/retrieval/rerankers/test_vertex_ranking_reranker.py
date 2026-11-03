@@ -212,3 +212,82 @@ def test_factory_lists_vertex_under_cross_encoder() -> None:
 
     providers = RerankerFactoryV2.get_providers_for_approach("cross-encoder")
     assert "vertex" in providers
+
+
+class _SequenceAsyncClient(FakeAsyncClient):
+    """호출 순서대로 응답을 돌려주는 Fake (재시도 경로 검증용)."""
+
+    def __init__(self, responses: list[httpx.Response]) -> None:
+        super().__init__(responses[0])
+        self._responses = list(responses)
+
+    async def post(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str],
+        json: dict[str, object],
+        timeout: float,
+    ) -> httpx.Response:
+        self.requests.append(
+            {"url": url, "headers": headers, "json": json, "timeout": timeout}
+        )
+        return self._responses.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_vertex_ranking_reranker_retries_retryable_status_then_succeeds() -> None:
+    """503 → 200 순서면 공용 RetryPolicy(결과 기반, 무대기)로 재요청해 성공한다."""
+    credentials = FakeCredentials()
+    client = _SequenceAsyncClient(
+        [
+            _response(503, {"error": {"message": "unavailable"}}),
+            _response(200, {"records": [{"id": "a", "score": 0.9}]}),
+        ]
+    )
+    reranker = VertexRankingReranker(
+        project_id="infra-test-bed-2026",
+        top_n=1,
+        max_documents=2,
+        max_retries=1,
+        http_client=client,  # type: ignore[arg-type]
+    )
+
+    with patch(
+        "google.auth.default", return_value=(credentials, "infra-test-bed-2026")
+    ):
+        reranked = await reranker.rerank(
+            "query", [_search_result("a", "first candidate", 0.2)], top_n=1
+        )
+
+    assert [item.id for item in reranked] == ["a"]
+    assert [item.score for item in reranked] == [0.9]
+    assert len(client.requests) == 2
+    assert reranker.stats["failed_requests"] == 0
+
+
+@pytest.mark.asyncio
+async def test_vertex_ranking_reranker_raises_last_status_after_retries_exhausted() -> None:
+    """재시도 소진 시 마지막 응답의 상태코드로 HTTPStatusError를 전파한다."""
+    credentials = FakeCredentials()
+    client = _SequenceAsyncClient(
+        [
+            _response(503, {"error": {"message": "unavailable"}}),
+            _response(429, {"error": {"message": "rate limited"}}),
+        ]
+    )
+    reranker = VertexRankingReranker(
+        project_id="infra-test-bed-2026",
+        max_retries=1,
+        http_client=client,  # type: ignore[arg-type]
+    )
+
+    with patch(
+        "google.auth.default", return_value=(credentials, "infra-test-bed-2026")
+    ):
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await reranker.rerank("query", [_search_result("a", "first candidate", 0.2)])
+
+    assert exc_info.value.response.status_code == 429
+    assert len(client.requests) == 2
+    assert reranker.stats["failed_requests"] == 1

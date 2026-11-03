@@ -1,7 +1,5 @@
-"""기본 off, YAML/legacy schema 보존 및 실제 DI 배선 검증."""
+"""기본 off, YAML 보존 및 실제 DI 배선 검증."""
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import pytest
@@ -23,18 +21,6 @@ def _yaml_config():
     return yaml.safe_load(path.read_text())["self_rag"]
 
 
-@pytest.fixture(scope="module")
-def legacy_schemas():
-    # schemas/ 패키지에 가려진 legacy 파일의 변경도 직접 검증한다.
-    path = Path(__file__).resolve().parents[3] / "app/config/schemas.py"
-    spec = importlib.util.spec_from_file_location("_jev_precheck_legacy_schemas", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 def test_yaml_mode_is_quoted_string_off():
     config = _yaml_config()["precheck"]
     assert config["mode"] == "off"
@@ -46,36 +32,31 @@ def test_yaml_mode_is_quoted_string_off():
 
 
 @pytest.mark.parametrize("mode", [False, None, "off", "shadow", "enforce"])
-def test_schema_normalizes_yaml_false(mode, legacy_schemas):
+def test_schema_normalizes_yaml_false(mode):
     expected = "off" if mode is False or mode is None else mode
-    assert legacy_schemas.SelfRAGPrecheckConfig(mode=mode).mode == expected
     assert PrecheckSettings.from_mapping({"mode": mode}).mode == expected
 
 
 @pytest.mark.parametrize("mode", ["bogus", True, 123, {}, []])
-def test_unknown_mode_warns_and_never_raises(mode, caplog, legacy_schemas):
-    assert legacy_schemas.SelfRAGPrecheckConfig(mode=mode).mode == "off"
+def test_unknown_mode_warns_and_never_raises(mode, caplog):
     assert PrecheckSettings.from_mapping({"mode": mode}).mode == "off"
     assert "self_rag_precheck_unknown_mode" in caplog.text
 
 
-def test_unknown_provider_disables_precheck(caplog, legacy_schemas):
-    config = legacy_schemas.SelfRAGPrecheckConfig(mode="enforce", provider="bogus")
-    assert config.mode == "off"
-    assert PrecheckSettings.from_mapping(config).mode == "off"
+def test_unknown_provider_disables_precheck(caplog):
+    assert PrecheckSettings.from_mapping({"mode": "enforce", "provider": "bogus"}).mode == "off"
     assert "self_rag_precheck_unknown_provider" in caplog.text
 
 
-def test_legacy_config_without_precheck_validates_with_off_default(legacy_schemas):
+def test_config_without_precheck_defaults_to_off():
     config = _yaml_config()
     del config["precheck"]
-    parsed = legacy_schemas.SelfRAGConfig.model_validate(config)
-    assert parsed.precheck.mode == "off"
-    assert legacy_schemas.SelfRAGPrecheckConfig().mode == "off"
-    assert parsed.precheck.model_dump() == PrecheckSettings().model_dump()
+    settings = PrecheckSettings.from_mapping(config.get("precheck") or {})
+    assert settings.mode == "off"
+    assert settings.model_dump() == PrecheckSettings().model_dump()
 
 
-def test_legacy_schema_retains_precheck_fields_and_runtime_settings(legacy_schemas):
+def test_precheck_settings_round_trip_runtime_fields():
     config = _yaml_config()
     config["precheck"] = {
         "mode": "enforce", "provider": "mock", "threshold": 0.45,
@@ -83,11 +64,8 @@ def test_legacy_schema_retains_precheck_fields_and_runtime_settings(legacy_schem
         "api_base": "https://typesafe.example", "systemone_path": "/proxy/v1/systemone",
         "model": "jev-test", "api_key": "test-only-key",
     }
-    parsed = legacy_schemas.SelfRAGConfig.model_validate(config)
-    serialized = parsed.model_dump()["precheck"]
-    assert serialized == config["precheck"]
-    settings = PrecheckSettings.from_mapping(parsed.precheck)
-    assert settings.model_dump() == serialized
+    settings = PrecheckSettings.from_mapping(config["precheck"])
+    assert settings.model_dump() == config["precheck"]
     assert "test-only-key" not in repr(settings)
 
 

@@ -27,7 +27,9 @@ from typing import Any, Literal
 
 import httpx
 
+from ....lib.config_validator import get_env_float, get_env_int
 from ....lib.logger import get_logger
+from ._retry import EmbeddingRetryableError, retry_embed
 from .interfaces import BaseEmbedder
 
 logger = get_logger(__name__)
@@ -57,30 +59,6 @@ def _normalize_model_name(model_name: str) -> str:
     if model_name.startswith("google/"):
         return model_name.removeprefix("google/")
     return model_name
-
-
-def _env_int(name: str, default: int) -> int:
-    """환경변수를 정수로 파싱하되, 비어있거나 잘못된 값이면 기본값을 사용한다."""
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        logger.warning("Invalid integer for %s=%r; using %s", name, value, default)
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    """환경변수를 실수로 파싱하되, 비어있거나 잘못된 값이면 기본값을 사용한다."""
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        logger.warning("Invalid float for %s=%r; using %s", name, value, default)
-        return default
 
 
 class VertexAIEmbedder(BaseEmbedder):
@@ -143,25 +121,27 @@ class VertexAIEmbedder(BaseEmbedder):
             0,
             max_retries
             if max_retries is not None
-            else _env_int("VERTEX_AI_EMBEDDING_MAX_RETRIES", 5),
+            else get_env_int("VERTEX_AI_EMBEDDING_MAX_RETRIES", 5, strict=False),
         )
         self.retry_base_seconds = max(
             0.0,
             retry_base_seconds
             if retry_base_seconds is not None
-            else _env_float("VERTEX_AI_EMBEDDING_RETRY_BASE_SECONDS", 1.0),
+            else get_env_float("VERTEX_AI_EMBEDDING_RETRY_BASE_SECONDS", 1.0, strict=False),
         )
         self.retry_max_seconds = max(
             self.retry_base_seconds,
             retry_max_seconds
             if retry_max_seconds is not None
-            else _env_float("VERTEX_AI_EMBEDDING_RETRY_MAX_SECONDS", 30.0),
+            else get_env_float("VERTEX_AI_EMBEDDING_RETRY_MAX_SECONDS", 30.0, strict=False),
         )
         self.document_request_delay_seconds = max(
             0.0,
             document_request_delay_seconds
             if document_request_delay_seconds is not None
-            else _env_float("VERTEX_AI_DOCUMENT_EMBEDDING_DELAY_SECONDS", 0.0),
+            else get_env_float(
+                "VERTEX_AI_DOCUMENT_EMBEDDING_DELAY_SECONDS", 0.0, strict=False
+            ),
         )
         self._credentials: Any | None = None
         # 병렬 임베딩(embed_chunks_parallel)에서 여러 스레드가 토큰을 동시 갱신할 때의
@@ -227,22 +207,6 @@ class VertexAIEmbedder(BaseEmbedder):
                 )
             return str(token)
 
-    def _retry_delay(self, attempt: int, response: httpx.Response) -> float:
-        """재시도 지연을 계산한다(Retry-After 우선, 없으면 지수 backoff 상한)."""
-        retry_base_seconds: float = float(self.retry_base_seconds)
-        retry_max_seconds: float = float(self.retry_max_seconds)
-        retry_after = response.headers.get("Retry-After")
-        if retry_after:
-            try:
-                return min(float(retry_after), retry_max_seconds)
-            except ValueError:
-                pass
-        exponential_delay: float = retry_base_seconds * float(2 ** max(0, attempt - 1))
-        return min(
-            exponential_delay,
-            retry_max_seconds,
-        )
-
     def _normalize_and_validate(self, embedding: list[float]) -> list[float]:
         """임베딩을 L2 정규화하고 차원이 기대와 일치하는지 검증한다."""
         norm = _l2_norm(embedding)
@@ -289,7 +253,12 @@ class VertexAIEmbedder(BaseEmbedder):
             "Content-Type": "application/json; charset=utf-8",
         }
 
-        for attempt in range(self.max_retries + 1):
+        def _post_once() -> httpx.Response:
+            """predict API에 1회 POST한다(401이면 토큰 재발급 후 1회 재요청).
+
+            재시도 대상 상태(429/5xx)면 응답을 실은 ``EmbeddingRetryableError``를 raise해
+            공용 ``retry_embed``가 Retry-After 우선·지수 백오프로 재시도하게 한다.
+            """
             response = self._client.post(
                 self._predict_url, headers=headers, json=payload
             )
@@ -300,23 +269,23 @@ class VertexAIEmbedder(BaseEmbedder):
                 response = self._client.post(
                     self._predict_url, headers=headers, json=payload
                 )
-            if (
-                response.status_code in RETRYABLE_VERTEX_STATUS_CODES
-                and attempt < self.max_retries
-            ):
-                delay = self._retry_delay(attempt + 1, response)
-                logger.warning(
-                    "Vertex embedding request failed with retryable status %s; "
-                    "retrying in %.1fs (%s/%s)",
-                    response.status_code,
-                    delay,
-                    attempt + 1,
-                    self.max_retries,
-                )
-                time.sleep(delay)
-                continue
-            response.raise_for_status()
-            break
+            if response.status_code in RETRYABLE_VERTEX_STATUS_CODES:
+                raise EmbeddingRetryableError(response.status_code, response=response)
+            return response
+
+        try:
+            response = retry_embed(
+                _post_once,
+                max_retries=self.max_retries,
+                base_seconds=self.retry_base_seconds,
+                max_seconds=self.retry_max_seconds,
+            )
+        except EmbeddingRetryableError as exc:
+            # 재시도 소진: 마지막 응답의 raise_for_status()로 원래 HTTP 오류를 전파
+            if exc.response is not None:
+                exc.response.raise_for_status()
+            raise
+        response.raise_for_status()
 
         body = response.json()
         predictions = body.get("predictions") or []

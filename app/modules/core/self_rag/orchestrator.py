@@ -9,12 +9,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-import structlog
+from app.lib.logger import get_logger
 
 from ..routing import ComplexityCalculator, ComplexityResult
 from .evaluator import EvalStatus, LLMQualityEvaluator, QualityScore
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 MAX_REGEN_CONTEXT_DOCS = 20  # Match the generator's maximum prompt document count.
 
 

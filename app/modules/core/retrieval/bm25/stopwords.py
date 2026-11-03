@@ -12,10 +12,11 @@
 Phase 2 구현 (2025-11-28)
 """
 
-import logging
 from collections.abc import Iterable
 
-logger = logging.getLogger(__name__)
+from app.lib.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class StopwordFilter:
