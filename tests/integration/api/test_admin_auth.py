@@ -1,3 +1,4 @@
+import httpx
 import pytest
 from httpx import AsyncClient
 
@@ -36,7 +37,7 @@ async def test_admin_status_requires_auth(monkeypatch):
     auth.api_key = "some-key"
 
     try:
-        async with AsyncClient(app=fastapi_app, base_url="http://test") as ac:
+        async with AsyncClient(transport=httpx.ASGITransport(app=fastapi_app), base_url="http://test") as ac:
             response = await ac.get("/api/admin/status")
             assert response.status_code == 401
     finally:
@@ -46,7 +47,7 @@ async def test_admin_status_requires_auth(monkeypatch):
 async def test_admin_status_with_valid_auth(mock_admin_auth):
     """올바른 키를 제공하면 성공해야 함"""
     test_key = mock_admin_auth
-    async with AsyncClient(app=fastapi_app, base_url="http://test") as ac:
+    async with AsyncClient(transport=httpx.ASGITransport(app=fastapi_app), base_url="http://test") as ac:
         headers = {"X-API-Key": test_key}
         response = await ac.get("/api/admin/status", headers=headers)
         assert response.status_code == 200
