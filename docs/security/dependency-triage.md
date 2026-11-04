@@ -64,20 +64,20 @@ note, not only in local chat history.
   below is empty. When it is, remove `continue-on-error` so the audit becomes a
   merge gate.
 
-## Current Baseline (2026-11-02)
+## Current Baseline (2026-11-04)
 
-The 2026-11-02 remediation moved FastAPI 0.104 / Starlette 0.27 to the current
-Starlette 1.x line and refreshed 28 vulnerable transitive packages (pypdf, pillow,
-aiohttp, anyio, cryptography, urllib3, requests, lxml, nltk, pymongo, ...),
-bringing pip-audit from 409 findings in 33 packages down to the list below.
-Every item here is an **accepted, temporary** risk with an owner action:
+The 2026-11-02 remediation moved FastAPI/Starlette to the current line and refreshed 28
+transitive packages (409 → 32 findings). The 2026-11-04 follow-up moved to the
+langchain-core 1.x line, removed the unused `langchain`, `langchain-openai`,
+`langchain-anthropic` and `langchain-google-genai` packages and bumped `langsmith`,
+`pydantic-settings` and the `ragas` extra (32 → 7 findings). Every item below is an
+**accepted, temporary** risk with an owner action:
 
 | Package | Pinned | Why it is still here | Planned action |
 |---|---|---|---|
-| `langchain`, `langchain-core`, `langchain-openai`, `langchain-anthropic`, `langchain-text-splitters` | 0.2.x | The 0.2 line is end-of-life; fixed versions are on the 0.3/1.x lines, which change the serialization and splitter APIs. OneRAG only imports `langchain_core.documents/messages/chat_history` and the text splitters, so the surface is small but needs a dedicated migration PR with the ingestion tests. | Migrate to the 1.x line in a separate PR; re-run `make audit`. |
-| `langsmith` | 0.1.x | Follows the langchain pin above. | Upgrade together with langchain. |
-| `chromadb` | 0.5.0 | 1.x is a major release with a new client API and pulls in a much larger dependency tree. Chroma is the `easy_start` local store, not the production default (Weaviate). | Evaluate 1.x in the optional-providers job before moving the pin. |
-| `protobuf` | 4.25.x | Fixed versions are 5.29.6+/6.33.5+, blocked by the `google-generativeai` pin. | Upgrade when the Gemini SDK pin moves. |
-| `fsspec` | 2026.2.x | Fixed in 2026.6.0, blocked by the `datasets`/`huggingface-hub` resolution. | Re-check after the next `uv lock --upgrade-package fsspec`. |
+| `chromadb` | 0.5.0 | 1.x is a major release with a new client API and a larger dependency tree. Chroma is the `easy_start` local store, not the production default (Weaviate). The lock resolves 1.5.x cleanly; the Chroma store/retriever tests must be run against it first. | Evaluate 1.x in the optional-providers job before moving the pin. |
+| `protobuf` | 4.25.x | Fixed versions are 5.29.6+/6.33.5+, blocked by the `google-generativeai` pin. | Upgrade when the Gemini SDK moves to `google-genai`. |
+| `fsspec` | 2026.2.x | Fixed in 2026.6.0, blocked by the `datasets` resolution (ragas extra). | Re-check after the next `uv lock --upgrade-package fsspec`. |
+| `langsmith` | 0.8.5 | Patch advisory fixed in 0.8.18; the lock picked 0.8.5 under the `ragas`/`langchain-community` constraints. | `uv lock --upgrade-package langsmith` once the ragas line allows it. |
 
 Re-run the audit after any of these pins change and shrink the table.

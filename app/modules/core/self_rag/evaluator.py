@@ -12,6 +12,7 @@ Self-RAG 시스템에서 답변 재생성 여부를 판단하는 데 사용됩�
 
 import asyncio
 import json
+import os
 from dataclasses import dataclass
 from enum import Enum
 from types import SimpleNamespace
@@ -19,7 +20,8 @@ from typing import Any
 
 from app.lib.logger import get_logger
 
-from ....lib.langfuse_client import observe, record_generation
+from ....lib.langfuse_client import observe
+from ....lib.llm_client import GoogleLLMClient
 
 logger = get_logger(__name__)
 
@@ -117,13 +119,34 @@ class _GoogleEvaluatorLLM:
     기존 호출부/테스트와 같은 모양(`await llm.ainvoke(prompt)` → `.content`)을 유지한다.
     """
 
-    def __init__(self, model: str, api_key: str, temperature: float = 0.0) -> None:
-        from ....lib.llm_client import GoogleLLMClient
-
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        temperature: float = 0.0,
+        timeout_seconds: float = 10.0,
+    ) -> None:
         self.model = model
         self.temperature = temperature
+        # google-generativeai SDK 의 API 키는 프로세스 전역(genai.configure)이다. 평가용 키가
+        # 기본 키(GOOGLE_API_KEY)와 다르면 생성/임베딩 클라이언트의 키까지 바뀌므로 경고한다.
+        default_key = os.getenv("GOOGLE_API_KEY")
+        if default_key and api_key != default_key:
+            logger.warning(
+                "self_rag_evaluator_key_overrides_global_sdk_key",
+                reason=(
+                    "Self-RAG 평가용 API 키가 GOOGLE_API_KEY 와 다릅니다. Gemini SDK 키는 "
+                    "프로세스 전역이라 이후 Gemini 생성/임베딩 호출도 이 키를 사용합니다."
+                ),
+            )
         self._client = GoogleLLMClient(
-            {"api_key": api_key, "model": model, "temperature": temperature}
+            {
+                "api_key": api_key,
+                "model": model,
+                "temperature": temperature,
+                # SDK 요청 상한 = 평가 타임아웃. wait_for 취소 뒤 스레드가 무기한 남지 않게 한다.
+                "timeout": timeout_seconds,
+            }
         )
 
     async def ainvoke(self, prompt: str) -> SimpleNamespace:
@@ -131,7 +154,7 @@ class _GoogleEvaluatorLLM:
             prompt, model=self.model, temperature=self.temperature
         )
         # 토큰 사용량은 GoogleLLMClient 가 Langfuse generation 으로 직접 기록한다.
-        return SimpleNamespace(content=text, usage_metadata=None)
+        return SimpleNamespace(content=text)
 
 
 class LLMQualityEvaluator:
@@ -200,6 +223,7 @@ class LLMQualityEvaluator:
                     model=model_name,
                     api_key=api_key,
                     temperature=0.0,  # 일관된 평가를 위해 0
+                    timeout_seconds=timeout_seconds,
                 )
                 logger.info(
                     "evaluator_initialized",
@@ -259,16 +283,7 @@ class LLMQualityEvaluator:
         # LLM 평가 수행
         try:
             response = await asyncio.wait_for(self.llm.ainvoke(prompt), self.timeout_seconds)
-            # LLM 호출별 토큰/비용을 Langfuse generation으로 기록한다(LangChain은
-            # AIMessage.usage_metadata에 input/output/total 토큰을 제공).
-            um = getattr(response, "usage_metadata", None)
-            if um:
-                record_generation(
-                    model=getattr(self.llm, "model", "gemini"),
-                    prompt_tokens=um.get("input_tokens", 0) or 0,
-                    completion_tokens=um.get("output_tokens", 0) or 0,
-                    total_tokens=um.get("total_tokens", 0) or 0,
-                )
+            # 토큰/비용은 GoogleLLMClient.generate_text 가 Langfuse generation 으로 기록한다.
             # response.content는 str | list 타입이므로 str 변환
             content: str = (
                 response.content if isinstance(response.content, str) else str(response.content)

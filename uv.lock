@@ -3817,7 +3817,7 @@ requires-dist = [
     { name = "pyyaml", specifier = "==6.0.1" },
     { name = "qdrant-client", marker = "extra == 'all-vectordb'", specifier = ">=1.7.0" },
     { name = "qdrant-client", marker = "extra == 'qdrant'", specifier = ">=1.7.0" },
-    { name = "ragas", marker = "extra == 'ragas'", specifier = ">=0.3" },
+    { name = "ragas", marker = "extra == 'ragas'", specifier = ">=0.3,<0.5" },
     { name = "rank-bm25", specifier = ">=0.2.2" },
     { name = "rank-bm25", marker = "extra == 'bm25'", specifier = ">=0.2.2" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0.1" },

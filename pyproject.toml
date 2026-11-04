@@ -150,7 +150,7 @@ redis = [
 ]
 
 ragas = [
-    "ragas>=0.3",  # langchain-core 1.x 와 호환되는 라인
+    "ragas>=0.3,<0.5",  # langchain-core 1.x 와 호환되는 라인(0.5+ 는 검증 후 상향)
     "datasets>=2.14.0",  # Ragas 의존성
 ]
 
