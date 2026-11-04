@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -92,6 +92,7 @@ async def test_self_rag_evaluator_records_generation_via_google_client(
 
     spy = _SpyContext()
     monkeypatch.setattr(lf, "langfuse_context", spy)
+    monkeypatch.setattr(llm_client, "langfuse_context", spy)
 
     # google-generativeai SDK 를 흉내 낸다: configure 는 no-op, generate_content 는 usage 포함 응답
     fake_response = SimpleNamespace(
@@ -127,41 +128,6 @@ async def test_self_rag_evaluator_records_generation_via_google_client(
         and c.get("usage") == {"input": 50, "output": 20, "total": 70, "unit": "TOKENS"}
     ]
     assert matching, f"generation 이 기록되지 않았다: {spy.calls}"
-async def test_self_rag_evaluator_records_generation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """self_rag evaluator가 LangChain usage_metadata에서 generation을 기록한다."""
-    from app.modules.core.self_rag.evaluator import LLMQualityEvaluator
-
-    spy = _SpyContext()
-    monkeypatch.setattr(lf, "langfuse_context", spy)
-
-    # api_key=None → self.llm=None으로 생성된 뒤 mock LLM을 주입
-    evaluator = LLMQualityEvaluator(api_key=None)
-
-    resp = MagicMock()
-    resp.content = (
-        '{"relevance": 0.9, "grounding": 0.8, "completeness": 0.7, '
-        '"confidence": 0.85, "reasoning": "근거 충분"}'
-    )
-    resp.usage_metadata = {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70}
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(return_value=resp)
-    mock_llm.model = "gemini-2.0-flash"
-    evaluator.llm = mock_llm
-
-    await evaluator.evaluate("질문", "답변", ["문서1"])
-
-    # record_generation → langfuse_context.update_current_observation이 실제 토큰으로 호출됨
-    matching = [
-        c
-        for c in spy.calls
-        if c.get("model") == "gemini-2.0-flash"
-        and c.get("usage") == {"input": 50, "output": 20, "total": 70, "unit": "TOKENS"}
-    ]
-    assert matching, f"evaluator usage 기록 누락: {spy.calls}"
-
-
 @pytest.mark.asyncio
 async def test_sql_generator_records_generation(
     monkeypatch: pytest.MonkeyPatch,
