@@ -65,17 +65,15 @@ dependencies = [
     # BM25 하이브리드 검색 (한국어 토크나이저 + BM25 인덱스)
     "kiwipiepy>=0.18.0",
     "rank-bm25>=0.2.2",
-    # LangChain Core (최소 필수만 유지)
-    "langchain>=0.1.0",
-    "langchain-core>=0.1.0",
+    # LangChain Core (최소 필수만 유지: Document/메시지 모델 + 텍스트 분할기만 사용)
+    # langchain / langchain-openai / langchain-anthropic / langchain-google-genai 는 앱 코드가
+    # import 하지 않아 제거했다(LLM 호출은 app.lib.llm_client 의 llm_factory 로 통일).
+    "langchain-core>=1.0,<2",
     # LLM Integrations (필요한 것만 선택)
-    "langchain-openai>=0.1.1",
-    "langchain-anthropic>=0.1.0",
-    "langchain-google-genai>=0.1.0",
     # LangSmith for tracing and monitoring
-    "langsmith>=0.0.60",
+    "langsmith>=0.4,<1",
     # LangChain Text Splitters (텍스트 분할 유틸리티)
-    "langchain-text-splitters>=0.0.1",
+    "langchain-text-splitters>=1.0,<2",
     # Langfuse for LLM observability and tracing
     # v3는 langfuse.decorators(observe/langfuse_context) 제거 + score API 변경(breaking)이라
     # v2 데코레이터 API에 의존하는 현재 코드와 호환되지 않는다. v3 자동 업그레이드 차단.
@@ -84,14 +82,14 @@ dependencies = [
     "tiktoken>=0.7.0",
     # Enhanced RAG System Dependencies
     "scikit-learn>=1.3.0",
-    "numpy>=1.26.0,<2",
+    "numpy>=1.26.0,<3",
     # Configuration and Environment
     "pyyaml==6.0.1",
     "python-dotenv==1.2.2",
     # Session and Caching
     "cachetools==5.3.0",
     # Validation and Serialization
-    "pydantic-settings==2.1.0",
+    "pydantic-settings>=2.1.0,<3",
     # Logging and Monitoring
     "structlog==25.5.0",
     # Rate Limiting
@@ -152,7 +150,7 @@ redis = [
 ]
 
 ragas = [
-    "ragas>=0.1.0,<0.2.0",  # 0.4+ 버전은 langchain 충돌
+    "ragas>=0.3",  # langchain-core 1.x 와 호환되는 라인
     "datasets>=2.14.0",  # Ragas 의존성
 ]
 

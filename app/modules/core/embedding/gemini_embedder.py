@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     class Embeddings:  # pragma: no cover - type-checking shim
         pass
 else:
-    from langchain.embeddings.base import Embeddings
+    from langchain_core.embeddings import Embeddings
 
 from ....lib.logger import get_logger
 from ._retry import resolve_retry_settings, retry_embed

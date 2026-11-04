@@ -14,9 +14,8 @@ import asyncio
 import json
 from dataclasses import dataclass
 from enum import Enum
+from types import SimpleNamespace
 from typing import Any
-
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.lib.logger import get_logger
 
@@ -109,6 +108,32 @@ class QualityEvaluation:
     error: str | None = None
 
 
+class _GoogleEvaluatorLLM:
+    """Self-RAG 평가용 Gemini 호출 어댑터.
+
+    예전에는 langchain-google-genai 의 ChatGoogleGenerativeAI 를 직접 썼다. 그 패키지는
+    프로젝트의 Google SDK(google-generativeai)와 동시에 설치할 수 없어 langchain-core 1.x
+    업그레이드를 막았고, 프로젝트 규칙(LLM 호출은 app.lib.llm_client 경유)에도 어긋났다.
+    기존 호출부/테스트와 같은 모양(`await llm.ainvoke(prompt)` → `.content`)을 유지한다.
+    """
+
+    def __init__(self, model: str, api_key: str, temperature: float = 0.0) -> None:
+        from ....lib.llm_client import GoogleLLMClient
+
+        self.model = model
+        self.temperature = temperature
+        self._client = GoogleLLMClient(
+            {"api_key": api_key, "model": model, "temperature": temperature}
+        )
+
+    async def ainvoke(self, prompt: str) -> SimpleNamespace:
+        text = await self._client.generate_text(
+            prompt, model=self.model, temperature=self.temperature
+        )
+        # 토큰 사용량은 GoogleLLMClient 가 Langfuse generation 으로 직접 기록한다.
+        return SimpleNamespace(content=text, usage_metadata=None)
+
+
 class LLMQualityEvaluator:
     """
     LLM 기반 답변 품질 평가기
@@ -171,9 +196,9 @@ class LLMQualityEvaluator:
                 return
 
             try:
-                self.llm = ChatGoogleGenerativeAI(
+                self.llm = _GoogleEvaluatorLLM(
                     model=model_name,
-                    google_api_key=api_key,  # type: ignore[call-arg]
+                    api_key=api_key,
                     temperature=0.0,  # 일관된 평가를 위해 0
                 )
                 logger.info(

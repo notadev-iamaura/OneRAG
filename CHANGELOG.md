@@ -41,6 +41,18 @@
 - **pip-audit 게이트 추가**: `make audit` 타깃과 GitHub Actions `Security Audit` 잡(기준선이 비기
   전까지 비차단)을 추가했습니다.
 
+### 의존성 (후속)
+- **langchain 0.2 → 1.x 라인**: `langchain-core` 1.6, `langchain-text-splitters` 1.1, `langsmith` 0.8로 올렸습니다.
+  앱이 실제로 import 하지 않던 `langchain`, `langchain-openai`, `langchain-anthropic`,
+  `langchain-google-genai` 패키지는 제거했습니다. 임베더의 `Embeddings` 기반 클래스는
+  `langchain_core.embeddings`에서 가져옵니다.
+- **Self-RAG 평가기**: `langchain-google-genai`의 `ChatGoogleGenerativeAI` 대신 프로젝트 공용
+  `GoogleLLMClient`(llm_factory 계층)를 쓰는 어댑터로 교체했습니다. 그 패키지는 구 Google SDK
+  (`google-generativeai`)와 동시에 설치할 수 없어 업그레이드를 막고 있었고, "LLM 호출은
+  llm_factory 경유" 규칙에도 어긋났습니다. 평가 호출 모양(`ainvoke` → `.content`)은 그대로입니다.
+- `pydantic-settings` 2.1 고정 → 2.16, `numpy` 상한 `<2` → `<3`(Python 3.11에서는 1.26 유지),
+  `ragas` extra는 langchain-core 1.x와 호환되는 0.4 라인으로 올렸습니다.
+
 ### 구조 개선 (P2)
 - **RAG 파이프라인 분리**: 4,900줄짜리 `rag_pipeline.py`의 `RAGPipeline`을 단계별 믹스인 패키지
   `app/api/services/pipeline/`(routing, retrieval, rerank, generation, verification, output + models,
