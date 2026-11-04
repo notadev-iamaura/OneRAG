@@ -9,6 +9,7 @@
  */
 
 import type { ColorConfig } from '../colors';
+import type { DeepPartial } from '../deepPartial';
 
 /**
  * 테마 프리셋 인터페이스
@@ -17,7 +18,7 @@ export interface ThemePreset {
   id: string;
   name: string;
   description: string;
-  colors: Partial<ColorConfig>;
+  colors: DeepPartial<ColorConfig>;
   preview: {
     primaryColor: string;
     secondaryColor: string;
@@ -377,7 +378,7 @@ export function getAllPresets(): ThemePreset[] {
  * 주의: 이 함수는 색상 설정만 반환합니다.
  * 실제 적용은 APP_CONFIG를 업데이트하거나 런타임 설정 로드를 통해 이루어집니다.
  */
-export function applyPreset(presetId: string): Partial<ColorConfig> | null {
+export function applyPreset(presetId: string): DeepPartial<ColorConfig> | null {
   console.log(`🎨 [applyPreset] 프리셋 "${presetId}" 조회 중...`);
   const preset = getPreset(presetId);
 

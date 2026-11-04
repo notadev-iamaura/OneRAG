@@ -10,11 +10,12 @@ PII 탐지 및 처리 결과를 MongoDB에 기록하여 컴플라이언스 추�
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+from app.lib.logger import get_logger
 
 from .models import (
     AuditRecord,
@@ -26,7 +27,7 @@ from .models import (
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PIIAuditLogger:

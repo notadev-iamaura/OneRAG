@@ -17,9 +17,9 @@ interface AppLayoutProps {
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const { config } = useConfig();
   const { messages } = useMenuMessages();
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem('sidebarOpen');
-    return saved ? JSON.parse(saved) : true;
+    return saved ? Boolean(JSON.parse(saved)) : true;
   });
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');

@@ -44,3 +44,22 @@ quickstart demos. Demo access codes, example API keys, and sample data must not
 be treated as production credentials. Any change that weakens authentication,
 PII masking, file validation, dependency pinning, or CI verification needs an
 explicit security note in the pull request.
+
+## Deployment Hardening Checklist
+
+- Set `FASTAPI_AUTH_KEY` to a random value of at least 32 characters
+  (`openssl rand -hex 32`). Without a key, the admin, upload and `/v1` APIs
+  reject every request; placeholder or short keys refuse to start in production.
+- Set `ENVIRONMENT=production` in the deployment environment. The default
+  `docker-compose.yml` now reads this from `.env` instead of forcing
+  `development`.
+- Put the API behind a reverse proxy and set `TRUSTED_PROXY_IPS` to that
+  proxy's address range. Forwarded-IP headers are only trusted from those
+  addresses, so rate limits cannot be bypassed by spoofing `X-Forwarded-For`.
+- Never inject the admin key into the frontend container. The frontend ignores
+  `ADMIN_API_KEY`; operators enter the key in the settings page and it stays in
+  their browser's localStorage.
+- Keep `SQL_SEARCH_ENABLED=false` unless the database role used for SQL search
+  is read-only and limited to the intended schema.
+- Run `make audit` (pip-audit) before a release and keep the baseline table in
+  `docs/security/dependency-triage.md` shrinking.

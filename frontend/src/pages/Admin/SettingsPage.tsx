@@ -127,7 +127,7 @@ export const SettingsPage: React.FC = () => {
     toast({
       title: messages.adminSettings.presetChangeToastTitle,
       description: format(messages.adminSettings.presetChangeToastDesc, {
-        name: localized?.name ?? THEME_PRESETS[presetId].name,
+        name: localized?.name ?? THEME_PRESETS[presetId]?.name ?? presetId,
       }),
     });
   };
@@ -313,10 +313,18 @@ export const SettingsPage: React.FC = () => {
       let current: Record<string, unknown> = updated as Record<string, unknown>;
 
       for (let i = 0; i < keys.length - 1; i++) {
-        current = current[keys[i]] as Record<string, unknown>;
+        const key = keys[i];
+        const next = key === undefined ? undefined : current[key];
+        if (typeof next !== 'object' || next === null) {
+          return prev;
+        }
+        current = next as Record<string, unknown>;
       }
 
       const lastKey = keys[keys.length - 1];
+      if (lastKey === undefined) {
+        return prev;
+      }
       current[lastKey] = !current[lastKey];
 
       return updated;

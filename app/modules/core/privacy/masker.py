@@ -15,15 +15,16 @@ Phase 2 구현 (2025-11-28)
 
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.lib.logger import get_logger
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ========================================

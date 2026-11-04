@@ -322,8 +322,8 @@ describe('maskPhoneNumber - 실전 시나리오 테스트', () => {
 
     const masked = maskPhoneNumberDeep(apiResponse);
 
-    expect(masked.data.messages[0].text).toBe('제 연락처는 [전화번호]입니다.');
-    expect(masked.data.messages[1].text).toBe('[전화번호]로 연락주세요.');
-    expect(masked.data.documents[0].content).toBe('연락처: [전화번호]');
+    expect(masked.data.messages[0]?.text).toBe('제 연락처는 [전화번호]입니다.');
+    expect(masked.data.messages[1]?.text).toBe('[전화번호]로 연락주세요.');
+    expect(masked.data.documents[0]?.content).toBe('연락처: [전화번호]');
   });
 });

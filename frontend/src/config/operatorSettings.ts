@@ -17,7 +17,7 @@ export interface OperatorSettings {
   logoDataUrl: string;
   logoFileName: string;
   // 관리자 쓰기 API(X-API-Key)에 사용하는 키. 빈 화면 설정 저장/리셋 등에 사용한다.
-  // 운영자가 직접 입력하거나, 배포 시 RUNTIME_CONFIG.ADMIN_API_KEY로 주입한다.
+  // 운영자가 설정 화면에서 직접 입력하며 localStorage에만 저장된다(배포 주입 없음).
   adminApiKey: string;
 }
 
@@ -122,7 +122,7 @@ export function buildOperatorRuntimeConfig(settings: OperatorSettings) {
   const normalized = normalizeSettings(settings);
   const logoDataUrl = normalized.logoDataUrl.trim();
   // 관리자 키는 비밀값이므로 화면 표시/내보내기용 런타임 설정에는 포함하지 않는다.
-  // (저장은 localStorage operatorSettings에만 유지되고, 주입은 RUNTIME_CONFIG.ADMIN_API_KEY로 별도 처리)
+  // (저장은 localStorage operatorSettings에만 유지된다)
   const operatorWithoutSecret: OperatorRuntimeSettings = {
     apiBaseUrl: normalized.apiBaseUrl,
     wsBaseUrl: normalized.wsBaseUrl,

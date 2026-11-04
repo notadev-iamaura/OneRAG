@@ -1,4 +1,3 @@
-import React from 'react';
 import PromptManager from '../components/PromptManager';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 import { useMenuMessages } from '../i18n/useMenuLocale';

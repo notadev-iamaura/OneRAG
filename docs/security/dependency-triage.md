@@ -53,3 +53,31 @@ If a vulnerability cannot be fixed immediately, record:
 
 Risk acceptance should be visible in a pull request, issue, or release-readiness
 note, not only in local chat history.
+
+## Automated Audit (CI)
+
+- `make audit` exports the runtime lock (`uv export --no-dev`) and runs
+  `pip-audit --no-deps` against the pinned versions.
+- The GitHub Actions job `Security Audit` runs the same check on every push and
+  pull request and writes the report to the job summary and an artifact.
+- The job is **non-blocking** (`continue-on-error: true`) until the baseline
+  below is empty. When it is, remove `continue-on-error` so the audit becomes a
+  merge gate.
+
+## Current Baseline (2026-11-02)
+
+The 2026-11-02 remediation moved FastAPI 0.104 / Starlette 0.27 to the current
+Starlette 1.x line and refreshed 28 vulnerable transitive packages (pypdf, pillow,
+aiohttp, anyio, cryptography, urllib3, requests, lxml, nltk, pymongo, ...),
+bringing pip-audit from 409 findings in 33 packages down to the list below.
+Every item here is an **accepted, temporary** risk with an owner action:
+
+| Package | Pinned | Why it is still here | Planned action |
+|---|---|---|---|
+| `langchain`, `langchain-core`, `langchain-openai`, `langchain-anthropic`, `langchain-text-splitters` | 0.2.x | The 0.2 line is end-of-life; fixed versions are on the 0.3/1.x lines, which change the serialization and splitter APIs. OneRAG only imports `langchain_core.documents/messages/chat_history` and the text splitters, so the surface is small but needs a dedicated migration PR with the ingestion tests. | Migrate to the 1.x line in a separate PR; re-run `make audit`. |
+| `langsmith` | 0.1.x | Follows the langchain pin above. | Upgrade together with langchain. |
+| `chromadb` | 0.5.0 | 1.x is a major release with a new client API and pulls in a much larger dependency tree. Chroma is the `easy_start` local store, not the production default (Weaviate). | Evaluate 1.x in the optional-providers job before moving the pin. |
+| `protobuf` | 4.25.x | Fixed versions are 5.29.6+/6.33.5+, blocked by the `google-generativeai` pin. | Upgrade when the Gemini SDK pin moves. |
+| `fsspec` | 2026.2.x | Fixed in 2026.6.0, blocked by the `datasets`/`huggingface-hub` resolution. | Re-check after the next `uv lock --upgrade-package fsspec`. |
+
+Re-run the audit after any of these pins change and shrink the table.

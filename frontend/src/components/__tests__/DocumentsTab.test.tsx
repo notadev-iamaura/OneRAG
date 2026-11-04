@@ -55,7 +55,7 @@ vi.mock('../document', () => ({
 /** 문서 목록 훅 기본 반환값 */
 const createDefaultListReturn = (): UseDocumentListReturn => ({
   documents: [
-    { id: 'doc-1', filename: 'test.pdf', originalName: 'test.pdf', size: 1024, mimeType: 'application/pdf', uploadedAt: '2026-01-01', status: 'completed', chunkCount: 5 },
+    { id: 'doc-1', filename: 'test.pdf', originalName: 'test.pdf', size: 1024, mimeType: 'application/pdf', uploadedAt: '2026-01-01', status: 'completed', chunks: 5 },
   ],
   loading: false,
   fetchError: false,

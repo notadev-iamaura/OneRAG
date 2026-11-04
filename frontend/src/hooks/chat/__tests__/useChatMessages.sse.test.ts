@@ -62,8 +62,8 @@ function makeStreamMessageMock(chunks: string[], sessionId = 'sse-session-123') 
       search_results: 3,
       reranking_applied: true,
     });
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkEvent: StreamChunkEvent = { event: 'chunk', data: chunks[i], chunk_index: i };
+    for (const [i, chunk] of chunks.entries()) {
+      const chunkEvent: StreamChunkEvent = { event: 'chunk', data: chunk, chunk_index: i };
       options?.onEvent?.(chunkEvent);
       options?.onChunk?.(chunkEvent);
     }
@@ -171,11 +171,11 @@ describe('useChatMessages — SSE 폴백/타이프라이터 (#46, #53)', () => {
     // user + assistant(placeholder가 최종 내용으로 채워짐)
     expect(messages).toHaveLength(2);
     const assistant = messages[1];
-    expect(assistant.role).toBe('assistant');
-    expect(assistant.content).toBe('안녕하세요!');
-    expect(assistant.sources).toHaveLength(1);
-    expect(assistant.processing_time).toBe(0.5);
-    expect(assistant.tokens_used).toBe(42);
+    expect(assistant?.role).toBe('assistant');
+    expect(assistant?.content).toBe('안녕하세요!');
+    expect(assistant?.sources).toHaveLength(1);
+    expect(assistant?.processing_time).toBe(0.5);
+    expect(assistant?.tokens_used).toBe(42);
     // RagProgress가 완료 단계로 전이
     expect(result.current.ragProgress.phase).toBe('completed');
     expect(result.current.isSseStreaming).toBe(false);
@@ -213,7 +213,7 @@ describe('useChatMessages — SSE 폴백/타이프라이터 (#46, #53)', () => {
     const messages = result.current.messages;
     // user + REST 어시스턴트 응답 (SSE placeholder는 제거됨 → 빈 말풍선 없음)
     expect(messages).toHaveLength(2);
-    expect(messages[1].content).toBe('REST 응답');
+    expect(messages[1]?.content).toBe('REST 응답');
   });
 
   // #46: 중단(abort) 시 REST 폴백을 하지 않고 빈 placeholder를 제거한다

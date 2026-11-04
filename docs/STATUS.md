@@ -1,6 +1,6 @@
 # OneRAG Current Status
 
-Last updated: 2026-06-18
+Last updated: 2026-11-03
 
 This page is the canonical current status for git-tracked documentation. Older
 roadmaps and reports may preserve their original historical findings, but this
@@ -42,12 +42,15 @@ non-generic carryover:
   `app/config/features/response_languages.yaml`.
 
 **Frontend i18n (전메뉴 다국어화)**: the homegrown lightweight layer
-(`useMenuMessages`: localStorage + CustomEvent + storage sync, with compile-time
-key-parity enforcement) was extended — not replaced by react-i18next — with an
+(`useMenuMessages`: localStorage + CustomEvent + storage sync, with key-parity
+enforced by the `MenuMessages` type — effective only now that `npm run typecheck`
+runs in the build and CI; before 2026-11 `tsc` never ran) was extended — not replaced by react-i18next — with an
 interpolation helper (`format`) and `Intl`-based `formatDate`/`formatNumber`
-wrappers. All user-facing literals across the component/page tree were migrated
-to a single ko/en catalog (`frontend/src/i18n/menuMessages.ts`), so the language
-selector switches the entire menu UI with one click. ko output is byte-identical
+wrappers. Menu/page literals were migrated to a single catalog
+(`frontend/src/i18n/menuMessages.ts`, five locales: ko/en/ja/es/zh-Hant), so the
+language selector switches the menu UI with one click. Roughly 170 Korean
+literals remain outside the catalog (toasts and error strings in hooks such as
+`usePromptManager`, `useDocumentDelete`), so the migration is not complete. ko output is byte-identical
 (regression-zero). Additional locales (ja/zh, …) need only a `MENU_LOCALES` +
 catalog entry — no code fork; `VITE_DEFAULT_LOCALE` sets the default locale.
 
@@ -57,8 +60,17 @@ The GitHub Actions CI pipeline currently covers:
 
 - `Lint`: `uv run ruff check .`
 - `Type Check`: `uv run mypy .`
-- `Architecture`: `uv run lint-imports`
-- `Test + Coverage`: backend pytest with coverage artifact generation
+- `Architecture`: `uv run lint-imports` (6 contracts: layered architecture,
+  services-use-orchestrators, lib-no-modules, composition-root-not-imported,
+  config-no-upper-layers, modules-no-batch). Every directory under `app/` is a
+  regular package now, so the graph covers all modules.
+- `Test + Coverage`: backend pytest (unit plus every `tests/integration` file
+  that runs without external services, selected with `-m "not live"`) with a
+  coverage floor (`fail_under` in `pyproject.toml`) and coverage artifacts.
+  `live`-marked tests (real network, paid LLM calls, external DBs) run only with
+  `ONERAG_RUN_LIVE_PROVIDER_TESTS=1` (`make test-live`).
+- `Security Audit`: `pip-audit` over the exported runtime lock. Non-blocking
+  until the baseline in `docs/security/dependency-triage.md` is empty.
 - `Optional Providers`: optional-provider unit tests (vector stores, BM25,
   rerankers, embedders) run with extras installed and
   `ONERAG_RUN_OPTIONAL_PROVIDER_TESTS=1`. These are skipped by the default
@@ -67,7 +79,8 @@ The GitHub Actions CI pipeline currently covers:
   (`HF_HUB_OFFLINE=1`); real-model reranker inference stays in integration
   verification.
 - `Runtime Smoke`: `make test-operational-smoke`
-- `Frontend`: `npm run build:warning-gate`, `npm run lint`, `npm run test:warning-gate`
+- `Frontend`: `npm run typecheck` (tsc, strict), `npm run build:warning-gate`,
+  `npm run lint`, `npm run test:warning-gate`
 - `LLM Cost Analysis`: token/cost reporting workflow
 
 PRs #70–#74 passed `Lint`, `Type Check` (mypy, 560 source files), `Architecture`

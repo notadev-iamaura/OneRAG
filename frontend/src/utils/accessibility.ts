@@ -116,7 +116,11 @@ export function calculateContrastRatio(
     } else if (color.startsWith('rgb')) {
       const match = color.match(/\d+/g);
       if (!match) return 0;
-      [r, g, b] = match.map(Number);
+      const [matchedR, matchedG, matchedB] = match.map(Number);
+      if (matchedR === undefined || matchedG === undefined || matchedB === undefined) return 0;
+      r = matchedR;
+      g = matchedG;
+      b = matchedB;
     } else {
       return 0;
     }

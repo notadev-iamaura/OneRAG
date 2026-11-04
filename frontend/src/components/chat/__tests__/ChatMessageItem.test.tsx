@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ChatMessageItem } from '../ChatMessageItem';
-import { ChatMessage, Source as SourceType } from '../../types';
+import { ChatMessage, Source as SourceType } from '../../../types';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 vi.mock('../../MarkdownRenderer', () => ({

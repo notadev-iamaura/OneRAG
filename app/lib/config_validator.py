@@ -7,14 +7,15 @@
 보안: SEC-002 대응
 업데이트: 2026-01-08 - Pydantic 기반 설정 검증 강화
 """
-import logging
 import os
 from typing import Any, Literal, TypeVar, cast
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-logger = logging.getLogger(__name__)
+from .logger import get_logger
+
+logger = get_logger(__name__)
 
 T = TypeVar("T")
 
@@ -24,11 +25,117 @@ class ConfigValidationError(ValueError):
     pass
 
 
+# ========================================
+# 값 강제 변환(coerce) 헬퍼 — 관대(lenient) 모드
+# ========================================
+# 설정 딕셔너리/환경변수에서 읽은 임의 값을 숫자로 바꾸되, 비어있거나 잘못된 값은
+# 경고 후 기본값으로 대체하고 범위를 벗어나면 clamp한다(예외를 던지지 않음).
+# 여러 모듈에 산재하던 ``_env_int`` / ``_env_float`` / ``_coerce_*`` 재구현을 대체한다.
+
+
+def coerce_int(
+    value: Any,
+    default: int,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+    label: str = "value",
+) -> int:
+    """
+    값을 int로 변환하되 범위를 clamp하고, 비어있거나 잘못된 값이면 기본값을 사용한다.
+
+    Args:
+        value: 변환할 값 (None/빈 문자열은 미설정으로 간주)
+        default: 미설정/변환 실패 시 기본값
+        minimum: 하한 (지정 시 이보다 작은 값은 하한으로 clamp)
+        maximum: 상한 (지정 시 이보다 큰 값은 상한으로 clamp)
+        label: 경고 로그에 표시할 값 이름 (환경 변수명 등)
+
+    Returns:
+        변환·clamp된 정수값
+
+    Examples:
+        >>> coerce_int("10", 5)
+        10
+        >>> coerce_int("abc", 5)
+        5
+        >>> coerce_int(0, 5, minimum=1)
+        1
+    """
+    if value is None or value == "":
+        result = default
+    else:
+        try:
+            result = int(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"'{label}'의 값 {value!r}은(는) 정수가 아닙니다. 기본값 {default}을(를) 사용합니다."
+            )
+            result = default
+    return _clamp(result, minimum, maximum)
+
+
+def coerce_float(
+    value: Any,
+    default: float,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    label: str = "value",
+) -> float:
+    """
+    값을 float로 변환하되 범위를 clamp하고, 비어있거나 잘못된 값이면 기본값을 사용한다.
+
+    Args:
+        value: 변환할 값 (None/빈 문자열은 미설정으로 간주)
+        default: 미설정/변환 실패 시 기본값
+        minimum: 하한 (지정 시 이보다 작은 값은 하한으로 clamp)
+        maximum: 상한 (지정 시 이보다 큰 값은 상한으로 clamp)
+        label: 경고 로그에 표시할 값 이름 (환경 변수명 등)
+
+    Returns:
+        변환·clamp된 실수값
+
+    Examples:
+        >>> coerce_float("1.5", 1.0)
+        1.5
+        >>> coerce_float("abc", 1.0)
+        1.0
+        >>> coerce_float("9", 1.0, maximum=2.0)
+        2.0
+    """
+    if value is None or value == "":
+        result = default
+    else:
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            logger.warning(
+                f"'{label}'의 값 {value!r}은(는) 실수가 아닙니다. 기본값 {default}을(를) 사용합니다."
+            )
+            result = default
+    return _clamp(result, minimum, maximum)
+
+
+_Number = TypeVar("_Number", int, float)
+
+
+def _clamp(value: _Number, minimum: _Number | None, maximum: _Number | None) -> _Number:
+    """값을 [minimum, maximum] 범위로 제한한다(None인 경계는 무시)."""
+    if minimum is not None and value < minimum:
+        return minimum
+    if maximum is not None and value > maximum:
+        return maximum
+    return value
+
+
 def get_env_int(
     key: str,
     default: int | None = None,
     min_value: int | None = None,
     max_value: int | None = None,
+    *,
+    strict: bool = True,
 ) -> int:
     """
     정수형 환경 변수 로드 및 검증
@@ -38,22 +145,27 @@ def get_env_int(
         default: 기본값 (None이면 필수)
         min_value: 최소값
         max_value: 최대값
+        strict: True(기본)면 정수가 아니거나 범위를 벗어날 때 예외를 던진다.
+            False면 관대 모드: 비어있거나 잘못된 값은 경고 후 기본값을 사용하고,
+            범위를 벗어난 값은 min/max로 clamp한다 (``coerce_int`` 위임).
 
     Returns:
         검증된 정수값
 
     Raises:
-        ConfigValidationError: 검증 실패 시
+        ConfigValidationError: 검증 실패 시 (strict=True), 또는 기본값 없이 미설정 시
 
     Examples:
         >>> get_env_int("PORT", default=8000)
         8000
         >>> get_env_int("TIMEOUT", min_value=1, max_value=3600)
         30
+        >>> get_env_int("RETRIES", default=3, min_value=0, strict=False)
+        3
     """
     raw_value = os.getenv(key)
 
-    if raw_value is None:
+    if raw_value is None or (not strict and raw_value == ""):
         if default is not None:
             return default
         raise ConfigValidationError(
@@ -61,11 +173,87 @@ def get_env_int(
             "필수 환경 변수입니다."
         )
 
+    if not strict:
+        if default is None:
+            raise ConfigValidationError(
+                f"환경 변수 '{key}'의 관대 모드(strict=False)에는 기본값이 필요합니다."
+            )
+        return coerce_int(raw_value, default, minimum=min_value, maximum=max_value, label=key)
+
     try:
         value = int(raw_value)
     except ValueError:
         raise ConfigValidationError(
             f"환경 변수 '{key}'의 값 '{raw_value}'은(는) 정수가 아닙니다."
+        )
+
+    if min_value is not None and value < min_value:
+        raise ConfigValidationError(
+            f"환경 변수 '{key}'의 값 {value}은(는) 최소값 {min_value}보다 작습니다."
+        )
+
+    if max_value is not None and value > max_value:
+        raise ConfigValidationError(
+            f"환경 변수 '{key}'의 값 {value}은(는) 최대값 {max_value}보다 큽니다."
+        )
+
+    return value
+
+
+def get_env_float(
+    key: str,
+    default: float | None = None,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    *,
+    strict: bool = True,
+) -> float:
+    """
+    실수형 환경 변수 로드 및 검증
+
+    Args:
+        key: 환경 변수명
+        default: 기본값 (None이면 필수)
+        min_value: 최소값
+        max_value: 최대값
+        strict: True(기본)면 실수가 아니거나 범위를 벗어날 때 예외를 던진다.
+            False면 관대 모드: 비어있거나 잘못된 값은 경고 후 기본값을 사용하고,
+            범위를 벗어난 값은 min/max로 clamp한다 (``coerce_float`` 위임).
+
+    Returns:
+        검증된 실수값
+
+    Raises:
+        ConfigValidationError: 검증 실패 시 (strict=True), 또는 기본값 없이 미설정 시
+
+    Examples:
+        >>> get_env_float("RETRY_BASE_SECONDS", default=1.0)
+        1.0
+        >>> get_env_float("THRESHOLD", default=0.5, min_value=0.0, max_value=1.0, strict=False)
+        0.5
+    """
+    raw_value = os.getenv(key)
+
+    if raw_value is None or (not strict and raw_value == ""):
+        if default is not None:
+            return default
+        raise ConfigValidationError(
+            f"환경 변수 '{key}'가 설정되지 않았습니다. "
+            "필수 환경 변수입니다."
+        )
+
+    if not strict:
+        if default is None:
+            raise ConfigValidationError(
+                f"환경 변수 '{key}'의 관대 모드(strict=False)에는 기본값이 필요합니다."
+            )
+        return coerce_float(raw_value, default, minimum=min_value, maximum=max_value, label=key)
+
+    try:
+        value = float(raw_value)
+    except ValueError:
+        raise ConfigValidationError(
+            f"환경 변수 '{key}'의 값 '{raw_value}'은(는) 실수가 아닙니다."
         )
 
     if min_value is not None and value < min_value:

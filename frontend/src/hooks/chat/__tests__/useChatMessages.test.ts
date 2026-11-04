@@ -31,6 +31,7 @@ describe('useChatMessages', () => {
 
     const defaultProps = {
         sessionId: mockSessionId,
+        initialMessages: [],
         showToast: mockShowToast,
         synchronizeSessionId: mockSynchronizeSessionId,
         setApiLogs: mockSetApiLogs,
@@ -90,10 +91,10 @@ describe('useChatMessages', () => {
 
         const messages = result.current.messages;
         expect(messages).toHaveLength(2);
-        expect(messages[0].role).toBe('user');
-        expect(messages[0].content).toBe('Hi there');
-        expect(messages[1].role).toBe('assistant');
-        expect(messages[1].content).toBe('Hello from AI');
+        expect(messages[0]?.role).toBe('user');
+        expect(messages[0]?.content).toBe('Hi there');
+        expect(messages[1]?.role).toBe('assistant');
+        expect(messages[1]?.content).toBe('Hello from AI');
 
         expect(chatAPI.sendMessage).toHaveBeenCalledWith('Hi there', mockSessionId);
         expect(mockSynchronizeSessionId).toHaveBeenCalledWith(mockSessionId, expect.any(String));
@@ -123,8 +124,8 @@ describe('useChatMessages', () => {
 
         const messages = result.current.messages;
         expect(messages).toHaveLength(2); // User message + Error message
-        expect(messages[1].role).toBe('assistant');
-        expect(messages[1].content).toContain('죄송합니다. 오류가 발생했습니다');
+        expect(messages[1]?.role).toBe('assistant');
+        expect(messages[1]?.content).toContain('죄송합니다. 오류가 발생했습니다');
         expect(result.current.loading).toBe(false);
     });
 

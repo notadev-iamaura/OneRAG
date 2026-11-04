@@ -45,6 +45,7 @@ from app.api.schemas.websocket import (
 )
 from app.api.services.websocket_manager import WebSocketManager
 from app.lib.auth import get_api_key_auth, verify_websocket_session_token
+from app.lib.client_ip import get_trusted_proxy_policy, resolve_client_ip
 from app.lib.errors import get_error_message, get_error_solutions
 from app.lib.logger import get_logger
 
@@ -73,6 +74,60 @@ def set_chat_service(service: Any) -> None:
         logger.info("ChatService 주입 완료")
     else:
         logger.debug("ChatService 해제됨")
+
+
+# 메시지 단위 레이트리미터 (HTTP 미들웨어는 WebSocket 프레임을 보지 못하므로 여기서 직접 적용)
+_rate_limiter: Any = None
+_rate_limit_ip: int | None = None
+_rate_limit_session: int | None = None
+
+
+def set_rate_limiter(
+    limiter: Any,
+    ip_limit: int | None = None,
+    session_limit: int | None = None,
+) -> None:
+    """WebSocket 채팅 메시지에 적용할 RateLimiter를 주입한다.
+
+    Args:
+        limiter: app.middleware.rate_limiter.RateLimiter 인스턴스(None으로 해제 가능)
+        ip_limit: 분당 IP 한도 override(None이면 limiter 기본값)
+        session_limit: 분당 세션 한도 override(None이면 limiter 기본값)
+    """
+    global _rate_limiter, _rate_limit_ip, _rate_limit_session
+    _rate_limiter = limiter
+    _rate_limit_ip = ip_limit
+    _rate_limit_session = session_limit
+    if limiter:
+        logger.info(
+            "WebSocket RateLimiter 주입 완료",
+            extra={"ip_limit": ip_limit, "session_limit": session_limit},
+        )
+
+
+def _websocket_client_ip(websocket: WebSocket) -> str | None:
+    """신뢰 프록시 정책을 적용해 WebSocket 클라이언트 IP를 결정한다."""
+    peer_host = websocket.client.host if websocket.client else None
+    return resolve_client_ip(peer_host, websocket.headers, get_trusted_proxy_policy())
+
+
+async def _is_rate_limited(websocket: WebSocket, session_id: str) -> bool:
+    """메시지 1건이 레이트리밋에 걸리는지 판단한다. 리미터가 없으면 항상 False."""
+    if _rate_limiter is None:
+        return False
+    allowed, limit_type, _remaining = await _rate_limiter.check_rate_limit(
+        ip=_websocket_client_ip(websocket),
+        session_id=session_id,
+        override_ip_limit=_rate_limit_ip,
+        override_session_limit=_rate_limit_session,
+    )
+    if not allowed:
+        logger.warning(
+            "WebSocket 메시지 레이트리밋 거부",
+            session_id=session_id,
+            limit_type=limit_type,
+        )
+    return not allowed
 
 
 def _resolve_websocket_language(websocket: WebSocket) -> str:
@@ -283,6 +338,16 @@ async def websocket_chat(
                     websocket=websocket,
                     message_id=message_id,
                     error_code="WS-002-VALIDATION_ERROR",
+                    lang=lang,
+                )
+                continue
+
+            # 레이트리밋: 메시지 1건 = LLM 호출이므로 HTTP 채팅과 같은 한도를 적용한다.
+            if await _is_rate_limited(websocket, session_id):
+                await _send_error(
+                    websocket=websocket,
+                    message_id=client_message.message_id,
+                    error_code="WS-004-RATE_LIMITED",
                     lang=lang,
                 )
                 continue

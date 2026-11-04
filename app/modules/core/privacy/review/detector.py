@@ -11,9 +11,10 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from typing import TYPE_CHECKING, Protocol
+
+from app.lib.logger import get_logger
 
 from .models import DetectionMethod, PIIEntity, PIIType
 
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
     from spacy.language import Language
     from spacy.tokens import Doc
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PIIDetectorProtocol(Protocol):

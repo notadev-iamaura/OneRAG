@@ -24,7 +24,9 @@ from typing import Any
 
 import httpx
 
+from .....lib.config_validator import coerce_float, coerce_int
 from .....lib.logger import get_logger
+from .....lib.retry import RetryError, RetryPolicy
 from ..interfaces import SearchResult
 
 logger = get_logger(__name__)
@@ -55,26 +57,9 @@ def _env_project_id() -> str | None:
     )
 
 
-def _coerce_int(value: Any, default: int, *, minimum: int = 1) -> int:
-    """값을 int로 변환하되 최소값을 보장하고, 잘못된 값이면 기본값을 사용한다."""
-    if value is None or value == "":
-        return max(minimum, default)
-    try:
-        return max(minimum, int(value))
-    except (TypeError, ValueError):
-        logger.warning("Invalid integer config value %r; using %s", value, default)
-        return max(minimum, default)
-
-
-def _coerce_float(value: Any, default: float, *, minimum: float = 0.1) -> float:
-    """값을 float로 변환하되 최소값을 보장하고, 잘못된 값이면 기본값을 사용한다."""
-    if value is None or value == "":
-        return max(minimum, default)
-    try:
-        return max(minimum, float(value))
-    except (TypeError, ValueError):
-        logger.warning("Invalid float config value %r; using %s", value, default)
-        return max(minimum, default)
+def _is_retryable_ranking_response(response: httpx.Response) -> bool:
+    """응답 상태코드가 재시도 대상(429/5xx)인지 판단한다 (RetryPolicy.retry_on_result)."""
+    return response.status_code in RETRYABLE_VERTEX_RANKING_STATUS_CODES
 
 
 def _coerce_bool(value: Any, default: bool) -> bool:
@@ -157,10 +142,10 @@ class VertexRankingReranker:
             location=location or DEFAULT_VERTEX_RANKING_LOCATION,
             ranking_config=ranking_config or DEFAULT_VERTEX_RANKING_CONFIG,
             model=model or DEFAULT_VERTEX_RANKING_MODEL,
-            top_n=_coerce_int(top_n, 10),
-            max_documents=_coerce_int(max_documents, 16),
-            timeout=_coerce_float(timeout, 1.5),
-            max_retries=_coerce_int(max_retries, 1, minimum=0),
+            top_n=coerce_int(top_n, 10, minimum=1, label="top_n"),
+            max_documents=coerce_int(max_documents, 16, minimum=1, label="max_documents"),
+            timeout=coerce_float(timeout, 1.5, minimum=0.1, label="timeout"),
+            max_retries=coerce_int(max_retries, 1, minimum=0, label="max_retries"),
             ignore_record_details_in_response=_coerce_bool(
                 ignore_record_details_in_response,
                 True,
@@ -385,42 +370,72 @@ class VertexRankingReranker:
             )
             raise
 
-    async def _post_rank(
+    async def _post_once(
         self,
         headers: dict[str, str],
         payload: dict[str, Any],
+        *,
+        allow_reauth: bool,
     ) -> httpx.Response:
-        """rank API에 POST하며 401 재인증·재시도 가능 상태코드를 처리한다."""
-        last_response: httpx.Response | None = None
-        for attempt in range(self.max_retries + 1):
+        """rank API에 1회 POST한다. 401이면(허용 시) 토큰을 재발급해 1회 재요청한다."""
+        response = await self._client.post(
+            self.endpoint,
+            headers=headers,
+            json=payload,
+            timeout=self.timeout,
+        )
+        if response.status_code == 401 and allow_reauth:
+            # 토큰 만료 가능성 → 자격증명 폐기 후 1회 재인증.
+            self._credentials = None
+            headers["Authorization"] = f"Bearer {self._refresh_access_token()}"
             response = await self._client.post(
                 self.endpoint,
                 headers=headers,
                 json=payload,
                 timeout=self.timeout,
             )
-            if response.status_code == 401 and attempt == 0:
-                # 토큰 만료 가능성 → 자격증명 폐기 후 1회 재인증.
-                self._credentials = None
-                headers["Authorization"] = f"Bearer {self._refresh_access_token()}"
-                response = await self._client.post(
-                    self.endpoint,
-                    headers=headers,
-                    json=payload,
-                    timeout=self.timeout,
-                )
-            if (
-                response.status_code in RETRYABLE_VERTEX_RANKING_STATUS_CODES
-                and attempt < self.max_retries
-            ):
-                last_response = response
-                continue
-            response.raise_for_status()
-            return response
+        return response
 
-        if last_response is not None:
+    async def _post_rank(
+        self,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> httpx.Response:
+        """rank API에 POST하며 401 재인증·재시도 가능 상태코드를 처리한다.
+
+        재시도는 공용 ``RetryPolicy``의 결과 기반 재시도(무대기)로 표현한다:
+        응답 상태가 ``RETRYABLE_VERTEX_RANKING_STATUS_CODES``이면 즉시 재요청하고
+        (총 ``max_retries + 1``회), 소진 시 마지막 응답의 ``raise_for_status()``로
+        ``HTTPStatusError``를 전파한다. 401 재인증은 첫 시도에서만 허용한다.
+        """
+        policy = RetryPolicy(
+            retry_exceptions=(),
+            max_attempts=self.max_retries + 1,
+            retry_on_result=_is_retryable_ranking_response,
+        )
+        response: httpx.Response | None = None
+        try:
+            async for attempt in policy.build_async_retrying():
+                with attempt:
+                    response = await self._post_once(
+                        headers,
+                        payload,
+                        allow_reauth=attempt.retry_state.attempt_number == 1,
+                    )
+                outcome = attempt.retry_state.outcome
+                if outcome is not None and not outcome.failed:
+                    # 결과 기반 재시도 판단용으로 응답을 outcome에 등록 (tenacity 공식 패턴)
+                    attempt.retry_state.set_result(response)
+        except RetryError as exc:
+            # 재시도 소진: 마지막 응답의 상태코드로 HTTPStatusError 전파
+            last_response: httpx.Response = exc.last_attempt.result()
             last_response.raise_for_status()
-        raise RuntimeError("Vertex ranking request failed without a response")
+            raise RuntimeError("Vertex ranking request failed without a response") from exc
+
+        if response is None:
+            raise RuntimeError("Vertex ranking request failed without a response")
+        response.raise_for_status()
+        return response
 
     def _parse_response(
         self,

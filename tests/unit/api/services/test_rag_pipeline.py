@@ -1364,7 +1364,10 @@ class TestGenerateAnswerEdgeCases:
 
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
 
-        with patch("app.api.services.rag_pipeline.validate_document", side_effect=mock_validate):
+        with patch(
+            "app.api.services.pipeline.generation_stage.validate_document",
+            side_effect=mock_validate,
+        ):
             await pipeline.generate_answer(
                 message="테스트 질문",
                 ranked_results=[safe_doc, malicious_doc],  # type: ignore

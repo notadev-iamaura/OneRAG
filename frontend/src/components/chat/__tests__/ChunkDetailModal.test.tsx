@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 import { ChunkDetailModal } from '../ChunkDetailModal';
-import { Source } from '../../types/chat';
+import { Source } from '../../../types/chat';
 import { documentAPI } from '../../../services/api';
 
 // happy-dom은 iframe src가 설정되면 자동으로 페이지 로드(fetch)를 시도하는데,

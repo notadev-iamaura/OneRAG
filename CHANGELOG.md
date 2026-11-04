@@ -16,6 +16,86 @@
   Self-RAG precheck와 답변 생성 LLM은 이 스위치와 별개입니다.
   켜는 법, 배포 전 검사와 롤링/rollback 절차: [Rerank mode guide](docs/RERANK_MODE.md).
 
+### 보안
+- **업로드 토큰 권한 범위 제한**: 세션 생성(`POST /api/chat/session`)만으로 발급되는 단기 업로드
+  토큰으로는 더 이상 문서 삭제(`DELETE /api/upload/documents/{id}`, `bulk-delete`)를 할 수 없습니다
+  (403, 서버 API 키 필요). 취소/재시도는 토큰이 바인딩된 세션이 만든 작업에만 허용되며,
+  업로드 작업 레코드에 `owner_session_id`가 기록됩니다. 조회/다운로드/업로드는 기존대로 동작합니다.
+- **인증 fail-closed**: `FASTAPI_AUTH_KEY`가 비어 있으면 환경(development 포함)과 무관하게
+  관리자 API, 업로드 API, `/v1`, 관리자 WebSocket이 401로 거부됩니다. 예전에는 개발 환경으로
+  감지되면 인증을 통째로 건너뛰어 `docker-compose.yml`의 `ENVIRONMENT=development` 고정값만으로도
+  관리자 API가 열렸습니다. 브라우저 채팅(`/api/chat`, `/chat-ws`)은 영향 없습니다.
+- **약한 키 거부**: 템플릿 자리표시자(`your_api_auth_key_here`, `local-dev-only-change-me` 등)나
+  16자 미만의 `FASTAPI_AUTH_KEY`는 프로덕션에서 서버 시작이 거부되고, 개발 환경에서는 경고만 출력됩니다.
+- **레이트리밋 스푸핑 차단**: `X-Forwarded-For`/`X-Real-IP`는 직접 연결 상대가 `TRUSTED_PROXY_IPS`
+  (기본 private: loopback + 사설망) 범위일 때만 신뢰합니다. 헤더만 바꿔 IP 한도를 우회하던 경로를 막습니다.
+  WebSocket 채팅(`/chat-ws`) 메시지에도 HTTP 채팅과 같은 IP/세션 한도가 적용되며 초과 시
+  `WS-004-RATE_LIMITED` 에러 이벤트를 받습니다.
+- **프론트엔드 관리자 키 노출 제거**: `frontend/entrypoint.sh`가 `ADMIN_API_KEY`를 공개 정적 파일
+  `config.js`에 기록하던 동작을 제거했습니다. `RUNTIME_CONFIG.ADMIN_API_KEY` 폴백도 삭제되어 관리자
+  키는 운영자 설정 화면(localStorage)에서만 읽습니다. 배포 환경변수에 값이 있으면 무시하고 경고를 남깁니다.
+- **의존성 취약점 정리**: FastAPI 0.104.1/Starlette 0.27.0(알려진 multipart DoS 등)을 현재
+  Starlette 1.x 라인으로 올리고, pypdf·pillow·aiohttp·anyio·cryptography·urllib3·requests·lxml·nltk·
+  pymongo 등 28개 전이 의존성을 갱신했습니다(pip-audit 409건 → 32건). 남은 항목과 사유는
+  `docs/security/dependency-triage.md`의 Current Baseline 표를 참고하세요.
+- **pip-audit 게이트 추가**: `make audit` 타깃과 GitHub Actions `Security Audit` 잡(기준선이 비기
+  전까지 비차단)을 추가했습니다.
+
+### 구조 개선 (P2)
+- **RAG 파이프라인 분리**: 4,900줄짜리 `rag_pipeline.py`의 `RAGPipeline`을 단계별 믹스인 패키지
+  `app/api/services/pipeline/`(routing, retrieval, rerank, generation, verification, output + models,
+  document_utils, base)로 나눴습니다. 공개/비공개 메서드 이름과 동작, 예전 import 경로
+  (`app.api.services.rag_pipeline.X`)는 그대로 유지됩니다. 오케스트레이션(`execute`,
+  `run_retrieval_phase`, 타임아웃 예산)만 `rag_pipeline.py`에 남습니다.
+- **스트리밍 경로 통합**: `ChatService.stream_rag_pipeline`이 `retrieval_module.search`를 직접 부르는 대신
+  비스트리밍과 같은 `RAGPipeline.run_retrieval_phase`를 호출합니다. 이제 스트리밍에서도 세션 컨텍스트,
+  멀티턴 재작성, 쿼리 확장, 정확 식별자·문서명 구출, 리랭크 융합·안정화, 앵커 부스트, SQL 컨텍스트가
+  동일하게 적용됩니다. 기간 불일치 환각 게이트는 스트리밍 텍스트를 바꾸지 않고 `done` 이벤트의
+  `hallucination_gate` 필드로 신호를 보냅니다(Self-RAG 재생성은 스트리밍 성격상 미적용).
+- **DI 컨테이너 정리**: provider별 Retriever 설정 매핑(227줄)을
+  `app/modules/core/retrieval/retrievers/wiring.py`로 옮기고 컨테이너는 위임만 합니다. 표준/graceful
+  두 기동 함수가 따로 들고 있던 모듈 그래프를 `_build_startup_modules` 하나로 합쳤습니다
+  (프로파일은 타임아웃/재시도만 다름). `scripts/index_all_data.py`에 있던 인덱싱 로직은
+  `app/modules/ingestion/bulk_index.py`로 옮겨 운영 코드가 `scripts/`를 import 하지 않습니다.
+- **계층 계약 확장**: import-linter 계약을 3개에서 6개로 늘렸습니다(DI 컨테이너를 하위 계층이 import
+  금지, config → api/core 금지, modules → batch 금지(기존 2건은 명시 예외)). 네임스페이스 패키지라
+  검사에서 빠져 있던 11개 디렉터리에 `__init__.py`를 추가해 **기존 3개 계약도 실제로 전체 모듈을
+  검사**하게 됐고, 그 과정에서 드러난 `app.config.schemas.reranking → app.modules…rerankers.mode`
+  역의존은 `mode.py`를 `app/lib/rerank_mode.py`로 옮겨 해소했습니다(예전 경로는 재노출 모듈).
+- **mypy 범위 확대**: `app.core.*`와 `app.api.services.*`(파이프라인, 채팅 서비스, DI 컨테이너)가
+  `ignore_errors` 목록에서 빠져 타입 검사를 받습니다. 그 과정에서 실제 버그 3건을 잡았습니다:
+  (1) 평가기용 LLM 래퍼와 GraphRAG 추출기용 LLM 래퍼가 존재하지 않는 `client.generate`를 호출
+  (`generate_text`로 수정), (2) 존재하지 않는 `ErrorCode.GENERATION_INVALID_RESPONSE` 참조
+  (`GENERATION_REQUEST_FAILED`로 수정), (3) Circuit Breaker 팩토리 미주입 시 검색이 AttributeError로
+  실패하던 경로(선택 의존성으로 처리).
+- **중복 제거 / 죽은 코드**: Qdrant·Pinecone 리트리버 공통 베이스 추출, 수제 재시도 루프와 환경변수
+  파서를 공용 헬퍼로 통일, 로깅 스타일을 `app.lib.logger.get_logger` 하나로 통일, 가려져 있던
+  `app/config/schemas.py`·레거시 `RerankerFactory`·V1 리랭킹 스키마·미사용 `Base*` ABC 제거.
+
+### 품질 게이트 / 정확성 (P1)
+- **GraphRAG 엔티티 임베딩 복구**: `NetworkXGraphStore`가 동기 `embed_query`를 `await` 해
+  매번 TypeError가 나고 광범위 except가 이를 삼켜, 운영에서는 엔티티 임베딩이 한 번도 생성되지
+  않던 결함을 수정했습니다. 임베더가 동기/비동기 어느 쪽이든 처리하며(동기는 `to_thread`),
+  실제 동기 임베더로 회귀 테스트를 추가했습니다. pgvector/qdrant/pinecone/mongodb 리트리버와
+  로컬 임베더의 동기 임베딩 호출도 `asyncio.to_thread`로 통일해 이벤트 루프 블로킹을 없앴습니다.
+- **통합 테스트 게이트 편입**: 외부 서비스 없이 통과하는 `tests/integration` 전체가 CI PR 게이트와
+  `make test`에 포함됩니다(`-m "not live"`). 실제 네트워크·유료 LLM·외부 DB 테스트는 새 `live`
+  마커 + `ONERAG_RUN_LIVE_PROVIDER_TESTS=1` 가드로 분리했습니다(`make test-live`). 선택 의존성이
+  없는 환경에서 ERROR가 나던 로컬 임베더 통합 테스트는 `importorskip`으로 SKIP 처리합니다.
+  깨져 있던 `make test-basic`, `make test-cov` 타깃을 수리했습니다.
+- **커버리지 하한**: `fail_under = 61`을 설정해 커버리지가 내려가면 CI가 실패합니다. 앵커 없는
+  `"pass"` 제외 규칙이 `password`/`passport`가 들어간 줄(PII 마스킹 코드 등)까지 커버리지에서
+  빼던 문제를 `^\s*pass\s*$`로 교정했습니다.
+- **버전 단일화**: `pyproject.toml`이 유일한 버전 소스가 되었고 `app.__version__`, FastAPI `version`,
+  `/health`, `/api` 응답이 모두 여기서 읽습니다(이전에는 1.0.7 / 2.0.0 / 2.0.0 / 1.2.1 네 갈래).
+  CHANGELOG 최신 릴리스와 일치하는지 검사하는 테스트를 추가했습니다.
+- **SQL 검색 기본 비활성화 + 읽기 전용 강제**: `SQL_SEARCH_ENABLED` 기본값이 `false`가 되었습니다.
+  켜더라도 실행 전 `SET TRANSACTION READ ONLY`와 `statement_timeout`을 적용하고, 검증기는
+  `pg_sleep`, `pg_read_file`, `dblink`, `lo_import`, `SELECT ... INTO`, `SET` 등을 추가로 차단합니다.
+  문자열 리터럴 안의 단어는 검사에서 제외해 오탐을 줄였습니다.
+- **프론트엔드 타입체크 게이트**: `npm run typecheck`(tsc --noEmit)를 빌드와 CI에 추가하고
+  기존 타입 오류를 해소했습니다. 이로써 strict tsconfig와 i18n 키 동등성이 실제로 강제됩니다.
+
 ### 추가됨
 - 운영 안정성 smoke 게이트 추가: `make test-operational-smoke` 및 GitHub Actions `Runtime Smoke` job
 - `/ready` readiness 엔드포인트 추가 및 Docker API healthcheck를 `/ready`로 전환

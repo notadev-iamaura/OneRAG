@@ -29,6 +29,10 @@ from app.lib.config_validator import get_env_int, get_env_url
 # from app.lib.ip_geolocation import IPGeolocationModule  # 비활성화: 세션 생성 타임아웃 원인
 from app.lib.logger import get_logger
 from app.lib.metrics import CostTracker, PerformanceMetrics
+from app.lib.rerank_mode import (
+    RerankerModeConfigError,
+    resolve_rerank_mode,
+)
 from app.lib.startup_policy import is_retrieval_required
 from app.lib.topic_extractor import extract_topic
 
@@ -74,13 +78,11 @@ from app.modules.core.retrieval.cache.semantic_cache import (
 from app.modules.core.retrieval.grok_answer_provider import GrokAnswerProvider
 from app.modules.core.retrieval.orchestrator import RetrievalOrchestrator
 from app.modules.core.retrieval.query_expansion.gpt5_engine import GPT5QueryExpansionEngine
-from app.modules.core.retrieval.rerankers.mode import (
-    RerankerModeConfigError,
-    resolve_rerank_mode,
-)
 
 # Retriever Factory (다중 벡터 DB 지원 - Factory 패턴 적용)
-from app.modules.core.retrieval.retrievers.factory import RetrieverFactory
+# RetrieverFactory 는 테스트가 di_container.RetrieverFactory 로 패치하므로 재노출을 유지한다.
+from app.modules.core.retrieval.retrievers.factory import RetrieverFactory as RetrieverFactory
+from app.modules.core.retrieval.retrievers.wiring import build_retriever_from_config
 from app.modules.core.routing.complexity_calculator import ComplexityCalculator
 from app.modules.core.routing.llm_query_router import LLMQueryRouter
 from app.modules.core.self_rag.evaluator import LLMQualityEvaluator
@@ -309,7 +311,7 @@ def extract_topic_default(message: object) -> str:
     config 미주입 경로이므로 코드 내장 한국어 기본 키워드를 사용한다.
     토픽 추출 로직의 단일 소스는 app.lib.topic_extractor이다.
     """
-    return extract_topic(message)
+    return str(extract_topic(message))
 
 
 def build_extract_topic_func(config: dict) -> Callable[[object], str]:
@@ -322,7 +324,7 @@ def build_extract_topic_func(config: dict) -> Callable[[object], str]:
     topic_keywords = config.get("routing", {}).get("topic_keywords")
 
     def _extract(message: object) -> str:
-        return extract_topic(message, topic_keywords)
+        return str(extract_topic(message, topic_keywords))
 
     return _extract
 
@@ -352,7 +354,7 @@ async def create_reranker_instance_v2(
         logger.info("Reranker 비활성화 (enabled=false)", extra={"effective": "disabled"})
         return None
 
-    details = {"effective": resolved.effective, "source": resolved.source}
+    details: dict[str, Any] = {"effective": resolved.effective, "source": resolved.source}
     if resolved.effective == "legacy":
         details.update(approach=resolved.legacy_approach, provider=resolved.legacy_provider)
     logger.info("Reranker v2 초기화", extra=details)
@@ -387,7 +389,7 @@ async def create_reranker_instance_v2(
         return None
 
 
-async def create_cache_instance(config: dict) -> MemoryCacheManager | None:
+async def create_cache_instance(config: dict) -> Any:
     """
     Cache 인스턴스 생성 헬퍼 함수
 
@@ -429,7 +431,7 @@ async def create_cache_instance(config: dict) -> MemoryCacheManager | None:
                 max_connections=10,  # Connection Pool 크기
             )
 
-            cache = RedisCacheManager(
+            cache: Any = RedisCacheManager(
                 redis_client=redis_client,
                 key_prefix=cache_config.get("key_prefix", "rag:cache:"),
                 default_ttl=cache_config.get("default_ttl", 3600),
@@ -444,7 +446,7 @@ async def create_cache_instance(config: dict) -> MemoryCacheManager | None:
                     "RedisCacheManager 초기화 성공",
                     extra={"cache_type": "distributed", "redis_url": redis_url}
                 )
-                return cache  # type: ignore[return-value]
+                return cache
             else:
                 logger.warning(
                     "Redis 헬스체크 실패",
@@ -467,7 +469,7 @@ async def create_cache_instance(config: dict) -> MemoryCacheManager | None:
 
     # 인메모리 캐시 사용 (단일 인스턴스 또는 Redis 실패 시)
     try:
-        cache = MemoryCacheManager(  # type: ignore[assignment]
+        cache = MemoryCacheManager(
             maxsize=cache_config.get("maxsize", 100),
             default_ttl=cache_config.get("default_ttl", 3600),
         )
@@ -479,7 +481,7 @@ async def create_cache_instance(config: dict) -> MemoryCacheManager | None:
                 "ttl": cache_config.get("default_ttl", 3600)
             }
         )
-        return cache  # type: ignore[return-value]
+        return cache
     except Exception as e:
         logger.warning("Cache 초기화 실패", extra={"error": str(e)}, exc_info=True)
         return None
@@ -607,7 +609,7 @@ async def create_reranker_chain_instance(
             llm_reranker = await llm_reranker
 
     # 활성화된 리랭커 수집
-    rerankers = []
+    rerankers: list[Any] = []
     if colbert_reranker:
         rerankers.append(colbert_reranker)
     if llm_reranker:
@@ -651,8 +653,8 @@ async def create_reranker_chain_instance(
 
 async def create_mcp_server_instance(
     config: dict,
-    retriever=None,
-    graph_store=None,
+    retriever: Any = None,
+    graph_store: Any = None,
 ) -> MCPServer | None:
     """
     MCP 서버 인스턴스 생성 헬퍼 함수
@@ -724,7 +726,7 @@ async def create_mcp_server_instance(
 async def create_evaluator_instance(
     config: dict,
     llm_factory: LLMClientFactory | None = None,
-):
+) -> Any:
     """
     Evaluator 인스턴스 생성 헬퍼 함수
 
@@ -779,7 +781,7 @@ async def create_evaluator_instance(
 
 def _create_evaluator_llm_client(
     llm_factory: LLMClientFactory, eval_config: dict
-):
+) -> Any:
     """
     평가기용 LLM 클라이언트 래퍼 생성
 
@@ -803,16 +805,15 @@ def _create_evaluator_llm_client(
         async def generate(self, prompt: str) -> str:
             """프롬프트를 LLM에 전송하고 응답 반환"""
             client = self._factory.get_client(provider="openrouter")
-            response = await client.generate(
-                prompt=prompt,
-                model=self._model,
-            )
-            return response
+            # BaseLLMClient 의 텍스트 생성 메서드는 generate_text 다(예전 .generate 는 존재하지 않아
+            # 평가기 호출 시 AttributeError 가 났다).
+            response = await client.generate_text(prompt, model=self._model)
+            return str(response)
 
     return EvaluatorLLMClient(llm_factory, model)
 
 
-async def create_graph_store_instance(config: dict, embedder: Any = None):
+async def create_graph_store_instance(config: dict, embedder: Any = None) -> Any:
     """
     GraphRAG 저장소 인스턴스 생성 헬퍼 함수
 
@@ -1012,9 +1013,9 @@ async def create_relation_extractor_instance(
 
 async def create_knowledge_graph_builder_instance(
     config: dict,
-    graph_store=None,
-    entity_extractor=None,
-    relation_extractor=None,
+    graph_store: Any = None,
+    entity_extractor: Any = None,
+    relation_extractor: Any = None,
 ) -> KnowledgeGraphBuilder | None:
     """
     지식 그래프 빌더 인스턴스 생성 헬퍼 함수
@@ -1078,7 +1079,7 @@ async def create_knowledge_graph_builder_instance(
         return None
 
 
-def _create_graph_llm_client(llm_factory: LLMClientFactory, model: str):
+def _create_graph_llm_client(llm_factory: LLMClientFactory, model: str) -> Any:
     """
     GraphRAG용 LLM 클라이언트 래퍼 생성
 
@@ -1118,20 +1119,22 @@ def _create_graph_llm_client(llm_factory: LLMClientFactory, model: str):
             # LLMClientFactory를 통해 generate 호출
             # 팩토리 인터페이스에 맞게 조정
             client = self._factory.get_client()
-            response = await client.generate(
-                prompt=prompt,
+            # BaseLLMClient 의 텍스트 생성 메서드는 generate_text 다(예전 .generate 는 존재하지 않아
+            # GraphRAG 엔티티/관계 추출이 DI 경로에서 AttributeError 로 실패했다).
+            response = await client.generate_text(
+                prompt,
                 model=self._model_id,
                 max_tokens=2000,
                 temperature=0.1,  # 정확한 추출을 위해 낮은 온도
             )
-            return response
+            return str(response)
 
     return GraphLLMClient(llm_factory, model)
 
 
 async def create_semantic_cache_instance(
     config: dict,
-    embedder=None,
+    embedder: Any = None,
 ) -> InMemorySemanticCache | None:
     """
     Semantic Cache 인스턴스 생성 헬퍼 함수
@@ -1303,220 +1306,90 @@ def create_retriever_via_factory(
     stopword_filter: Any | None = None,
     user_dictionary: Any | None = None,
 ) -> Any:
-    """
-    설정 기반 Retriever 생성 (RetrieverFactory 사용)
+    """설정 기반 Retriever 생성 (RetrieverFactory 사용).
 
-    Provider별로 다른 설정 파라미터와 의존성을 매핑하여
-    RetrieverFactory를 통해 인스턴스를 생성합니다.
+    provider별 설정/의존성 매핑은 app.modules.core.retrieval.retrievers.wiring 에 있다.
+    컨테이너는 의존성(VectorStore/Weaviate 지연 provider)만 넘기고 배선 로직을 갖지 않는다.
+    """
+    return build_retriever_from_config(
+        config,
+        embedder,
+        vector_store=vector_store,
+        vector_store_provider=vector_store_provider,
+        vector_store_factory=create_vector_store_via_factory,
+        weaviate_client=weaviate_client,
+        weaviate_client_provider=weaviate_client_provider,
+        synonym_manager=synonym_manager,
+        stopword_filter=stopword_filter,
+        user_dictionary=user_dictionary,
+    )
+
+
+
+def get_agent_config_with_timeout(base_config: dict) -> dict:
+    """
+    Agent 설정에 환경변수 타임아웃 추가
+
+    AGENT_TIMEOUT_SECONDS 환경변수를 로드하여
+    Agent 설정에 timeout_seconds를 추가합니다.
+
+    Args:
+        base_config: 기본 설정 딕셔너리
+
+    Returns:
+        타임아웃이 추가된 설정 딕셔너리
+    """
+    timeout_seconds = get_env_int(
+        "AGENT_TIMEOUT_SECONDS",
+        default=300,  # 5분
+        min_value=10,  # 최소 10초
+        max_value=3600,  # 최대 1시간
+    )
+
+    # Agent 설정 복사 및 타임아웃 추가
+    agent_config = dict(base_config)
+    if "agent" not in agent_config:
+        agent_config["agent"] = {}
+    agent_config["agent"]["timeout_seconds"] = timeout_seconds
+
+    logger.info(
+        "Agent 타임아웃 설정 완료",
+        extra={"timeout_seconds": timeout_seconds}
+    )
+    return agent_config
+
+
+
+def create_query_expansion(
+    config: dict,
+    llm_factory: LLMClientFactory | None,
+    cb_factory: CircuitBreakerFactory,
+) -> GPT5QueryExpansionEngine | None:
+    """
+    쿼리 확장 엔진 생성 (설정 기반 활성화/비활성화)
+
+    query_expansion.enabled 설정이 False이면 None을 반환하여
+    쿼리 확장 기능을 비활성화합니다.
 
     Args:
         config: 설정 딕셔너리
-        embedder: 임베딩 모델 인스턴스
-        vector_store: VectorStore 인스턴스 (Weaviate/Grok 외 provider용)
-        vector_store_provider: VectorStore provider (필요할 때만 지연 생성)
-        weaviate_client: Weaviate 클라이언트 (Weaviate provider용)
-        weaviate_client_provider: Weaviate provider (필요할 때만 지연 생성)
-        synonym_manager: 동의어 관리자 (하이브리드 지원 provider용)
-        stopword_filter: 불용어 필터 (하이브리드 지원 provider용)
-        user_dictionary: 사용자 사전 (하이브리드 지원 provider용)
+        llm_factory: LLM Factory 인스턴스
+        cb_factory: CircuitBreaker 팩토리
 
     Returns:
-        IRetriever 구현체 인스턴스
-
-    지원 Provider:
-    - weaviate: Dense + BM25 하이브리드 (weaviate_client 필요)
-    - chroma: Dense + BM25 하이브리드 (store + BM25 엔진 필요)
-    - pinecone: Dense + Sparse 하이브리드 (store 필요)
-    - qdrant: Dense + Full-Text 하이브리드 (store 필요)
-    - pgvector: Dense 전용 (store 필요)
-    - mongodb: Dense 전용 (store 필요)
-    - grok: 관리형 검색 (VectorStore 불필요)
+        GPT5QueryExpansionEngine 인스턴스 또는 None (비활성화 시)
     """
-    provider = config.get("vector_db", {}).get("provider", "weaviate")
+    query_expansion_config = config.get("query_expansion", {})
+    enabled = query_expansion_config.get("enabled", True)
 
-    def resolve_vector_store() -> Any:
-        if vector_store is not None:
-            return vector_store
-        if vector_store_provider is not None:
-            return vector_store_provider()
-        return create_vector_store_via_factory(config)
-
-    def resolve_weaviate_client() -> Any:
-        if weaviate_client is not None:
-            return weaviate_client
-        if weaviate_client_provider is not None:
-            return weaviate_client_provider()
+    if not enabled:
+        logger.info(
+            "Query Expansion 비활성화",
+            extra={"config_key": "query_expansion.enabled", "value": False}
+        )
         return None
 
-    # Provider별 설정 매핑
-    retriever_config: dict[str, Any] = {}
-
-    # BM25 전처리 모듈 (하이브리드 지원 provider용)
-    bm25_preprocessors: dict[str, Any] | None = None
-    if RetrieverFactory.supports_hybrid(provider):
-        if provider == "weaviate":
-            # Weaviate는 기존 전처리 모듈만 주입 (BM25 실행은 Weaviate 내장)
-            bm25_preprocessors = {
-                "synonym_manager": synonym_manager,
-                "stopword_filter": stopword_filter,
-                "user_dictionary": user_dictionary,
-            }
-        elif provider in ("chroma", "pgvector", "mongodb"):
-            # BM25 엔진 기반 하이브리드 확장 (현재는 chroma에서 사용)
-            try:
-                from app.modules.core.retrieval.bm25_engine import (
-                    BM25Index,
-                    HybridMerger,
-                    KoreanTokenizer,
-                )
-                from app.modules.core.retrieval.bm25_engine.tokenizer import (
-                    WhitespaceTokenizer,
-                )
-
-                # 범용성: bm25.yaml의 tokenizer 설정으로 언어에 맞는 토크나이저 선택.
-                # 기본 "korean"은 Kiwi 형태소 분석기, 그 외(예: "whitespace")는
-                # 언어 중립 토크나이저로 비한국어 코퍼스를 지원한다.
-                tokenizer_type = config.get("bm25", {}).get("tokenizer", "korean")
-                tokenizer: object
-                if tokenizer_type == "korean":
-                    tokenizer = KoreanTokenizer(
-                        stopword_filter=stopword_filter,
-                        synonym_manager=synonym_manager,
-                        user_dictionary=user_dictionary,
-                    )
-                else:
-                    tokenizer = WhitespaceTokenizer()
-                    logger.info(
-                        f"BM25 언어 중립 토크나이저 사용 (tokenizer={tokenizer_type})"
-                    )
-                bm25_index = BM25Index(tokenizer=tokenizer)  # type: ignore[arg-type]
-                hybrid_merger = HybridMerger(
-                    alpha=config.get("hybrid_search", {}).get("default_alpha", 0.6)
-                )
-
-                bm25_preprocessors = {
-                    "bm25_index": bm25_index,
-                    "hybrid_merger": hybrid_merger,
-                }
-                logger.info(f"BM25 엔진 주입 완료 (provider={provider})")
-
-            except ImportError:
-                logger.warning(
-                    f"BM25 엔진 의존성 미설치 - {provider}는 Dense 전용으로 동작합니다. "
-                    "하이브리드 검색을 사용하려면: uv add kiwipiepy rank-bm25"
-                )
-                bm25_preprocessors = None
-        else:
-            # Pinecone, Qdrant 등은 기존 전처리 모듈 주입
-            bm25_preprocessors = {
-                "synonym_manager": synonym_manager,
-                "stopword_filter": stopword_filter,
-                "user_dictionary": user_dictionary,
-            }
-
-    if provider == "weaviate":
-        resolved_weaviate_client = resolve_weaviate_client()
-        # Weaviate: weaviate_client 사용 (store 대신)
-        weaviate_config = config.get("weaviate", {})
-        retriever_config = {
-            "weaviate_client": resolved_weaviate_client,
-            "collection_name": weaviate_config.get("collection_name", "Documents"),
-            "alpha": weaviate_config.get("hybrid_search", {}).get("default_alpha", 0.6),
-            "fusion_type": weaviate_config.get("hybrid_search", {}).get(
-                "fusion_type", "ranked"
-            ),
-            "additional_collections": weaviate_config.get("additional_collections", []),
-            "collection_properties": config.get("domain", {}).get("retrieval", {}).get(
-                "collections", {}
-            ),
-            # 메타데이터 검색결과 source_file 표시 접미사를 config에서 파생한다.
-            # 미설정(None) 시 생성자가 한국어 기본 " (메타데이터)"로 폴백(회귀 0).
-            # 비한국어 운영자는 weaviate.metadata_source_suffix로 자국어/영어 라벨 주입.
-            "metadata_source_suffix": weaviate_config.get("metadata_source_suffix"),
-        }
-    elif provider == "chroma":
-        resolved_vector_store = resolve_vector_store()
-        # Chroma: BM25 엔진이 있으면 하이브리드 검색 지원
-        chroma_config = config.get("chroma", {})
-        retriever_config = {
-            "store": resolved_vector_store,
-            "collection_name": chroma_config.get("collection_name", "documents"),
-            "top_k": chroma_config.get("retrieval", {}).get("default_top_k", 10),
-        }
-    elif provider == "pinecone":
-        resolved_vector_store = resolve_vector_store()
-        # Pinecone: 하이브리드 지원
-        pinecone_config = config.get("pinecone", {})
-        retriever_config = {
-            "store": resolved_vector_store,
-            "namespace": pinecone_config.get("namespace", "default"),
-            "top_k": pinecone_config.get("retrieval", {}).get("default_top_k", 10),
-            "hybrid_alpha": pinecone_config.get("hybrid", {}).get("default_alpha", 0.6),
-        }
-    elif provider == "qdrant":
-        resolved_vector_store = resolve_vector_store()
-        # Qdrant: 하이브리드 지원
-        qdrant_config = config.get("qdrant", {})
-        retriever_config = {
-            "store": resolved_vector_store,
-            "collection_name": qdrant_config.get("collection_name", "documents"),
-            "top_k": qdrant_config.get("retrieval", {}).get("default_top_k", 10),
-            "hybrid_alpha": qdrant_config.get("hybrid_search", {}).get("default_alpha", 0.6),
-        }
-    elif provider == "pgvector":
-        resolved_vector_store = resolve_vector_store()
-        # pgvector: Dense 전용
-        pgvector_config = config.get("pgvector", {})
-        retriever_config = {
-            "store": resolved_vector_store,
-            "table_name": pgvector_config.get("table_name", "documents"),
-            "top_k": pgvector_config.get("retrieval", {}).get("default_top_k", 10),
-        }
-    elif provider == "mongodb":
-        resolved_vector_store = resolve_vector_store()
-        # MongoDB Atlas: Dense 전용
-        mongodb_config = config.get("mongodb", {}).get("vector_search", {})
-        retriever_config = {
-            "store": resolved_vector_store,
-            "collection_name": mongodb_config.get("collection_name", "documents"),
-            "top_k": mongodb_config.get("retrieval", {}).get("default_top_k", 10),
-        }
-    elif provider == "grok":
-        # Grok Collections API: 검색 전용 (VectorStore 불필요)
-        grok_config = config.get("grok", {})
-        retriever_config = {
-            "api_key": grok_config.get("api_key"),
-            "collection_ids": grok_config.get("collection_ids", []),
-            "model": grok_config.get("model", "grok-3"),
-            "api_url": grok_config.get(
-                "search_api_url", "https://api.x.ai/v1/documents/search"
-            ),
-            "timeout": grok_config.get("timeout", 30),
-            "top_k": grok_config.get("top_k", 10),
-            "retrieval_mode": grok_config.get("retrieval_mode", "hybrid"),
-        }
-        # Grok은 VectorStore 없이 동작하므로 BM25 전처리 불필요
-        bm25_preprocessors = None
-
-    logger.info(
-        "Retriever 생성 시작",
-        extra={
-            "provider": provider,
-            "hybrid_support": RetrieverFactory.supports_hybrid(provider),
-        }
-    )
-
-    return RetrieverFactory.create(
-        provider=provider,
-        embedder=embedder,
-        config=retriever_config,
-        bm25_preprocessors=bm25_preprocessors,
-    )
-
-
-# ========================================
-# AppContainer
-# ========================================
+    return GPT5QueryExpansionEngine.from_config(config, llm_factory, cb_factory)
 
 
 class AppContainer(containers.DeclarativeContainer):
@@ -1931,37 +1804,6 @@ class AppContainer(containers.DeclarativeContainer):
     # Phase 5: Agent Orchestrator (Agentic RAG)
     # ----------------------------------------
     # QA-003: Agent 타임아웃 설정 (환경변수)
-    def get_agent_config_with_timeout(base_config: dict) -> dict:
-        """
-        Agent 설정에 환경변수 타임아웃 추가
-
-        AGENT_TIMEOUT_SECONDS 환경변수를 로드하여
-        Agent 설정에 timeout_seconds를 추가합니다.
-
-        Args:
-            base_config: 기본 설정 딕셔너리
-
-        Returns:
-            타임아웃이 추가된 설정 딕셔너리
-        """
-        timeout_seconds = get_env_int(
-            "AGENT_TIMEOUT_SECONDS",
-            default=300,  # 5분
-            min_value=10,  # 최소 10초
-            max_value=3600,  # 최대 1시간
-        )
-
-        # Agent 설정 복사 및 타임아웃 추가
-        agent_config = dict(base_config)
-        if "agent" not in agent_config:
-            agent_config["agent"] = {}
-        agent_config["agent"]["timeout_seconds"] = timeout_seconds
-
-        logger.info(
-            "Agent 타임아웃 설정 완료",
-            extra={"timeout_seconds": timeout_seconds}
-        )
-        return agent_config
 
     # AgentFactory를 통한 에이전트 생성
     # MCP 서버와 LLM Factory에 의존
@@ -1998,36 +1840,6 @@ class AppContainer(containers.DeclarativeContainer):
 
     # Query Expansion (optional) - 새 아키텍처 from_config() 사용
     # enabled 설정에 따라 쿼리 확장을 켜고 끌 수 있음
-    def create_query_expansion(
-        config: dict,
-        llm_factory: LLMClientFactory | None,
-        cb_factory: CircuitBreakerFactory,
-    ) -> GPT5QueryExpansionEngine | None:
-        """
-        쿼리 확장 엔진 생성 (설정 기반 활성화/비활성화)
-
-        query_expansion.enabled 설정이 False이면 None을 반환하여
-        쿼리 확장 기능을 비활성화합니다.
-
-        Args:
-            config: 설정 딕셔너리
-            llm_factory: LLM Factory 인스턴스
-            cb_factory: CircuitBreaker 팩토리
-
-        Returns:
-            GPT5QueryExpansionEngine 인스턴스 또는 None (비활성화 시)
-        """
-        query_expansion_config = config.get("query_expansion", {})
-        enabled = query_expansion_config.get("enabled", True)
-
-        if not enabled:
-            logger.info(
-                "Query Expansion 비활성화",
-                extra={"config_key": "query_expansion.enabled", "value": False}
-            )
-            return None
-
-        return GPT5QueryExpansionEngine.from_config(config, llm_factory, cb_factory)
 
     query_expansion = providers.Singleton(
         create_query_expansion,
@@ -2170,286 +1982,198 @@ class AppContainer(containers.DeclarativeContainer):
 # ========================================
 
 
-async def initialize_async_resources(container: AppContainer) -> None:
+async def _await_if_needed(value: Any) -> Any:
+    """async Singleton provider 가 돌려주는 코루틴/Future 를 실제 인스턴스로 풀어준다."""
+    if asyncio.iscoroutine(value) or isinstance(value, asyncio.Future):
+        return await value
+    return value
+
+
+class _StartupSignals:
+    """같은 우선순위 그룹 안에서의 의존 순서를 보장하는 이벤트 묶음.
+
+    GracefulInitializer 는 우선순위 그룹 단위로 asyncio.gather 로 동시에 초기화하므로
+    ModuleConfig.dependencies 는 순서 정렬에만 쓰이고 실제 대기는 하지 않는다. 검색
+    오케스트레이터는 Weaviate Retriever 초기화가 끝난 뒤에 붙어야 하므로 이벤트로 기다린다.
     """
-    AsyncIO 리소스 초기화 (main.py의 Phase 3 병렬 초기화 재현)
 
-    Args:
-        container: AppContainer 인스턴스
-    """
+    def __init__(self) -> None:
+        self.weaviate_retriever_done = asyncio.Event()
 
-    logger.info("Async 리소스 초기화 시작")
-    retrieval_required = is_retrieval_required()
 
-    # Phase 3 병렬 초기화 태스크
-    init_tasks = {
-        # "IP Geolocation": container.ip_geolocation().initialize(),  # 비활성화: 타임아웃 원인
-        "Session": container.session().initialize(),
-        "Generation": container.generation().initialize(),
-        "Evaluation": container.evaluation().initialize(),
-        "Tool Executor": container.tool_executor().initialize(),
-        "Prompt Repository": container.prompt_repository().initialize(),  # Hybrid Mode: PostgreSQL PromptRepository
-        "Database Manager": container.database_manager().initialize(),  # SQL Search용 PostgreSQL 연결
-    }
-
-    task_names = list(init_tasks.keys())
-    results = await asyncio.gather(*init_tasks.values(), return_exceptions=True)
-
-    # 결과 검증
-    failed_modules = []
-    for module_name, result in zip(task_names, results, strict=False):
-        if isinstance(result, Exception):
-            logger.error(
-                "모듈 초기화 실패",
-                extra={"module": module_name, "error": str(result)},
-                exc_info=True
-            )
-            failed_modules.append((module_name, result))
-        else:
-            logger.info("모듈 초기화 성공", extra={"module": module_name})
-
-    if failed_modules:
-        error_summary = "\n".join([f"  • {name}: {str(err)}" for name, err in failed_modules])
-        logger.error(
-            "모듈 초기화 실패 (Graceful Degradation)",
-            extra={
-                "failed_count": len(failed_modules),
-                "error_summary": error_summary
-            }
-        )
-
-        # Phase 1 MVP: Generation, Evaluation, DB 관련 모듈은 선택사항 (API 키/DB 없이도 실행 가능)
-        # Quickstart 환경에서는 PostgreSQL 없이도 동작해야 함
-        optional_modules = {"Generation", "Evaluation", "Prompt Repository", "Database Manager"}
-        critical_failures = [name for name, _ in failed_modules if name not in optional_modules]
-
-        if critical_failures:
-            # 선택사항이 아닌 모듈이 실패한 경우에만 RuntimeError 발생
-            raise RuntimeError(f"Critical module initialization failed: {critical_failures}")
-        else:
-            logger.info(
-                "선택적 모듈 실패 (Graceful Degradation 적용)",
-                extra={"failed_modules": [name for name, _ in failed_modules]}
-            )
-
-    # Phase 5 순차 초기화 (의존성 있는 모듈들)
-    logger.info("의존 모듈 초기화 시작")
-
-    # Weaviate Retriever (프로덕션 기본값) - Phase 1 MVP에서 선택사항
+async def _init_weaviate_retriever(
+    container: AppContainer, signals: _StartupSignals | None = None
+) -> None:
+    """Weaviate Retriever 를 해결하고 initialize() 가 있으면 호출한다."""
     try:
-        weaviate_retriever_instance = container.weaviate_retriever()
-        if asyncio.iscoroutine(weaviate_retriever_instance) or isinstance(
-            weaviate_retriever_instance, asyncio.Future
-        ):
-            weaviate_retriever_instance = await weaviate_retriever_instance
-        if hasattr(weaviate_retriever_instance, "initialize"):
-            await weaviate_retriever_instance.initialize()
-        logger.info("Weaviate Retriever 초기화 성공")
-    except Exception as e:
-        logger.warning(
-            "Weaviate Retriever 초기화 실패 (Graceful Degradation)",
-            extra={"error": str(e)},
-            exc_info=True
-        )
-        if retrieval_required:
-            raise RuntimeError(
-                "Retrieval provider initialization failed and RETRIEVAL_STARTUP_POLICY=required"
-            ) from e
-        # Phase 1 MVP: Weaviate를 사용할 수 없으면 제한 모드로 계속 실행
+        instance = await _await_if_needed(container.weaviate_retriever())
+        if hasattr(instance, "initialize"):
+            await instance.initialize()
+    finally:
+        # 실패/타임아웃이어도 신호는 보낸다. 오케스트레이터가 영원히 기다리지 않도록.
+        if signals is not None:
+            signals.weaviate_retriever_done.set()
 
-    # Reranker와 Cache를 먼저 await (async factory이므로)
-    reranker = container.reranker()
-    if asyncio.iscoroutine(reranker) or isinstance(reranker, asyncio.Future):
-        reranker = await reranker  # type: ignore[assignment]
-    logger.info("Reranker 해결 완료")
 
-    cache = container.cache()
-    if asyncio.iscoroutine(cache) or isinstance(cache, asyncio.Future):
-        cache = await cache  # type: ignore[assignment]
-    logger.info("Cache 해결 완료")
+async def _init_retrieval_orchestrator(
+    container: AppContainer, signals: _StartupSignals | None = None
+) -> None:
+    """Weaviate Retriever 완료를 기다리고 Reranker/Cache(async 팩토리)를 해결한 뒤
+    Retrieval Orchestrator 를 초기화한다."""
+    if signals is not None:
+        await signals.weaviate_retriever_done.wait()
+    await _await_if_needed(container.reranker())
+    await _await_if_needed(container.cache())
+    orchestrator = await _await_if_needed(container.retrieval_orchestrator())
+    await orchestrator.initialize()
 
-    # Retrieval Orchestrator (의존성들이 모두 resolved됨)
-    orchestrator = container.retrieval_orchestrator()
-    if asyncio.iscoroutine(orchestrator) or isinstance(orchestrator, asyncio.Future):
-        orchestrator = await orchestrator
-    try:
-        await orchestrator.initialize()
-        logger.info("Retrieval Orchestrator 초기화 성공")
-    except Exception as e:
-        if retrieval_required:
-            raise
-        logger.warning(
-            "Retrieval Orchestrator 초기화 실패 (Degraded Startup)",
-            extra={"error": str(e)},
-            exc_info=True,
-        )
 
-    # Self-RAG (retrieval과 generation에 의존, 초기화 후 override 필요)
-    self_rag = container.self_rag()
-    if asyncio.iscoroutine(self_rag) or isinstance(self_rag, asyncio.Future):
-        self_rag = await self_rag
-    logger.info("Self-RAG 모듈 해결 완료")
-
-    # Singleton 패턴: 초기화된 인스턴스를 재사용하도록 override
+async def _init_self_rag(container: AppContainer) -> None:
+    """Self-RAG(async Singleton)를 해결하고 같은 인스턴스를 재사용하도록 override 한다."""
+    self_rag = await _await_if_needed(container.self_rag())
     container.self_rag.override(self_rag)
 
-    logger.info("Async 리소스 초기화 완료")
+
+async def _no_op_init() -> None:
+    """Singleton 이거나 from_config() 로 이미 초기화된 모듈용 더미 초기화 함수."""
+    return None
 
 
-async def initialize_async_resources_graceful(container: AppContainer) -> None:
+def _build_startup_modules(
+    container: AppContainer,
+    *,
+    retrieval_required: bool,
+    graceful: bool,
+    signals: _StartupSignals | None = None,
+) -> list[Any]:
+    """두 기동 모드가 공유하는 모듈 그래프를 만든다.
+
+    graceful=True 는 healthcheck 안에 끝나도록 짧은 타임아웃/재시도를 쓰고,
+    graceful=False(표준)는 넉넉한 타임아웃으로 한 번만 시도한다. 모듈 목록과 의존성,
+    우선순위는 두 모드가 같다. (예전에는 두 함수가 서로 다른 모듈 집합을 따로 들고 있어
+    한쪽만 고쳐지는 일이 반복됐다.)
     """
-    Graceful Degradation을 지원하는 AsyncIO 리소스 초기화
+    from app.core.graceful_initializer import ModuleConfig, ModulePriority
 
-    기존 initialize_async_resources()의 Graceful Degradation 버전입니다.
-    Feature flag로 활성화/비활성화할 수 있습니다.
+    signals = signals or _StartupSignals()
 
-    주요 개선 사항:
-    1. 우선순위 기반 초기화 (CRITICAL → IMPORTANT → OPTIONAL)
-    2. 모듈별 재시도 및 타임아웃 지원
-    3. IMPORTANT/OPTIONAL 실패 시 Graceful Degradation (시스템 계속 동작)
-    4. 모듈 상태 추적 및 모니터링
+    def timing(graceful_timeout: float, graceful_retry: int) -> dict[str, Any]:
+        if graceful:
+            return {"timeout": graceful_timeout, "retry_count": graceful_retry}
+        # 표준 모드는 예전처럼 느긋하게 기다린다(예전 경로에는 타임아웃이 없었다).
+        return {"timeout": 120.0, "retry_count": 1}
 
-    Args:
-        container: AppContainer 인스턴스
-
-    Raises:
-        RuntimeError: CRITICAL 모듈 초기화 실패 시
-    """
-    from app.core.graceful_initializer import (
-        GracefulInitializer,
-        ModuleConfig,
-        ModulePriority,
+    orchestrator_priority = (
+        ModulePriority.CRITICAL if retrieval_required else ModulePriority.IMPORTANT
     )
-
-    logger.info("Graceful 모듈 초기화 시작 (Graceful Degradation)")
-    retrieval_required = is_retrieval_required()
-
-    initializer = GracefulInitializer()
-
-    # 헬퍼 함수: 이미 초기화된 Singleton 모듈용 더미 async 함수
-    async def _no_op_init():
-        """Singleton이나 이미 초기화된 모듈용 더미 함수"""
-        return None
-
-    # ========================================
-    # 모듈 우선순위 분류 및 등록
-    # ========================================
-
-    # CRITICAL 모듈: 시스템 동작에 필수 (실패 시 전체 중단)
-    critical_modules = [
+    return [
         ModuleConfig(
             name="Session",
             priority=ModulePriority.CRITICAL,
             initializer=container.session().initialize,
-            timeout=10.0,  # 15초 → 10초 (healthcheck 여유 확보)
-            retry_count=2,  # 3회 → 2회 (재시도 시간 단축)
+            **timing(10.0, 2),
         ),
         ModuleConfig(
             name="Generation",
-            priority=ModulePriority.CRITICAL,
+            # Quickstart 는 LLM 키 없이도 떠야 하므로 CRITICAL 이 아니다.
+            priority=ModulePriority.IMPORTANT,
             initializer=container.generation().initialize,
-            timeout=12.0,  # 20초 → 12초 (API 응답 시간 최소화)
-            retry_count=2,  # 3회 → 2회
+            **timing(12.0, 2),
         ),
         ModuleConfig(
             name="DatabaseManager",
-            priority=ModulePriority.CRITICAL,
+            priority=ModulePriority.IMPORTANT,
             initializer=container.database_manager().initialize,
-            timeout=10.0,  # SQL Search용 PostgreSQL 연결
-            retry_count=2,
+            **timing(10.0, 2),
+        ),
+        ModuleConfig(
+            name="PromptRepository",
+            priority=ModulePriority.OPTIONAL,
+            initializer=container.prompt_repository().initialize,
+            **timing(8.0, 1),
         ),
         ModuleConfig(
             name="DocumentProcessor",
             priority=ModulePriority.CRITICAL,
-            initializer=_no_op_init,  # Singleton, 초기화 불필요
+            initializer=_no_op_init,
             timeout=5.0,
         ),
-    ]
-
-    retrieval_orchestrator_module = ModuleConfig(
-        name="RetrievalOrchestrator",
-        priority=ModulePriority.CRITICAL if retrieval_required else ModulePriority.IMPORTANT,
-        initializer=container.retrieval_orchestrator().initialize,
-        dependencies=["WeaviateRetriever"],
-        timeout=15.0,  # 30초 → 15초 (healthcheck 여유 5초 남김)
-        retry_count=1,  # 3회 → 1회 (타임아웃 내 빠른 실패)
-    )
-    if retrieval_required:
-        critical_modules.append(retrieval_orchestrator_module)
-
-    # IMPORTANT 모듈: 핵심 기능이지만 제한 모드로 동작 가능
-    important_modules = [
-        # ModuleConfig(  # 비활성화: 세션 생성 타임아웃 원인 (9-14초 지연)
-        #     name="IPGeolocation",
-        #     priority=ModulePriority.IMPORTANT,
-        #     initializer=container.ip_geolocation().initialize,
-        #     timeout=5.0,  # 10초 → 5초 (네트워크 기반 모듈 빠른 타임아웃)
-        #     retry_count=1,  # 2회 → 1회
-        # ),
         ModuleConfig(
             name="Evaluation",
             priority=ModulePriority.IMPORTANT,
             initializer=container.evaluation().initialize,
-            timeout=8.0,  # 10초 → 8초
-            retry_count=1,  # 2회 → 1회
+            **timing(8.0, 1),
         ),
         ModuleConfig(
             name="ToolExecutor",
-            priority=ModulePriority.IMPORTANT,
+            priority=ModulePriority.CRITICAL,
             initializer=container.tool_executor().initialize,
-            timeout=10.0,  # 15초 → 10초
-            retry_count=1,  # 2회 → 1회
+            **timing(10.0, 1),
         ),
         ModuleConfig(
             name="WeaviateRetriever",
-            priority=ModulePriority.IMPORTANT,
-            initializer=container.weaviate_retriever().initialize,
+            priority=ModulePriority.CRITICAL if retrieval_required else ModulePriority.IMPORTANT,
+            initializer=lambda: _init_weaviate_retriever(container, signals),
             dependencies=["DocumentProcessor"],
-            timeout=8.0,  # 20초 → 8초 (Weaviate 연결 지연 시 빠르게 실패 & graceful degradation)
-            retry_count=1,  # 2회 → 1회 (1회 실패 후 즉시 Optional로 전환)
+            **timing(8.0, 1),
         ),
-    ]
-    if not retrieval_required:
-        important_modules.append(retrieval_orchestrator_module)
-
-    # OPTIONAL 모듈: 선택적 기능 (실패 시 무시 가능)
-    optional_modules = [
         ModuleConfig(
-            name="QueryExpansion",
-            priority=ModulePriority.OPTIONAL,
-            initializer=_no_op_init,  # from_config()로 이미 초기화됨
-            timeout=5.0,
+            name="RetrievalOrchestrator",
+            priority=orchestrator_priority,
+            initializer=lambda: _init_retrieval_orchestrator(container, signals),
+            dependencies=["WeaviateRetriever"],
+            **timing(15.0, 1),
         ),
         ModuleConfig(
             name="SelfRAG",
             priority=ModulePriority.OPTIONAL,
-            initializer=_no_op_init,  # Singleton, 초기화 불필요
+            initializer=lambda: _init_self_rag(container),
+            dependencies=["RetrievalOrchestrator"],
+            timeout=10.0,
+        ),
+        ModuleConfig(
+            name="QueryExpansion",
+            priority=ModulePriority.OPTIONAL,
+            initializer=_no_op_init,
             timeout=5.0,
         ),
     ]
 
-    # 모듈 등록
-    for module in critical_modules + important_modules + optional_modules:
+
+async def _run_startup(container: AppContainer, *, graceful: bool) -> None:
+    """공통 기동 루틴: 모듈 그래프 등록 → 우선순위 순 초기화 → 요약 로그."""
+    from app.core.graceful_initializer import GracefulInitializer
+
+    retrieval_required = is_retrieval_required()
+    mode = "graceful" if graceful else "standard"
+    logger.info(
+        "Async 리소스 초기화 시작",
+        extra={"mode": mode, "retrieval_required": retrieval_required},
+    )
+    initializer = GracefulInitializer()
+    for module in _build_startup_modules(
+        container, retrieval_required=retrieval_required, graceful=graceful
+    ):
         initializer.register_module(module)
-
-    # ========================================
-    # 초기화 실행
-    # ========================================
     try:
+        # IMPORTANT/OPTIONAL 실패는 두 모드 모두 degraded 로 계속 뜬다(퀵스타트: DB/LLM 키 없이 기동).
+        # CRITICAL 실패(Session/ToolExecutor/필수 검색)는 RuntimeError 로 기동을 중단한다.
         await initializer.initialize_all(enable_graceful_degradation=True)
-
-        # 결과 요약
-        initializer.log_summary()
-
-        logger.info("Graceful 초기화 완료")
-
     except RuntimeError as e:
-        logger.error(
-            "Critical 모듈 초기화 실패",
-            extra={"error": str(e)},
-            exc_info=True
-        )
+        logger.error("Critical 모듈 초기화 실패", extra={"mode": mode, "error": str(e)}, exc_info=True)
         raise
+    initializer.log_summary()
+    logger.info("Async 리소스 초기화 완료", extra={"mode": mode})
+
+
+async def initialize_async_resources(container: AppContainer) -> None:
+    """표준 기동 모드(넉넉한 타임아웃, 재시도 1회). 모듈 그래프는 graceful 모드와 같다."""
+    await _run_startup(container, graceful=False)
+
+
+async def initialize_async_resources_graceful(container: AppContainer) -> None:
+    """Graceful 기동 모드(healthcheck 안에 끝나도록 짧은 타임아웃/재시도)."""
+    await _run_startup(container, graceful=True)
 
 
 async def cleanup_resources(container: AppContainer) -> None:
@@ -2508,7 +2232,9 @@ async def cleanup_resources(container: AppContainer) -> None:
         graph_store = container.graph_store()
         if graph_store and hasattr(graph_store, "close"):
             logger.info("Graph Store 종료 중")
-            await graph_store.close()
+            close_result = graph_store.close()
+            if inspect.isawaitable(close_result):
+                await close_result
             logger.info("Graph Store 종료 완료")
     except Exception as e:
         cleanup_errors.append(f"Graph Store: {e}")

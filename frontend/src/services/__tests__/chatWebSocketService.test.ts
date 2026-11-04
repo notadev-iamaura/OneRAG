@@ -64,7 +64,7 @@ class MockWebSocket {
   }
 
   // 테스트 헬퍼: 연결 종료 시뮬레이션
-  simulateClose(code: number, reason?: string) {
+  simulateClose(code: number, reason: string = '') {
     this.readyState = MockWebSocket.CLOSED;
     this.onclose?.(new CloseEvent('close', { code, reason }));
   }
@@ -247,7 +247,7 @@ describe('ChatWebSocketService', () => {
       expect(ws?.send).toHaveBeenCalledTimes(1);
 
       // 전송된 메시지 검증
-      const sentData = JSON.parse(ws?.send.mock.calls[0][0]);
+      const sentData = JSON.parse(ws?.send.mock.calls[0]?.[0]);
       expect(sentData.type).toBe('message');
       expect(sentData.content).toBe('안녕하세요');
       expect(sentData.session_id).toBe('test-session');

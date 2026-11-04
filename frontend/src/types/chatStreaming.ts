@@ -180,8 +180,8 @@ export type RagProgressPhase =
 export interface RagProgressState {
   phase: RagProgressPhase;
   label?: string;
-  searchResults?: number;
-  rerankingApplied?: boolean;
+  searchResults?: number | undefined;
+  rerankingApplied?: boolean | undefined;
   updatedAt?: string;
 }
 

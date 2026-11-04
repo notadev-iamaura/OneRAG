@@ -50,4 +50,7 @@ def test_main_rate_limit_middleware_exempts_readiness() -> None:
     ]
 
     assert rate_limit_middlewares
-    assert "/ready" in rate_limit_middlewares[0].options["excluded_paths"]
+    middleware = rate_limit_middlewares[0]
+    # Starlette 0.3x까지는 .options, 1.x부터는 .kwargs에 미들웨어 인자가 담긴다.
+    options = getattr(middleware, "kwargs", None) or getattr(middleware, "options", {})
+    assert "/ready" in options["excluded_paths"]

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 프로젝트 개요
 도메인 범용화된 오픈소스 RAG 시스템. FastAPI 백엔드, React/Vite 프론트엔드, 모듈형 검색/생성/평가 파이프라인을 하나의 코드베이스로 제공합니다.
 
-- **패키지 버전**: `pyproject.toml` 기준 1.0.7
+- **패키지 버전**: `pyproject.toml`이 단일 진실원. `app.__version__`, FastAPI `version`, `/health`가 모두 여기서 읽는다(CHANGELOG 최신 릴리스와 일치시킬 것).
 - **현재 운영 상태**: `docs/STATUS.md`를 기준으로 확인
 - **현재 CI 게이트**: Ruff, Mypy, Import Linter, backend pytest+coverage, Runtime Smoke, frontend build/lint/test
 - **주요 개선**: `/health` liveness와 `/ready` readiness 분리, retrieval startup policy, quickstart 데이터 안전화, runtime smoke CI
@@ -77,7 +77,7 @@ make test-cov           # 테스트 커버리지 리포트
 
 # 코드 품질 관리 (CI/CD 통과 필수)
 make lint               # ruff 린트 검사
-make type-check         # mypy 엄격 모드 타입 체크
+make type-check         # mypy 타입 체크 (핵심 모듈 엄격, api/core/config 등은 완화 — pyproject overrides 참조)
 make lint-imports       # 아키텍처 계층 검증 (Import Linter)
 ```
 
@@ -94,6 +94,9 @@ make lint-imports       # 아키텍처 계층 검증 (Import Linter)
 ### 2. 통합 보안 (Unified Security)
 - **PII Facade**: `PIIProcessor`가 단순 마스킹과 고도화된 AI 리뷰(`PIIReviewProcessor`)를 통합 관리.
 - **Admin Auth**: `/api/admin` 하위의 모든 엔드포인트에 `X-API-Key` 인증 전역 적용.
+- **Fail-closed 인증**: `FASTAPI_AUTH_KEY`가 없으면 관리자/업로드/`/v1`/관리자 WS는 환경과 무관하게 401. 자리표시자·16자 미만 키는 프로덕션 기동 거부. 브라우저 채팅만 무인증 허용.
+- **업로드 토큰 범위**: 세션 발급 토큰은 업로드/조회/자기 작업 취소·재시도만 가능. 삭제 계열은 `require_upload_admin_access`(API 키)로 제한.
+- **신뢰 프록시**: 레이트리밋 IP는 `app/lib/client_ip.py`의 `TRUSTED_PROXY_IPS` 정책으로 해석(기본 private). WebSocket 메시지도 같은 한도.
 
 ### 3. 운영 유연성 (Dynamic Config)
 - **YAML Routing**: `routing_rules_v2.yaml`에서 서비스 핵심 키워드를 관리. 코드 수정 없이 복합 쿼리 판단 로직 변경 가능.

@@ -22,7 +22,7 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
-# 레거시 스키마 (하위 호환성)
+# 패키지 레벨 헬퍼 (app/config/schemas/__init__.py)
 from ..config.schemas import detect_duplicate_keys_in_yaml
 from ..config.schemas import validate_config_dict as validate_config_dict_legacy
 
@@ -155,7 +155,9 @@ class ConfigLoader:
 
                 else:
                     # 레거시 스키마 사용 (기존 동작 유지)
-                    logger.debug("레거시 Pydantic 스키마 사용 (app/config/schemas.py)")
+                    logger.debug(
+                        "RootConfig 기반 validate_config_dict 사용 (app/config/schemas/__init__.py)"
+                    )
                     try:
                         validated_config = validate_config_dict_legacy(base_config)
                         logger.debug("설정 검증 완료")

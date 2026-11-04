@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from app.modules.core.retrieval.interfaces import SearchResult
-from app.modules.core.retrieval.rerankers.factory import RerankerFactory, RerankerFactoryV2
+from app.modules.core.retrieval.rerankers.factory import RerankerFactoryV2
 from app.modules.core.retrieval.rerankers.jev_client import JevAnswer, JevAPIError
 from app.modules.core.retrieval.rerankers.mode import RerankerModeConfigError
 
@@ -127,9 +127,10 @@ def test_migration_error_constructs_neither_side(old_mode):
 
 
 @pytest.mark.asyncio
-async def test_old_api_delegates_before_stale_provider_validation():
+async def test_jev_mode_delegates_before_stale_provider_validation():
+    """jev 모드에서는 stale 레거시 provider 선택을 검증하지 않고 jev 리랭커를 만든다."""
     with patch(PREFIX + "factory.RerankerFactoryV2._create_llm_reranker") as llm:
-        reranker = RerankerFactory.create({"reranking": {"provider": "stale"}},
+        reranker = RerankerFactoryV2.create({"reranking": {"provider": "stale"}},
             env={"RERANK_MODE": "jev", "TYPESAFE_API_KEY": "test-key"})
         try:
             assert reranker.mode == "enforce"

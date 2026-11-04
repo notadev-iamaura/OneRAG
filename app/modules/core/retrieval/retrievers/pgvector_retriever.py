@@ -15,41 +15,21 @@ pgvector Retriever - Dense 벡터 검색
 Note:
     pgvector는 기본적으로 Dense 벡터 검색만 지원합니다.
     하이브리드 검색이 필요한 경우 Weaviate, Pinecone, Qdrant를 사용하세요.
+    공통 검색/문서 관리 흐름은 ``VectorStoreRetrieverBase``에 있습니다.
 """
 
-from typing import Any, Protocol, runtime_checkable
+from typing import ClassVar
 
-from app.lib.logger import get_logger
-from app.modules.core.retrieval.interfaces import SearchResult
+from app.modules.core.retrieval.retrievers._vector_store_retriever_base import (
+    IEmbedder,
+    IVectorStore,
+    VectorStoreRetrieverBase,
+)
 
-logger = get_logger(__name__)
-
-
-@runtime_checkable
-class IEmbedder(Protocol):
-    """임베딩 모델 인터페이스"""
-
-    def embed_query(self, text: str) -> list[float]:
-        """쿼리 텍스트를 벡터로 변환"""
-        ...
+__all__ = ["IEmbedder", "IVectorStore", "PgVectorRetriever"]
 
 
-@runtime_checkable
-class IVectorStore(Protocol):
-    """벡터 스토어 인터페이스 (PgVectorStore용)"""
-
-    async def search(
-        self,
-        collection: str,
-        query_vector: list[float],
-        top_k: int,
-        filters: dict[str, Any] | None = None,
-    ) -> list[dict[str, Any]]:
-        """벡터 유사도 검색"""
-        ...
-
-
-class PgVectorRetriever:
+class PgVectorRetriever(VectorStoreRetrieverBase):
     """
     pgvector를 사용하는 Dense Retriever
 
@@ -60,7 +40,8 @@ class PgVectorRetriever:
     - IRetriever Protocol 구현
 
     Note:
-    - 하이브리드 검색 미지원 (Dense only)
+    - 하이브리드 검색 미지원 (Dense only). ``search(alpha=...)``는
+      IRetriever 계약 호환용(#35)이며 무시된다.
     - 하이브리드 필요 시 Weaviate, Pinecone, Qdrant 사용 권장
 
     사용 예시:
@@ -72,6 +53,11 @@ class PgVectorRetriever:
         )
         results = await retriever.search("검색 쿼리")
     """
+
+    _collection_attr: ClassVar[str] = "table_name"
+    _health_check_dimension: ClassVar[int] = 1024
+
+    table_name: str
 
     def __init__(
         self,
@@ -92,318 +78,5 @@ class PgVectorRetriever:
         Note:
             pgvector는 Dense 검색만 지원합니다.
         """
-        self.embedder = embedder
-        self.store = store
-        self.table_name = table_name
-        self.top_k = top_k
-
-        # 통계
-        self._stats = {
-            "total_searches": 0,
-            "errors": 0,
-        }
-
-        logger.info(
-            f"PgVectorRetriever 초기화: table={table_name}, "
-            f"top_k={top_k}, mode=dense_only"
-        )
-
-    @property
-    def stats(self) -> dict[str, int]:
-        """검색 통계 반환"""
-        return self._stats.copy()
-
-    async def search(
-        self,
-        query: str,
-        top_k: int = 10,
-        filters: dict[str, Any] | None = None,
-        alpha: float | None = None,  # #35: IRetriever 계약 호환용(pgvector는 dense 전용)
-    ) -> list[SearchResult]:
-        """
-        Dense 벡터 검색 수행
-
-        검색 흐름:
-        1. embedder로 쿼리 벡터화
-        2. PgVectorStore에서 검색
-        3. 결과를 SearchResult로 변환
-
-        Args:
-            query: 검색 쿼리 문자열
-            top_k: 반환할 최대 결과 수
-            filters: 메타데이터 필터링 조건 (예: {"file_type": "PDF"})
-            alpha: 하이브리드 가중치(#35). pgvector는 dense 전용이라 무시한다.
-
-        Returns:
-            검색 결과 리스트 (SearchResult)
-                - id: 문서 ID
-                - content: 문서 내용
-                - score: 유사도 점수
-                - metadata: 메타데이터 딕셔너리
-
-        Raises:
-            ValueError: 임베딩 생성 실패 시
-            RuntimeError: 검색 실패 시
-        """
-        try:
-            # 1. Dense 쿼리 벡터화
-            logger.debug(f"쿼리 임베딩 생성 중: '{query[:50]}...'")
-            query_vector = self.embedder.embed_query(query)
-
-            # 2. PgVectorStore에서 검색
-            raw_results = await self.store.search(
-                collection=self.table_name,
-                query_vector=query_vector,
-                top_k=top_k,
-                filters=filters,
-            )
-
-            # 3. SearchResult로 변환
-            results = self._convert_to_search_results(raw_results)
-
-            # 4. 통계 업데이트
-            self._stats["total_searches"] += 1
-
-            logger.info(
-                f"PgVectorRetriever 검색 완료: "
-                f"{len(results)}개 결과 반환 (query='{query[:30]}...')"
-            )
-
-            return results
-
-        except Exception as e:
-            self._stats["errors"] += 1
-            logger.error(
-                f"PgVectorRetriever 검색 실패: {e}",
-                extra={"query": query[:100]},
-                exc_info=True,
-            )
-            raise
-
-    async def health_check(self) -> bool:
-        """
-        pgvector 연결 상태 확인
-
-        간단한 검색을 수행하여 store가 정상 동작하는지 확인합니다.
-
-        Returns:
-            정상 동작 여부 (True/False)
-        """
-        try:
-            # 빈 벡터로 간단한 검색 시도
-            dummy_vector = [0.0] * 1024  # 기본 차원
-
-            await self.store.search(
-                collection=self.table_name,
-                query_vector=dummy_vector,
-                top_k=1,
-            )
-
-            logger.debug("PgVectorRetriever health check 성공")
-            return True
-
-        except Exception as e:
-            logger.warning(f"PgVectorRetriever health check 실패: {e}")
-            return False
-
-    # ============================================================
-    # 문서 관리 메서드 (Store 위임, duck typing)
-    # ============================================================
-
-    async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
-        """document_id로 모든 청크 조회"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(
-            collection=self.table_name,
-            filters={"document_id": document_id},
-        )
-        return [
-            {
-                "id": str(r.get("_id", "")),
-                "content": r.get("content", ""),
-                "metadata": {k: v for k, v in r.items() if k not in ("_id", "content")},
-            }
-            for r in raw_results
-        ]
-
-    async def delete_document(self, document_id: str) -> bool:
-        """document_id의 모든 청크 삭제"""
-        chunks = await self.get_document_chunks(document_id)
-        if not chunks:
-            return False
-        object_ids = [c["id"] for c in chunks]
-        if not hasattr(self.store, "delete_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 delete_objects를 지원하지 않습니다."
-            )
-        await self.store.delete_objects(
-            collection=self.table_name, object_ids=object_ids,
-        )
-        logger.info(f"문서 삭제 완료: document_id={document_id}, 청크 {len(object_ids)}개")
-        return True
-
-    async def list_documents(self, page: int = 1, page_size: int = 20) -> dict[str, Any]:
-        """고유 문서 목록 페이지네이션 조회"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.table_name)
-        doc_map: dict[str, dict[str, Any]] = {}
-        for r in raw_results:
-            doc_id = r.get("document_id", r.get("_id", ""))
-            if doc_id not in doc_map:
-                doc_map[doc_id] = {
-                    "id": doc_id,
-                    "filename": r.get("source_file", ""),
-                    "file_type": r.get("file_type", ""),
-                    "created_at": r.get("created_at", ""),
-                    "chunk_count": 0,
-                }
-            doc_map[doc_id]["chunk_count"] += 1
-        all_docs = list(doc_map.values())
-        total = len(all_docs)
-        start = (page - 1) * page_size
-        end = start + page_size
-        return {"documents": all_docs[start:end], "total_count": total}
-
-    async def get_document_details(self, document_id: str) -> dict[str, Any] | None:
-        """문서 상세 정보 조회"""
-        chunks = await self.get_document_chunks(document_id)
-        if not chunks:
-            return None
-        first = chunks[0]["metadata"]
-        total_size = sum(len(c.get("content", "").encode("utf-8")) for c in chunks)
-        return {
-            "id": document_id,
-            "filename": first.get("source_file", ""),
-            "file_type": first.get("file_type", ""),
-            "file_size": total_size,
-            "created_at": first.get("created_at", ""),
-            "actual_chunk_count": len(chunks),
-            "chunk_previews": [c["content"][:200] for c in chunks],
-            "metadata": first,
-        }
-
-    async def get_document_stats(self) -> dict[str, Any]:
-        """문서/벡터 수량 통계"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.table_name)
-        doc_ids = {r.get("document_id", r.get("_id", "")) for r in raw_results}
-        return {"total_documents": len(doc_ids), "vector_count": len(raw_results)}
-
-    async def get_collection_info(self) -> dict[str, Any]:
-        """컬렉션 메타정보 반환"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.table_name)
-        dates = [r.get("created_at", "") for r in raw_results if r.get("created_at")]
-        return {
-            "collection_name": self.table_name,
-            "total_objects": len(raw_results),
-            "oldest_document": min(dates) if dates else None,
-            "newest_document": max(dates) if dates else None,
-        }
-
-    async def delete_all_documents(self) -> bool:
-        """전체 문서 삭제"""
-        if not hasattr(self.store, "fetch_objects") or not hasattr(self.store, "delete_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 전체 삭제를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.table_name)
-        if not raw_results:
-            return True
-        object_ids = [str(r.get("_id", "")) for r in raw_results]
-        await self.store.delete_objects(collection=self.table_name, object_ids=object_ids)
-        logger.warning(f"전체 문서 삭제 완료: {len(object_ids)}개 객체")
-        return True
-
-    async def recreate_collection(self) -> bool:
-        """컬렉션 재생성"""
-        await self.delete_all_documents()
-        return True
-
-    async def backup_metadata(self) -> list[dict[str, Any]]:
-        """모든 문서의 메타데이터를 백업"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.table_name)
-        doc_map: dict[str, dict[str, Any]] = {}
-        for r in raw_results:
-            doc_id = r.get("document_id", r.get("_id", ""))
-            if doc_id not in doc_map:
-                doc_map[doc_id] = {
-                    "id": doc_id,
-                    "filename": r.get("source_file", ""),
-                    "file_type": r.get("file_type", ""),
-                    "created_at": r.get("created_at", ""),
-                    "chunk_count": 0,
-                }
-            doc_map[doc_id]["chunk_count"] += 1
-        return list(doc_map.values())
-
-    def _convert_to_search_results(
-        self, raw_results: list[dict[str, Any]]
-    ) -> list[SearchResult]:
-        """
-        pgvector 결과를 SearchResult로 변환
-
-        pgvector 결과 형식:
-            {
-                "_id": str,           # 벡터 ID
-                "_score": float,      # 유사도 점수
-                "content": str,       # 문서 내용
-                ...metadata...        # 기타 메타데이터
-            }
-
-        SearchResult 형식:
-            - id: str              # 문서 ID
-            - content: str         # 문서 내용
-            - score: float         # 유사도 점수
-            - metadata: dict       # 메타데이터
-
-        Args:
-            raw_results: PgVectorStore 검색 결과
-
-        Returns:
-            SearchResult 리스트
-        """
-        results: list[SearchResult] = []
-
-        for item in raw_results:
-            # ID 추출
-            doc_id = str(item.get("_id", ""))
-
-            # 콘텐츠 추출
-            content = str(item.get("content", ""))
-
-            # 점수 추출
-            score = float(item.get("_score", 0.0))
-
-            # 메타데이터 추출 (_id, _score, content 제외)
-            metadata: dict[str, Any] = {}
-            for key, value in item.items():
-                if key not in ("_id", "_score", "content"):
-                    metadata[key] = value
-
-            results.append(
-                SearchResult(
-                    id=doc_id,
-                    content=content,
-                    score=score,
-                    metadata=metadata,
-                )
-            )
-
-        return results
+        super().__init__(embedder=embedder, store=store, collection=table_name, top_k=top_k)
+        self._log_init("dense_only")

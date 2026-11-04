@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { ChatDevTools } from '../ChatDevTools';
-import { SessionInfo, ApiLog } from '../../types';
+import { SessionInfo, ApiLog } from '../../../types';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 describe('ChatDevTools', () => {
@@ -96,6 +96,7 @@ describe('ChatDevTools', () => {
     it('should copy log on click', () => {
         renderWithContext(<ChatDevTools {...defaultProps} leftPanelTab={1} />);
         const copyButton = screen.getAllByLabelText('로그 복사')[0];
+        if (!copyButton) throw new Error('로그 복사 버튼을 찾을 수 없습니다');
         fireEvent.click(copyButton);
         expect(mockCopyToClipboard).toHaveBeenCalled();
     });

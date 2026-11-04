@@ -82,6 +82,34 @@ class QueryExecutor:
 
         logger.info(f"QueryExecutor 초기화: timeout={self.timeout}s, max_rows={self.max_rows}")
 
+    async def _apply_read_only_guards(self, session: Any) -> None:
+        """현재 트랜잭션을 읽기 전용으로 고정하고 statement_timeout을 건다.
+
+        PostgreSQL 전용 구문이다. 가드를 걸지 못하면 쿼리를 실행하지 않는다(fail-closed).
+        PostgreSQL 에서는 실패한 SET 이 트랜잭션을 abort 상태로 만들어 이어지는 쿼리가
+        엉뚱한 'current transaction is aborted' 오류를 내므로, 여기서 롤백하고 명확한
+        오류로 끝낸다.
+
+        Raises:
+            RuntimeError: 가드 적용 실패
+        """
+        timeout_ms = max(int(self.timeout * 1000), 1)
+        try:
+            await session.execute(text("SET TRANSACTION READ ONLY"))
+            await session.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
+        except Exception as guard_error:
+            logger.error(
+                "SQL 읽기 전용 가드 적용 실패 — 쿼리를 실행하지 않습니다",
+                extra={"error": str(guard_error)},
+            )
+            rollback = getattr(session, "rollback", None)
+            if callable(rollback):
+                try:
+                    await rollback()
+                except Exception as rollback_error:  # noqa: BLE001 - 정리 단계
+                    logger.debug("가드 실패 후 롤백 실패(무시)", extra={"error": str(rollback_error)})
+            raise RuntimeError(f"read-only guard failed: {guard_error}") from guard_error
+
     async def execute(self, sql_query: str) -> QueryResult:
         """
         SQL 쿼리를 실행하고 결과를 반환합니다.
@@ -109,6 +137,10 @@ class QueryExecutor:
             logger.info(f"SQL 실행: {sql_query[:100]}...")
 
             async with self.db_manager.get_session() as session:
+                # 심층 방어: 키워드 블랙리스트를 통과한 SQL이라도 DB 레벨에서 쓰기를 막고
+                # 실행 시간을 제한한다. READ ONLY 트랜잭션에서는 INSERT/UPDATE/DDL이 거부되고,
+                # statement_timeout은 pg_sleep 같은 지연 공격을 끊는다(SET LOCAL은 트랜잭션 범위).
+                await self._apply_read_only_guards(session)
                 # text()로 감싸서 raw SQL 실행
                 result = await session.execute(text(sql_query))
 

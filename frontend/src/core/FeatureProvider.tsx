@@ -57,8 +57,8 @@ export function FeatureProvider({ children, overrideConfig }: FeatureProviderPro
         return features[module].enabled;
       },
       isFeatureEnabled: (module: keyof FeatureConfig, feature: string) => {
-        const moduleConfig = features[module] as Record<string, boolean>;
-        return moduleConfig.enabled && moduleConfig[feature];
+        const moduleConfig: Record<string, boolean | undefined> = { ...features[module] };
+        return moduleConfig.enabled === true && moduleConfig[feature] === true;
       },
     }),
     [features]
@@ -83,7 +83,7 @@ export function FeatureProvider({ children, overrideConfig }: FeatureProviderPro
  */
 interface FeatureGuardProps {
   module: keyof FeatureConfig;
-  feature?: string;
+  feature?: string | undefined;
   children: React.ReactNode;
   fallback?: React.ReactNode;
 }

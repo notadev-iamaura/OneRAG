@@ -7,16 +7,19 @@ NetworkX 기반 인메모리 그래프 저장소
 - 단일 인스턴스 환경에 적합
 - 빠른 그래프 연산 (NetworkX 최적화)
 """
-import logging
+import asyncio
+import inspect
 from collections import deque
 from collections.abc import Iterator
 from typing import Any, Literal, overload
+
+from app.lib.logger import get_logger
 
 from ...embedding.vector_ops import l2_norm
 from ..interfaces import IGraphStore
 from ..models import Entity, GraphSearchResult, Relation
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class _EdgeView:
@@ -113,12 +116,40 @@ class NetworkXGraphStore(IGraphStore):
         self._entities: dict[str, Entity] = {}
         self._embedder: Any = None  # 임베딩 모델 (선택적)
 
+    async def _embed_text(self, text: str) -> list[float]:
+        """주입된 임베더 종류에 상관없이 텍스트 임베딩을 돌려준다.
+
+        운영에서는 DI 컨테이너가 IEmbedder 구현체(동기 embed_query + 비동기 aembed_query)를
+        주입하고, 일부 테스트는 async embed_query만 가진 가짜 객체를 주입한다. 예전 코드는
+        동기 embed_query를 그대로 await 해서 매번 TypeError가 났고, 그 예외를 광범위한
+        except가 삼켜 GraphRAG 엔티티 임베딩이 운영에서 한 번도 생성되지 않았다.
+
+        우선순위:
+        1. aembed_query 코루틴 함수가 있으면 그대로 await
+        2. embed_query가 코루틴 함수면 await
+        3. 동기 embed_query는 asyncio.to_thread로 이벤트 루프 밖에서 실행
+        """
+        embedder = self._embedder
+        aembed = getattr(embedder, "aembed_query", None)
+        if callable(aembed) and inspect.iscoroutinefunction(aembed):
+            return list(await aembed(text))
+
+        embed = embedder.embed_query
+        if inspect.iscoroutinefunction(embed):
+            return list(await embed(text))
+
+        result = await asyncio.to_thread(embed, text)
+        if inspect.isawaitable(result):
+            # 동기 함수가 코루틴을 돌려주는 드문 경우(예: 일부 mock)도 안전하게 처리
+            result = await result
+        return list(result)
+
     def set_embedder(self, embedder: Any) -> None:
         """
         임베딩 모델 설정
 
         Args:
-            embedder: 임베딩 기능을 가진 객체 (async embed_query, embed_documents 지원)
+            embedder: 임베딩 기능을 가진 객체 (IEmbedder 또는 async embed_query를 가진 객체)
         """
         self._embedder = embedder
 
@@ -137,7 +168,7 @@ class NetworkXGraphStore(IGraphStore):
         embedding = None
         if self._embedder and text_to_embed:
             try:
-                embedding = await self._embedder.embed_query(text_to_embed)
+                embedding = await self._embed_text(text_to_embed)
             except Exception as e:
                 logger.warning(f"Failed to create embedding for entity {entity.id}: {e}")
 
@@ -283,7 +314,7 @@ class NetworkXGraphStore(IGraphStore):
         # 1. 벡터 검색 시도 (임베더가 설정된 경우)
         if self._embedder:
             try:
-                query_vec = await self._embedder.embed_query(query)
+                query_vec = await self._embed_text(query)
 
                 scored_entities: list[tuple[Entity, float]] = []
                 for node_id, node_data in self._graph.nodes(data=True):

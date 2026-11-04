@@ -20,14 +20,12 @@ interface RequestRecord {
  */
 export class RateLimiter {
   private config: RateLimiterConfig;
-  private storageKey: string;
 
   constructor(config: RateLimiterConfig) {
     this.config = {
       keyPrefix: 'rate_limit',
       ...config,
     };
-    this.storageKey = `${this.config.keyPrefix}_${Date.now()}`;
   }
 
   /**

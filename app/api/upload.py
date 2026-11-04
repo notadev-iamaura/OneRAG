@@ -24,7 +24,12 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from ..lib.auth import get_api_key, get_api_key_auth, verify_upload_access_token
+from ..lib.auth import (
+    AUTH_NOT_CONFIGURED_DETAIL,
+    get_api_key,
+    get_api_key_auth,
+    verify_upload_access_token,
+)
 from ..lib.logger import get_logger
 from ..modules.core.privacy.masker import DEFAULT_WHITELIST, PrivacyMasker
 from .audit_event_store import AuditEventStore, SQLiteAuditEventStore
@@ -54,6 +59,15 @@ logger = get_logger(__name__)
 _privacy_masker: PrivacyMasker | None = PrivacyMasker(whitelist=list(DEFAULT_WHITELIST))
 
 
+# 자격(principal) 식별 문자열 규약
+# - API_KEY_PRINCIPAL: 서버 API 키(X-API-Key)로 인증된 운영자. 모든 업로드 API 사용 가능.
+# - "upload-token:{session_id}": 세션 생성 시 발급된 단기 토큰을 가진 브라우저 사용자.
+#   업로드/조회만 가능하고, 공유 코퍼스를 파괴하는 삭제는 불가. 취소/재시도는 자기 세션이
+#   만든 작업에만 가능하다.
+API_KEY_PRINCIPAL = "api-key"
+UPLOAD_TOKEN_PRINCIPAL_PREFIX = "upload-token:"
+
+
 def get_upload_access(request: Request) -> str:
     """업로드 API 접근 인증 (서버 API 키 OR 단기 업로드 토큰).
 
@@ -64,21 +78,27 @@ def get_upload_access(request: Request) -> str:
 
     세션 식별자는 X-OneRAG-Session-Id 헤더 또는 ?session_id 쿼리에서 읽는다.
 
+    서버 API 키가 설정되지 않았으면 환경과 무관하게 401을 돌려준다(fail-closed).
+    예전에는 개발 환경이면 인증을 건너뛰었는데, 환경 감지만 속이면 업로드/삭제 API가
+    그대로 열리는 구조였다.
+
     Returns:
-        검증에 사용된 자격 식별 문자열.
+        자격 식별 문자열(API_KEY_PRINCIPAL 또는 "upload-token:{session_id}").
 
     Raises:
-        HTTPException: API 키도 유효한 업로드 토큰도 없을 때(원 401 예외 전파).
+        HTTPException: 키 미구성이거나, API 키도 유효한 업로드 토큰도 없을 때.
     """
     auth = get_api_key_auth()
-    # 서버 API 키가 설정되지 않은 개발/테스트 환경에서는 인증을 스킵한다
-    # (기존 미들웨어/대시보드와 동일한 dev-skip 의미). 프로덕션은 environment.py
-    # 다층 감지로 미들웨어 단계에서 차단된다.
     if not auth.api_key:
-        return "dev-no-auth"
+        logger.warning(
+            "FASTAPI_AUTH_KEY 미설정 상태에서 업로드 API 요청 거부(fail-closed)",
+            extra={"path": request.url.path},
+        )
+        raise HTTPException(status_code=401, detail=dict(AUTH_NOT_CONFIGURED_DETAIL))
 
     try:
-        return get_api_key(request)
+        get_api_key(request)
+        return API_KEY_PRINCIPAL
     except HTTPException as api_key_error:
         # X-API-Key가 없거나 틀린 경우, 브라우저용 단기 업로드 토큰을 대체 자격으로 허용한다.
         upload_token = request.headers.get("X-OneRAG-Upload-Token") or request.query_params.get(
@@ -92,13 +112,76 @@ def get_upload_access(request: Request) -> str:
             and session_id
             and verify_upload_access_token(session_id, upload_token, auth.api_key)
         ):
-            return f"upload-token:{session_id}"
+            return f"{UPLOAD_TOKEN_PRINCIPAL_PREFIX}{session_id}"
         raise api_key_error
+
+
+def _principal_session_id(principal: Any) -> str | None:
+    """업로드 토큰 자격이면 바인딩된 세션 ID를, API 키 자격이면 None을 돌려준다.
+
+    핸들러를 FastAPI 밖에서 직접 호출하면(스모크 테스트 등) principal에 Depends 객체가
+    그대로 들어오므로, 문자열이 아닌 값은 운영자 자격(None)으로 취급한다.
+    """
+    if isinstance(principal, str) and principal.startswith(UPLOAD_TOKEN_PRINCIPAL_PREFIX):
+        return principal[len(UPLOAD_TOKEN_PRINCIPAL_PREFIX) :]
+    return None
+
+
+def require_upload_admin_access(principal: str = Depends(get_upload_access)) -> str:
+    """삭제처럼 공유 코퍼스를 바꾸는 작업은 서버 API 키 자격만 허용한다.
+
+    업로드 토큰은 "세션 생성"만으로 누구나 받을 수 있는 자격이므로, 이 토큰으로 전체
+    문서를 삭제할 수 있게 두면 인증 없는 삭제와 같다. 토큰 자격이면 403을 돌려준다.
+    """
+    if _principal_session_id(principal) is not None:
+        logger.warning(
+            "업로드 토큰 자격으로 관리자 전용 업로드 API 요청 거부",
+            extra={"principal": principal},
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error_code": "UPLOAD-403",
+                "error": "권한 부족",
+                "message": "이 작업은 서버 API 키(X-API-Key) 인증이 필요합니다",
+                "suggestion": "운영자 설정에서 관리자 API 키를 입력한 뒤 다시 시도하세요",
+            },
+        )
+    return principal
+
+
+def _assert_job_owner(job: dict[str, Any], principal: str, job_id: str) -> None:
+    """취소/재시도처럼 작업 상태를 바꾸는 요청은 작업을 만든 세션만 허용한다.
+
+    API 키 자격은 모든 작업을 다룰 수 있다. 업로드 토큰 자격은 작업 레코드의
+    owner_session_id가 토큰의 세션과 같을 때만 통과한다. (owner가 기록되지 않은 과거
+    작업은 운영자 전용으로 취급한다.)
+    """
+    session_id = _principal_session_id(principal)
+    if session_id is None:
+        return
+    owner = job.get("owner_session_id")
+    if owner and owner == session_id:
+        return
+    logger.warning(
+        "다른 세션의 업로드 작업 조작 시도 거부",
+        extra={"job_id": job_id, "principal": principal, "owner_session_id": owner},
+    )
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "error_code": "UPLOAD-403",
+            "error": "권한 부족",
+            "message": "이 업로드 작업은 다른 세션이 생성했습니다",
+            "job_id": job_id,
+        },
+    )
 
 
 # ✅ H4 보안 패치: Upload API 인증 추가
 # 파일 업로드/삭제는 시스템 변경이므로 인증 필요.
 # get_upload_access는 X-API-Key 또는 단기 업로드 토큰(브라우저용, #22)을 허용한다.
+# 삭제 계열은 require_upload_admin_access로 API 키 자격만 추가 허용한다.
 router = APIRouter(tags=["Upload"], dependencies=[Depends(get_upload_access)])
 modules: dict[str, Any] = {}
 config: dict[str, Any] = {}
@@ -1545,6 +1628,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     metadata: str | None = Form(None),
+    principal: str = Depends(get_upload_access),
 ):
     """문서 업로드"""
     try:
@@ -1631,6 +1715,8 @@ async def upload_document(
             # 워커 진입점(process_queued_upload_job_once)이 재처리할 수 있도록 기록
             "temp_file_path": str(file_path),
             "processing_attempt_id": processing_attempt_id,
+            # 업로드 토큰 자격이면 작업 소유 세션을 기록한다(취소/재시도 권한 판단용).
+            "owner_session_id": _principal_session_id(principal),
             **original_payload,
         }
         # 동기 SQLite 트랜잭션을 to_thread로 오프로딩 (이벤트 루프 블로킹 방지)
@@ -1808,7 +1894,10 @@ async def list_documents(page: int = 1, page_size: int = 20):
         ) from error
 
 
-@router.delete("/upload/documents/{document_id}")
+@router.delete(
+    "/upload/documents/{document_id}",
+    dependencies=[Depends(require_upload_admin_access)],
+)
 async def delete_document(document_id: str):
     """문서 삭제"""
     try:
@@ -1859,7 +1948,11 @@ async def delete_document(document_id: str):
         ) from error
 
 
-@router.post("/upload/documents/bulk-delete", response_model=BulkDeleteResponse)
+@router.post(
+    "/upload/documents/bulk-delete",
+    response_model=BulkDeleteResponse,
+    dependencies=[Depends(require_upload_admin_access)],
+)
 async def bulk_delete_documents(request: BulkDeleteRequest):
     """문서 일괄 삭제"""
     try:
@@ -2400,7 +2493,10 @@ def _upload_cancel_response(job_id: str, job: dict[str, Any]) -> UploadCancelRes
 
 
 @router.post("/upload/status/{job_id}/cancel", response_model=UploadCancelResponse)
-async def cancel_upload_job(job_id: str) -> UploadCancelResponse:
+async def cancel_upload_job(
+    job_id: str,
+    principal: str = Depends(get_upload_access),
+) -> UploadCancelResponse:
     """업로드 작업을 취소한다 (#30).
 
     - pending: 즉시 취소(부분 산출물 정리)
@@ -2421,6 +2517,7 @@ async def cancel_upload_job(job_id: str) -> UploadCancelResponse:
             },
         )
 
+    _assert_job_owner(job, principal, job_id)
     status = str(job.get("status") or "")
     if status in {"cancelled", "cancelling"}:
         return _upload_cancel_response(job_id, job)
@@ -2485,6 +2582,7 @@ async def cancel_upload_job(job_id: str) -> UploadCancelResponse:
 async def retry_upload_job(
     background_tasks: BackgroundTasks,
     job_id: str,
+    principal: str = Depends(get_upload_access),
 ) -> UploadRetryResponse:
     """실패한 업로드를 보관 원본으로부터 재처리한다 (#10).
 
@@ -2503,6 +2601,7 @@ async def retry_upload_job(
                 "job_id": job_id,
             },
         )
+    _assert_job_owner(job, principal, job_id)
     status = str(job.get("status") or "")
     if status != "failed" or job.get("retry_safe") is not True:
         raise HTTPException(
@@ -2709,7 +2808,10 @@ def _get_chunked_receiving_job(job_id: str) -> dict[str, Any]:
 
 
 @router.post("/upload/chunked/start", response_model=ChunkedUploadStartResponse)
-async def start_chunked_upload(payload: ChunkedUploadStartRequest) -> ChunkedUploadStartResponse:
+async def start_chunked_upload(
+    payload: ChunkedUploadStartRequest,
+    principal: str = Depends(get_upload_access),
+) -> ChunkedUploadStartResponse:
     """대용량 문서 분할 업로드를 시작한다 (#11).
 
     리버스 프록시 바디 한도(nginx client_max_body_size, Cloud Run 32MB 등)를
@@ -2745,6 +2847,7 @@ async def start_chunked_upload(payload: ChunkedUploadStartRequest) -> ChunkedUpl
         "chunked_upload": True,
         "chunk_received_size": 0,
         "chunk_recommended_size": CHUNKED_UPLOAD_RECOMMENDED_CHUNK_SIZE,
+        "owner_session_id": _principal_session_id(principal),
     }
     save_upload_job(job_id)
     return ChunkedUploadStartResponse(
@@ -2762,6 +2865,7 @@ async def upload_chunked_chunk(
     job_id: str,
     chunk: UploadFile = File(...),
     offset: int = Form(...),
+    principal: str = Depends(get_upload_access),
 ) -> ChunkedUploadChunkResponse:
     """파일 조각을 offset 위치에 기록한다 (#11).
 
@@ -2778,6 +2882,8 @@ async def upload_chunked_chunk(
             },
         )
     job = _get_chunked_receiving_job(job_id)
+    # 조각 전송/완료도 작업을 만든 세션만 할 수 있다(다른 세션의 임시 파일 변조 방지).
+    _assert_job_owner(job, principal, job_id)
     received_size = int(job.get("chunk_received_size") or 0)
     expected_size = int(job.get("file_size") or 0)
     if offset != received_size:
@@ -2867,6 +2973,7 @@ async def complete_chunked_upload(
     background_tasks: BackgroundTasks,
     job_id: str,
     payload: ChunkedUploadCompleteRequest,
+    principal: str = Depends(get_upload_access),
 ) -> UploadResponse:
     """분할 업로드를 완료하고 문서 처리를 시작한다 (#11).
 
@@ -2876,6 +2983,8 @@ async def complete_chunked_upload(
     """
     try:
         job = _get_chunked_receiving_job(job_id)
+        # 조각 전송/완료도 작업을 만든 세션만 할 수 있다(다른 세션의 임시 파일 변조 방지).
+        _assert_job_owner(job, principal, job_id)
         expected_size = int(job.get("file_size") or 0)
         received_size = int(job.get("chunk_received_size") or 0)
         file_path = Path(str(job["temp_file_path"]))

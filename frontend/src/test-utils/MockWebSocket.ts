@@ -57,7 +57,11 @@ export class MockWebSocket implements IWebSocket {
    * MockWebSocket 생성자
    * @param url - WebSocket 연결 URL
    */
-  constructor(public url: string) {
+  /** WebSocket 연결 URL */
+  public url: string;
+
+  constructor(url: string) {
+    this.url = url;
     MockWebSocket.instances.push(this);
   }
 

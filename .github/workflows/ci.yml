@@ -124,6 +124,65 @@ jobs:
         run: uv run lint-imports
 
   # ============================================
+  # 의존성 취약점 감사 (pip-audit)
+  # ------------------------------------------------------------------
+  # 런타임 의존성(uv export --no-dev)만 감사한다. docs/security/dependency-triage.md의
+  # "Current Baseline" 목록이 비기 전까지는 비차단(continue-on-error)으로 운용하고,
+  # 결과는 잡 요약(Step Summary)과 아티팩트로 남긴다. 기준선이 0이 되면
+  # continue-on-error를 제거해 차단 게이트로 전환한다.
+  # ============================================
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      - name: Export runtime requirements
+        run: >
+          uv export --frozen --no-dev --no-emit-project
+          --format requirements.txt --no-hashes
+          --output-file requirements-audit.txt
+
+      # 비차단: 기준선(docs/security/dependency-triage.md)이 비기 전까지는 스텝 실패를
+      # 경고로만 남긴다(잡/체크는 초록). 기준선이 0이 되면 continue-on-error 를 제거한다.
+      - name: Run pip-audit
+        continue-on-error: true
+        run: |
+          python -m pip install --quiet pip-audit
+          set +e
+          pip-audit -r requirements-audit.txt --no-deps --strict --desc=off \
+            --format=markdown --output=pip-audit-report.md
+          status=$?
+          set -e
+          {
+            echo "## pip-audit (runtime dependencies)"
+            echo
+            if [ -s pip-audit-report.md ]; then cat pip-audit-report.md; else echo "No known vulnerabilities found."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.md
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ============================================
   # 테스트 및 커버리지 (Pytest) - 30분 타임아웃
   # ============================================
   test:
@@ -157,15 +216,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      # 단위 테스트 + 외부 서비스 없이 통과하는 통합 테스트(tests/integration)를 한 번에 실행한다.
+      # 실제 네트워크/유료 LLM/외부 DB 테스트는 `live` 마커로 분리되어 여기서는 제외되고,
+      # ONERAG_RUN_LIVE_PROVIDER_TESTS=1 인 주간 스케줄 워크플로에서만 돈다.
+      # 커버리지 하한은 pyproject.toml [tool.coverage.report] fail_under 가 강제한다.
       - name: Run Tests with Coverage
-        run: uv run pytest -p pytest_cov --cov=app --cov-report=html --cov-report=xml --tb=short -q --timeout=60 --ignore=tests/integration
-
-      # P0 회귀 테스트: DI 컨테이너 배선 / async Singleton Future 해소 / OpenAI 호환 RAG 검색.
-      # 기본 테스트 스텝이 tests/integration을 ignore하고, verify 스크립트는 -m integration으로
-      # deselect되어 어떤 게이트에서도 실행되지 않던 결함을 막기 위해 명시적으로 실행한다.
-      # 세 테스트 모두 외부 서비스(docker/Weaviate) 없이 ENVIRONMENT=test로 통과한다.
-      - name: Run wiring regression tests (P0)
-        run: uv run pytest tests/integration/api/test_container_wiring.py tests/integration/api/test_openai_compat_rag.py tests/integration/api/test_grok_agent_wiring.py -q --timeout=60
+        run: uv run pytest -p pytest_cov --cov=app --cov-report=html --cov-report=xml --tb=short -q --timeout=120 -m "not live"
 
       - name: Upload coverage
         if: always()
@@ -308,6 +364,9 @@ jobs:
 
       - name: Build
         run: npm run build:warning-gate
+
+      - name: Type check
+        run: npm run typecheck
 
       - name: Lint
         run: npm run lint

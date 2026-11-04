@@ -84,12 +84,15 @@ export const getAdminWSBaseURL = (): string => {
 const API_BASE_URL = getAdminAPIBaseURL();
 const WS_BASE_URL = getAdminWSBaseURL();
 
+/** 관리자 WebSocket 이벤트 리스너(내부 저장용, 페이로드는 unknown) */
+type AdminEventCallback = (data: unknown) => void;
+
 class AdminService {
   private wsConnection: WebSocket | null = null;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectInterval = 5000; // 5초
-  private eventListeners: Map<string, ((...args: unknown[]) => void)[]> = new Map();
+  private eventListeners: Map<string, AdminEventCallback[]> = new Map();
 
   constructor() {
     logger.log('🚀 AdminService 초기화');
@@ -200,20 +203,21 @@ class AdminService {
   /**
    * 이벤트 리스너 등록
    */
-  on(event: string, callback: (...args: unknown[]) => void) {
+  on<T = unknown>(event: string, callback: (data: T) => void) {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, []);
     }
-    this.eventListeners.get(event)!.push(callback);
+    // 이벤트별 페이로드 타입은 호출 측이 지정한다(내부 저장소는 unknown 페이로드로 통일).
+    this.eventListeners.get(event)!.push(callback as AdminEventCallback);
   }
 
   /**
    * 이벤트 리스너 제거
    */
-  off(event: string, callback: (...args: unknown[]) => void) {
+  off<T = unknown>(event: string, callback: (data: T) => void) {
     const listeners = this.eventListeners.get(event);
     if (listeners) {
-      const index = listeners.indexOf(callback);
+      const index = listeners.indexOf(callback as AdminEventCallback);
       if (index > -1) {
         listeners.splice(index, 1);
       }
@@ -411,6 +415,39 @@ class AdminService {
    */
   async optimizeDatabase() {
     return this.apiCall('/database/optimize', { method: 'POST' });
+  }
+
+  /**
+   * RAG 파이프라인 테스트 (검색 + 생성)
+   */
+  async testRAG(query: string) {
+    return this.apiCall('/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+  }
+
+  /**
+   * 인덱스 재구축 요청
+   * (백엔드에 해당 엔드포인트가 아직 없으면 HTTP 오류로 실패하며, 호출 측에서 실패 토스트를 표시한다)
+   */
+  async rebuildIndex() {
+    return this.apiCall('/index/rebuild', { method: 'POST' });
+  }
+
+  /**
+   * 세션 상세 정보 조회
+   */
+  async getSessionDetails(sessionId: string) {
+    return this.apiCall(`/sessions/${encodeURIComponent(sessionId)}`);
+  }
+
+  /**
+   * 문서 재처리 요청
+   */
+  async reprocessDocument(documentId: string) {
+    return this.apiCall(`/documents/${encodeURIComponent(documentId)}/reprocess`, { method: 'POST' });
   }
 }
 

@@ -122,3 +122,81 @@ def test_rate_limit_middleware_replays_post_body_with_session_id() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"session_id": "session-1", "message": "hello"}
+
+
+# ---------------------------------------------------------------------------
+# 신뢰 프록시 정책: X-Forwarded-For 스푸핑으로 IP 레이트리밋을 우회할 수 없어야 한다
+# ---------------------------------------------------------------------------
+
+
+def _build_limited_app(ip_limit: int, trusted_proxy_policy):
+    """IP 한도가 작은 앱을 만들어 몇 번의 요청으로 429를 재현한다."""
+    from app.lib.client_ip import TrustedProxyPolicy  # noqa: F401 (타입 참고용)
+
+    limiter = RateLimiter(ip_limit=ip_limit, session_limit=100, window_seconds=60)
+    app = FastAPI()
+    app.add_middleware(
+        RateLimitMiddleware,
+        rate_limiter=limiter,
+        excluded_paths=[],
+        trusted_proxy_policy=trusted_proxy_policy,
+    )
+
+    @app.get("/ping")
+    async def ping() -> dict[str, str]:
+        return {"ok": "pong"}
+
+    return app
+
+
+def test_forwarded_for_spoofing_cannot_bypass_ip_limit() -> None:
+    """peer(testclient)가 신뢰 프록시가 아니면 매 요청 다른 XFF를 보내도 한 IP로 집계된다."""
+    from app.lib.client_ip import TrustedProxyPolicy
+
+    app = _build_limited_app(ip_limit=2, trusted_proxy_policy=TrustedProxyPolicy.none())
+    client = TestClient(app)
+
+    statuses = [
+        client.get("/ping", headers={"X-Forwarded-For": f"203.0.113.{i}"}).status_code
+        for i in range(1, 5)
+    ]
+    # 2건 허용 후 3번째부터 429 — 헤더 변경이 새 IP로 인정되지 않는다
+    assert statuses == [200, 200, 429, 429]
+
+
+def test_trusted_proxy_forwarded_for_separates_clients() -> None:
+    """peer가 신뢰 프록시면 XFF의 클라이언트 주소별로 따로 집계된다."""
+    from app.lib.client_ip import TrustedProxyPolicy
+
+    app = _build_limited_app(ip_limit=1, trusted_proxy_policy=TrustedProxyPolicy.all())
+    client = TestClient(app)
+
+    first = client.get("/ping", headers={"X-Forwarded-For": "198.51.100.1"}).status_code
+    second = client.get("/ping", headers={"X-Forwarded-For": "198.51.100.2"}).status_code
+    repeat = client.get("/ping", headers={"X-Forwarded-For": "198.51.100.1"}).status_code
+    assert (first, second, repeat) == (200, 200, 429)
+
+
+def test_chat_rate_limit_middleware_ignores_spoofed_headers() -> None:
+    """ChatRateLimitMiddleware도 같은 신뢰 프록시 규칙을 따른다."""
+    from app.lib.client_ip import TrustedProxyPolicy
+    from app.middleware.rate_limiter import ChatRateLimitMiddleware
+
+    limiter = RateLimiter(ip_limit=100, session_limit=100, window_seconds=60)
+    app = FastAPI()
+    app.add_middleware(
+        ChatRateLimitMiddleware,
+        rate_limiter=limiter,
+        ip_limit=1,
+        session_limit=100,
+        trusted_proxy_policy=TrustedProxyPolicy.none(),
+    )
+
+    @app.post("/api/chat")
+    async def chat() -> dict[str, str]:
+        return {"ok": "chat"}
+
+    client = TestClient(app)
+    first = client.post("/api/chat", headers={"X-Forwarded-For": "1.1.1.1"}).status_code
+    second = client.post("/api/chat", headers={"X-Forwarded-For": "2.2.2.2"}).status_code
+    assert (first, second) == (200, 429)

@@ -13,15 +13,16 @@ Kiwi 한국어 형태소 분석기를 래핑하여 BM25 검색에 필요한
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from app.lib.logger import get_logger
 
 if TYPE_CHECKING:
     from app.modules.core.retrieval.bm25.stopwords import StopwordFilter
     from app.modules.core.retrieval.bm25.synonym_manager import SynonymManager
     from app.modules.core.retrieval.bm25.user_dictionary import UserDictionary
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @runtime_checkable

@@ -10,10 +10,11 @@
     "복합항목명" → ["복합항목명"] (O)
 """
 
-import logging
 import re
 
-logger = logging.getLogger(__name__)
+from app.lib.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class UserDictionary:

@@ -55,7 +55,9 @@ describe('DocumentListView', () => {
     render(<DocumentListView {...defaultProps} documents={[doc]} onToggleSelect={onToggleSelect} />);
     // 문서 행의 체크박스 (두 번째 체크박스, 첫 번째는 전체 선택)
     const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[1]); // 개별 문서 체크박스
+    const documentCheckbox = checkboxes[1]; // 개별 문서 체크박스
+    if (!documentCheckbox) throw new Error('문서 체크박스를 찾을 수 없습니다');
+    fireEvent.click(documentCheckbox);
     expect(onToggleSelect).toHaveBeenCalledWith('doc-1');
   });
 
@@ -64,7 +66,9 @@ describe('DocumentListView', () => {
     const doc = createMockDocument();
     render(<DocumentListView {...defaultProps} documents={[doc]} onToggleSelectAll={onToggleSelectAll} />);
     const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[0]); // 전체 선택 체크박스
+    const selectAllCheckbox = checkboxes[0]; // 전체 선택 체크박스
+    if (!selectAllCheckbox) throw new Error('전체 선택 체크박스를 찾을 수 없습니다');
+    fireEvent.click(selectAllCheckbox);
     expect(onToggleSelectAll).toHaveBeenCalled();
   });
 

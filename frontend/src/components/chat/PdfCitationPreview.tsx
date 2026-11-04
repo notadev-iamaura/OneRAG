@@ -256,7 +256,6 @@ export const PdfCitationPreview: React.FC<PdfCitationPreviewProps> = ({
                 setRenderedPage({ width: viewport.width, height: viewport.height });
 
                 renderTask = pdfPage.render({
-                    canvas,
                     canvasContext: context,
                     viewport,
                     transform: outputScale !== 1

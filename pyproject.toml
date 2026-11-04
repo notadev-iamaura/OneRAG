@@ -1,6 +1,6 @@
 [project]
 name = "onerag"
-version = "1.0.7"
+version = "1.2.1"
 description = "Production-ready modular RAG backend — swap Vector DB, LLM, Reranker with 1 line of config"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -33,7 +33,7 @@ keywords = [
 
 dependencies = [
     # FastAPI and ASGI Server
-    "fastapi==0.104.1",
+    "fastapi>=0.115.0,<1",
     "uvicorn[standard]==0.24.0",
     "python-multipart==0.0.32",
     # HTTP Client (requests 제거, httpx만 사용)
@@ -61,7 +61,7 @@ dependencies = [
     "pandas>=2.2.0",
     "beautifulsoup4==4.12.2",
     "markdown==3.10.2",
-    "Pillow>=10.0.0,<12", # 이미지 처리 (image_chat.py에서 필요)
+    "Pillow>=10.0.0,<14", # 이미지 처리 (image_chat.py에서 필요)
     # BM25 하이브리드 검색 (한국어 토크나이저 + BM25 인덱스)
     "kiwipiepy>=0.18.0",
     "rank-bm25>=0.2.2",
@@ -105,7 +105,7 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "playwright==1.59.0",
     "apscheduler==3.10.4",
-    "lxml==5.3.0",
+    "lxml>=5.3.0,<7",
     # Korean NLP for PII Detection (spaCy)
     "spacy>=3.7.0",
     # ko_core_news_sm: PyPI 정책상 직접 URL 의존성 불가 → 설치 후 별도 다운로드 필요
@@ -322,8 +322,28 @@ module = [
     "tests.*",
     # 배치 처리 모듈 - 크롤러 관련 (외부 라이브러리 의존)
     "app.batch.*",
-    # API 라우터 - FastAPI 엔드포인트 (FastAPI 타입 추론 복잡)
-    "app.api.*",
+    # API 라우터/엔드포인트 (FastAPI 타입 추론 복잡). app.api.services 는 2026-11 부터 검사 대상.
+    "app.api.routers.*",
+    "app.api.schemas.*",
+    "app.api.demo.*",
+    "app.api.admin",
+    "app.api.upload",
+    "app.api.analytics",
+    "app.api.chat",
+    "app.api.documents",
+    "app.api.evaluations",
+    "app.api.health",
+    "app.api.image_chat",
+    "app.api.ingest",
+    "app.api.langsmith_logs",
+    "app.api.monitoring",
+    "app.api.prompts",
+    "app.api.upload_job_store",
+    "app.api.document_ledger_store",
+    "app.api.original_file_storage",
+    "app.api.analytics_event_store",
+    "app.api.audit_event_store",
+    "app.api.container_registry",
     # 미들웨어 (FastAPI/Starlette 의존)
     "app.middleware.*",
     # 데이터베이스 레이어 (SQLAlchemy/Motor 의존)
@@ -332,8 +352,6 @@ module = [
     "app.config.*",
     # 모델 정의 - Pydantic 기반 (이미 타입 안전)
     "app.models.*",
-    # DI 컨테이너 (dependency-injector 라이브러리 의존)
-    "app.core.*",
     # 세션 관리 (MongoDB/Redis 의존)
     "app.modules.core.session.*",
     # enrichment (외부 LLM 의존)
@@ -392,6 +410,7 @@ markers = [
     "unit: marks tests as unit tests",
     "system: marks tests that require system Python environment",
     "e2e: marks tests as end-to-end tests with real APIs (costs money, slower)",
+    "live: marks tests that hit real network/paid APIs or external services; run only with ONERAG_RUN_LIVE_PROVIDER_TESTS=1",
     "eval: marks tests as evaluation tests for CI/CD quality gates",
     "performance: marks in-process concurrency/performance acceptance tests (mock-based, no external cost)",
 ]
@@ -421,14 +440,17 @@ omit = [
 ]
 
 [tool.coverage.report]
+# 커버리지 하한. 현재 수준(약 63%)에서 시작해 점진적으로 올린다. 내려가면 CI가 실패한다.
+fail_under = 61
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
     "raise AssertionError",
     "raise NotImplementedError",
     "if __name__ == .__main__.:",
-    "pass",
-    "\\.\\.\\.",
+    # 앵커 없는 "pass"는 password/passport 같은 단어가 든 줄까지 제외시켰다(PII 마스킹 코드 등).
+    "^\\s*pass\\s*$",
+    "^\\s*\\.\\.\\.\\s*$",
 ]
 show_missing = true
 precision = 2

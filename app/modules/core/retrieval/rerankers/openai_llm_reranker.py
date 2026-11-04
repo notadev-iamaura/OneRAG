@@ -19,12 +19,12 @@ import re
 import time
 from typing import Any, cast
 
-import structlog
+from app.lib.logger import get_logger
 
 from .....lib.langfuse_client import observe, record_generation
 from ..interfaces import IReranker, SearchResult
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class OpenAILLMReranker(IReranker):

@@ -68,12 +68,12 @@ def upload_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FastAPI:
     monkeypatch.setattr(upload, "_audit_event_store_signature", None)
     monkeypatch.setattr(upload, "_privacy_masker", None)
 
-    # 인증 싱글톤이 다른 테스트에서 api_key를 설정해 둘 수 있으므로 dev 모드로 격리한다.
-    # (api_key=None → get_upload_access가 dev-skip하여 헤더 없이 업로드 허용)
+    # 인증 싱글톤을 테스트 키로 고정한다. 키가 없으면 업로드 API는 fail-closed(401)이므로
+    # 테스트 클라이언트(_client)는 기본으로 X-API-Key 헤더를 보낸다.
     from app.lib import auth as auth_module
 
     auth_instance = auth_module.get_api_key_auth()
-    monkeypatch.setattr(auth_instance, "api_key", None)
+    monkeypatch.setattr(auth_instance, "api_key", TEST_API_KEY)
 
     fake_retrieval = FakeRetrievalModule()
     upload.set_dependencies(
@@ -87,10 +87,21 @@ def upload_app(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FastAPI:
     return app
 
 
-def _client(app: FastAPI) -> Any:
+TEST_API_KEY = "test-upload-api-key-0123456789"
+
+
+def _client(app: FastAPI, *, with_api_key: bool = True) -> Any:
+    """테스트 클라이언트. 기본은 운영자(API 키) 자격, with_api_key=False면 무자격."""
     from fastapi.testclient import TestClient
 
-    return TestClient(app)
+    headers = {"X-API-Key": TEST_API_KEY} if with_api_key else {}
+    return TestClient(app, headers=headers)
+
+
+def _token_headers(session_id: str) -> dict[str, str]:
+    """세션에 바인딩된 단기 업로드 토큰 헤더(브라우저 사용자 자격)."""
+    token = create_upload_access_token(session_id, TEST_API_KEY, ttl_seconds=900)
+    return {"X-OneRAG-Upload-Token": token, "X-OneRAG-Session-Id": session_id}
 
 
 def test_upload_stores_original_and_download_original(upload_app: FastAPI) -> None:
@@ -336,39 +347,148 @@ async def _noop_background(*args: Any, **kwargs: Any) -> None:
     await asyncio.sleep(0)
 
 
-def test_get_upload_access_allows_valid_token(
-    upload_app: FastAPI, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_get_upload_access_allows_valid_token(upload_app: FastAPI) -> None:
     """서버 API 키가 설정된 경우, 단기 업로드 토큰으로 업로드가 허용되어야 한다(#22)."""
-    from app.lib import auth as auth_module
-
-    # 인증 활성화: api_key 설정
-    auth_instance = auth_module.get_api_key_auth()
-    monkeypatch.setattr(auth_instance, "api_key", "server-secret")
-    token = create_upload_access_token("sess-1", "server-secret", ttl_seconds=900)
-
-    client = _client(upload_app)
+    client = _client(upload_app, with_api_key=False)
     # 토큰만으로 업로드 (X-API-Key 없이)
     response = client.post(
         "/api/upload",
         files={"file": ("doc.txt", b"hello", "text/plain")},
-        headers={"X-OneRAG-Upload-Token": token, "X-OneRAG-Session-Id": "sess-1"},
+        headers=_token_headers("sess-1"),
     )
     assert response.status_code == 200, response.text
+    job_id = response.json()["job_id"]
+    # 토큰 자격으로 만든 작업에는 소유 세션이 기록된다.
+    assert upload.upload_jobs[job_id]["owner_session_id"] == "sess-1"
 
 
-def test_get_upload_access_rejects_without_credentials(
-    upload_app: FastAPI, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_get_upload_access_rejects_without_credentials(upload_app: FastAPI) -> None:
     """API 키가 설정된 경우, 토큰/키 둘 다 없으면 401이어야 한다(#22)."""
-    from app.lib import auth as auth_module
-
-    auth_instance = auth_module.get_api_key_auth()
-    monkeypatch.setattr(auth_instance, "api_key", "server-secret")
-
-    client = _client(upload_app)
+    client = _client(upload_app, with_api_key=False)
     response = client.post(
         "/api/upload",
         files={"file": ("doc.txt", b"hello", "text/plain")},
     )
     assert response.status_code == 401
+
+
+def test_upload_api_is_fail_closed_without_server_key(
+    upload_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """서버 키가 없으면 개발 환경이라도 업로드 API는 모두 401이어야 한다(fail-closed)."""
+    from app.lib import auth as auth_module
+
+    monkeypatch.setattr(auth_module.get_api_key_auth(), "api_key", None)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+
+    client = _client(upload_app, with_api_key=False)
+    assert client.get("/api/upload/documents").status_code == 401
+    assert client.delete("/api/upload/documents/any").status_code == 401
+    # 아무 값이나 넣은 X-API-Key도 통과하면 안 된다.
+    assert (
+        client.get("/api/upload/documents", headers={"X-API-Key": "whatever"}).status_code == 401
+    )
+
+
+def test_upload_token_cannot_delete_documents(upload_app: FastAPI) -> None:
+    """세션 생성만으로 받는 업로드 토큰으로는 공유 코퍼스를 삭제할 수 없어야 한다."""
+    client = _client(upload_app, with_api_key=False)
+    upload_response = client.post(
+        "/api/upload",
+        files={"file": ("doc.txt", b"hello", "text/plain")},
+        headers=_token_headers("sess-del"),
+    )
+    assert upload_response.status_code == 200
+    job_id = upload_response.json()["job_id"]
+
+    single = client.delete(f"/api/upload/documents/{job_id}", headers=_token_headers("sess-del"))
+    assert single.status_code == 403
+    assert single.json()["detail"]["error_code"] == "UPLOAD-403"
+
+    bulk = client.post(
+        "/api/upload/documents/bulk-delete",
+        json={"ids": [job_id]},
+        headers=_token_headers("sess-del"),
+    )
+    assert bulk.status_code == 403
+
+    # 운영자(API 키)는 여전히 삭제할 수 있다.
+    admin = _client(upload_app)
+    assert admin.delete(f"/api/upload/documents/{job_id}").status_code == 200
+
+
+def test_upload_token_can_only_cancel_own_jobs(
+    upload_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """취소는 작업을 만든 세션만 가능하고, 다른 세션 토큰은 403이어야 한다."""
+    monkeypatch.setattr(upload, "process_document_background_guarded", _noop_background)
+    client = _client(upload_app, with_api_key=False)
+    response = client.post(
+        "/api/upload",
+        files={"file": ("doc.txt", b"hello", "text/plain")},
+        headers=_token_headers("owner-sess"),
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    other = client.post(
+        f"/api/upload/status/{job_id}/cancel", headers=_token_headers("other-sess")
+    )
+    assert other.status_code == 403
+
+    own = client.post(f"/api/upload/status/{job_id}/cancel", headers=_token_headers("owner-sess"))
+    assert own.status_code == 200
+    assert own.json()["status"] in {"cancelled", "cancelling"}
+
+
+def test_api_key_can_cancel_any_job(
+    upload_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """운영자(API 키)는 소유 세션과 무관하게 작업을 취소할 수 있어야 한다."""
+    monkeypatch.setattr(upload, "process_document_background_guarded", _noop_background)
+    browser = _client(upload_app, with_api_key=False)
+    response = browser.post(
+        "/api/upload",
+        files={"file": ("doc.txt", b"hello", "text/plain")},
+        headers=_token_headers("someone"),
+    )
+    job_id = response.json()["job_id"]
+
+    admin = _client(upload_app)
+    assert admin.post(f"/api/upload/status/{job_id}/cancel").status_code == 200
+
+
+def test_chunked_upload_is_bound_to_owner_session(upload_app: FastAPI) -> None:
+    """분할 업로드의 조각 전송/완료는 작업을 시작한 세션만 할 수 있어야 한다."""
+    client = _client(upload_app, with_api_key=False)
+    start = client.post(
+        "/api/upload/chunked/start",
+        json={"filename": "doc.txt", "content_type": "text/plain", "file_size": 5},
+        headers=_token_headers("owner-sess"),
+    )
+    assert start.status_code == 200, start.text
+    job_id = start.json()["job_id"]
+
+    # 다른 세션이 조각을 밀어 넣거나 완료시키려 하면 403
+    intruder = client.post(
+        f"/api/upload/chunked/{job_id}/chunk",
+        files={"chunk": ("doc.txt", b"hello", "text/plain")},
+        data={"offset": "0"},
+        headers=_token_headers("other-sess"),
+    )
+    assert intruder.status_code == 403
+    complete = client.post(
+        f"/api/upload/chunked/{job_id}/complete",
+        json={},
+        headers=_token_headers("other-sess"),
+    )
+    assert complete.status_code == 403
+
+    # 소유 세션은 정상 진행
+    own = client.post(
+        f"/api/upload/chunked/{job_id}/chunk",
+        files={"chunk": ("doc.txt", b"hello", "text/plain")},
+        data={"offset": "0"},
+        headers=_token_headers("owner-sess"),
+    )
+    assert own.status_code == 200, own.text

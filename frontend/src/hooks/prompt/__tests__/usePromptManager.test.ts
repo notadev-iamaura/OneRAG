@@ -733,7 +733,7 @@ describe('usePromptManager', () => {
       });
 
       // systemPrompt(is_active: true)가 맨 위에 있어야 함
-      expect(result.current.filteredPrompts[0].is_active).toBe(true);
+      expect(result.current.filteredPrompts[0]?.is_active).toBe(true);
     });
 
     it('카테고리별 프롬프트 분류가 올바르다', async () => {

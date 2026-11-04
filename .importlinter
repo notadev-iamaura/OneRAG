@@ -28,3 +28,36 @@ source_modules =
     app.lib
 forbidden_modules =
     app.modules
+
+[importlinter:contract:composition_root_is_top]
+name = Composition root (DI container) is not imported by lower layers
+type = forbidden
+source_modules =
+    app.modules
+    app.infrastructure
+    app.lib
+    app.config
+forbidden_modules =
+    app.core.di_container
+    app.core.graceful_initializer
+
+[importlinter:contract:config_no_upper_layers]
+name = Config layer cannot depend on API or composition root
+type = forbidden
+source_modules =
+    app.config
+forbidden_modules =
+    app.api
+    app.core
+
+[importlinter:contract:modules_no_batch]
+name = Domain modules cannot depend on batch scripts
+type = forbidden
+source_modules =
+    app.modules
+forbidden_modules =
+    app.batch
+# 알려진 부채(ingestion 서비스가 batch 유틸에 의존). 새 위반은 막고, 이 둘은 이관 PR에서 제거한다.
+ignore_imports =
+    app.modules.ingestion.service -> app.batch.metadata_chunker
+    app.modules.ingestion.service -> app.batch.notion_client

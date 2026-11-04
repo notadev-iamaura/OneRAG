@@ -12,8 +12,9 @@ PII 탐지 결과를 평가하고 처리 방향을 결정:
 
 from __future__ import annotations
 
-import logging
 from typing import Any
+
+from app.lib.logger import get_logger
 
 from .models import (
     PIIEntity,
@@ -23,7 +24,7 @@ from .models import (
     PolicyDecision,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PIIPolicyEngine:

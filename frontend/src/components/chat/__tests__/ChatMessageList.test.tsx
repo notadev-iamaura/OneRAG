@@ -1,14 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ChatMessageList } from '../ChatMessageList';
-import { ChatMessage } from '../../types';
+import { ChatMessage } from '../../../types';
 
 vi.mock('../ChatMessageItem', () => ({
-    ChatMessageItem: ({ message }) => <div data-testid="message-item">{message.content}</div>
+    ChatMessageItem: ({ message }: { message: ChatMessage }) => <div data-testid="message-item">{message.content}</div>
 }));
 
 vi.mock('../../ChatEmptyState', () => ({
-    ChatEmptyState: ({ onSuggestionClick }) => (
+    ChatEmptyState: ({ onSuggestionClick }: { onSuggestionClick: (suggestion: string) => void }) => (
         <div data-testid="empty-state">
             <button onClick={() => onSuggestionClick('suggest')}>Suggestion</button>
         </div>

@@ -10,7 +10,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 import { WebSocketProvider } from '../../../core/WebSocketProvider';
 import { useChatStreamingWithDI } from '../useChatStreamingWithDI';
-import type { IWebSocket, WebSocketFactory } from '../../../types/websocket';
+import type { IWebSocket, WebSocketFactory, WebSocketReadyStateType } from '../../../types/websocket';
 import { WebSocketReadyState } from '../../../types/websocket';
 
 /**
@@ -21,7 +21,7 @@ import { WebSocketReadyState } from '../../../types/websocket';
 class MockWebSocket implements IWebSocket {
   static instances: MockWebSocket[] = [];
 
-  readyState = WebSocketReadyState.CONNECTING;
+  readyState: WebSocketReadyStateType = WebSocketReadyState.CONNECTING;
   onopen: ((event: Event) => void) | null = null;
   onclose: ((event: CloseEvent) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -30,7 +30,10 @@ class MockWebSocket implements IWebSocket {
   send = vi.fn();
   close = vi.fn();
 
-  constructor(public url: string) {
+  public url: string;
+
+  constructor(url: string) {
+    this.url = url;
     MockWebSocket.instances.push(this);
   }
 
@@ -600,7 +603,7 @@ describe('useChatStreamingWithDI', () => {
       });
 
       expect(result.current.streamingMessage?.sources).toHaveLength(2);
-      expect(result.current.streamingMessage?.sources?.[0].document).toBe('doc1.pdf');
+      expect(result.current.streamingMessage?.sources?.[0]?.document).toBe('doc1.pdf');
     });
   });
 });

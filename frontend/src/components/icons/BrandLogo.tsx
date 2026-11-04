@@ -15,7 +15,7 @@ interface BrandLogoProps {
 const SVGLogoFallback: React.FC<{
   width: number | string;
   height: number | string;
-  className?: string;
+  className?: string | undefined;
   isDark: boolean;
 }> = ({
   width,
@@ -144,8 +144,6 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
       <div
         className={cn("flex flex-col items-center justify-center font-bold tracking-tight", className)}
         style={{
-          width: typeof width === 'number' ? `${width}px` : width,
-          height: typeof height === 'number' ? `${height}px` : height,
           fontSize: typeof height === 'number' ? `${height * 0.45}px` : '1.25rem',
           color: isDark ? 'var(--foreground)' : 'var(--foreground)',
           ...style,

@@ -12,12 +12,12 @@ alpha 파라미터로 두 소스 간 가중치를 조절합니다:
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
+from app.lib.logger import get_logger
 from app.modules.core.retrieval.interfaces import SearchResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # RRF 상수 (일반적으로 60 사용)
 _RRF_K = 60

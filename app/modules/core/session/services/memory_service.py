@@ -18,6 +18,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from .....lib.langfuse_client import observe, record_generation
 from .....lib.logger import get_logger
 from .....lib.mongodb_client import MongoDBClient
+from .....lib.retry import BackoffStrategy, RetryCallState, RetryPolicy
 
 logger = get_logger(__name__)
 
@@ -880,52 +881,65 @@ class MemoryService:
                 "updated_at": datetime.now(UTC),
             }
 
-            # 재시도 로직
+            # 재시도 로직 (공용 RetryPolicy: 선형 백오프 0.1s * 시도 횟수)
             retry_count = session_config.get("mongodb_save_retry", 3)
             timeout = session_config.get("mongodb_save_timeout", 1.0)
 
-            for attempt in range(retry_count):
-                try:
-                    # MongoDB 저장 (타임아웃 적용)
-                    import asyncio
-
-                    await asyncio.wait_for(
-                        asyncio.to_thread(collection.insert_one, message_doc), timeout=timeout
+            def _log_retry(retry_state: RetryCallState) -> None:
+                """재시도 직전(before_sleep) 경고 로그"""
+                outcome = retry_state.outcome
+                error = outcome.exception() if outcome is not None else None
+                if isinstance(error, TimeoutError):
+                    logger.warning(
+                        f"MongoDB 저장 타임아웃 (재시도 {retry_state.attempt_number}/{retry_count}): "
+                        f"session_id={session_id}"
+                    )
+                else:
+                    logger.warning(
+                        f"MongoDB 저장 오류 (재시도 {retry_state.attempt_number}/{retry_count}): {error}"
                     )
 
-                    logger.debug(
-                        f"💾 채팅 히스토리 MongoDB 저장 성공: "
-                        f"session_id={session_id}, "
-                        f"message_id={message_doc['message_id']}"
-                    )
-                    return
+            policy = RetryPolicy(
+                retry_exceptions=(Exception,),
+                max_attempts=retry_count,
+                strategy=BackoffStrategy.LINEAR,
+                initial_delay_s=0.1,
+                max_delay_s=float("inf"),
+                before_sleep=_log_retry,
+            )
 
-                except TimeoutError:
-                    if attempt < retry_count - 1:
-                        logger.warning(
-                            f"MongoDB 저장 타임아웃 (재시도 {attempt + 1}/{retry_count}): "
-                            f"session_id={session_id}"
-                        )
-                        await asyncio.sleep(0.1 * (attempt + 1))  # 지수 백오프
-                    else:
-                        logger.error(f"MongoDB 저장 최종 실패 (타임아웃): session_id={session_id}")
+            try:
+                async for attempt in policy.build_async_retrying():
+                    # 주의: tenacity AttemptManager는 블록 안의 예외를 삼키고 재시도 판단으로
+                    # 넘기므로, 성공 처리(로그/return)는 반드시 `with attempt:` 블록 안에 둔다.
+                    with attempt:
+                        try:
+                            # MongoDB 저장 (타임아웃 적용)
+                            await asyncio.wait_for(
+                                asyncio.to_thread(collection.insert_one, message_doc),
+                                timeout=timeout,
+                            )
+                        except TimeoutError:
+                            raise
+                        except Exception as e:
+                            # 중복 키 에러는 무시 (이미 저장됨)
+                            if "duplicate key" in str(e).lower():
+                                logger.debug(
+                                    f"MongoDB 중복 메시지 (이미 저장됨): "
+                                    f"message_id={message_doc['message_id']}"
+                                )
+                                return
+                            raise
 
-                except Exception as e:
-                    # 중복 키 에러는 무시 (이미 저장됨)
-                    if "duplicate key" in str(e).lower():
                         logger.debug(
-                            f"MongoDB 중복 메시지 (이미 저장됨): "
+                            f"💾 채팅 히스토리 MongoDB 저장 성공: "
+                            f"session_id={session_id}, "
                             f"message_id={message_doc['message_id']}"
                         )
                         return
-
-                    if attempt < retry_count - 1:
-                        logger.warning(
-                            f"MongoDB 저장 오류 (재시도 {attempt + 1}/{retry_count}): {e}"
-                        )
-                        await asyncio.sleep(0.1 * (attempt + 1))
-                    else:
-                        raise
+            except TimeoutError:
+                # 타임아웃 소진은 오류 로그만 남기고 전파하지 않음 (기존 동작 보존)
+                logger.error(f"MongoDB 저장 최종 실패 (타임아웃): session_id={session_id}")
 
         except Exception as e:
             # DB 저장 실패해도 채팅은 계속 작동 (Fail-Safe)

@@ -16,42 +16,26 @@ Pinecone Retriever - 하이브리드 검색 (Dense + Sparse Vector)
 Note:
     Pinecone은 Sparse Vector를 통한 하이브리드 검색을 지원합니다.
     hybrid_alpha 파라미터로 Dense/Sparse 가중치를 조절할 수 있습니다.
+    공통 검색/문서 관리 흐름은 ``HybridVectorStoreRetrieverBase``에 있습니다.
 """
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, ClassVar
 
 from app.lib.logger import get_logger
-from app.modules.core.retrieval.interfaces import SearchResult
+from app.modules.core.retrieval.retrievers._vector_store_retriever_base import (
+    HybridVectorStoreRetrieverBase,
+    IEmbedder,
+)
+from app.modules.core.retrieval.retrievers._vector_store_retriever_base import (
+    IHybridVectorStore as IVectorStore,
+)
 
 logger = get_logger(__name__)
 
-
-@runtime_checkable
-class IEmbedder(Protocol):
-    """임베딩 모델 인터페이스"""
-
-    def embed_query(self, text: str) -> list[float]:
-        """쿼리 텍스트를 벡터로 변환"""
-        ...
+__all__ = ["IEmbedder", "IVectorStore", "PineconeRetriever"]
 
 
-@runtime_checkable
-class IVectorStore(Protocol):
-    """벡터 스토어 인터페이스 (PineconeVectorStore용)"""
-
-    async def search(
-        self,
-        collection: str,
-        query_vector: list[float],
-        top_k: int,
-        filters: dict[str, Any] | None = None,
-        sparse_vector: dict[str, Any] | None = None,
-    ) -> list[dict[str, Any]]:
-        """벡터 유사도 검색"""
-        ...
-
-
-class PineconeRetriever:
+class PineconeRetriever(HybridVectorStoreRetrieverBase):
     """
     Pinecone 벡터 DB를 사용하는 하이브리드 Retriever
 
@@ -76,6 +60,10 @@ class PineconeRetriever:
         )
         results = await retriever.search("검색 쿼리")
     """
+
+    _collection_attr: ClassVar[str] = "namespace"
+
+    namespace: str
 
     def __init__(
         self,
@@ -109,128 +97,16 @@ class PineconeRetriever:
             하이브리드 검색을 사용하려면 Pinecone 인덱스가
             Sparse-Dense 모드로 생성되어 있어야 합니다.
         """
-        self.embedder = embedder
-        self.store = store
-        self.namespace = namespace
-        self.top_k = top_k
-        self.hybrid_alpha = hybrid_alpha
-
-        # BM25 전처리 모듈
-        self.synonym_manager = synonym_manager
-        self.stopword_filter = stopword_filter
-        self.user_dictionary = user_dictionary
-
-        # BM25 전처리 활성화 여부
-        self._bm25_preprocessing_enabled = any(
-            [synonym_manager is not None, stopword_filter is not None, user_dictionary is not None]
+        super().__init__(
+            embedder=embedder,
+            store=store,
+            collection=namespace,
+            top_k=top_k,
+            hybrid_alpha=hybrid_alpha,
+            synonym_manager=synonym_manager,
+            stopword_filter=stopword_filter,
+            user_dictionary=user_dictionary,
         )
-
-        # Sparse 인코더 (하이브리드 검색용, 지연 초기화)
-        self._sparse_encoder: Any | None = None
-
-        # 통계
-        self._stats = {
-            "total_searches": 0,
-            "hybrid_searches": 0,
-            "errors": 0,
-            "bm25_preprocessed": 0,
-        }
-
-        # 로그 메시지 구성
-        bm25_status = "enabled" if self._bm25_preprocessing_enabled else "disabled"
-        search_mode = "hybrid" if hybrid_alpha < 1.0 else "dense_only"
-        logger.info(
-            f"PineconeRetriever 초기화: namespace={namespace}, "
-            f"top_k={top_k}, alpha={hybrid_alpha}, mode={search_mode}, "
-            f"bm25_preprocessing={bm25_status}"
-        )
-
-    @property
-    def stats(self) -> dict[str, int]:
-        """검색 통계 반환"""
-        return self._stats.copy()
-
-    async def search(
-        self,
-        query: str,
-        top_k: int = 10,
-        filters: dict[str, Any] | None = None,
-        alpha: float | None = None,
-    ) -> list[SearchResult]:
-        """
-        하이브리드/Dense 검색 수행
-
-        검색 흐름:
-        1. embedder로 쿼리 벡터화 (Dense)
-        2. BM25 전처리 후 Sparse 벡터 생성 (하이브리드 모드 시)
-        3. PineconeVectorStore에서 검색
-        4. 결과를 SearchResult로 변환
-
-        Args:
-            query: 검색 쿼리 문자열
-            top_k: 반환할 최대 결과 수
-            filters: 메타데이터 필터링 조건 (예: {"file_type": "PDF"})
-            alpha: 하이브리드 가중치 동적 오버라이드(#35). None이면 인스턴스 기본
-                hybrid_alpha를 사용한다. alpha<1.0이면 Sparse(BM25) 벡터를 생성해
-                하이브리드 검색을 수행한다(lexical 질의에서 낮은 alpha → BM25 강화).
-
-        Returns:
-            검색 결과 리스트 (SearchResult)
-                - id: 문서 ID
-                - content: 문서 내용
-                - score: 유사도 점수
-                - metadata: 메타데이터 딕셔너리
-
-        Raises:
-            ValueError: 임베딩 생성 실패 시
-            RuntimeError: 검색 실패 시
-        """
-        try:
-            # alpha 오버라이드 적용(없으면 인스턴스 기본값, #35)
-            effective_alpha = alpha if alpha is not None else self.hybrid_alpha
-
-            # 1. Dense 쿼리 벡터화 (원본 쿼리 - 의미 보존)
-            logger.debug(f"쿼리 임베딩 생성 중: '{query[:50]}...'")
-            query_vector = self.embedder.embed_query(query)
-
-            # 2. Sparse 벡터 생성 (하이브리드 모드)
-            sparse_vector = None
-            if effective_alpha < 1.0 and self._sparse_encoder is not None:
-                # BM25 전처리 적용
-                processed_query = self._preprocess_query(query)
-                sparse_vector = self._sparse_encoder.encode(processed_query)
-                self._stats["hybrid_searches"] += 1
-
-            # 3. PineconeVectorStore에서 검색
-            raw_results = await self.store.search(
-                collection=self.namespace,
-                query_vector=query_vector,
-                top_k=top_k,
-                filters=filters,
-                sparse_vector=sparse_vector,
-            )
-
-            # 4. SearchResult로 변환
-            results = self._convert_to_search_results(raw_results)
-
-            # 5. 통계 업데이트
-            self._stats["total_searches"] += 1
-
-            logger.info(
-                f"PineconeRetriever 검색 완료: "
-                f"{len(results)}개 결과 반환 (query='{query[:30]}...')"
-            )
-
-            return results
-
-        except Exception as e:
-            self._stats["errors"] += 1
-            logger.error(
-                f"PineconeRetriever 검색 실패: {e}",
-                extra={"query": query[:100]},
-                exc_info=True,
-            )
-            raise
 
     async def health_check(self) -> bool:
         """
@@ -252,262 +128,3 @@ class PineconeRetriever:
         except Exception as e:
             logger.warning(f"PineconeRetriever health check 실패: {e}")
             return False
-
-    def _preprocess_query(self, query: str) -> str:
-        """
-        BM25 검색을 위한 쿼리 전처리
-
-        전처리 파이프라인:
-        1. 사용자 사전 - 합성어 보호 (분리 방지)
-        2. 동의어 확장 (축약어 → 표준어)
-        3. 불용어 제거
-        4. 사용자 사전 - 합성어 복원
-
-        Args:
-            query: 원본 검색 쿼리
-
-        Returns:
-            전처리된 쿼리 (Sparse 벡터 생성용)
-
-        Note:
-            - Dense embedding은 원본 쿼리 사용 (의미 보존)
-            - Sparse 벡터만 전처리된 쿼리 사용 (키워드 매칭 향상)
-        """
-        if not self._bm25_preprocessing_enabled:
-            return query
-
-        processed = query
-        restore_map: dict[str, str] = {}
-
-        try:
-            # Step 1: 사용자 사전 - 합성어 보호
-            if self.user_dictionary is not None:
-                processed, restore_map = self.user_dictionary.protect_entries(processed)
-
-            # Step 2: 동의어 확장
-            if self.synonym_manager is not None:
-                processed = self.synonym_manager.expand_query(processed)
-
-            # Step 3: 불용어 제거
-            if self.stopword_filter is not None:
-                processed = self.stopword_filter.filter_text(processed)
-
-            # Step 4: 사용자 사전 - 합성어 복원
-            if self.user_dictionary is not None and restore_map:
-                processed = self.user_dictionary.restore_entries(processed, restore_map)
-
-            # 전처리 결과 로깅 (변경 시에만)
-            if processed != query:
-                self._stats["bm25_preprocessed"] += 1
-                logger.debug(f"BM25 쿼리 전처리: '{query}' → '{processed}'")
-
-        except Exception as e:
-            # 전처리 실패 시 원본 쿼리 사용 (Graceful Degradation)
-            logger.warning(
-                f"BM25 쿼리 전처리 실패, 원본 사용: {str(e)}", extra={"query": query[:100]}
-            )
-            return query
-
-        return processed
-
-    # ============================================================
-    # 문서 관리 메서드 (Store 위임, duck typing)
-    # ============================================================
-
-    async def get_document_chunks(self, document_id: str) -> list[dict[str, Any]]:
-        """document_id로 모든 청크 조회"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(
-            collection=self.namespace,
-            filters={"document_id": document_id},
-        )
-        return [
-            {
-                "id": str(r.get("_id", "")),
-                "content": r.get("content", ""),
-                "metadata": {k: v for k, v in r.items() if k not in ("_id", "content")},
-            }
-            for r in raw_results
-        ]
-
-    async def delete_document(self, document_id: str) -> bool:
-        """document_id의 모든 청크 삭제"""
-        chunks = await self.get_document_chunks(document_id)
-        if not chunks:
-            return False
-        object_ids = [c["id"] for c in chunks]
-        if not hasattr(self.store, "delete_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 delete_objects를 지원하지 않습니다."
-            )
-        await self.store.delete_objects(
-            collection=self.namespace, object_ids=object_ids,
-        )
-        logger.info(f"문서 삭제 완료: document_id={document_id}, 청크 {len(object_ids)}개")
-        return True
-
-    async def list_documents(self, page: int = 1, page_size: int = 20) -> dict[str, Any]:
-        """고유 문서 목록 페이지네이션 조회"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.namespace)
-        doc_map: dict[str, dict[str, Any]] = {}
-        for r in raw_results:
-            doc_id = r.get("document_id", r.get("_id", ""))
-            if doc_id not in doc_map:
-                doc_map[doc_id] = {
-                    "id": doc_id,
-                    "filename": r.get("source_file", ""),
-                    "file_type": r.get("file_type", ""),
-                    "created_at": r.get("created_at", ""),
-                    "chunk_count": 0,
-                }
-            doc_map[doc_id]["chunk_count"] += 1
-        all_docs = list(doc_map.values())
-        total = len(all_docs)
-        start = (page - 1) * page_size
-        end = start + page_size
-        return {"documents": all_docs[start:end], "total_count": total}
-
-    async def get_document_details(self, document_id: str) -> dict[str, Any] | None:
-        """문서 상세 정보 조회"""
-        chunks = await self.get_document_chunks(document_id)
-        if not chunks:
-            return None
-        first = chunks[0]["metadata"]
-        total_size = sum(len(c.get("content", "").encode("utf-8")) for c in chunks)
-        return {
-            "id": document_id,
-            "filename": first.get("source_file", ""),
-            "file_type": first.get("file_type", ""),
-            "file_size": total_size,
-            "created_at": first.get("created_at", ""),
-            "actual_chunk_count": len(chunks),
-            "chunk_previews": [c["content"][:200] for c in chunks],
-            "metadata": first,
-        }
-
-    async def get_document_stats(self) -> dict[str, Any]:
-        """문서/벡터 수량 통계"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.namespace)
-        doc_ids = {r.get("document_id", r.get("_id", "")) for r in raw_results}
-        return {"total_documents": len(doc_ids), "vector_count": len(raw_results)}
-
-    async def get_collection_info(self) -> dict[str, Any]:
-        """컬렉션 메타정보 반환"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.namespace)
-        dates = [r.get("created_at", "") for r in raw_results if r.get("created_at")]
-        return {
-            "collection_name": self.namespace,
-            "total_objects": len(raw_results),
-            "oldest_document": min(dates) if dates else None,
-            "newest_document": max(dates) if dates else None,
-        }
-
-    async def delete_all_documents(self) -> bool:
-        """전체 문서 삭제"""
-        if not hasattr(self.store, "fetch_objects") or not hasattr(self.store, "delete_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 전체 삭제를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.namespace)
-        if not raw_results:
-            return True
-        object_ids = [str(r.get("_id", "")) for r in raw_results]
-        await self.store.delete_objects(collection=self.namespace, object_ids=object_ids)
-        logger.warning(f"전체 문서 삭제 완료: {len(object_ids)}개 객체")
-        return True
-
-    async def recreate_collection(self) -> bool:
-        """컬렉션 재생성"""
-        await self.delete_all_documents()
-        return True
-
-    async def backup_metadata(self) -> list[dict[str, Any]]:
-        """모든 문서의 메타데이터를 백업"""
-        if not hasattr(self.store, "fetch_objects"):
-            raise NotImplementedError(
-                f"{type(self).__name__}의 store는 fetch_objects를 지원하지 않습니다."
-            )
-        raw_results = await self.store.fetch_objects(collection=self.namespace)
-        doc_map: dict[str, dict[str, Any]] = {}
-        for r in raw_results:
-            doc_id = r.get("document_id", r.get("_id", ""))
-            if doc_id not in doc_map:
-                doc_map[doc_id] = {
-                    "id": doc_id,
-                    "filename": r.get("source_file", ""),
-                    "file_type": r.get("file_type", ""),
-                    "created_at": r.get("created_at", ""),
-                    "chunk_count": 0,
-                }
-            doc_map[doc_id]["chunk_count"] += 1
-        return list(doc_map.values())
-
-    def _convert_to_search_results(
-        self, raw_results: list[dict[str, Any]]
-    ) -> list[SearchResult]:
-        """
-        Pinecone 결과를 SearchResult로 변환
-
-        Pinecone 결과 형식:
-            {
-                "_id": str,           # 벡터 ID
-                "_score": float,      # 유사도 점수
-                "content": str,       # 문서 내용
-                ...metadata...        # 기타 메타데이터
-            }
-
-        SearchResult 형식:
-            - id: str              # 문서 ID
-            - content: str         # 문서 내용
-            - score: float         # 유사도 점수
-            - metadata: dict       # 메타데이터
-
-        Args:
-            raw_results: PineconeVectorStore 검색 결과
-
-        Returns:
-            SearchResult 리스트
-        """
-        results: list[SearchResult] = []
-
-        for item in raw_results:
-            # ID 추출
-            doc_id = str(item.get("_id", ""))
-
-            # 콘텐츠 추출
-            content = str(item.get("content", ""))
-
-            # 점수 추출
-            score = float(item.get("_score", 0.0))
-
-            # 메타데이터 추출 (_id, _score, content 제외)
-            metadata: dict[str, Any] = {}
-            for key, value in item.items():
-                if key not in ("_id", "_score", "content"):
-                    metadata[key] = value
-
-            results.append(
-                SearchResult(
-                    id=doc_id,
-                    content=content,
-                    score=score,
-                    metadata=metadata,
-                )
-            )
-
-        return results

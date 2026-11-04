@@ -25,7 +25,11 @@ class MockWebSocket implements IWebSocket {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
 
-  constructor(public url: string) {}
+  public url: string;
+
+  constructor(url: string) {
+    this.url = url;
+  }
 
   send = vi.fn();
   close = vi.fn();

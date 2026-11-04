@@ -106,8 +106,13 @@ dev-fast: install-dev
 	uv run uvicorn main:app --reload --host 0.0.0.0 --port 8001 --log-level warning --reload-delay 0.25
 
 # 테스트 실행 (UV 환경)
+# 기본 테스트: live(실네트워크/유료 API/외부 서비스) 테스트는 제외한다.
 test: install-dev
-	uv run pytest
+	ENVIRONMENT=test uv run pytest -m "not live"
+
+# live 테스트: 실제 외부 서비스/유료 API 호출. ONERAG_RUN_LIVE_PROVIDER_TESTS=1 이 필요하다.
+test-live: install-dev
+	ENVIRONMENT=test ONERAG_RUN_LIVE_PROVIDER_TESTS=1 uv run pytest -m live
 
 # 테스트 실행 (시스템 Python 환경 - UV 문제 시 대안)
 test-system:
@@ -135,18 +140,15 @@ test-auto:
 	fi
 
 # 기본 테스트 (타임아웃 방지)
-test-basic:
+# 가장 빠른 기본 점검: 앱 기동 가드 + readiness 계약 (예전 tests/test_basic.py 등은 삭제됨)
+test-basic: install-dev
 	@echo "🧪 Running basic tests only..."
-	@if [ -d ".venv_system" ]; then \
-		source .venv_system/bin/activate && python -m pytest tests/test_basic.py tests/test_config_simple.py -v --tb=short; \
-	else \
-		./scripts/test-env-setup.sh --system --minimal && \
-		source .venv_system/bin/activate && python -m pytest tests/test_basic.py tests/test_config_simple.py -v --tb=short; \
-	fi
+	ENVIRONMENT=test uv run pytest tests/test_main_startup.py tests/unit/api/test_health_readiness.py -v --tb=short
 
 # 테스트 커버리지
+# pyproject addopts가 pytest_cov 플러그인을 끄므로(-p no:pytest_cov) 여기서 명시적으로 켠다.
 test-cov: install-dev
-	uv run pytest --cov=app --cov-report=html --cov-report=term
+	ENVIRONMENT=test uv run pytest -p pytest_cov --cov=app --cov-report=html --cov-report=term -m "not live"
 
 # 운영 안정성 smoke 테스트 (CI와 로컬에서 동일하게 사용)
 test-operational-smoke:
@@ -214,6 +216,16 @@ type-check: install-dev
 lint-imports: install-dev
 	@echo "🔍 Checking import dependencies..."
 	uv run lint-imports
+
+# 런타임 의존성 취약점 감사 (pip-audit)
+# uv 가상환경에는 ensurepip가 없어 pip-audit가 임시 venv를 만들지 못하므로,
+# lock을 requirements로 export한 뒤 --no-deps로 고정 버전만 검사한다.
+# (python3는 ensurepip가 포함된 시스템/pyenv 인터프리터여야 한다.)
+.PHONY: audit
+audit:
+	@echo "🔎 Auditing runtime dependencies with pip-audit..."
+	uv export --frozen --no-dev --no-emit-project --format requirements.txt --no-hashes --output-file .pip-audit-requirements.txt
+	@uvx --python python3 pip-audit -r .pip-audit-requirements.txt --no-deps --desc=off; status=$$?; rm -f .pip-audit-requirements.txt; exit $$status
 
 repair-venv-scripts: check-uv
 	@echo "🔧 Reinstalling console scripts for moved workspaces..."

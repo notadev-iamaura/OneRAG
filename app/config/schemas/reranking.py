@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from app.modules.core.retrieval.rerankers.mode import (
+from app.lib.rerank_mode import (
     RerankerModeConfigError,
     normalize_mode_value,
 )

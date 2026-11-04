@@ -28,11 +28,19 @@ HAS_OPENROUTER_KEY = bool(os.getenv("OPENROUTER_API_KEY"))
 HAS_ANY_LLM_KEY = HAS_OPENAI_KEY or HAS_OPENROUTER_KEY
 
 
-# API 키가 없으면 전체 모듈 스킵
-pytestmark = pytest.mark.skipif(
-    not HAS_ANY_LLM_KEY,
-    reason="실제 LLM API 키 필요 (OPENAI_API_KEY 또는 OPENROUTER_API_KEY)"
-)
+# API 키가 없으면 전체 모듈 스킵. 키가 있어도 실제 과금이 발생하므로
+# ONERAG_RUN_LIVE_PROVIDER_TESTS=1 을 명시한 경우에만 실행한다(`make test` 중 의도치 않은 과금 방지).
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
+        not HAS_ANY_LLM_KEY,
+        reason="실제 LLM API 키 필요 (OPENAI_API_KEY 또는 OPENROUTER_API_KEY)",
+    ),
+    pytest.mark.skipif(
+        os.getenv("ONERAG_RUN_LIVE_PROVIDER_TESTS") != "1",
+        reason="유료 LLM 호출 테스트는 ONERAG_RUN_LIVE_PROVIDER_TESTS=1 일 때만 실행",
+    ),
+]
 
 
 class TestSelfReflectionRealLLM:

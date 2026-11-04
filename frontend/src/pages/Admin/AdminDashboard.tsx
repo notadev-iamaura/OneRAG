@@ -144,6 +144,15 @@ interface Document {
   metadata?: Record<string, unknown>;
 }
 
+/** /api/admin/test 응답(RAG 테스트 결과) */
+interface RagTestResult {
+  query?: string;
+  retrievedChunks?: Array<{ content?: string; score?: number }>;
+  generatedAnswer?: string;
+  responseTime?: string | number;
+  error?: string;
+}
+
 interface Session {
   id: string;
   status: 'active' | 'idle' | 'expired';
@@ -229,7 +238,7 @@ const AdminDashboard: React.FC = () => {
   // 다이얼로그 상태
   const [testDialogOpen, setTestDialogOpen] = useState(false);
   const [testQuery, setTestQuery] = useState('');
-  const [testResult, setTestResult] = useState<Record<string, unknown> | null>(null);
+  const [testResult, setTestResult] = useState<RagTestResult | null>(null);
   const [testLoading, setTestLoading] = useState(false);
 
   // 상세 다이얼로그 상태
@@ -1000,7 +1009,7 @@ const AdminDashboard: React.FC = () => {
                   <div className="space-y-2 font-bold">
                     <Label className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">{messages.adminDashboard.retrievedChunksLabel}</Label>
                     <ScrollArea className="h-32 rounded-2xl bg-muted/30 border border-border/40 p-4">
-                      {testResult.retrievedChunks?.map((chunk: Record<string, unknown>, i: number) => (
+                      {testResult.retrievedChunks?.map((chunk, i) => (
                         <div key={i} className="text-sm mb-3 last:mb-0 pb-3 border-b border-border/20 last:border-0">
                           <p className="opacity-80 leading-relaxed font-medium">"{chunk.content}"</p>
                           <Badge variant="secondary" className="mt-1 h-4 text-[8px] font-black">Score: {chunk.score?.toFixed(3)}</Badge>

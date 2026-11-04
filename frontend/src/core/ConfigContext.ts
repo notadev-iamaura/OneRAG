@@ -6,8 +6,9 @@
 
 import { createContext } from 'react';
 import type { AppConfig } from '../config';
-import { APP_CONFIG } from '../config';
+import type { DeepPartial } from '../config/deepPartial';
 import type { RuntimeBrandConfig } from '../config/brand';
+import type { FeatureConfig } from '../config/features';
 import type { OperatorRuntimeSettings } from '../config/operatorSettings';
 
 export interface RuntimeConfig {
@@ -19,7 +20,8 @@ export interface RuntimeConfig {
     header?: { height?: number };
     content?: { padding?: number };
   };
-  features?: typeof APP_CONFIG.features;
+  // 저장된 설정은 일부 플래그만 담을 수 있다(ConfigProvider에서 기본값과 깊은 병합).
+  features?: DeepPartial<FeatureConfig>;
 }
 
 export interface ConfigContextType {

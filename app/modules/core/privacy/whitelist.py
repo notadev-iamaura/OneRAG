@@ -14,17 +14,18 @@ privacy.yaml 설정과 동기화하여 모든 PII 처리 모드에서 공유.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import yaml
 
+from app.lib.logger import get_logger
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ========================================

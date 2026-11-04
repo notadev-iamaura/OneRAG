@@ -23,7 +23,7 @@ interface ChatMessageListProps {
     copyToClipboard: (text: string, successMessage?: string) => void;
     onChunkClick: (source: SourceType) => void;
     onSuggestionClick: (suggestion: string) => void;
-    messagesEndRef: React.RefObject<HTMLDivElement>;
+    messagesEndRef: React.RefObject<HTMLDivElement | null>;
     showScrollButton?: boolean;
     handleScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
     scrollToBottom?: (behavior: ScrollBehavior) => void;

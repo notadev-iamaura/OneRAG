@@ -333,9 +333,9 @@ export const useChatMessages = ({
         // 누적 상태(전체 수신 내용/소스/트레이스)
         const accumulated: {
             content: string;
-            sources?: Source[];
-            processingTime?: number;
-            tokensUsed?: number;
+            sources?: Source[] | undefined;
+            processingTime?: number | undefined;
+            tokensUsed?: number | undefined;
         } = { content: '' };
 
         // 표시/수신 버퍼와 타이프라이터 타이머

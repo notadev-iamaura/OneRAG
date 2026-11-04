@@ -20,11 +20,11 @@
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Callable
-from typing import TypeVar
+from typing import Any, TypeVar
 
+from ....lib.config_validator import get_env_float, get_env_int
 from ....lib.logger import get_logger
 from ....lib.retry import BackoffStrategy, build_backoff_wait
 
@@ -46,47 +46,38 @@ _DEFAULT_RETRY_MAX_SECONDS = 30.0
 
 
 class EmbeddingRetryableError(Exception):
-    """테스트/내부용 재시도 가능 오류.
+    """재시도 가능 오류(명시적 상태 코드).
 
-    실제 프로바이더 예외 대신 명시적 상태 코드를 담아 재시도 경로를 검증할 때
-    사용한다. ``status_code`` 속성으로 상태 코드를 노출한다.
+    - 테스트/내부용: 실제 프로바이더 예외 대신 상태 코드를 담아 재시도 경로를 검증한다.
+    - REST 임베더용: 응답 상태가 재시도 대상일 때 응답을 ``response``에 실어 raise하면
+      ``retry_embed``가 ``Retry-After`` 헤더를 존중해 재시도하고, 소진 시 호출처가
+      ``response.raise_for_status()``로 원래 HTTP 오류를 전파할 수 있다.
+
+    ``status_code`` 속성으로 상태 코드를, ``response`` 속성으로 원본 응답(있으면)을 노출한다.
     """
 
-    def __init__(self, status_code: int, message: str | None = None) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        message: str | None = None,
+        *,
+        response: Any | None = None,
+    ) -> None:
         self.status_code = status_code
+        self.response = response
         super().__init__(message or f"retryable embedding error: HTTP {status_code}")
 
 
-def _env_int(name: str, default: int) -> int:
-    """환경변수를 정수로 읽되, 미설정/오류 시 기본값을 사용한다."""
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        logger.warning("Invalid integer for %s=%r; using %s", name, value, default)
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    """환경변수를 실수로 읽되, 미설정/오류 시 기본값을 사용한다."""
-    value = os.getenv(name)
-    if value is None or value == "":
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        logger.warning("Invalid float for %s=%r; using %s", name, value, default)
-        return default
-
-
 def resolve_retry_settings() -> tuple[int, float, float]:
-    """환경변수 기반 재시도 설정(max_retries, base_seconds, max_seconds)을 해석한다."""
+    """환경변수 기반 재시도 설정(max_retries, base_seconds, max_seconds)을 해석한다.
+
+    미설정/빈 값/잘못된 값은 공용 ``get_env_int``/``get_env_float``의 관대 모드
+    (strict=False)로 기본값에 폴백한다.
+    """
     return (
-        _env_int(_ENV_MAX_RETRIES, _DEFAULT_MAX_RETRIES),
-        _env_float(_ENV_RETRY_BASE_SECONDS, _DEFAULT_RETRY_BASE_SECONDS),
-        _env_float(_ENV_RETRY_MAX_SECONDS, _DEFAULT_RETRY_MAX_SECONDS),
+        get_env_int(_ENV_MAX_RETRIES, _DEFAULT_MAX_RETRIES, strict=False),
+        get_env_float(_ENV_RETRY_BASE_SECONDS, _DEFAULT_RETRY_BASE_SECONDS, strict=False),
+        get_env_float(_ENV_RETRY_MAX_SECONDS, _DEFAULT_RETRY_MAX_SECONDS, strict=False),
     )
 
 

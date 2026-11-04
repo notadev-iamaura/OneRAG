@@ -52,7 +52,6 @@ function createMockChatAPIService(overrides?: Partial<IChatAPIService>): IChatAP
     getSessionInfo: vi.fn().mockResolvedValue({
       data: { session_id: 'mock-session', created_at: '2024-01-01', message_count: 0 },
     }),
-    streamMessage: vi.fn(),
     ...overrides,
   };
 }

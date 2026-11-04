@@ -328,6 +328,6 @@ describe('UploadTab', () => {
 
         // a 실패로 슬롯이 비면 c가 시작되어야 함
         expect(uploadMock).toHaveBeenCalledTimes(3);
-        expect((uploadMock.mock.calls[2][0] as File).name).toBe('bulk-c.pdf');
+        expect((uploadMock.mock.calls[2]?.[0] as File).name).toBe('bulk-c.pdf');
     });
 });

@@ -14,6 +14,8 @@ import psutil
 from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
 
+from app import __version__ as APP_VERSION
+
 from ..lib.logger import get_logger
 from ..lib.startup_policy import is_retrieval_required
 
@@ -70,7 +72,7 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: str
     uptime: float
-    version: str = "2.0.0"
+    version: str = APP_VERSION
     environment: str
 
 

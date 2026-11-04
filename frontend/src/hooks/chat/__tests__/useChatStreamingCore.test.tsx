@@ -8,7 +8,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useChatStreamingCore } from '../useChatStreamingCore';
-import type { IChatWebSocketService, WebSocketEventHandler } from '../../../services/createChatWebSocketService';
+import type { IChatWebSocketService } from '../../../services/createChatWebSocketService';
+import type { EventCallback as WebSocketEventHandler } from '../../../types/chatStreaming';
 
 /**
  * Mock WebSocket 서비스 생성
@@ -27,8 +28,12 @@ function createMockService(): IChatWebSocketService & {
     simulateEvent: (event: string, data: unknown) => void;
     simulateConnect: () => void;
   } = {
+    isConnected: false,
+    currentState: 'idle',
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn(),
+    stop: vi.fn(),
+    resetReconnectAttempts: vi.fn(),
     sendMessage: vi.fn().mockReturnValue('generated-msg-id'),
     on: vi.fn((event: string, handler: WebSocketEventHandler) => {
       if (!listeners.has(event)) {
@@ -514,7 +519,7 @@ describe('useChatStreamingCore', () => {
       });
 
       expect(result.current.streamingMessage?.sources).toHaveLength(2);
-      expect(result.current.streamingMessage?.sources?.[0].document).toBe('doc1.pdf');
+      expect(result.current.streamingMessage?.sources?.[0]?.document).toBe('doc1.pdf');
     });
   });
 

@@ -3,8 +3,8 @@
  * react-window를 사용한 대용량 데이터 렌더링 최적화
  */
 import React from 'react';
-import { FixedSizeList as List } from 'react-window';
-import AutoSizer from 'react-virtualized-auto-sizer';
+import { List, type RowComponentProps } from 'react-window';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
 import {
   Info,
   Download,
@@ -28,9 +28,12 @@ interface VirtualizedDocumentListProps {
   onDocumentDownload: (id: string) => void;
 }
 
-interface RowProps {
-  index: number;
-  style: React.CSSProperties;
+// react-window v2 rowProps: 행 렌더링에 필요한 데이터/콜백을 전달한다.
+interface DocumentRowProps {
+  documents: Document[];
+  onDocumentClick: (document: Document) => void;
+  onDocumentDelete: (id: string) => void;
+  onDocumentDownload: (id: string) => void;
 }
 
 export const VirtualizedDocumentList: React.FC<VirtualizedDocumentListProps> = ({
@@ -42,8 +45,18 @@ export const VirtualizedDocumentList: React.FC<VirtualizedDocumentListProps> = (
   // i18n: 상태 라벨/크기·업로드 메타/빈 상태(현재 로케일)
   const { messages, locale } = useMenuMessages();
 
-  const Row = ({ index, style }: RowProps) => {
-    const document = documents[index];
+  const Row = ({
+    index,
+    style,
+    documents: rowDocuments,
+    onDocumentClick,
+    onDocumentDelete,
+    onDocumentDownload,
+  }: RowComponentProps<DocumentRowProps>) => {
+    const document = rowDocuments[index];
+    if (document === undefined) {
+      return <div style={style} />;
+    }
 
     const getStatusLabel = (status: string) => {
       switch (status) {
@@ -160,19 +173,18 @@ export const VirtualizedDocumentList: React.FC<VirtualizedDocumentListProps> = (
 
   return (
     <div className="h-[600px] w-full rounded-[24px] border border-border/60 overflow-hidden bg-background/50 backdrop-blur-sm">
-      <AutoSizer>
-        {({ height, width }: { height: number; width: number }) => (
+      <AutoSizer
+        renderProp={({ height, width }) => (
           <List
-            height={height}
-            itemCount={documents.length}
-            itemSize={180}
-            width={width}
+            style={{ height: height ?? 0, width: width ?? 0 }}
+            rowCount={documents.length}
+            rowHeight={180}
+            rowComponent={Row}
+            rowProps={{ documents, onDocumentClick, onDocumentDelete, onDocumentDownload }}
             className="scrollbar-hide"
-          >
-            {Row}
-          </List>
+          />
         )}
-      </AutoSizer>
+      />
     </div>
   );
 };
