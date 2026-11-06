@@ -12,6 +12,7 @@ from weaviate import WeaviateClient
 
 from app.core.interfaces.storage import IVectorStore
 from app.lib.logger import get_logger
+from app.lib.weaviate_integration import register_integration_header
 
 logger = get_logger(__name__)
 
@@ -56,6 +57,7 @@ class WeaviateVectorStore(IVectorStore):
             grpc_secure=is_secure,
             auth_credentials=auth_config,
         )
+        register_integration_header(self.client)
         logger.info(f"WeaviateVectorStore initialized connected to {self.url}")
 
     async def add_documents(self, collection: str, documents: list[dict[str, Any]]) -> int:

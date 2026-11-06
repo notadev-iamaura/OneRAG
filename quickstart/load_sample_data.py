@@ -253,6 +253,9 @@ def load_sample_data(reset: bool | None = None, collection_name: str | None = No
         grpc_port=weaviate_grpc_port,
         grpc_secure=False,
     )
+    from app.lib.weaviate_integration import register_integration_header
+
+    register_integration_header(client)
 
     try:
         # 컬렉션 이름 - RAG 시스템 기본 컬렉션과 동일하게 설정

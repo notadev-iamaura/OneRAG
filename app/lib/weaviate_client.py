@@ -24,6 +24,7 @@ from weaviate.exceptions import WeaviateConnectionError
 
 from app.lib.config_loader import load_config
 from app.lib.logger import get_logger
+from app.lib.weaviate_integration import register_integration_header
 
 # 로거 설정
 logger = get_logger(__name__)
@@ -98,6 +99,8 @@ class WeaviateClient:
                 )
 
                 self._client.connect()
+
+            register_integration_header(self._client)
 
             # 연결 테스트
             if self._client.is_ready():
