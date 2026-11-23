@@ -3,8 +3,8 @@ version: '3.8'
 services:
   weaviate:
     # 로컬 개발: cr.weaviate.io 사용 가능
-    # Railway 배포: semitechnologies/weaviate:1.27.8 (Docker Hub) 사용 필수
-    image: cr.weaviate.io/semitechnologies/weaviate:1.27.8
+    # Railway 배포: semitechnologies/weaviate:1.39.13 (Docker Hub) 사용 필수
+    image: cr.weaviate.io/semitechnologies/weaviate:1.39.13
     container_name: weaviate-local
     restart: unless-stopped
     ports:

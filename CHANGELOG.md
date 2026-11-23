@@ -108,6 +108,9 @@
 - 0% 커버리지 모듈 5개에 단위 테스트 56개 추가 (Phase 1)
 
 ### 변경됨
+- Weaviate 이미지를 1.27.8 → 1.39.13으로 업그레이드 (Go 1.26.10 기반, CVE-2026-111943 대응).
+  기존 데이터 볼륨(예: `docker-compose.prod.yml`)은 마이너 버전을 하나씩 올려야 합니다
+  (1.28 → 1.29 → … → 1.39). 업그레이드 전에 볼륨을 백업하세요.
 - Quickstart/easy-start 샘플 데이터 로더가 기본적으로 기존 컬렉션을 삭제하지 않도록 변경
 - CI가 backend coverage artifact, frontend warning-gated build/test, runtime smoke를 모두 검증하도록 최신화
 - `GenerationConfig` max_tokens 범위 통일 (100-32000 -> 1-128000)

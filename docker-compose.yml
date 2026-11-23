@@ -8,7 +8,7 @@
 services:
   # Weaviate 벡터 데이터베이스
   weaviate:
-    image: cr.weaviate.io/semitechnologies/weaviate:1.27.8
+    image: cr.weaviate.io/semitechnologies/weaviate:1.39.13
     container_name: rag-weaviate
     restart: unless-stopped
     ports:

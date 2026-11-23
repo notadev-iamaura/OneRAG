@@ -80,7 +80,7 @@ echo "   Weaviate 배포는 Railway Dashboard에서 수동으로 진행하세요
 echo ""
 echo "   1. Railway Dashboard → 프로젝트 열기"
 echo "   2. New Service → Docker Image"
-echo "   3. Image: semitechnologies/weaviate:1.27.8  (⚠️ Docker Hub 이미지!)"
+echo "   3. Image: semitechnologies/weaviate:1.39.13  (⚠️ Docker Hub 이미지!)"
 echo "   4. Deploy 클릭"
 echo ""
 echo "   주의: cr.weaviate.io는 Railway가 지원하지 않습니다!"
