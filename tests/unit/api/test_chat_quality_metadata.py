@@ -292,3 +292,28 @@ def test_chat_exposes_self_rag_status(
     else:
         assert payload["self_rag_metadata"] is None
         assert payload["model_info"]["self_rag_skip_reason"] == "evaluator_unavailable"
+
+
+def test_chat_returns_agent_execution_metadata() -> None:
+    execution = {
+        "mode": "agent", "steps_taken": 2, "tools_used": ["get_document_by_id"],
+        "stop_reason": "max_iterations", "success": True,
+    }
+    service = MagicMock()
+    service.handle_session = AsyncMock(return_value={"success": True, "session_id": "session"})
+    service.execute_rag_pipeline = AsyncMock(return_value={
+        "answer": "답변", "sources": [], "tokens_used": 18, "topic": "test",
+        "model_info": {"provider": "agent"}, "metadata": execution,
+    })
+    service.add_conversation_to_session = AsyncMock()
+    app = FastAPI()
+    app.include_router(router)
+    set_chat_service(service)
+    try:
+        response = TestClient(app).post("/chat", json={"message": "질문", "use_agent": True})
+    finally:
+        set_chat_service(None)  # type: ignore[arg-type]
+
+    assert response.status_code == 200
+    metadata = response.json()["metadata"]
+    assert {field: metadata[field] for field in execution} == execution

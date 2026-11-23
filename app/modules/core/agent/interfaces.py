@@ -13,9 +13,12 @@ LLM이 도구 선택 → 실행 → 결과 평가를 반복하는 에이전트 �
 - AgentResult: 최종 결과
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 from uuid import uuid4
+
+from .extractive_reader import ExtractiveReaderConfig
 
 
 @dataclass
@@ -136,9 +139,15 @@ class AgentConfig:
     orchestrator_error_message: str | None = None
     # Orchestrator: Reflection 컨텍스트 추출 시 도구 결과 부재 대체 문자열(내부 신호)
     orchestrator_empty_context: str | None = None
+    require_evidence_quotes: bool = False
+    verify_question_conditions: bool = False
+    verify_premise_mismatch: bool = False
+    extractive_reader: ExtractiveReaderConfig | None = None
 
     def __post_init__(self) -> None:
         """설정값 검증"""
+        if self.extractive_reader is not None and not self.require_evidence_quotes:
+            raise ValueError("An extractive reader requires require_evidence_quotes")
         # reflection_threshold 범위 검증 (0-10)
         if not 0.0 <= self.reflection_threshold <= 10.0:
             raise ValueError(
@@ -206,13 +215,39 @@ class ToolResult:
     success: bool
 
     # 결과 데이터 (성공 시)
-    data: dict[str, Any] | None = None
+    data: Any = None
 
     # 에러 메시지 (실패 시)
     error: str | None = None
 
     # 실행 시간 (초)
     execution_time: float = 0.0
+
+    @property
+    def documents(self) -> list[dict[str, Any]]:
+        """Accept vector search lists, wrapped search results and single document lookups."""
+        rows = self.data
+        if isinstance(rows, dict):
+            rows = rows.get("documents", [rows] if "content" in rows else [])
+        if not isinstance(rows, list):
+            return []
+        return [row for row in rows if isinstance(row, dict) and "content" in row]
+
+    def planning_evidence(self) -> str:
+        documents = self.documents
+        if not documents:
+            return json.dumps(self.data, ensure_ascii=False, default=str)[:1600]
+        excerpts = []
+        for doc in documents[:3]:
+            meta = doc.get("metadata") or {}
+            item = {
+                key: str(doc.get(key) or meta.get(key))[:160]
+                for key in ("id", "document_id", "source_id", "source", "source_file")
+                if doc.get(key) or meta.get(key)
+            }
+            item["content"] = str(doc["content"])[:360]
+            excerpts.append(item)
+        return json.dumps(excerpts, ensure_ascii=False)
 
 
 @dataclass
@@ -288,6 +323,10 @@ class AgentState:
     # 에러 정보 (실패 시)
     error: str | None = None
 
+    session_context: str = ""
+    grounding_status: str | None = None
+    followup_queries: list[str] = field(default_factory=list)
+
     @property
     def current_iteration(self) -> int:
         """
@@ -324,20 +363,22 @@ class AgentState:
         Returns:
             이전 스텝들의 요약 문자열 (없으면 빈 문자열)
         """
-        if not self.steps:
-            return ""
-
         context_parts = []
         for step in self.steps:
             step_summary = f"Step {step.step_number}: {step.reasoning}"
             for result in step.tool_results:
                 if result.success:
                     step_summary += f"\n  - {result.tool_name}: 성공"
+                    if result.data:
+                        step_summary += f"\n    근거: {result.planning_evidence()}"
                 else:
                     step_summary += f"\n  - {result.tool_name}: 실패 ({result.error})"
             context_parts.append(step_summary)
 
-        return "\n".join(context_parts)
+        history = "\n".join(context_parts)[-8000:]
+        if self.session_context:
+            return f"이전 대화: {self.session_context[-1500:]}\n{history}"
+        return history
 
 
 @dataclass
@@ -382,6 +423,8 @@ class AgentResult:
 
     # 디버그 정보 (선택적)
     debug_info: dict[str, Any] = field(default_factory=dict)
+    stop_reason: Literal["completed", "max_iterations", "error", "no_new_evidence", "timeout"] = "completed"
+    grounding_status: str | None = None
 
 
 @dataclass

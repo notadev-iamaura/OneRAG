@@ -1,5 +1,6 @@
 """Provider-neutral source citation normalization helpers."""
 
+import re
 from typing import Any
 
 _DISPLAY_NAME_KEYS = (
@@ -25,6 +26,10 @@ _SOURCE_URI_KEYS = (
     "citation",
 )
 _SOURCE_ID_KEYS = ("source_id", "citation_id", "id", "_id")
+# A measured rate in prose is allowed in excerpts, even though it contains "/".
+_MEASURED_RATE = re.compile(r"(?<![\w/])\d+(?:[.,]\d+)?\s*(?:mm|cm|km|m|g|kg|MB|GB)/(?:ms|s|min|h)(?![\w/])")
+_PUBLIC_WEB_LINK = re.compile(r"""https?://[^\s<>"']+""", re.IGNORECASE)
+_LOCAL_WINDOWS_PATH = re.compile(r"(?:[A-Za-z]:\\|\\\\[^\\\s]+\\)")
 _METADATA_EXCLUDE_KEYS = {
     "content",
     "page_content",
@@ -100,6 +105,17 @@ def _public_text_value(value: Any | None) -> str | None:
     return str(value)
 
 
+def _public_excerpt(text: str) -> str:
+    if _LOCAL_WINDOWS_PATH.search(text):
+        return ""
+    if "/" in text:
+        # A public link elsewhere in a sentence cannot make a private path publishable.
+        remainder = _MEASURED_RATE.sub("", _PUBLIC_WEB_LINK.sub("", text))
+        if "/" in remainder:
+            return ""
+    return text
+
+
 def _normalization_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     """metadata에서 사설 참조 문자열 값을 사전에 제거한다."""
     return {
@@ -126,6 +142,11 @@ def _compact_additional_metadata(value: Any) -> Any | None:
         compacted: dict[str, Any] = {}
         for key, item in value.items():
             if key in _METADATA_EXCLUDE_KEYS:
+                continue
+            if key == "cited_sentences" and isinstance(item, list):
+                excerpts = [safe for text in item if isinstance(text, str) and (safe := _public_excerpt(text))]
+                if excerpts:
+                    compacted[key] = excerpts
                 continue
             if (
                 key in _SOURCE_URI_KEYS
@@ -203,6 +224,7 @@ def normalize_source_payload(
     sequence_id: int,
     source_type: str,
     relevance: float,
+    relevance_unit: str | None = None,
     content_preview: str,
     metadata: dict[str, Any] | None = None,
     document_name: str | None = None,
@@ -221,9 +243,7 @@ def normalize_source_payload(
     explicit_document_name = _public_text_value(document_name)
     explicit_document_id = _public_text_value(document_id)
     explicit_section = _public_text_value(section)
-    public_content_preview = (
-        "" if _is_private_source_reference(content_preview) else content_preview
-    )
+    public_content_preview = _public_excerpt(content_preview)
     normalized_document_name = str(
         explicit_document_name
         or _first_present(source_metadata, _DISPLAY_NAME_KEYS)
@@ -276,6 +296,7 @@ def normalize_source_payload(
         "chunk": normalized_chunk,
         "section": normalized_section,
         "relevance": relevance,
+        "relevance_unit": relevance_unit,
         "score": relevance,
         "content_preview": public_content_preview,
         "source_type": source_type,
@@ -325,6 +346,7 @@ def normalize_citation_source_payload(
             sequence_id=sequence_id,
             source_type=source_type,
             relevance=1.0,
+            relevance_unit="unavailable",
             content_preview=str(preview_value)[:300] if preview_value else "",
             metadata=metadata,
             document_name=str(document_name_value) if document_name_value else None,
@@ -339,6 +361,7 @@ def normalize_citation_source_payload(
         sequence_id=sequence_id,
         source_type=source_type,
         relevance=1.0,
+        relevance_unit="unavailable",
         content_preview="" if private_reference else citation_text[:300],
         metadata={"citation": citation_text},
         document_name=None if private_reference else citation_text,

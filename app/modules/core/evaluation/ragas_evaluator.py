@@ -10,6 +10,7 @@ Ragas 라이브러리를 사용한 RAG 답변 품질 평가
 의존성: ragas (선택적, pip install rag-chatbot[ragas])
 """
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -298,8 +299,11 @@ class RagasEvaluator:
                 row = df.iloc[i]
 
                 # 메트릭 값 추출 (없으면 기본값)
-                faith = float(row.get("faithfulness", 0.5))
-                relevance = float(row.get("answer_relevancy", 0.5))
+                faith = float(row["faithfulness"])
+                relevance = float(row["answer_relevancy"])
+                if not math.isfinite(faith) or not math.isfinite(relevance):
+                    results.append(self._create_default_result("유한한 평가 점수가 필요합니다"))
+                    continue
                 precision = row.get("context_precision", None)
 
                 # 범위 보정 (0.0-1.0)
@@ -326,7 +330,7 @@ class RagasEvaluator:
         except Exception as e:
             logger.error(f"Ragas 결과 변환 오류: {e}")
             # 변환 실패 시 기본값 반환
-            for _ in range(sample_count):
+            for _ in range(len(results), sample_count):
                 results.append(self._create_default_result(f"결과 변환 실패: {e}"))
 
         return results

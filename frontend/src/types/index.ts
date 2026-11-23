@@ -75,6 +75,7 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   sources?: Source[] | undefined;
+  retrieved_sources?: Source[] | undefined;
   // RAG Trace 메트릭(메시지별로 보존). 방 전환 시 이전 방 메트릭이 고정 표시되는 문제를
   // 해결하기 위해, 전역 로그가 아닌 메시지 자체에 트레이스를 부착한다.
   processing_time?: number | undefined;
@@ -83,6 +84,7 @@ export interface ChatMessage {
 }
 
 export interface SourceAdditionalMetadata {
+  citations?: Array<{ sentence: number; claim: string; quote: string }>;
   folder?: string;
   full_path?: string;
   uploaded_at?: string;
@@ -153,7 +155,9 @@ export interface Source {
   page?: number | null;
   chunk?: number | null;
   section?: string | null;
-  relevance: number;
+  relevance?: number | null;
+  relevance_unit?: 'percent' | 'fraction' | 'raw' | 'unavailable' | null;
+  source_type?: string;
   score?: number | null;
   content_preview: string;
   source_uri?: string | null;
@@ -202,6 +206,7 @@ export interface SourceDetail {
 export interface ChatResponse {
   answer: string;
   sources: Source[];
+  cited_sources?: Source[] | null;
   session_id: string;
   processing_time: number;
   tokens_used: number;
@@ -233,6 +238,7 @@ export interface ChatHistoryEntry {
   created_at?: string;
   updated_at?: string;
   sources?: Source[];
+  retrieved_sources?: Source[];
   // 백엔드 히스토리가 메시지별로 반환하는 트레이스 메트릭(memory_service 기준).
   processing_time?: number;
   tokens_used?: number;

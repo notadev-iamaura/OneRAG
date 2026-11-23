@@ -284,9 +284,8 @@ class InternalEvaluator:
             # JSON 파싱
             data = json.loads(content)
 
-            # 점수 추출 (기본값 0.5)
-            faithfulness = float(data.get("faithfulness", 0.5))
-            relevance = float(data.get("relevance", 0.5))
+            faithfulness = float(data["faithfulness"])
+            relevance = float(data["relevance"])
             reasoning = data.get("reasoning", "")
 
             # overall 계산: faithfulness 50% + relevance 50%

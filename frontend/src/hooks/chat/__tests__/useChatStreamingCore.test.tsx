@@ -514,12 +514,14 @@ describe('useChatStreamingCore', () => {
       act(() => {
         mockService.simulateEvent('stream_sources', {
           message_id: 'msg-001',
-          sources: mockSources,
+          sources: mockSources.slice(0, 1),
+          retrieved_sources: mockSources,
         });
       });
 
-      expect(result.current.streamingMessage?.sources).toHaveLength(2);
+      expect(result.current.streamingMessage?.sources).toHaveLength(1);
       expect(result.current.streamingMessage?.sources?.[0]?.document).toBe('doc1.pdf');
+      expect(result.current.streamingMessage?.retrieved_sources).toEqual(mockSources);
     });
   });
 

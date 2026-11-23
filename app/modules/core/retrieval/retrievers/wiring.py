@@ -85,6 +85,9 @@ def build_retriever_from_config(
         elif provider in ("chroma", "pgvector", "mongodb"):
             # BM25 엔진 기반 하이브리드 확장 (현재는 chroma에서 사용)
             try:
+                # The wrapper defers this import until the first build.
+                from rank_bm25 import BM25Plus  # noqa: F401
+
                 from app.modules.core.retrieval.bm25_engine import (
                     BM25Index,
                     HybridMerger,
@@ -110,7 +113,10 @@ def build_retriever_from_config(
                     logger.info(
                         f"BM25 언어 중립 토크나이저 사용 (tokenizer={tokenizer_type})"
                     )
-                bm25_index = BM25Index(tokenizer=tokenizer)  # type: ignore[arg-type]
+                bm25_index = BM25Index(
+                    tokenizer=tokenizer,  # type: ignore[arg-type]
+                    linked_titles=config.get("bm25", {}).get("linked_titles", False),
+                )
                 hybrid_merger = HybridMerger(
                     alpha=config.get("hybrid_search", {}).get("default_alpha", 0.6)
                 )

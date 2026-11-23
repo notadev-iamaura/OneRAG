@@ -7,7 +7,7 @@ Phase 3.1: chat.py에서 추출한 검증된 스키마들
 ⚠️ 주의: 이 코드는 기존 검증된 스키마를 재사용합니다.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, validator
 
@@ -44,6 +44,7 @@ class Source(BaseModel):
     chunk: int | None = None
     section: str | None = None
     relevance: float
+    relevance_unit: Literal["percent", "fraction", "raw", "unavailable"] | None = None
     score: float | None = None
     content_preview: str
     source_uri: str | None = None
@@ -85,6 +86,7 @@ class ChatResponse(BaseModel):
 
     answer: str
     sources: list[Source]
+    cited_sources: list[Source] | None = Field(default=None, description="Sentences cited in the final answer")
     session_id: str
     message_id: str  # 평가 시스템을 위한 메시지 고유 ID
     processing_time: float

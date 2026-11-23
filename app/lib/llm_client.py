@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 import google.generativeai as genai
 from anthropic import Anthropic
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from .langfuse_client import langfuse_context, observe
 from .logger import get_logger
@@ -1001,8 +1001,8 @@ class OllamaLLMClient(BaseLLMClient):
         self.base_url = config.get("base_url", self.DEFAULT_BASE_URL)
         self.model = config.get("model", "llama3.2")
 
-        # OpenAI 호환 클라이언트 초기화 (지연 로딩)
-        self._client: OpenAI | None = None
+        # An async transport lets a cancelled agent release its local inference request.
+        self._client: AsyncOpenAI | None = None
 
         logger.info(
             "Ollama 클라이언트 생성 완료",
@@ -1012,10 +1012,10 @@ class OllamaLLMClient(BaseLLMClient):
             },
         )
 
-    def _get_client(self) -> OpenAI:
-        """OpenAI 호환 클라이언트 지연 초기화"""
+    def _get_client(self) -> AsyncOpenAI:
+        """OpenAI 호환 비동기 클라이언트 지연 초기화"""
         if self._client is None:
-            self._client = OpenAI(
+            self._client = AsyncOpenAI(
                 base_url=f"{self.base_url}{self.OPENAI_COMPAT_PATH}",
                 api_key="not-needed",  # Ollama는 API 키 불필요
                 timeout=self.timeout,
@@ -1050,11 +1050,9 @@ class OllamaLLMClient(BaseLLMClient):
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
-            create_fn = client.chat.completions.create
-            response = await asyncio.to_thread(
-                create_fn,  # type: ignore[arg-type]
+            response = await client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
@@ -1068,7 +1066,10 @@ class OllamaLLMClient(BaseLLMClient):
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            return response.choices[0].message.content or ""
+            choice = response.choices[0]
+            if kwargs.get("require_complete") and choice.finish_reason != "stop":
+                raise ValueError("Incomplete local model response")
+            return choice.message.content or ""
         except Exception as e:
             logger.error(
                 "Ollama LLM 생성 실패",
@@ -1109,7 +1110,7 @@ class OllamaLLMClient(BaseLLMClient):
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=messages,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
@@ -1120,14 +1121,14 @@ class OllamaLLMClient(BaseLLMClient):
             )
 
             p = c = t = 0
-            for chunk in response:  # type: ignore[union-attr]
-                cu = getattr(chunk, "usage", None)
-                if cu is not None:
-                    p = getattr(cu, "prompt_tokens", 0) or 0
-                    c = getattr(cu, "completion_tokens", 0) or 0
-                    t = getattr(cu, "total_tokens", 0) or 0
-                if chunk.choices and chunk.choices[0].delta.content:  # type: ignore[union-attr]
-                    yield chunk.choices[0].delta.content  # type: ignore[union-attr]
+            async with response:
+                async for chunk in response:
+                    if chunk.usage is not None:
+                        p = chunk.usage.prompt_tokens
+                        c = chunk.usage.completion_tokens
+                        t = chunk.usage.total_tokens
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
             self._emit_generation(
                 model=model,
                 prompt_tokens=p,
@@ -1542,7 +1543,8 @@ class LLMClientFactory:
         try:
             from app.lib.admin_ai_settings_store import get_admin_ai_settings_store
 
-            return get_admin_ai_settings_store().get_provider_key(provider)
+            key: str | None = get_admin_ai_settings_store().get_provider_key(provider)
+            return key
         except Exception:
             return None
 

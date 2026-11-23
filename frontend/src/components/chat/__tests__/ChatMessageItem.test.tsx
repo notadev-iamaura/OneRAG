@@ -8,7 +8,8 @@ vi.mock('../../MarkdownRenderer', () => ({
     MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div>
 }));
 
-vi.mock('../../../utils/chat/formatters', () => ({
+vi.mock('../../../utils/chat/formatters', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../../../utils/chat/formatters')>(),
     formatSourcePreview: (text: string) => text,
     formatTimestamp: () => '10:00 AM'
 }));
@@ -47,6 +48,13 @@ describe('ChatMessageItem', () => {
         expect(screen.getByText(/참고한 문서/)).toBeInTheDocument();
     });
 
+    it('displays a normalized RAG score once on the correct badge scale', () => {
+        const source = { ...botMessage.sources![0]!, relevance: 33.9, relevance_unit: 'percent' as const };
+        renderWithContext(<ChatMessageItem message={{ ...botMessage, sources: [source] }} isAnimated={false} copyToClipboard={mockCopyToClipboard} onChunkClick={mockOnChunkClick} />);
+        fireEvent.click(screen.getByText(/참고한 문서/));
+        expect(screen.getByText('33.9%')).toHaveClass('text-slate-600');
+    });
+
     it('should call onChunkClick when source is clicked', () => {
         renderWithContext(<ChatMessageItem message={botMessage} isAnimated={true} copyToClipboard={mockCopyToClipboard} onChunkClick={mockOnChunkClick} />);
         const trigger = screen.getByText(/참고한 문서/);
@@ -55,6 +63,20 @@ describe('ChatMessageItem', () => {
         const sourceItem = screen.getByText(/doc\.pdf/);
         fireEvent.click(sourceItem.closest('button')!);
         expect(mockOnChunkClick).toHaveBeenCalled();
+    });
+
+    it('shows each supported claim with its original sentence', () => {
+        const source = { ...botMessage.sources![0]!, additional_metadata: { citations: [
+            { sentence: 2, claim: 'Friday', quote: 'Orders close on Friday.' },
+            { sentence: 5, claim: 'Monday', quote: 'Dispatch resumes on Monday.' },
+        ] } };
+        renderWithContext(<ChatMessageItem message={{ ...botMessage, sources: [source] }} isAnimated={true}
+            copyToClipboard={mockCopyToClipboard} onChunkClick={mockOnChunkClick} />);
+        fireEvent.click(screen.getByText(/참고한 문서/));
+        for (const citation of source.additional_metadata.citations) {
+            expect(screen.getByText(citation.claim)).toBeInTheDocument();
+            expect(screen.getByText(citation.quote)).toBeInTheDocument();
+        }
     });
 
     it('should render copy button for assistant message and handle click', () => {

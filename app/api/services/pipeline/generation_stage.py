@@ -15,7 +15,8 @@ from ....lib.logger import get_logger
 from ....lib.prompt_sanitizer import contains_output_leakage, validate_document
 from ....lib.request_cost import bind_request_cost_ledger
 from ....lib.types import RAGResultDict
-from ..source_contract import normalize_citation_source_payload
+from ....modules.core.generation.citations import AnswerCitations
+from ..source_contract import normalize_citation_source_payload, normalize_source_payload
 from .document_utils import (
     _extract_fallback_document_preview,
 )
@@ -124,6 +125,7 @@ class GenerationStageMixin(PipelineStateBase):
         from ....modules.core.generation.generator import GenerationResult
 
         logger.debug("[6단계] 답변 생성 시작")
+        document_mode = not options.get("sql_context")
         if not self.generation_module:
             logger.error("생성 모듈 없음")
             return GenerationResult(
@@ -133,6 +135,8 @@ class GenerationStageMixin(PipelineStateBase):
                 model_used="none",
                 provider="none",
                 generation_time=0.0,
+                citations=[] if document_mode else None,
+                citation_status="error" if document_mode else None,
             )
         cb = self.circuit_breaker_factory.get("answer_generation")
         safe_docs = []
@@ -157,6 +161,8 @@ class GenerationStageMixin(PipelineStateBase):
             """실제 답변 생성 로직 (Circuit Breaker 내부)"""
             # session_context를 options에 포함시켜 전달
             generation_options = {**options, "session_context": context}
+            if document_mode:
+                generation_options["_answer_citations"] = AnswerCitations(message)
             return cast(
                 GenerationResult,
                 await self.generation_module.generate_answer(
@@ -197,6 +203,8 @@ class GenerationStageMixin(PipelineStateBase):
             )
             latency_ms = (time.time() - start_time) * 1000
             self.performance_metrics.record_latency("generate_integrated_answer", latency_ms)
+            citations = None
+            citation_status = None
 
             # 타입 가드: GenerationResult 또는 dict 처리
             # GenerationResult 객체인지 확인 (hasattr로도 체크하여 더 안전하게)
@@ -205,6 +213,8 @@ class GenerationStageMixin(PipelineStateBase):
                 provider = generation_result.provider
                 answer = generation_result.answer
                 model_info = generation_result.model_info
+                citations = generation_result.citations
+                citation_status = generation_result.citation_status
             elif isinstance(generation_result, dict):
                 # fallback이 dict를 반환한 경우 (Circuit Breaker 내부 fallback)
                 tokens = generation_result.get("tokens_used", 0)
@@ -219,6 +229,10 @@ class GenerationStageMixin(PipelineStateBase):
                 answer = self.generation_type_error_message
                 model_info = {"provider": "error", "model": "unknown"}
 
+            if model_info.get("provider") in {"security", "fallback", "error", "rag"}:
+                citations = []
+                citation_status = "error"
+
             if tokens > 0 and provider in ["google", "openai", "anthropic"]:
                 self.cost_tracker.track_usage(provider, tokens, is_input=False)
 
@@ -228,6 +242,8 @@ class GenerationStageMixin(PipelineStateBase):
                     extra={"preview": answer[:100]}
                 )
                 answer = self.prompt_leakage_blocked_message
+                citations = []
+                citation_status = "error"
                 self.performance_metrics.record_error("prompt_leakage_blocked")
 
             logger.info(
@@ -245,6 +261,8 @@ class GenerationStageMixin(PipelineStateBase):
                 model_used=model_info.get("model", "unknown"),
                 provider=model_info.get("provider", "unknown"),
                 generation_time=latency_ms / 1000,
+                citations=citations,
+                citation_status=citation_status,
             )
         except CircuitBreakerOpenError:
             # Circuit Breaker 에러 → 일시적 장애, Fallback 사용
@@ -257,6 +275,8 @@ class GenerationStageMixin(PipelineStateBase):
                 model_used=fallback_result["model_info"].get("model", "fallback"),
                 provider=fallback_result["model_info"].get("provider", "fallback"),
                 generation_time=0.0,
+                citations=[] if document_mode else None,
+                citation_status="error" if document_mode else None,
             )
         except TimeoutError as e:
             # 타임아웃 에러 → 클라이언트에게 재시도 유도
@@ -351,19 +371,47 @@ class GenerationStageMixin(PipelineStateBase):
             formatted_sources = []
             for idx, source in enumerate(agent_result.sources or []):
                 if isinstance(source, dict):
-                    formatted_sources.append(
-                        self.Source(
-                            id=idx,
-                            document=source.get("source", source.get("title", f"Source {idx + 1}")),
-                            page=source.get("page"),
-                            chunk=source.get("chunk"),
-                            relevance=source.get("relevance", source.get("score", 0.0)),
-                            content_preview=source.get(
-                                "content_preview", source.get("content", "")[:200]
-                            ),
-                            source_type="agent",
-                        )
+                    document = source.get("source", source.get("title", f"Source {idx + 1}"))
+                    preview = source.get("content_preview", source.get("content", "")[:200])
+                    excerpts = source.get("cited_sentences") or []
+                    if self.privacy_masker:
+                        document = self.privacy_masker.mask_filename(document)
+                        preview = self.privacy_masker.mask_text(preview)
+                        excerpts = [self.privacy_masker.mask_text(text) for text in excerpts]
+                    agent_score = source.get("relevance", source.get("score"))
+                    relevance = float(agent_score or 0.0)
+                    if agent_score is None:
+                        relevance_unit = "unavailable"
+                    elif source.get("relevance") is not None and 0 <= relevance <= 1:
+                        relevance_unit = "fraction"
+                    else:
+                        relevance_unit = "raw"
+                    source_data = normalize_source_payload(
+                        sequence_id=idx,
+                        source_type="agent",
+                        document_name=document,
+                        document_id=source.get("document_id"),
+                        metadata={"source_id": source.get("source_id")},
+                        page=source.get("page"),
+                        chunk=source.get("chunk"),
+                        relevance=relevance,
+                        relevance_unit=relevance_unit,
+                        content_preview=preview,
+                        additional_metadata={"cited_sentences":excerpts} if excerpts else None,
                     )
+                    # Keep offsets relative to the retrieved chunk when the public quote is intact.
+                    citation = source_data["additional_metadata"]
+                    offsets = [source.get(k) for k in ("quote_start", "answer_start", "answer_end", "quote_end")]
+                    if (agent_result.grounding_status == "verified_quotes" and len(excerpts) == 1
+                            and citation.get("cited_sentences") == source.get("cited_sentences")
+                            and all(type(i) is int for i in offsets)):
+                        left, start, end, right = cast(list[int], offsets)
+                        if (0 <= left <= start < end <= right and len(excerpts[0]) == right - left
+                                and excerpts[0][start-left:end-left] == agent_result.answer):
+                            citation.update(quote_start=left, answer_start=start, answer_end=end,
+                                            quote_end=right, offset_basis="retrieved_chunk",
+                                            offset_unit="unicode_codepoint")
+                    formatted_sources.append(self.Source(**source_data))
                 else:
                     # 이미 Source 객체인 경우 그대로 사용
                     formatted_sources.append(source)
@@ -387,6 +435,8 @@ class GenerationStageMixin(PipelineStateBase):
                         "mode": "agent",
                         "steps_taken": agent_result.steps_taken,
                         "tools_used": agent_result.tools_used,
+                        "stop_reason": agent_result.stop_reason,
+                        "grounding_status": agent_result.grounding_status,
                         "total_time": agent_result.total_time,
                         "success": agent_result.success,
                     },

@@ -57,7 +57,8 @@ async def test_add_conversation_persists_via_chat_store() -> None:
     session: dict[str, Any] = {"messages_metadata": [], "topics": [], "facts": {}}
 
     await service.add_conversation(
-        "s1", session, "질문", "답변", {"timestamp": 1.0, "tokens_used": 3}
+        "s1", session, "질문", "답변",
+        {"timestamp": 1.0, "tokens_used": 3, "sources": [], "retrieved_sources": ["candidate"]},
     )
 
     chat_store.save_exchange.assert_awaited_once()
@@ -65,6 +66,11 @@ async def test_add_conversation_persists_via_chat_store() -> None:
     assert kwargs["session_id"] == "s1"
     assert kwargs["user_message"] == "질문"
     assert kwargs["assistant_response"] == "답변"
+    assert kwargs["assistant_metadata"]["sources"] == []
+    assert kwargs["assistant_metadata"]["retrieved_sources"] == ["candidate"]
+    history = await service.get_chat_history("s1", session)
+    assert history["messages"][1]["sources"] == []
+    assert history["messages"][1]["retrieved_sources"] == ["candidate"]
 
 
 async def test_chat_store_failure_does_not_break_chat() -> None:
@@ -91,7 +97,7 @@ async def test_get_chat_history_restores_from_postgres_after_session_loss() -> N
         {
             "role": "assistant",
             "content": "이전 답변",
-            "metadata": {"tokens_used": 7, "sources": ["doc1"]},
+            "metadata": {"tokens_used": 7, "sources": ["doc1"], "retrieved_sources": ["doc1", "doc2"]},
             "created_at": "2026-01-01T00:00:01",
         },
     ]
@@ -107,6 +113,7 @@ async def test_get_chat_history_restores_from_postgres_after_session_loss() -> N
     assert history["messages"][1]["content"] == "이전 답변"
     assert history["messages"][1]["tokens_used"] == 7
     assert history["messages"][1]["sources"] == ["doc1"]
+    assert history["messages"][1]["retrieved_sources"] == ["doc1", "doc2"]
 
 
 async def test_get_chat_history_falls_back_to_memory_when_pg_empty() -> None:

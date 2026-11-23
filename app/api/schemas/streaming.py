@@ -124,6 +124,8 @@ class StreamDoneEvent(BaseModel):
     """
 
     event: Literal["done"] = "done"
+    cited_sources: list[Any] | None = None
+    grounding_status: str | None = None
     session_id: str = Field(
         ...,
         description="세션 ID",

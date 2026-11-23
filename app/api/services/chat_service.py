@@ -25,8 +25,11 @@ from ...lib.logger import get_logger
 from ...lib.metrics import CostTracker, PerformanceMetrics
 from ...lib.topic_extractor import extract_topic
 from ...lib.types import RAGResultDict, SessionInfoDict, SessionResult, StatsDict
+from ...modules.core.generation.citations import AnswerCitations
+from ...modules.core.generation.generator import DocumentStreamProgress, GenerationModule
 from .blocked_response import DEFAULT_BLOCKED_ANSWER
 from .rag_pipeline import RAGPipeline
+from .source_contract import normalize_source_payload
 
 # LangSmith 트레이싱 import
 try:
@@ -46,6 +49,8 @@ except ImportError:
 
 
 logger = get_logger(__name__)
+
+_DEFAULT_FIRST_TOKEN_TIMEOUT = 25.0
 
 
 # 스트리밍(SSE/WS)에서 검색 결과가 0건일 때 사용자에게 chunk로 안내하는 informational
@@ -457,14 +462,15 @@ class ChatService:
             )
             # 점수 추출: 0.0도 유효한 값이므로 `or` 대신 명시적 None 검사를 사용한다(#14).
             score_candidates = (
-                getattr(document, "score", None),
+                document.get("score") if isinstance(document, dict) else getattr(document, "score", None),
                 metadata.get("score"),
                 metadata.get("relevance"),
             )
             score = next(
                 (candidate for candidate in score_candidates if candidate is not None),
-                0.0,
+                None,
             )
+            has_score = isinstance(score, (int, float)) and not isinstance(score, bool)
             source_name = (
                 metadata.get("source")
                 or metadata.get("source_file")
@@ -473,14 +479,24 @@ class ChatService:
                 or f"document-{index + 1}"
             )
 
-            sources.append(
-                {
-                    "id": index,
-                    "document": str(source_name),
-                    "content_preview": str(content)[:200],
-                    "relevance": float(score) if isinstance(score, (int, float)) else 0.0,
-                }
+            name, excerpt = str(source_name), str(content)
+            masker = self.rag_pipeline.privacy_masker
+            if masker:
+                name, excerpt = masker.mask_filename(name), masker.mask_text(excerpt)
+            public_ids = {
+                key: metadata[key] for key in (
+                    "document_id", "doc_id", "file_id", "id", "_id", "source_id", "citation_id",
+                    "page", "page_number", "page_index", "chunk", "chunk_index",
+                ) if key in metadata
+            }
+            payload = normalize_source_payload(
+                sequence_id=index, source_type="rag", metadata=public_ids, document_name=name,
+                content_preview=excerpt[:200], relevance=float(score) if isinstance(score, (int, float)) else 0.0,
+                relevance_unit="raw" if has_score else "unavailable",
             )
+            sources.append({key: payload[key] for key in (
+                "id", "source_id", "document", "document_id", "page", "chunk", "content_preview", "relevance", "relevance_unit",
+            )})
         return sources
 
     def _get_stream_model_info(self, generation_module: Any | None) -> dict[str, Any]:
@@ -497,11 +513,11 @@ class ChatService:
         """Resolve the first-token watchdog timeout in seconds."""
         timeout = options.get("first_token_timeout", options.get("stream_first_token_timeout"))
         if timeout is None:
-            timeout = self.config.get("streaming", {}).get("first_token_timeout", 25.0)
+            timeout = self.config.get("streaming", {}).get("first_token_timeout", _DEFAULT_FIRST_TOKEN_TIMEOUT)
         try:
             return max(float(timeout), 0.0)
         except (TypeError, ValueError):
-            return 25.0
+            return _DEFAULT_FIRST_TOKEN_TIMEOUT
 
     @staticmethod
     def _estimate_stream_tokens(answer: str, chunk_count: int) -> int:
@@ -740,8 +756,10 @@ class ChatService:
 
             # 6. 스트리밍 답변 생성
             generation_module = self.modules.get("generation")
+            reader = AnswerCitations(message)
             model_info = self._get_stream_model_info(generation_module)
             stream_tokens_used = 0
+            stream_progress: DocumentStreamProgress | None = None
             # 안내성(문서 없음) 응답은 실제 답변이 아니므로 저장/성공 집계에서 제외한다(#7/[28]).
             canned_no_answer = False
 
@@ -773,6 +791,11 @@ class ChatService:
                     generation_options.setdefault("max_context_documents", 20)
                 if sql_search_result is not None and getattr(sql_search_result, "used", False):
                     generation_options["sql_context"] = sql_search_result.formatted_context
+                else:
+                    generation_options["_answer_citations"] = reader
+                    if isinstance(generation_module, GenerationModule):
+                        stream_progress = DocumentStreamProgress()
+                        generation_options["_document_stream_progress"] = stream_progress
 
                 # 스트리밍 호출
                 # 첫 청크(first-chunk) 타임아웃 + 청크 간(inter-chunk) 타임아웃.
@@ -801,11 +824,8 @@ class ChatService:
                     chunk_emitted = False
                     fallback_reason: str | None = None
                     try:
-                        is_first_chunk = True
+                        chunk_timeout: float | None = first_chunk_timeout
                         while True:
-                            chunk_timeout = (
-                                first_chunk_timeout if is_first_chunk else inter_chunk_timeout
-                            )
                             try:
                                 if chunk_timeout is not None and chunk_timeout > 0:
                                     text_chunk = await asyncio.wait_for(
@@ -825,12 +845,12 @@ class ChatService:
                                     logger.warning(
                                         "스트리밍 첫 청크 타임아웃, 비스트리밍 fallback 진입",
                                         extra={
-                                            "timeout": first_chunk_timeout,
+                                            "timeout": chunk_timeout,
                                             "session_id": final_session_id,
                                         },
                                     )
                                     fallback_reason = (
-                                        f"first_token_timeout:{first_chunk_timeout}"
+                                        f"before_visible_timeout:{chunk_timeout}"
                                     )
                                     break
                                 # 이미 청크를 보낸 뒤 중간 timeout: 폴백 시 중복 답변이
@@ -846,6 +866,14 @@ class ChatService:
                                 }
                                 return
 
+                            if stream_progress is not None and text_chunk == "":
+                                # A provider token is buffered for citation parsing or PII
+                                # masking. Renew the idle deadline without sending its contents.
+                                if not chunk_emitted:
+                                    chunk_timeout = (
+                                        inter_chunk_timeout or first_chunk_timeout or _DEFAULT_FIRST_TOKEN_TIMEOUT
+                                    )
+                                continue
                             answer_chunks.append(str(text_chunk))
                             # GAP #5: burst flush 방지를 위한 서버사이드 페이싱.
                             last_chunk_sent_at = await self._pace_stream_chunk(
@@ -858,7 +886,7 @@ class ChatService:
                             }
                             chunk_index += 1
                             chunk_emitted = True
-                            is_first_chunk = False
+                            chunk_timeout = inter_chunk_timeout
                     except Exception as stream_error:
                         # 첫 청크 전(아직 chunk 미전송) 예외는 폴백 대상.
                         # 이미 청크를 보낸 뒤라면 중복 답변 방지를 위해 기존 에러 처리.
@@ -886,6 +914,11 @@ class ChatService:
 
                     if fallback_reason is not None:
                         try:
+                            stream_progress = None
+                            generation_options.pop("_document_stream_progress", None)
+                            if "_answer_citations" in generation_options:
+                                reader = AnswerCitations(message)
+                                generation_options["_answer_citations"] = reader
                             fallback_result = await generation_module.generate_answer(
                                 query=message,
                                 context_documents=context_documents,
@@ -958,14 +991,25 @@ class ChatService:
             if answer_text.strip() == NO_DOCUMENTS_MESSAGE.strip():
                 canned_no_answer = True
             # 안내성 응답(canned_no_answer)이거나 답변이 비면 토큰을 0으로 보고한다([28]).
+            provider_tokens = stream_progress.total_tokens if stream_progress else None
             if canned_no_answer or not answer_text:
                 tokens_used = 0
             else:
-                tokens_used = stream_tokens_used or self._estimate_stream_tokens(
+                tokens_used = provider_tokens or stream_tokens_used or self._estimate_stream_tokens(
                     answer_text, chunk_index
                 )
 
             # 실제 답변이 있을 때만 저장하고 성공으로 집계한다(#7).
+            cited_sources = (
+                self.rag_pipeline.format_answer_citations(reader.citations)
+                if reader.passages or (
+                    isinstance(generation_module, GenerationModule)
+                    and not getattr(sql_search_result, "used", False)
+                ) else None
+            )
+            period_mismatch = self._stream_hallucination_gate_triggered(message, reranked_documents)
+            if period_mismatch:
+                cited_sources = []
             persisted_real_answer = bool(
                 final_session_id and answer_text and not canned_no_answer
             )
@@ -978,7 +1022,8 @@ class ChatService:
                         {
                             "tokens_used": tokens_used,
                             "processing_time": processing_time,
-                            "sources": stream_sources,
+                            "sources": stream_sources if cited_sources is None else cited_sources,
+                            "retrieved_sources": stream_sources,
                             "topic": self.extract_topic(message),
                             "model_info": model_info,
                             "message_id": message_id,
@@ -1013,13 +1058,16 @@ class ChatService:
                     "tokens_used": tokens_used,
                     "sources": stream_sources,
                     "model_info": model_info,
-                    "token_estimation": "estimated_from_stream",
+                    "token_estimation": "provider_usage" if provider_tokens else "estimated_from_stream",
                 },
             }
             # 환각 게이트(기간 불일치)는 전체 답변을 본 뒤 판정하므로 스트리밍 텍스트를 바꾸지는
             # 않고, 비스트리밍과 같은 기준의 판정 결과를 done 이벤트에 실어 클라이언트가 안내할 수
             # 있게 한다.
-            if self._stream_hallucination_gate_triggered(message, reranked_documents):
+            if cited_sources is not None:
+                done_event["data"]["cited_sources"] = cited_sources
+                done_event["data"]["grounding_status"] = "insufficient" if period_mismatch else reader.status
+            if period_mismatch:
                 done_event["data"]["hallucination_gate"] = "period_mismatch"
             yield done_event
 

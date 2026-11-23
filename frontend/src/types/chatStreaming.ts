@@ -59,6 +59,7 @@ export interface StreamSourcesMessage {
   type: 'stream_sources';
   message_id: string;
   sources: Source[];
+  retrieved_sources?: Source[];
 }
 
 /**
@@ -111,6 +112,7 @@ export interface StreamMetadataEvent {
   event: 'metadata';
   session_id: string;
   search_results: number;
+  sources?: Source[];
   reranking_applied?: boolean;
   query_expansion?: string | null;
   timestamp?: string | null;
@@ -132,6 +134,7 @@ export interface StreamDoneEvent {
   tokens_used?: number;
   processing_time?: number;
   sources?: Source[];
+  cited_sources?: Source[] | null;
 }
 
 /** 에러 이벤트 (백엔드 StreamErrorEvent) */
@@ -205,6 +208,7 @@ export interface StreamingMessage {
   content: string;
   /** RAG 소스 (스트리밍 완료 전에 수신 가능) */
   sources?: Source[];
+  retrieved_sources?: Source[];
   /** 현재 스트리밍 상태 */
   state: StreamingState;
   /** 에러 발생 시 에러 메시지 */

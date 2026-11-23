@@ -1,6 +1,27 @@
 import { formatDate } from '../../i18n/format';
 import { type MenuLocale } from '../../i18n/menuMessages';
+import type { Source } from '../../types';
 import { parseHtmlContent } from './htmlParser';
+
+export function formatSourceRelevance(source: Source): { text: string; percent: number | null } | null {
+    const value = source.relevance;
+    if (typeof value !== 'number' || !Number.isFinite(value) || source.relevance_unit === 'unavailable') return null;
+    let unit = source.relevance_unit;
+    if (!unit) {
+        // Full REST RAG and SQL payloads historically used a 100-point scale.
+        // Older compact streaming candidates carried unnormalized retrieval scores.
+        if (source.source_type === 'sql' || (source.source_type === 'rag' && source.score != null)) unit = 'percent';
+        else if (source.source_id?.startsWith('rag:') && source.score == null) unit = 'raw';
+        else if (value >= 0 && value <= 1) unit = 'fraction';
+        else if (value >= 0 && value <= 100) unit = 'percent';
+        else unit = 'raw';
+    }
+    const percent = unit === 'fraction' ? value * 100 : value;
+    if (unit === 'raw' || percent < 0 || percent > 100) {
+        return { text: String(Number(value.toPrecision(4))), percent: null };
+    }
+    return { text: `${Number(percent.toFixed(2))}%`, percent };
+}
 
 export const formatSourcePreview = (text?: string, limit = 220): string => {
     if (!text) {

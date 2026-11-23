@@ -8,13 +8,16 @@ from typing import TYPE_CHECKING, Any, cast
 
 from ....lib.logger import get_logger
 from ....lib.types import RAGResultDict
-from ..source_contract import normalize_source_payload
+from ..source_contract import _public_excerpt, normalize_source_payload
 from .document_utils import (
+    _document_content,
     _document_metadata,
+    _document_score,
 )
 from .models import FormattedSources
 
 if TYPE_CHECKING:
+    from ....modules.core.generation.citations import PassageCitation
     from ...modules.core.sql_search import SQLSearchResult
     from ..schemas.debug import DebugTrace
 
@@ -67,7 +70,7 @@ class OutputStageMixin(PipelineStateBase):
     def _format_rag_source(self, idx: int, doc: Any) -> dict[str, Any] | None:
         """RAG 검색 결과를 Source 객체로 변환"""
         try:
-            metadata = getattr(doc, "metadata", {}) or {}
+            metadata = _document_metadata(doc)
             source_metadata = dict(metadata)
             document_name = (
                 metadata.get("source_file")
@@ -85,13 +88,22 @@ class OutputStageMixin(PipelineStateBase):
                             str(source_metadata[key])
                         )
 
-            content_text = getattr(doc, "content", None) or getattr(doc, "page_content", "")
+            content_text = _document_content(doc)
             if content_text and self.privacy_masker:
                 content_text = self.privacy_masker.mask_text(content_text)
             content_preview = content_text[:200] if content_text else ""
 
-            raw_score = getattr(doc, "score", 0.0)
-            normalized_score = self.score_normalizer.normalize(raw_score)
+            raw_score = _document_score(doc)
+            normalized_score = self.score_normalizer.normalize(raw_score or 0.0)
+            scale = self.score_normalizer.config
+            if raw_score is None:
+                relevance_unit = "unavailable"
+            elif scale.enabled and scale.max_score == 100:
+                relevance_unit = "percent"
+            elif scale.enabled and scale.max_score == 1:
+                relevance_unit = "fraction"
+            else:
+                relevance_unit = "raw"
 
             # file_path(서버 내부 절대경로)는 출처 응답에 노출하지 않는다.
             # source_contract.normalize_source_payload가 file_path 키를 metadata와
@@ -104,6 +116,7 @@ class OutputStageMixin(PipelineStateBase):
                 source_type="rag",
                 document_name=document_name,
                 relevance=normalized_score,
+                relevance_unit=relevance_unit,
                 content_preview=content_preview,
                 metadata=source_metadata,
             )
@@ -115,6 +128,34 @@ class OutputStageMixin(PipelineStateBase):
             )
             return None
 
+
+    def format_answer_citations(self, citations: list[PassageCitation]) -> list[dict[str, Any]]:
+        sources: dict[int, dict[str, Any]] = {}
+        for citation in citations:
+            doc = citation.document
+            if _document_metadata(doc).get("_generation_only"):
+                continue
+            quote, claim = citation.quote, citation.claim
+            if self.privacy_masker:
+                quote = self.privacy_masker.mask_text(quote)
+                claim = self.privacy_masker.mask_text(claim)
+            if not _public_excerpt(quote) or not _public_excerpt(claim):
+                continue
+            index = citation.document_number - 1
+            if index not in sources:
+                payload = self._format_rag_source(index, doc)
+                if not payload:
+                    continue
+                payload["content_preview"] = quote[:200]
+                payload["additional_metadata"] = {"citations": [], "cited_sentences": []}
+                sources[index] = payload
+            details = sources[index]["additional_metadata"]
+            item = {"sentence": citation.sentence_number, "claim": claim, "quote": quote}
+            if item not in details["citations"]:
+                details["citations"].append(item)
+            if quote not in details["cited_sentences"]:
+                details["cited_sentences"].append(quote)
+        return list(sources.values())
 
     def _format_sql_row(
         self,
@@ -153,6 +194,7 @@ class OutputStageMixin(PipelineStateBase):
             source_type="sql",
             document_name=document_name,
             relevance=100.0,
+            relevance_unit="percent",
             content_preview=row_preview[:200] if row_preview else self._sql_preview_fallback,
             metadata={key: value for key, value in metadata.items() if value is not None},
             additional_metadata={"row_keys": sorted(str(key) for key in row.keys())},

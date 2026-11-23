@@ -137,7 +137,7 @@ class TestGraphRAGDIIntegration:
     @pytest.mark.asyncio
     async def test_mcp_server_has_graph_store_in_global_config(self, mock_config):
         """MCP 서버 global_config에 graph_store 포함 확인"""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         # MCP 활성화 설정 추가
         config = {
@@ -151,6 +151,7 @@ class TestGraphRAGDIIntegration:
 
         # MCPToolFactory.create 모킹
         mock_server = MagicMock()
+        mock_server.initialize = AsyncMock()
         mock_server.server_name = "test-server"
         mock_server._global_config = {}
 

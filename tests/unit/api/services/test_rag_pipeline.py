@@ -141,7 +141,8 @@ class TestExecute:
         return RAGPipeline(config=mock_config, **mock_modules)
 
     @pytest.mark.asyncio
-    async def test_execute_standard_mode_success(self, pipeline: RAGPipeline) -> None:
+    @pytest.mark.parametrize("scoped_agent", [False, True])
+    async def test_execute_standard_mode_success(self, pipeline: RAGPipeline, scoped_agent: bool) -> None:
         """
         표준 모드 성공 실행
 
@@ -149,6 +150,11 @@ class TestExecute:
         When: execute 호출
         Then: 7단계 파이프라인 실행 후 결과 반환
         """
+        options: dict[str, Any] = {"use_agent": scoped_agent}
+        if scoped_agent:
+            options.update(filters={"group": "sales"}, rag_mode="grok_answer")
+            pipeline.agent_orchestrator = AsyncMock()
+
         # Mock: 각 단계
         with (
             patch.object(pipeline, "route_query") as mock_route,
@@ -198,7 +204,7 @@ class TestExecute:
             result = await pipeline.execute(
                 message="테스트 질문",
                 session_id="test-session",
-                options={"use_agent": False},
+                options=options,
             )
 
         # 검증
@@ -206,6 +212,8 @@ class TestExecute:
         mock_route.assert_called_once()
         mock_prepare.assert_called_once()
         mock_retrieve.assert_called_once()
+        if scoped_agent:
+            pipeline.agent_orchestrator.run.assert_not_awaited()
         mock_rerank.assert_called_once()
         mock_expand.assert_awaited_once()
         mock_generate.assert_called_once()
@@ -1281,8 +1289,9 @@ class TestGenerateAnswerEdgeCases:
     """generate_answer 메서드 추가 테스트 (에지 케이스)"""
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("sql_context", [None, "조회 결과"])
     async def test_generate_no_generation_module(
-        self, mock_config: dict[str, Any], mock_modules: dict[str, Any]
+        self, mock_config: dict[str, Any], mock_modules: dict[str, Any], sql_context: str | None
     ) -> None:
         """
         Generation Module 없음 에러
@@ -1300,9 +1309,9 @@ class TestGenerateAnswerEdgeCases:
 
         result = await pipeline.generate_answer(
             message="테스트 질문",
-            ranked_results=[],
+            ranked_results=[{"content": "검색 후보"}],
             context=None,
-            options={},
+            options={"sql_context": sql_context},
         )
 
         # 검증: 에러 메시지 반환
@@ -1311,6 +1320,29 @@ class TestGenerateAnswerEdgeCases:
         assert result.tokens_used == 0
         assert result.model_used == "none"
         assert result.provider == "none"
+        assert result.citations == (None if sql_context else [])
+        assert result.citation_status == (None if sql_context else "error")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("sql_context", [None, "조회 결과"])
+    async def test_open_breaker_keeps_fallback_answer_without_document_citations(
+        self, mock_config: dict[str, Any], mock_modules: dict[str, Any], sql_context: str | None
+    ) -> None:
+        from app.lib.circuit_breaker import CircuitBreakerOpenError
+
+        breaker = mock_modules["circuit_breaker_factory"].get.return_value
+        breaker.call = AsyncMock(side_effect=CircuitBreakerOpenError("open"))
+        generation = AsyncMock()
+        mock_modules["generation_module"] = generation
+        pipeline = RAGPipeline(config=mock_config, **mock_modules)
+        result = await pipeline.generate_answer(
+            "질문", [{"content": "확인된 원문"}], None, {"sql_context": sql_context}
+        )
+        generation.generate_answer.assert_not_awaited()
+        assert "확인된 원문" in result.answer
+        assert result.provider == "fallback" and result.tokens_used == 0
+        assert result.citations == (None if sql_context else [])
+        assert result.citation_status == (None if sql_context else "error")
 
     @pytest.mark.asyncio
     async def test_generate_document_injection_detected(
@@ -2123,6 +2155,18 @@ class TestFormatSources:
         assert sources.count == 0
         assert sources.sources == []
 
+    def test_relevance_unit_preserves_raw_wire_values_and_subpercent_scores(self, pipeline: RAGPipeline) -> None:
+        scale = pipeline.score_normalizer.config
+        raw = 0.005 * scale.default_weight_sum / (scale.rrf_k + 1)
+        docs = [{"content": "원문", "score": raw}, {"content": "0점", "score": 0}, {"content": "점수 없음"}]
+        normalized, zero, missing = pipeline.format_sources(docs).sources
+        assert (normalized.relevance, normalized.score, normalized.relevance_unit) == (0.5, 0.5, "percent")
+        assert (zero.relevance, zero.relevance_unit) == (0.0, "percent")
+        assert (missing.relevance, missing.relevance_unit) == (0.0, "unavailable")
+        scale.enabled = False
+        raw_source = pipeline.format_sources(docs[:1]).sources[0]
+        assert (raw_source.relevance, raw_source.score, raw_source.relevance_unit) == (raw, raw, "raw")
+
     def test_format_sources_with_documents(self, pipeline: RAGPipeline) -> None:
         """
         문서 리스트를 Source 객체로 변환
@@ -2236,6 +2280,7 @@ class TestFormatSources:
         assert sources[0].document == "collections://collection_1/files/file_1"
         assert sources[0].source_uri == "collections://collection_1/files/file_1"
         assert sources[0].source_type == "grok"
+        assert sources[0].relevance_unit == "unavailable"
         assert sources[0].additional_metadata["citation"] == (
             "collections://collection_1/files/file_1"
         )
@@ -2265,6 +2310,7 @@ class TestFormatSources:
         assert source.document_id == "row-1"
         assert source.source_id == "sql:row-1:na:3"
         assert source.score == 100.0
+        assert source.relevance_unit == "percent"
         assert source.metadata["category"] == "billing"
         assert source.sql_query == "SELECT * FROM plans"
 
@@ -2349,8 +2395,9 @@ class TestExecuteAgentMode:
         assert get_current_ledger() is None
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("mask_quote", [False, True])
     async def test_execute_agent_mode_success(
-        self, mock_config, mock_modules
+        self, mock_config, mock_modules, mask_quote
     ) -> None:
         """
         Agent 모드 실행 성공
@@ -2363,7 +2410,14 @@ class TestExecuteAgentMode:
         mock_agent_result = MagicMock()
         mock_agent_result.success = True
         mock_agent_result.answer = "Agent 답변"
-        mock_agent_result.sources = [{"title": "Agent 문서"}]
+        mock_agent_result.grounding_status = "verified_quotes"
+        mock_agent_result.sources = [
+            {"title": "Agent 문서", "relevance": 0.8, "cited_sentences": ["Agent 답변입니다."],
+             "quote_start": 10, "answer_start": 10, "answer_end": 18, "quote_end": 22},
+            {"title": "순위 점수", "score": 0.016, "cited_sentences": ["관련 설명"],
+             "quote_start": 0, "answer_start": 0, "answer_end": 2, "quote_end": 5},
+            {"title": "점수 없음"},
+        ]
         mock_agent_result.steps_taken = 3
         mock_agent_result.tools_used = ["search_weaviate"]
         mock_agent_result.total_time = 2.5
@@ -2371,6 +2425,11 @@ class TestExecuteAgentMode:
 
         mock_modules["agent_orchestrator"] = mock_agent
         pipeline = RAGPipeline(config=mock_config, **mock_modules)
+        if mask_quote:
+            masker = MagicMock()
+            masker.mask_filename.side_effect = str
+            masker.mask_text.side_effect = lambda text: text.replace("Agent 답변", "[가림]")
+            pipeline.privacy_masker = masker
 
         result = await pipeline._execute_agent_mode(
             message="복잡한 질문",
@@ -2379,6 +2438,19 @@ class TestExecuteAgentMode:
         )
 
         assert result["answer"] == "Agent 답변"
+        assert [(source.relevance, source.relevance_unit) for source in result["sources"]] == [
+            (0.8, "fraction"), (0.016, "raw"), (0.0, "unavailable"),
+        ]
+        expected = {
+            "cited_sentences": ["Agent 답변입니다."], "quote_start": 10, "answer_start": 10,
+            "answer_end": 18, "quote_end": 22, "offset_basis": "retrieved_chunk",
+            "offset_unit": "unicode_codepoint",
+        }
+        if mask_quote:
+            expected = {"cited_sentences": ["[가림]입니다."]}
+        assert result["sources"][0].additional_metadata == expected
+        assert result["sources"][1].additional_metadata == {"cited_sentences": ["관련 설명"]}
+        assert result["sources"][2].additional_metadata == {}
         assert result["metadata"]["mode"] == "agent"
         assert result["metadata"]["steps_taken"] == 3
 

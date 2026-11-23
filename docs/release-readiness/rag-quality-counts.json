@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "korean_policy_comparisons": {
+    "klue_1": {
+      "scope": "retrospective",
+      "retained": "candidate",
+      "control": {
+        "per_stratum": 80,
+        "grounded_answers": 53,
+        "correct_abstentions": 60,
+        "positive_reference_retrieved": 75,
+        "answers_displayed": 87,
+        "answers_displayed_on_negatives": 20,
+        "errors": 6
+      },
+      "candidate": {
+        "per_stratum": 80,
+        "grounded_answers": 54,
+        "correct_abstentions": 60,
+        "positive_reference_retrieved": 75,
+        "answers_displayed": 89,
+        "answers_displayed_on_negatives": 20,
+        "errors": 4
+      }
+    },
+    "klue_2": {
+      "scope": "retrospective",
+      "retained": "candidate",
+      "control": {
+        "per_stratum": 32,
+        "grounded_answers": 21,
+        "correct_abstentions": 23,
+        "positive_reference_retrieved": 30,
+        "answers_displayed": 35,
+        "answers_displayed_on_negatives": 9,
+        "errors": 3
+      },
+      "candidate": {
+        "per_stratum": 32,
+        "grounded_answers": 22,
+        "correct_abstentions": 23,
+        "positive_reference_retrieved": 30,
+        "answers_displayed": 36,
+        "answers_displayed_on_negatives": 9,
+        "errors": 2
+      }
+    },
+    "klue_3": {
+      "scope": "registered_before_scores",
+      "retained": "candidate",
+      "control": {
+        "per_stratum": 80,
+        "grounded_answers": 57,
+        "correct_abstentions": 62,
+        "positive_reference_retrieved": 77,
+        "answers_displayed": 87,
+        "answers_displayed_on_negatives": 17,
+        "errors": 6
+      },
+      "candidate": {
+        "per_stratum": 80,
+        "grounded_answers": 58,
+        "correct_abstentions": 62,
+        "positive_reference_retrieved": 77,
+        "answers_displayed": 88,
+        "answers_displayed_on_negatives": 17,
+        "errors": 5
+      }
+    },
+    "tydi_1": {
+      "scope": "independent",
+      "retained": "control",
+      "control": {
+        "per_stratum": 24,
+        "grounded_answers": 12,
+        "correct_abstentions": 21,
+        "positive_reference_retrieved": 19,
+        "answers_displayed": 19,
+        "answers_displayed_on_negatives": 3,
+        "errors": 0
+      },
+      "candidate": {
+        "per_stratum": 24,
+        "grounded_answers": 9,
+        "correct_abstentions": 21,
+        "positive_reference_retrieved": 19,
+        "answers_displayed": 19,
+        "answers_displayed_on_negatives": 3,
+        "errors": 0
+      }
+    },
+    "tydi_2": {
+      "scope": "independent",
+      "retained": "control",
+      "control": {
+        "per_stratum": 16,
+        "grounded_answers": 7,
+        "correct_abstentions": 15,
+        "positive_reference_retrieved": 16,
+        "answers_displayed": 14,
+        "answers_displayed_on_negatives": 1,
+        "errors": 0
+      },
+      "candidate": {
+        "per_stratum": 16,
+        "grounded_answers": 7,
+        "correct_abstentions": 15,
+        "positive_reference_retrieved": 16,
+        "answers_displayed": 14,
+        "answers_displayed_on_negatives": 1,
+        "errors": 0
+      }
+    }
+  },
+  "reused_klue_development": {
+    "positive_tool_top8_hits": 12,
+    "layers": {
+      "product": {
+        "qwen": {
+          "per_stratum": 12,
+          "grounded_answers": 7,
+          "correct_abstentions": 10,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 13,
+          "answers_displayed_on_negatives": 2,
+          "errors": 0
+        },
+        "gpt54": {
+          "per_stratum": 12,
+          "grounded_answers": 6,
+          "correct_abstentions": 9,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 12,
+          "answers_displayed_on_negatives": 2,
+          "errors": 1
+        },
+        "luna": {
+          "per_stratum": 12,
+          "grounded_answers": 6,
+          "correct_abstentions": 9,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 13,
+          "answers_displayed_on_negatives": 3,
+          "errors": 0
+        }
+      },
+      "raw_first_literal": {
+        "qwen": {
+          "per_stratum": 12,
+          "grounded_answers": 6,
+          "correct_abstentions": 10,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 13,
+          "answers_displayed_on_negatives": 2,
+          "errors": 0
+        },
+        "gpt54": {
+          "per_stratum": 12,
+          "grounded_answers": 4,
+          "correct_abstentions": 10,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 10,
+          "answers_displayed_on_negatives": 1,
+          "errors": 1
+        },
+        "luna": {
+          "per_stratum": 12,
+          "grounded_answers": 4,
+          "correct_abstentions": 9,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 13,
+          "answers_displayed_on_negatives": 3,
+          "errors": 0
+        }
+      },
+      "raw_source_occurrence": {
+        "qwen": {
+          "per_stratum": 12,
+          "grounded_answers": 7,
+          "correct_abstentions": 10,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 13,
+          "answers_displayed_on_negatives": 2,
+          "errors": 0
+        },
+        "gpt54": {
+          "per_stratum": 12,
+          "grounded_answers": 4,
+          "correct_abstentions": 10,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 10,
+          "answers_displayed_on_negatives": 1,
+          "errors": 1
+        },
+        "luna": {
+          "per_stratum": 12,
+          "grounded_answers": 4,
+          "correct_abstentions": 9,
+          "positive_reference_retrieved": 11,
+          "answers_displayed": 13,
+          "answers_displayed_on_negatives": 3,
+          "errors": 0
+        }
+      }
+    },
+    "offline_current_policy_replay": {
+      "luna": {
+        "cases": 24,
+        "per_stratum": 12,
+        "real_model_calls": 0,
+        "grounded_answers": 7,
+        "correct_abstentions": 9,
+        "answers_displayed": 13,
+        "errors": 0
+      },
+      "qwen": {
+        "cases": 24,
+        "per_stratum": 12,
+        "real_model_calls": 0,
+        "grounded_answers": 8,
+        "correct_abstentions": 10,
+        "answers_displayed": 13,
+        "errors": 0
+      }
+    }
+  },
+  "earlier_bilingual_suite": {
+    "passed": false,
+    "panels": {
+      "klue_ko_final": {
+        "per_stratum": 80,
+        "grounded_answers": 57,
+        "correct_abstentions": 58,
+        "errors": 6
+      },
+      "squad_en_confirmation": {
+        "per_stratum": 32,
+        "grounded_answers": 28,
+        "correct_abstentions": 27,
+        "errors": 0
+      },
+      "squad_en_primary": {
+        "per_stratum": 32,
+        "grounded_answers": 25,
+        "correct_abstentions": 30,
+        "errors": 0
+      },
+      "tydi_en_original": {
+        "per_stratum": 24,
+        "grounded_answers": 15,
+        "correct_abstentions": 14,
+        "errors": 0
+      },
+      "tydi_ko_final": {
+        "per_stratum": 24,
+        "grounded_answers": 5,
+        "correct_abstentions": 23,
+        "errors": 0
+      }
+    }
+  },
+  "local_score_receipts_sha256": {
+    "rag-evidence-selection/release-check/first160/report.json": "e22ee6d1d1063c9ef27be259bb18335f9de42b735ed2512797d1d48ee23be59d",
+    "rag-evidence-selection/release-check/second64/report.json": "dfedde76679a728dddca724db2a05cfc2323e96bc5707d395a7a22a6e5863a63",
+    "rag-evidence-selection/release-check/third160/report.json": "a3b05a4569ccdd6f0b13afc5c2ba8ee750f8e597ca393ee5f48167d299818d63",
+    "rag-evidence-selection/paired-trials/tydi/score.json": "2f0bf4176122c2b0e272c34893bdb377a15779c70182c2d79ee45e34975d5ab5",
+    "rag-evidence-selection/paired-trials/tydi-replication/score.json": "a7d9b8fbf498910035254cda95fa9fab5b8ad5fe907f2e321f06bf2ec25a6b2f",
+    "rag-growth-03/openai-luna-klue24/audit.json": "3566e6042e97d07766f6d5474963264a533dc6cc2d16523249c1a615a45459bc",
+    "rag-growth-03/openai-luna-klue24/screen-report.json": "e70e76a2c7e7641a8685aa6777c8409df7b455759e13abeb6ae9bf086203636d",
+    "rag-growth-03/openai-luna-klue24/protocol.json": "6b9b7b275b793f5be71ffa586b5a12d17de7026c9969a6ba29064066f1389e5d",
+    "rag-growth-03/openai-luna-klue24/current-policy-replay.json": "7d98de264dd3f172966f6751f6b17bb280d8443d15a5421c00f352e9cae0427b",
+    "rag-growth-03/openai-luna-klue24/current-qwen-policy-replay.json": "82fc88e6d7820ad95e2b3b2a64b9982bd52ff7bbf369abed3cfcf6b80a589062",
+    "rag-growth-03/public-suite-result.json": "fe68cd10142c1a7e01702de53a5fcb9d4c036eeb24793579204e89f3bd16d9ff"
+  }
+}

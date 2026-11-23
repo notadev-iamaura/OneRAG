@@ -2,6 +2,8 @@
 
 본 문서는 OneRAG의 답변 품질을 객관적으로 측정하고 개선하기 위한 **통합 평가 시스템** 구축 계획을 정의합니다.
 
+한국어 문서 조사 에이전트의 검색·답변 정책은 공개 문항과 로컬 모델로 반복 평가할 수 있다. 표본별 근거 정답·보류 건수와 모델 비교, 실행 방법과 후보 채택 기준을 확인할 수 있다. [공개 평가 결과](release-readiness/rag-quality-results.md) · [로컬 정책 평가](release-readiness/rag-growth-local.md)
+
 ---
 
 ## 1. 개요 및 목적
@@ -172,6 +174,39 @@ curl -X POST http://localhost:8000/api/admin/evaluate \
 ```
 
 ### CI/CD 평가 스크립트
+
+이 명령은 데이터셋에 기록된 답변을 평가합니다. 기본 입력은 `data/eval_set.json`이며
+각 문항에 `query`, `answer`, `context`가 필요합니다. 종료 코드 1은 채점된 점수가
+기준에 미달했을 때, 2는 데이터 또는 평가기 문제로 유효한 점수를 내지 못했을 때입니다.
+실제 서버의 검색과 생성을 함께 측정하는 방법은 [실코퍼스 평가](../scripts/README.md)에 있습니다.
+
+문서 조사 모드는 `mcp.enabled`와 `mcp.agent.require_evidence_quotes`를 켜고
+`use_agent: true`로 요청합니다. 검색한 문장의 ID를 모델이 선택하면 서버가
+그 문서에서 발췌를 구성합니다. 응답의 `metadata.grounding_status` 값은
+`verified_quotes`, `insufficient`, `invalid_citation`, `error`입니다.
+문장 ID 검증은 인용한 문장의 존재를 확인합니다. 해당 문장이 답을 지지하는지는
+별도의 정답·근거 평가에서 확인합니다. `grading.expected_outcome`가 `abstain`인
+평가 문항은 정상 보류와 빈 출처를 함께 요구합니다.
+
+Python BM25를 사용하는 Chroma 구성에서는 `bm25.linked_titles`가 기본으로 켜집니다.
+상위 문서가 다른 후보 문서의 제목을 본문에서 언급하면 4위 이하의 순위를 조정합니다.
+개별 문장의 인용은 응답의 `sources[].additional_metadata.cited_sentences`에서 확인할 수 있습니다.
+
+일반 문서 채팅의 `sources`에는 검색 참고 자료가 들어갑니다. `cited_sources`는 최종 답변이
+실제로 인용한 문서 목록입니다. 각 항목의 `additional_metadata.citations`에 주장, 문장 번호,
+원문 발췌가 있습니다. 빈 배열은 확인된 인용이 0건이라는 뜻입니다. 이 필드를 제공하지 않는
+모드에서는 값이 null이거나 필드가 생략됩니다. 스트리밍에서는 완료 이벤트의
+`data.cited_sources`를 확인합니다. WebSocket의 `stream_sources`와 대화 기록에서는
+`sources`가 답변 카드에 표시한 출처이고 `retrieved_sources`가 검색 후보입니다.
+채팅 화면의 RAG Trace는 후보의 원래 검색 순서를 보여 줍니다.
+출처의 `relevance_unit`은 정규화한 백분율(`percent`), 0~1 비율(`fraction`),
+검색 원점수(`raw`), 점수 없음(`unavailable`)을 구분합니다. 백분율은 검색 점수의 표시 단위입니다.
+
+문서 조사 모드에서 `mcp.agent.require_evidence_quotes`를 켜면 선택한 문장 번호와
+발췌를 확인합니다. 한국어 단일 문서 답변에 `mcp.agent.verify_question_conditions`도
+켜면 인용에 없는 질문 조건을 모델이 다시 읽습니다. 독립 표본에서 이 옵션은 근거 없는
+답을 줄이면서 답할 수 있는 질문도 더 많이 보류했습니다. 기본값은 `false`입니다.
+
 ```bash
 # 기본 실행 (internal 평가기)
 make eval

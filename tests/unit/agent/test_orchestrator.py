@@ -232,6 +232,7 @@ class TestAgentOrchestrator:
 
         # 검증: max_iterations(3)에서 멈춰야 함
         assert result.steps_taken == 3
+        assert result.stop_reason == "max_iterations"
         assert mock_planner.plan.call_count == 3
         assert mock_executor.execute.call_count == 3
 

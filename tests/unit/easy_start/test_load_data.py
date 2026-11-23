@@ -207,6 +207,7 @@ class TestBm25Index:
         assert hasattr(loaded, "search")
         results = loaded.search("설치", top_k=2)
         assert len(results) > 0
+        assert results == index.search("설치", top_k=2)
 
 
 class TestLoadSafety:

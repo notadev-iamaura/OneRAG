@@ -13,6 +13,8 @@ Kiwi 한국어 형태소 분석기를 래핑하여 BM25 검색에 필요한
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from app.lib.logger import get_logger
@@ -40,12 +42,15 @@ class Tokenizer(Protocol):
 class WhitespaceTokenizer:
     """언어 중립 공백 기반 토크나이저 (비한국어 코퍼스용).
 
-    형태소 분석 없이 소문자화 + 공백 분리만 수행한다. 영어·다국어 BM25에
-    적합하며, 한국어 형태소 분석기(Kiwi)가 부적합한 코퍼스에서 사용한다.
+    유니코드를 정규화하고 대소문자와 문장부호 차이를 제거한다. 모델명과
+    버전 번호에 쓰이는 내부 구분자는 유지한다. Kiwi 형태소 분석이 필요 없는
+    코퍼스에서 사용한다.
     """
 
     def tokenize(self, text: str) -> list[str]:
-        return text.lower().split()
+        # Keep letters, numbers and internal identifier separators (e.g. AR-200,
+        # 3.2.1), but do not make sentence punctuation part of the search term.
+        return re.findall(r"\w+(?:['.\-]\w+)*", unicodedata.normalize("NFKC", text).casefold())
 
     def tokenize_batch(self, texts: list[str]) -> list[list[str]]:
         return [self.tokenize(t) for t in texts]

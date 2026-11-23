@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.modules.core.agent.factory import AgentFactory
 from app.modules.core.agent.interfaces import (
     AgentConfig,
     AgentState,
@@ -23,7 +24,234 @@ from app.modules.core.agent.interfaces import (
     ToolCall,
     ToolResult,
 )
-from app.modules.core.agent.synthesizer import AgentSynthesizer
+from app.modules.core.agent.synthesizer import (
+    AgentSynthesizer,
+    _document_links,
+    _expanded_windows,
+    _premise_review_passages,
+)
+
+
+def test_document_links_only_use_visible_mentions_of_other_titles():
+    evidence = {
+        "S1": ({"title": "Rail Manifest"}, ""),
+        "S2": ({"title": "North Port (station)"}, ""),
+        "S3": ({"title": "Porter"}, ""),
+    }
+    sentences = {
+        "S1.2": ("S1", "The shipment goes through North Port."),
+        "S2.1": ("S2", "North Port is a seaport."),
+        "S3.1": ("S3", "North Portland has another shipment."),
+    }
+    assert _document_links(evidence, sentences, {"shipment"}) == ["[S1.2] → S2"]
+
+
+def test_expanded_search_allocates_each_document_a_sentence_and_keeps_its_position():
+    docs = {
+        f"S{i}": ["Regular service.", "A late shipment.", "Harbor timetable."] for i in range(1, 9)
+    }
+    titles = {ref: f"Timetable {ref}" for ref in docs}
+    windows = _expanded_windows(docs, titles, {"late", "shipment"})
+    assert windows.keys() == docs.keys()
+    assert all(1 in indices and indices == sorted(set(indices)) for indices in windows.values())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response", "status", "expected"),
+    [
+        (
+            "Friday [S1.1].\n[S1.1, S1.2]",
+            "verified_quotes",
+            ["Arrival is Friday.", "Dispatch is Thursday."],
+        ),
+        (
+            "EVIDENCE: [S1.1] [S1.2]\nANSWER: Friday.",
+            "verified_quotes",
+            ["Arrival is Friday.", "Dispatch is Thursday."],
+        ),
+        (
+            "FACT: [S1.1]\nFACT: [S1.2]\nANSWER: Friday.",
+            "verified_quotes",
+            ["Arrival is Friday.", "Dispatch is Thursday."],
+        ),
+        ("FACT: [S1.1]\nFACT: [S2.2]\nANSWER: Friday.", "invalid_citation", []),
+        ("근거: [S1.1] Arrival is Friday.\n답: Friday.", "verified_quotes", ["Arrival is Friday."]),
+        ("참고 문장: [S1.1]\n정답: Friday.", "verified_quotes", ["Arrival is Friday."]),
+        ("참고 문장: [S9.1]\n정답: Friday.", "invalid_citation", []),
+        ("EVIDENCE: [S1.1] Arrival is Sunday.\nANSWER: Friday.", "invalid_citation", []),
+        ("EVIDENCE: INSUFFICIENT\nANSWER: 근거 부족", "insufficient", []),
+        ("EVIDENCE: [S9.1]\nANSWER: 근거 부족", "invalid_citation", []),
+        ("INSUFFICIENT\n[S9.1]", "invalid_citation", []),
+        ("EVIDENCE: [S1.1] [S1.7]\nANSWER: Friday.", "invalid_citation", []),
+        ("Friday [S9.1].\n[S1.1]", "invalid_citation", []),
+        ("Friday [S7.x].\n[S1.1]", "invalid_citation", []),
+        ("Friday\n[S1.1] [S1.3]", "invalid_citation", []),
+        ("Friday", "invalid_citation", []),
+        ("INSUFFICIENT\nSEARCH: dispatch note", "insufficient", []),
+    ],
+)
+async def test_grounded_sentence_references(response, status, expected):
+    client = AsyncMock()
+    client.generate_text.return_value = response
+    language = "English" if response.startswith("FACT:") else "한국어"
+    synth = AgentSynthesizer(client, AgentConfig(require_evidence_quotes=True, output_language=language))
+    docs = [{"id": "manifest", "content": "Arrival is Friday. Dispatch is Thursday."}]
+    result = ToolResult("read", "search", True, data=docs)
+    state = AgentState("When does it arrive?", steps=[AgentStep(1, "", [], [result])])
+    answer, sources = await synth.synthesize(state)
+    assert state.grounding_status == status
+    assert [s for source in sources for s in source["cited_sentences"]] == expected
+    if expected:
+        assert answer == "Friday."
+    if "SEARCH:" in response:
+        assert state.followup_queries == ["dispatch note"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("options", "decision", "expected_status", "expected_calls"),
+    [
+        ({}, "", "verified_quotes", 1),
+        ({"verify_question_conditions": True}, "OK", "verified_quotes", 2),
+        ({"verify_question_conditions": True}, "MISSING: 겨울", "insufficient", 2),
+        ({"verify_question_conditions": True}, "MISSING: 공항", "error", 2),
+        ({"verify_question_conditions": True, "verify_premise_mismatch": True},
+         "MISSING: 겨울", "insufficient", 2),
+    ],
+)
+async def test_korean_condition_review_requires_opt_in(options, decision, expected_status, expected_calls):
+    config = AgentFactory.create_config({"mcp": {"agent": {"require_evidence_quotes": True, **options}}})
+    client = AsyncMock()
+    client.generate_text.side_effect = ["EVIDENCE: [S1.1]\nANSWER: 금요일", decision]
+    result = ToolResult("read", "search", True, data=[{"id": "timetable", "content": "도착일은 금요일이다."}])
+    state = AgentState("겨울 열차의 도착일은 언제인가요?", steps=[AgentStep(1, "", [], [result])])
+    answer, sources = await AgentSynthesizer(client, config).synthesize(state)
+    assert state.grounding_status == expected_status
+    assert client.generate_text.await_count == expected_calls
+    if expected_status == "verified_quotes":
+        assert answer == "금요일"
+        assert sources[0]["cited_sentences"] == ["도착일은 금요일이다."]
+    else:
+        assert answer == "근거 부족"
+        assert not sources
+        assert bool(state.followup_queries) == (expected_status == "insufficient")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("question", "passage", "reply", "review", "status"),
+    [
+        (
+            "은하재단이 받은 상은?", "해솔재단은 푸른상을 받았다. 은하재단은 상을 수여했다.",
+            "푸른상", "CONFLICT: [S1.2] | 은하재단이 받은 | 은하재단은 상을 수여했다", "insufficient",
+        ),
+        (
+            "모든 구간에 지급되는 보조금은?", "일부 구간에 4만원을 지급한다.",
+            "4만원", "CONFLICT: [S1.1] | 모든 구간 | 일부 구간", "insufficient",
+        ),
+        (
+            "전시를 관람할 수 있는 기간은?", "전시는 2028년 3월 개막한다.",
+            "2028년 3월", "CONFLICT: [S1.1] | 관람할 수 있는 기간 | 개막한다", "insufficient",
+        ),
+        (
+            "한서진이 피고인으로 송치된 날짜는?", "한서진은 3월 4일 피의자로 소환됐다.",
+            "3월 4일", "CONFLICT: [S1.1] | 피고인으로 송치된 | 피의자로 소환됐다", "insufficient",
+        ),
+        (
+            "시의회가 예산을 승인한 날짜는?", "시의회는 7월 1일 예산을 제안했다.",
+            "7월 1일", "CONFLICT: [S1.1] | 승인한 | 예산을 제안했다", "insufficient",
+        ),
+        (
+            "시의회가 예산을 승인한 날짜는?", "시의회는 7월 1일 예산을 가결했다.",
+            "7월 1일", "OK", "verified_quotes",
+        ),
+        (
+            "은하재단이 받은 상은?", "해솔재단은 푸른상을 받았다. 은하재단은 해솔재단이 쓰던 이름이다.",
+            "푸른상", "OK", "verified_quotes",
+        ),
+        (
+            "시상식은 어느 요일에 열리나?", "행사는 매주 화요일에 열린다.",
+            "화요일", None, "verified_quotes",
+        ),
+        (
+            "모든 구간에 지급되는 보조금은?", "올해 3월 1일부터 모든 구간에 보조금 4만원을 지급한다.",
+            "4만원", None, "verified_quotes",
+        ),
+        (
+            "모든 구간에 지급되는 보조금은?", "일부 구간에 4만원을 지급한다.",
+            "4만원", "CONFLICT: [S1.8] | 모든 구간 | 일부 구간", "error",
+        ),
+        (
+            "모든 구간에 지급되는 보조금은?", "일부 구간에 4만원을 지급한다.",
+            "4만원", "CONFLICT: [S1.1] | 모든 구간 | 시범 운영", "error",
+        ),
+        (
+            "모든 구간에 지급되는 보조금은?", "일부 구간에 4만원을 지급한다.",
+            "4만원", "CONFLICT: [S1.1] | 신규 구간 | 일부 구간", "error",
+        ),
+        (
+            "모든 구간에 지급되는 보조금은?", "일부 구간에 4만원을 지급한다.",
+            "4만원", "CONFLICT: [S1.1] | 모든 구간 | 4만원", "error",
+        ),
+        (
+            "모든 구간에 지급되는 보조금은?", "일부 구간에 4만원을 지급한다.",
+            "4만원", "CONFLICT:\n[S1.1] | 모든 구간 | 일부 구간", "error",
+        ),
+    ],
+)
+async def test_korean_premise_review(question, passage, reply, review, status):
+    config = AgentFactory.create_config(
+        {"mcp": {"agent": {"require_evidence_quotes": True, "verify_premise_mismatch": True}}}
+    )
+    client = AsyncMock()
+    client.generate_text.side_effect = [f"근거: [S1.1]\n답: {reply}", review]
+    result = ToolResult("read", "search", True, data=[{"id": "archive", "content": passage}])
+    state = AgentState(question, steps=[AgentStep(1, "", [], [result])])
+    answer, sources = await AgentSynthesizer(client, config).synthesize(state)
+    assert client.generate_text.await_count == (2 if review else 1)
+    assert state.grounding_status == status
+    assert not state.followup_queries
+    if status == "verified_quotes":
+        assert answer == reply
+        assert sources[0]["cited_sentences"] == [passage.split(". ")[0].rstrip(".") + "."]
+    else:
+        assert answer == "근거 부족"
+        assert sources == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("language", "first_response", "status"),
+    [
+        ("English", "FACT: [S1.1]\nANSWER: 4만원", "verified_quotes"),
+        ("한국어", "근거: [S9.9]\n답: 4만원", "invalid_citation"),
+        ("한국어", "INSUFFICIENT\nSEARCH: 다른 구간 지원금", "insufficient"),
+    ],
+)
+async def test_premise_review_preserves_other_paths(language, first_response, status):
+    config = AgentConfig(output_language=language, require_evidence_quotes=True, verify_premise_mismatch=True)
+    client = AsyncMock()
+    client.generate_text.return_value = first_response
+    result = ToolResult("read", "search", True, data=[{"id": "note", "content": "일부 구간에 4만원을 지급한다."}])
+    state = AgentState("모든 구간의 지원금은?", steps=[AgentStep(1, "", [], [result])])
+    await AgentSynthesizer(client, config).synthesize(state)
+    assert state.grounding_status == status
+    assert state.followup_queries == (["다른 구간 지원금"] if status == "insufficient" else [])
+    client.generate_text.assert_awaited_once()
+
+
+def test_premise_review_bounds_evidence_without_dropping_original_citations():
+    question = "모든 역의 개통 날짜는?"
+    segments = [f"일부 역의 기록 {i}. " + "글" * 1100 for i in range(12)]
+    labels = [f"S2.{i}" for i in [2, 4, 6, 8, 10]]
+    shown = _premise_review_passages(question, "2027년", "노선도", "S2", segments, labels)
+    assert set(labels) <= shown.keys()
+    assert len(shown) <= 6
+    assert max(map(len, shown.values())) <= 900
+    assert not _premise_review_passages(
+        question, "2027년", "노선도", "S2", segments, [*labels, "S2.9", "S2.11"]
+    )
 
 
 class TestAgentSynthesizer:

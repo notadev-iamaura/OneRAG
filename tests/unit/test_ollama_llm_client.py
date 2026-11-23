@@ -5,6 +5,7 @@ OllamaLLMClient의 핵심 기능을 Mock 기반으로 검증합니다.
 실제 Ollama 서버 없이 테스트 가능합니다.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -62,7 +63,7 @@ class TestOllamaLLMClientGenerate:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock(message=MagicMock(content="테스트 응답"))]
         mock_response.usage = MagicMock(total_tokens=50)
-        mock_openai.chat.completions.create.return_value = mock_response
+        mock_openai.chat.completions.create = AsyncMock(return_value=mock_response)
 
         client._client = mock_openai
 
@@ -80,7 +81,7 @@ class TestOllamaLLMClientGenerate:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock(message=MagicMock(content="응답"))]
         mock_response.usage = MagicMock(total_tokens=30)
-        mock_openai.chat.completions.create.return_value = mock_response
+        mock_openai.chat.completions.create = AsyncMock(return_value=mock_response)
 
         client._client = mock_openai
 
@@ -92,6 +93,35 @@ class TestOllamaLLMClientGenerate:
         call_args = mock_openai.chat.completions.create.call_args
         messages = call_args.kwargs.get("messages", call_args[1].get("messages", []))
         assert any(m["role"] == "system" for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_cancelling_ollama_generation_releases_the_http_request():
+    import httpx
+    from openai import AsyncOpenAI
+
+    from app.lib.llm_client import OllamaLLMClient
+
+    received = asyncio.Event()
+    released = asyncio.Event()
+
+    async def waiting_endpoint(request):
+        received.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            released.set()
+
+    transport = httpx.AsyncClient(transport=httpx.MockTransport(waiting_endpoint))
+    async with AsyncOpenAI(api_key="local", base_url="http://local.test/v1", http_client=transport) as sdk:
+        client = OllamaLLMClient(config={})
+        client._client = sdk
+        task = asyncio.create_task(client.generate_text("test"))
+        await asyncio.wait_for(received.wait(), 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert released.is_set()
 
 
 class TestOllamaLLMClientHealthCheck:

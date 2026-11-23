@@ -74,7 +74,11 @@ function makeStreamMessageMock(chunks: string[], sessionId = 'sse-session-123') 
       total_chunks: chunks.length,
       tokens_used: 42,
       processing_time: 0.5,
-      sources: [{ id: 1, document: 'doc.pdf', relevance: 0.9, content_preview: 'p' }],
+      sources: [
+        { id: 1, document: 'doc.pdf', relevance: 0.9, content_preview: 'p' },
+        { id: 2, document: 'other.pdf', relevance: 0.8, content_preview: 'candidate' },
+      ],
+      cited_sources: [{ id: 1, document: 'doc.pdf', relevance: 0.9, content_preview: 'quoted sentence' }],
     };
     options?.onEvent?.(doneEvent);
     options?.onDone?.(doneEvent);
@@ -174,6 +178,8 @@ describe('useChatMessages — SSE 폴백/타이프라이터 (#46, #53)', () => {
     expect(assistant?.role).toBe('assistant');
     expect(assistant?.content).toBe('안녕하세요!');
     expect(assistant?.sources).toHaveLength(1);
+    expect(assistant?.sources?.[0]?.content_preview).toBe('quoted sentence');
+    expect(assistant?.retrieved_sources?.map(s => s.document)).toEqual(['doc.pdf', 'other.pdf']);
     expect(assistant?.processing_time).toBe(0.5);
     expect(assistant?.tokens_used).toBe(42);
     // RagProgress가 완료 단계로 전이
@@ -188,7 +194,8 @@ describe('useChatMessages — SSE 폴백/타이프라이터 (#46, #53)', () => {
       data: {
         session_id: mockSessionId,
         answer: 'REST 응답',
-        sources: [],
+        sources: [{ id: 1, document: 'candidate.pdf', relevance: 0.9, content_preview: 'p' }],
+        cited_sources: [],
         tokens_used: 5,
         processing_time: 0.2,
         model_info: { provider: 'test', model: 'm' },
@@ -214,6 +221,8 @@ describe('useChatMessages — SSE 폴백/타이프라이터 (#46, #53)', () => {
     // user + REST 어시스턴트 응답 (SSE placeholder는 제거됨 → 빈 말풍선 없음)
     expect(messages).toHaveLength(2);
     expect(messages[1]?.content).toBe('REST 응답');
+    expect(messages[1]?.sources).toEqual([]);
+    expect(messages[1]?.retrieved_sources?.map(s => s.document)).toEqual(['candidate.pdf']);
   });
 
   // #46: 중단(abort) 시 REST 폴백을 하지 않고 빈 placeholder를 제거한다

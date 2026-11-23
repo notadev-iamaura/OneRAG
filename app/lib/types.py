@@ -66,6 +66,8 @@ class RAGResultDict(TypedDict, total=False):
 
     answer: str
     sources: list[dict[str, Any]]
+    cited_sources: list[dict[str, Any]]
+    grounding_status: str
     tokens_used: int
     topic: str
     processing_time: float

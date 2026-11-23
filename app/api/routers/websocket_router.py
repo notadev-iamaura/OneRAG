@@ -435,6 +435,7 @@ async def _process_streaming(
     start_time = time.time()
     token_index = 0
     sources: list[dict[str, Any]] = []
+    retrieved_sources: list[dict[str, Any]] | None = None
     # stream_start 전송 여부 추적 — metadata 수신 시점에 서버 확정 ID로 1회 전송
     stream_started = False
 
@@ -488,7 +489,9 @@ async def _process_streaming(
             elif event_type == "done":
                 # done 이벤트에서 sources 추출
                 done_data = event.get("data", {})
-                sources = done_data.get("sources", [])
+                retrieved_sources = done_data.get("sources", [])
+                cited = done_data.get("cited_sources")
+                sources = (retrieved_sources or []) if cited is None else cited
 
             elif event_type == "error":
                 # 스트리밍 중 에러 발생: 파이프라인이 전달한 error_code/message를
@@ -513,8 +516,9 @@ async def _process_streaming(
         sources_event = StreamSourcesEvent(
             message_id=message_id,
             sources=sources,
+            retrieved_sources=retrieved_sources,
         )
-        await websocket.send_json(sources_event.model_dump())
+        await websocket.send_json(sources_event.model_dump(exclude_none=True))
 
         # 5. StreamEndEvent 전송
         processing_time_ms = int((time.time() - start_time) * 1000)

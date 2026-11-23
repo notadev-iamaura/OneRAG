@@ -925,11 +925,6 @@ class RAGPipeline(
                 return self._create_fallback_response(message, start_time, route_decision.metadata)
             return route_decision.immediate_response
 
-        use_agent = options.get("use_agent", False)
-        if use_agent and self.agent_orchestrator:
-            logger.info("Agent 모드 활성화", extra={"orchestrator": "AgentOrchestrator"})
-            return await self._execute_agent_mode(message, session_id, start_time)
-
         if enable_debug_trace:
             debug_trace_data["original_query"] = message
 
@@ -940,7 +935,13 @@ class RAGPipeline(
         if data_source is not None:
             options["data_source"] = data_source
 
+        # Tool calls do not carry request-scoped filters. Keep scoped requests on
+        # the retrieval phase which applies them to all evidence.
         rag_mode = self._resolve_rag_mode(options)
+        if options.get("use_agent") and self.agent_orchestrator:
+            if not self._build_retrieval_filters(options):
+                return await self._execute_agent_mode(message, session_id, start_time)
+            rag_mode = "local"
         route_decision.metadata["rag_mode"] = rag_mode
         if rag_mode == "grok_answer":
             logger.info("Grok answer mode 실행")
@@ -1036,6 +1037,11 @@ class RAGPipeline(
             quality_score=getattr(generation_result, "quality_score", None),
             refusal_reason=getattr(generation_result, "refusal_reason", None),
         )
+        citations = getattr(generation_result, "citations", None)
+        if isinstance(citations, list):
+            result["cited_sources"] = self.format_answer_citations(citations)
+            if status := getattr(generation_result, "citation_status", None):
+                result["grounding_status"] = status
         tracker.end_stage("build_result")
         tracker.end_pipeline()
         performance_metrics = tracker.get_metrics()
