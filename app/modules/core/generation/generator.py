@@ -367,6 +367,12 @@ def _compact_prompt_text(value: str | None) -> str:
     return re.sub(r"[\s'\"「」『』（）()【】\\/:：·._-]+", "", value).casefold()
 
 
+def _require_document_stop(finish_reason: str | None) -> None:
+    """A partial provider response cannot establish a document citation."""
+    if finish_reason != "stop":
+        raise ValueError("Document response did not finish with a stop signal")
+
+
 class Stats(TypedDict):
     """GenerationModule 통계 타입"""
 
@@ -1180,9 +1186,11 @@ class GenerationModule:
             )
 
             # 결과 추출
-            answer = response.choices[0].message.content or ""
+            choice = response.choices[0]
+            answer = choice.message.content or ""
             reader = options.get("_answer_citations")
             if isinstance(reader, AnswerCitations):
+                _require_document_stop(getattr(choice, "finish_reason", None))
                 answer = (reader.feed(answer) + reader.finish()).strip()
 
             # 빈 응답 extractive fallback(GAP D): LLM이 빈 답변을 반환하면 무응답 대신
@@ -2217,6 +2225,8 @@ class GenerationModule:
         progress = options.get("_document_stream_progress")
         if not isinstance(progress, DocumentStreamProgress):
             progress = None
+        reader = options.get("_answer_citations")
+        document_finish_reason = None
 
         # 청크 단위로 yield
         async for chunk in self._iterate_stream_chunks(stream):
@@ -2228,14 +2238,19 @@ class GenerationModule:
                 stream_total_tokens = getattr(chunk_usage, "total_tokens", 0) or 0
 
             if chunk.choices and len(chunk.choices) > 0:
-                delta = chunk.choices[0].delta
+                choice = chunk.choices[0]
+                if isinstance(reader, AnswerCitations):
+                    finish_reason = getattr(choice, "finish_reason", None)
+                    if finish_reason is not None:
+                        _require_document_stop(finish_reason)
+                        document_finish_reason = finish_reason
+                delta = choice.delta
                 if hasattr(delta, "content") and delta.content:
                     content = delta.content
                     chunk_count += 1  # 청크 카운트 증가
                     if first_token_at is None:
                         first_token_at = datetime.now(UTC)
 
-                    reader = options.get("_answer_citations")
                     if isinstance(reader, AnswerCitations):
                         content = reader.feed(content)
                         if not content:
@@ -2253,8 +2268,8 @@ class GenerationModule:
                     else:
                         yield content
 
-        reader = options.get("_answer_citations")
         if isinstance(reader, AnswerCitations):
+            _require_document_stop(document_finish_reason)
             tail = reader.finish()
             if tail:
                 if masking_active:

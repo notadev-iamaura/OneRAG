@@ -491,6 +491,7 @@ class ChatService:
             }
             payload = normalize_source_payload(
                 sequence_id=index, source_type="rag", metadata=public_ids, document_name=name,
+                mask_text=masker.mask_text if masker else None,
                 content_preview=excerpt[:200], relevance=float(score) if isinstance(score, (int, float)) else 0.0,
                 relevance_unit="raw" if has_score else "unavailable",
             )

@@ -44,6 +44,7 @@ from .original_file_storage import (
     resolve_original_reference,
     store_original_file,
 )
+from .services.source_contract import public_source_identifier, public_source_metadata
 from .upload_job_store import (
     JsonUploadJobStore,
     PostgresUploadJobStore,
@@ -2181,18 +2182,6 @@ def _guess_original_media_type(filename: str) -> str:
     return media_types.get(ext, "application/octet-stream")
 
 
-_SOURCE_DETAIL_PRIVATE_METADATA_KEYS = {
-    "embedding",
-    "embeddings",
-    "vector",
-    "vectors",
-    "file_path",
-    "original_file_path",
-    "storage_backend",
-    "original_storage_backend",
-}
-
-
 def _chunk_metadata(chunk: Any) -> dict[str, Any]:
     if isinstance(chunk, dict):
         metadata = chunk.get("metadata")
@@ -2237,25 +2226,6 @@ def _first_source_detail_value(metadata: dict[str, Any], *keys: str) -> Any:
         if value not in (None, ""):
             return value
     return None
-
-
-def _public_source_detail_uri(value: Any) -> str | None:
-    if value in (None, ""):
-        return None
-    uri = str(value)
-    if uri.startswith(("file://", "gs://", "/")):
-        return None
-    if "://" not in uri and "/" in uri:
-        return None
-    return uri
-
-
-def _public_source_detail_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in metadata.items()
-        if key not in _SOURCE_DETAIL_PRIVATE_METADATA_KEYS
-    }
 
 
 def _source_detail_candidate_ids(
@@ -2354,15 +2324,20 @@ async def get_document_source_detail(
     chunk: int | None = Query(default=None),
 ) -> dict[str, Any]:
     """청크(인용 출처)의 전체 본문을 source_id로 조회한다."""
+    mask_text = _privacy_masker.mask_text if _privacy_masker else None
+    if public_source_identifier(document_id, mask_text) != document_id:
+        raise HTTPException(status_code=404, detail="문서 출처를 찾을 수 없습니다")
+    public_id = public_source_identifier(source_id, mask_text)
     chunks = await _get_document_chunks_for_detail(document_id)
     for index, item in enumerate(chunks):
         metadata = _chunk_metadata(item)
-        if source_id not in _source_detail_candidate_ids(
+        candidates = _source_detail_candidate_ids(
             document_id=document_id,
             chunk=item,
             metadata=metadata,
             fallback_order=index,
-        ):
+        )
+        if not any(public_source_identifier(candidate, mask_text) == public_id for candidate in candidates):
             continue
         if not _matches_source_detail_filters(metadata=metadata, page=page, chunk=chunk):
             continue
@@ -2374,9 +2349,10 @@ async def get_document_source_detail(
         chunk_index = _coerce_optional_int(
             _first_source_detail_value(metadata, "chunk_index", "chunk")
         )
+        public_metadata = public_source_metadata(metadata, mask_text)
         document_name = (
             _first_source_detail_value(
-                metadata,
+                public_metadata,
                 "document_name",
                 "source_file",
                 "filename",
@@ -2384,25 +2360,17 @@ async def get_document_source_detail(
             )
         )
         return {
-            "source_id": source_id,
+            "source_id": public_id,
             "document_id": document_id,
             "document_name": str(document_name) if document_name else None,
             "document": str(document_name) if document_name else None,
             "page": page_number,
             "chunk": chunk_index,
-            "section": metadata.get("section") or metadata.get("heading"),
+            "section": public_metadata.get("section") or public_metadata.get("heading"),
             "content": content,
             "full_content": content,
-            "source_uri": _public_source_detail_uri(
-                _first_source_detail_value(
-                    metadata,
-                    "source_uri",
-                    "uri",
-                    "url",
-                    "citation",
-                )
-            ),
-            "metadata": _public_source_detail_metadata(metadata),
+            "source_uri": _first_source_detail_value(public_metadata, "source_uri", "uri", "url", "citation"),
+            "metadata": public_metadata,
         }
 
     raise HTTPException(
@@ -2411,7 +2379,7 @@ async def get_document_source_detail(
             "error": "출처 청크를 찾을 수 없음",
             "message": "요청하신 출처 청크를 찾을 수 없습니다",
             "document_id": document_id,
-            "source_id": source_id,
+            "source_id": public_id,
         },
     )
 

@@ -55,6 +55,7 @@ from ..schemas.chat_schemas import (
 from ..schemas.feedback import FeedbackRequest, FeedbackResponse
 from ..schemas.streaming import StreamChatRequest, StreamErrorEvent
 from ..services.chat_service import ChatService
+from ..services.source_contract import public_history_message
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["Chat"])
@@ -582,7 +583,11 @@ async def get_chat_history(
         history = await session_module.get_chat_history(session_id)
         start = offset
         end = start + limit
-        paginated_messages = history["messages"][start:end]
+        masker = chat_service.rag_pipeline.privacy_masker
+        paginated_messages = [
+            public_history_message(row, masker.mask_text if masker else None)
+            for row in history["messages"][start:end]
+        ]
         return ChatHistoryResponse(
             session_id=session_id,
             messages=paginated_messages,

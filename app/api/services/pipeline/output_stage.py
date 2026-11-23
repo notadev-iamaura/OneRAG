@@ -113,6 +113,7 @@ class OutputStageMixin(PipelineStateBase):
 
             return normalize_source_payload(
                 sequence_id=idx,
+                mask_text=self.privacy_masker.mask_text if self.privacy_masker else None,
                 source_type="rag",
                 document_name=document_name,
                 relevance=normalized_score,

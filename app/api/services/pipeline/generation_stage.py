@@ -37,7 +37,8 @@ class GenerationStageMixin(PipelineStateBase):
         """Convert Grok citation payloads into OneRAG Source objects."""
         sources: list[Any] = []
         for idx, citation in enumerate(citations):
-            source_data = normalize_citation_source_payload(idx, citation, source_type="grok")
+            source_data = normalize_citation_source_payload(idx, citation, source_type="grok",
+                mask_text=self.privacy_masker.mask_text if self.privacy_masker else None)
             sources.append(self.Source(**source_data))
         return sources
 
@@ -388,6 +389,7 @@ class GenerationStageMixin(PipelineStateBase):
                         relevance_unit = "raw"
                     source_data = normalize_source_payload(
                         sequence_id=idx,
+                        mask_text=self.privacy_masker.mask_text if self.privacy_masker else None,
                         source_type="agent",
                         document_name=document,
                         document_id=source.get("document_id"),
@@ -419,7 +421,7 @@ class GenerationStageMixin(PipelineStateBase):
             result: RAGResultDict = cast(
                 RAGResultDict,
                 {
-                    "answer": agent_result.answer,
+                    "answer": self.privacy_masker.mask_text(agent_result.answer) if self.privacy_masker else agent_result.answer,
                     "sources": formatted_sources,
                     "tokens_used": request_ledger.total_tokens,
                     "topic": self.extract_topic_func(message),

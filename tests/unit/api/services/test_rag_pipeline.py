@@ -2365,6 +2365,27 @@ class TestBuildResult:
 
 
 class TestExecuteAgentMode:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("privacy", [True, False])
+    async def test_agent_answer_uses_the_configured_privacy_mask_before_session_storage(
+        self, mock_config, mock_modules, privacy
+    ) -> None:
+        from app.modules.core.privacy.masker import PrivacyMasker
+
+        phone = "010-1234-6789"
+        agent = AsyncMock()
+        agent.run.return_value = SimpleNamespace(answer=phone, sources=[{"document_id": "public-file", "source_id": phone}],
+            success=True, steps_taken=1, total_time=.1, tools_used=["search_weaviate"], stop_reason="completed",
+            grounding_status="verified_quotes")
+        mock_modules["agent_orchestrator"] = agent
+        pipeline = RAGPipeline(config=mock_config, **mock_modules)
+        masker = PrivacyMasker()
+        pipeline.privacy_masker = masker if privacy else None
+        result = await pipeline._execute_agent_mode(message="연락처?", session_id="test", start_time=time.time())
+        assert result["answer"] == (masker.mask_text(phone) if privacy else phone)
+        assert result["sources"][0].document_id == "public-file"
+        assert result["sources"][0].source_id != phone
+
     """_execute_agent_mode 메서드 테스트"""
 
     @pytest.mark.asyncio
@@ -2437,7 +2458,7 @@ class TestExecuteAgentMode:
             start_time=time.time(),
         )
 
-        assert result["answer"] == "Agent 답변"
+        assert result["answer"] == ("[가림]" if mask_quote else "Agent 답변")
         assert [(source.relevance, source.relevance_unit) for source in result["sources"]] == [
             (0.8, "fraction"), (0.016, "raw"), (0.0, "unavailable"),
         ]

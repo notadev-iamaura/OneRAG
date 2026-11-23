@@ -917,6 +917,7 @@ class TestChatServiceStreamingTimeoutGuards:
                 yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=part))])
                 if mode == "buffer_then_stall":
                     await asyncio.sleep(5)
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="stop")])
             yield SimpleNamespace(choices=[], usage=SimpleNamespace(total_tokens=173))
 
         generation._iterate_stream_chunks = provider_chunks
