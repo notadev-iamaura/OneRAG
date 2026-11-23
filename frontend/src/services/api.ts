@@ -703,6 +703,10 @@ const parseChatStreamBlock = (block: string): StreamChatEvent | null => {
   if (typeof parsed.event !== 'string' && eventType) {
     parsed.event = eventType;
   }
+  if ((parsed.event === 'metadata' || parsed.event === 'done') &&
+      parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data)) {
+    return { ...parsed.data, event: parsed.event } as StreamChatEvent;
+  }
   return parsed as unknown as StreamChatEvent;
 };
 

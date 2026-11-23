@@ -83,6 +83,17 @@ def test_public_https_uri_is_preserved() -> None:
     assert payload["source_uri"] == public_url
 
 
+def test_measured_rate_preserves_evidence_but_other_private_references_are_filtered() -> None:
+    excerpt = "Payload capacity: 50 kg. Maximum speed: 2 m/s."
+    for preview, expected in [(excerpt, excerpt), (excerpt + " See /srv/private.pdf", "")]:
+        payload = normalize_source_payload(
+            sequence_id=0, source_type="agent", relevance=1.0, content_preview=preview,
+            additional_metadata={"cited_sentences": [preview]},
+        )
+        assert payload["content_preview"] == expected
+        assert payload["additional_metadata"].get("cited_sentences", []) == ([expected] if expected else [])
+
+
 def test_storage_backend_keys_excluded_from_metadata() -> None:
     """스토리지 백엔드 식별자 일반 키는 metadata에서 제외되어야 한다."""
     payload = normalize_source_payload(
@@ -111,3 +122,45 @@ def test_citation_payload_filters_private_reference() -> None:
     )
     all_strings = _flatten_strings(payload)
     assert "/srv/app/data/private.pdf" not in all_strings
+
+
+def test_public_links_and_measured_rates_do_not_whitelist_embedded_private_references() -> None:
+    public = "공개 안내 https://example.org/manual 속도 7 m/s"
+    for private in ("file:///private/demo.pdf", "gs://bucket/internal.pdf", "/srv/private/doc", r"C:\uploads\demo"):
+        mixed = f"{public} 첨부는 {private}"
+        payload = normalize_source_payload(
+            sequence_id=0, source_type="agent", relevance=0.8, content_preview=mixed,
+            additional_metadata={"cited_sentences": [mixed, public]},
+        )
+        assert payload["content_preview"] == ""
+        assert payload["additional_metadata"] == {"cited_sentences": [public]}
+
+
+def test_live_stream_and_rest_share_safe_identity_without_inventing_a_file_handle() -> None:
+    from app.api.services.chat_service import ChatService
+    from app.api.services.source_contract import public_history_message
+    from app.modules.core.privacy.masker import PrivacyMasker
+
+    service = ChatService({}, {})
+    masker = PrivacyMasker()
+    service.rag_pipeline.privacy_masker = masker
+    seen = set()
+    for value in ("010-1234-6789", "010-5678-6789", r"C:\uploads\example\internal.pdf"):
+        metadata = {"source": "안내.pdf", "document_id": value, "chunk_index": 2,
+                    "extra": {"file_path": "/internal/path.pdf", "customer": value}}
+        [stream] = service._format_stream_sources([{"content": "공개 내용", "metadata": metadata}])
+        rest = normalize_source_payload(sequence_id=0, source_type="rag", relevance=0, content_preview="공개 내용",
+                                        metadata=metadata, mask_text=masker.mask_text)
+        legacy = {"document": "안내.pdf", "document_id": value, "chunk": 2, "id": 0,
+                  "source_id": f"rag:{value}:na:2", "metadata": metadata}
+        msg = public_history_message({"sources": [legacy], "retrieved_sources": [legacy]}, masker.mask_text)
+        for source in (stream, rest, *msg["sources"], *msg["retrieved_sources"]):
+            assert source["source_id"] == stream["source_id"]
+            assert source.get("document_id") is None
+            assert all(value not in text and "/internal/path.pdf" not in text for text in _flatten_strings(source))
+        seen.add(stream["source_id"])
+    assert len(seen) == 3
+
+    safe = normalize_source_payload(sequence_id=0, source_type="rag", relevance=0, content_preview="",
+                                    document_id="public-file", metadata={"source_id": "public-chunk"})
+    assert (safe["document_id"], safe["source_id"]) == ("public-file", "public-chunk")

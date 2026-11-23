@@ -55,6 +55,7 @@ from ..schemas.chat_schemas import (
 from ..schemas.feedback import FeedbackRequest, FeedbackResponse
 from ..schemas.streaming import StreamChatRequest, StreamErrorEvent
 from ..services.chat_service import ChatService
+from ..services.source_contract import public_history_message
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["Chat"])
@@ -295,7 +296,8 @@ async def chat(
             {
                 "tokens_used": rag_result["tokens_used"],
                 "processing_time": time.time() - start_time,
-                "sources": rag_result["sources"],
+                "sources": rag_result.get("cited_sources", rag_result["sources"]),
+                "retrieved_sources": rag_result["sources"],
                 "topic": rag_result["topic"],
                 "model_info": rag_result.get("model_info"),
                 "message_id": message_id,
@@ -329,6 +331,13 @@ async def chat(
 
         # ⭐ 품질 메타데이터 구성 (Self-RAG Phase 3.1)
         metadata: dict[str, Any] = {"total_time": time.time() - start_time}
+        if rag_result.get("grounding_status"):
+            metadata["grounding_status"] = rag_result["grounding_status"]
+        agent_metadata = rag_result.get("metadata") or {}
+        if agent_metadata.get("mode") == "agent":
+            for key in ("mode", "stop_reason", "grounding_status", "steps_taken", "tools_used", "success"):
+                if key in agent_metadata:
+                    metadata[key] = agent_metadata[key]
 
         # Self-RAG 품질 점수가 있는 경우 quality 객체 추가
         quality_score = rag_result.get("quality_score")
@@ -352,6 +361,7 @@ async def chat(
         response = ChatResponse(
             answer=rag_result["answer"],
             sources=rag_result["sources"],
+            cited_sources=rag_result.get("cited_sources"),
             session_id=session_id,
             message_id=message_id,
             processing_time=time.time() - start_time,
@@ -573,7 +583,11 @@ async def get_chat_history(
         history = await session_module.get_chat_history(session_id)
         start = offset
         end = start + limit
-        paginated_messages = history["messages"][start:end]
+        masker = chat_service.rag_pipeline.privacy_masker
+        paginated_messages = [
+            public_history_message(row, masker.mask_text if masker else None)
+            for row in history["messages"][start:end]
+        ]
         return ChatHistoryResponse(
             session_id=session_id,
             messages=paginated_messages,

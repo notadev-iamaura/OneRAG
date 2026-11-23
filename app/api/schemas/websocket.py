@@ -146,8 +146,9 @@ class StreamSourcesEvent(BaseModel):
     )
     sources: list[dict[str, Any]] = Field(
         ...,
-        description="검색 소스 목록",
+        description="응답에 표시할 출처 목록",
     )
+    retrieved_sources: list[dict[str, Any]] | None = Field(default=None, description="검색 결과 후보")
 
 
 class StreamEndEvent(BaseModel):

@@ -14,7 +14,7 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Badge } from '@/components/ui/badge';
+import { SourceRelevanceBadge } from './SourceRelevanceBadge';
 import {
     Tooltip,
     TooltipContent,
@@ -34,6 +34,22 @@ interface ChatMessageItemProps {
     isAnimated: boolean;
     copyToClipboard: (text: string, successMessage?: string) => void;
     onChunkClick: (source: SourceType) => void;
+}
+
+function SourceEvidence({ source }: { source: SourceType }) {
+    const values = source.additional_metadata?.citations;
+    const citations = Array.isArray(values)
+        ? values.filter(citation => typeof citation?.claim === 'string' && typeof citation.quote === 'string')
+        : [];
+    if (citations.length === 0) {
+        return <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">{formatSourcePreview(source.content_preview)}</p>;
+    }
+    return <>{citations.map((citation, i) => (
+        <span className="mt-2 block text-xs leading-relaxed" key={i}>
+            <strong className="block">{citation.claim}</strong>
+            <q className="block text-muted-foreground">{citation.quote}</q>
+        </span>
+    ))}</>;
 }
 
 export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
@@ -148,16 +164,9 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                                                         {source.document}
                                                         {source.page && <span className="ml-1 text-[10px] opacity-60 font-normal">(p.{source.page})</span>}
                                                     </div>
-                                                    <Badge variant="outline" className={cn(
-                                                        "h-4 text-[8px] px-1 font-extrabold shrink-0 shadow-none border-none",
-                                                        source.relevance > 0.8 ? "bg-green-500/10 text-green-600" : "bg-slate-500/10 text-slate-600"
-                                                    )}>
-                                                        {(source.relevance * 100).toFixed(0)}%
-                                                    </Badge>
+                                                    <SourceRelevanceBadge source={source} compact />
                                                 </div>
-                                                <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed relative z-10">
-                                                    {formatSourcePreview(source.content_preview)}
-                                                </p>
+                                                <SourceEvidence source={source} />
                                             </button>
                                         ))}
                                     </div>

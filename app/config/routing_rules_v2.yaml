@@ -61,9 +61,11 @@ rules:
 
   # 인사말 규칙
   greeting:
+    # Factual queries can contain a salutation or a substring such as "hi" in "which".
+    match_mode: whole_message
     keywords:
-      ko: [안녕, 반가워, 처음, 시작, 하이, 헬로]
-      en: [hello, hi, hey, greetings]
+      ko: [안녕, 안녕하세요, 안녕하십니까, 안녕하세용, 반가워, 반가워요, 반갑습니다, 처음, 처음이에요, 처음 왔어요, 처음 뵙겠습니다, 시작, 하이, 헬로]
+      en: [hello, hello there, hello everyone, hi, hi there, hey, hey there, greetings]
     action: "direct_answer"
     priority: 3
     response:
@@ -73,9 +75,10 @@ rules:
 
   # 감사 표현
   thanks:
+    match_mode: whole_message
     keywords:
-      ko: [고마워, 감사, 고맙습니다]
-      en: [thanks, thank you]
+      ko: [고마워, 고마워요, 정말 고마워요, 고맙습니다, 감사, 감사해, 감사해요, 감사합니다, 정말 감사합니다, 감사드립니다]
+      en: [thanks, thank you, many thanks, thanks a lot, thanks so much, thank you so much, thank you very much]
     action: "direct_answer"
     priority: 3
     response:

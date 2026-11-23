@@ -700,6 +700,7 @@ async def create_mcp_server_instance(
 
         # global_config 업데이트 (retriever, graph_store 주입)
         server._global_config = global_config
+        await server.initialize()
 
         logger.info(
             "MCPServer 초기화 성공",

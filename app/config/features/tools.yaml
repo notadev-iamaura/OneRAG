@@ -110,6 +110,17 @@ mcp: &mcp_section
     fallback_tool: "search_weaviate"  # 기본 폴백 도구 (레지스트리 명칭 사용)
     # Self-Reflection 설정
     enable_reflection: true
+    # 문서 QA용. 답변이 사용한 문서와 실제 발췌를 검증하며, 근거가 부족하면 보류한다.
+    require_evidence_quotes: false
+    # 단답형 문서 QA 전용 옵션. 사용 시 require_evidence_quotes를 함께 켠다.
+    # 예: {implementation: ko_encoder, model_dir: /models/ko-reader, device: cpu, top_k: 3}
+    # ko_multi_passage는 상위 8개 문단, 로컬 독해·근거 모델과 해당 독해기의 보정 임계값을 사용한다.
+    extractive_reader: null
+    # 인용문에서 확인되지 않은 한국어 질문 조건을 로컬 또는 설정된 모델로 한 번 더 판정한다.
+    verify_question_conditions: false
+    # 한국어 단일 문서 인용에 대상·수량·기간 충돌의 단서가 있을 때 원문을 한 번 대조한다.
+    # verify_question_conditions를 함께 켜면 기존 조건 검증을 사용한다.
+    verify_premise_mismatch: false
     reflection_threshold: 7.0
     max_reflection_iterations: 2
     # 에이전트(synthesizer/planner/reflector) 출력 언어.

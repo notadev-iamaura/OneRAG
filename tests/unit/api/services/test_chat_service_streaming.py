@@ -12,6 +12,7 @@ ChatService.stream_rag_pipeline() 메서드 구현을 위한 TDD 테스트.
 """
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -805,12 +806,13 @@ class TestChatServiceStreaming:
         none_doc.metadata = {"score": 0.0, "source": "b.pdf"}
         none_doc.page_content = "내용"
 
-        sources = service._format_stream_sources([zero_doc, none_doc])
+        sources = service._format_stream_sources([zero_doc, none_doc, {"content": "점수 없음"}])
 
         # document.score=0.0이 metadata score 0.5에 가려지지 않아야 한다.
         assert sources[0]["relevance"] == 0.0
         # document.score=None이면 metadata score 0.0이 그대로 보존돼야 한다.
         assert sources[1]["relevance"] == 0.0
+        assert [source["relevance_unit"] for source in sources] == ["raw", "raw", "unavailable"]
 
     def test_format_stream_sources_excludes_context_expanded(self):
         """인접 청크 확장으로 추가된 이웃 청크는 스트리밍 소스에서 제외돼야 한다(#4)"""
@@ -832,6 +834,20 @@ class TestChatServiceStreaming:
 
         assert len(sources) == 1
         assert sources[0]["document"] == "real.md"
+
+    def test_candidates_keep_distinct_document_ids_and_locations(self):
+        from app.api.services.chat_service import ChatService
+
+        service = ChatService({}, {})
+        docs = [
+            {"content": "공개 문장", "score": 0.8, "metadata": {"document_id": name, "chunk_index": i}}
+            for i, name in enumerate(("calendar", "invoice"))
+        ]
+        sources = service._format_stream_sources(docs)
+        assert [(s["document_id"], s["chunk"], s["relevance"]) for s in sources] == [
+            ("calendar", 0, 0.8), ("invoice", 1, 0.8),
+        ]
+        assert all(source["relevance_unit"] == "raw" for source in sources)
 
 
 class TestChatServiceStreamingTimeoutGuards:
@@ -873,6 +889,58 @@ class TestChatServiceStreamingTimeoutGuards:
             "generation": mock_generation,
             "retrieval": mock_retrieval,
         }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["short", "privacy", "buffer_then_stall"])
+    async def test_buffered_document_tokens_drive_watchdog_without_public_progress(self, mode, monkeypatch):
+        from app.api.services.chat_service import ChatService
+        from app.modules.core.generation.generator import GenerationModule
+        from app.modules.core.privacy.masker import PrivacyMasker
+
+        modules = self._build_modules(None, "fallback")
+        fallback = modules["generation"].generate_answer
+        monkeypatch.setattr(GenerationModule, "_load_admin_runtime_settings", lambda self: {})
+        generation = GenerationModule({}, MagicMock(), PrivacyMasker() if mode == "privacy" else None)
+        generation.client = MagicMock()
+        generation._build_prompt = AsyncMock(return_value=("system", "question"))
+        generation.generate_answer = fallback
+        modules["generation"] = generation
+        query = "연락처를 설명해 주세요." if mode == "privacy" else "마감일은? 정답만."
+
+        async def provider_chunks(stream):
+            parts = (
+                ["연락처는 ", "010-", "1234-", "5678", " 입니다."]
+                if mode == "privacy" else ["EVIDENCE", ": ", "[S1.1]", "\nANSWER:", " 금요일"]
+            )
+            for part in parts:
+                await asyncio.sleep(0.035)
+                yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=part))])
+                if mode == "buffer_then_stall":
+                    await asyncio.sleep(5)
+            yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None), finish_reason="stop")])
+            yield SimpleNamespace(choices=[], usage=SimpleNamespace(total_tokens=173))
+
+        generation._iterate_stream_chunks = provider_chunks
+        service = ChatService(modules, {})
+        async with asyncio.timeout(2):
+            events = [event async for event in service.stream_rag_pipeline(
+                message=query, session_id="test-123", options={"first_token_timeout": 0.13},
+            )]
+        chunks = [e["data"] for e in events if e["event"] == "chunk"]
+        assert chunks and all(chunks)
+        done = events[-1]
+        assert done["event"] == "done" and done["data"]["total_chunks"] == len(chunks)
+        if mode == "buffer_then_stall":
+            fallback.assert_awaited_once()
+            assert "".join(chunks) == "fallback" and done["data"]["tokens_used"] == 11
+        else:
+            fallback.assert_not_awaited()
+            assert done["data"]["tokens_used"] == 173
+            assert done["data"]["token_estimation"] == "provider_usage"
+            if mode == "short":
+                assert "".join(chunks) == "금요일"
+            else:
+                assert "연락처" in "".join(chunks) and "010-1234-5678" not in "".join(chunks)
 
     @pytest.mark.asyncio
     async def test_stream_pre_first_chunk_exception_falls_back(self):

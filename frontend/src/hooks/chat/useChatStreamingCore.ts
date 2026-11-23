@@ -198,10 +198,10 @@ export function useChatStreamingCore(
      * 스트리밍 소스 처리 (RAG 참조 문서)
      */
     const handleStreamSources = (data: unknown) => {
-      const { message_id, sources } = data as StreamSourcesMessage;
+      const { message_id, sources, retrieved_sources } = data as StreamSourcesMessage;
       setStreamingMessage((prev) => {
         if (!prev || prev.id !== message_id) return prev;
-        return { ...prev, sources };
+        return { ...prev, sources, ...(retrieved_sources && { retrieved_sources }) };
       });
     };
 
@@ -220,6 +220,7 @@ export function useChatStreamingCore(
           content: prev.content,
           timestamp: new Date().toISOString(),
           sources: prev.sources,
+          retrieved_sources: prev.retrieved_sources,
         };
 
         // 다음 틱에 콜백 호출 (상태 업데이트 후)

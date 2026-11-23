@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "scope": "Public local document QA. This first suite-level list was assembled after the original English measurements. Each panel and its scoring policy had its own earlier registration. Results are not a prospective independent replication of this whole suite.",
+  "rule": "Require all five panels and both observed strict accuracies at or above 80 percent on every panel. Keep all model errors in their original denominator.",
+  "panels": {
+    "klue_ko_final": {"language": "ko", "per_stratum": 80, "reservation": "panels/reservation.json", "freeze": "ko/final-measured-freeze.json", "result": "ko/final.json"},
+    "tydi_ko_final": {"language": "ko", "per_stratum": 24, "reservation": "tydi-ko/reservation.json", "freeze": "tydi-ko/policy.freeze.json", "result": "tydi-ko/result.json"},
+    "squad_en_primary": {"language": "en", "per_stratum": 32, "reservation": "transfer/preregistration.json", "freeze": "transfer/independent-arms/preregistration.json", "split": "final", "result": "transfer/independent-arms/final.jsonl", "report": "transfer/independent-arms/final-report.json"},
+    "squad_en_confirmation": {"language": "en", "per_stratum": 32, "reservation": "transfer/preregistration.json", "freeze": "transfer/independent-arms/preregistration.json", "split": "confirmation", "result": "transfer/independent-arms/confirmation.jsonl", "report": "transfer/independent-arms/confirmation-report.json"},
+    "tydi_en_original": {"language": "en", "per_stratum": 24, "reservation": "transfer/tydi-preregistration.json", "freeze": "transfer/minilm/preregistration.json", "result": "transfer/minilm/tydi.jsonl", "report": "transfer/minilm/tydi-report.json"}
+  },
+  "scoring_source_sha256": "a3e5f2af733b8599c98176d64f83d5cf5993a558e617af4e86f0098f72486199",
+  "completed_report_sha256": {
+    "transfer/independent-arms/final-report.json": "57f7347dfc1897ecdf4a0a498ebbc4c0457fc1240b951f467eea4c1f323b03ec",
+    "transfer/independent-arms/confirmation-report.json": "92436d8eb94cb48024f4732fc425c4b56f2c41dfe7b9de2890cae546b2d84264",
+    "transfer/minilm/tydi-report.json": "1b1a70dcf10e8b365f9e8d110c0341e7fb5d6058811427a9bc5a117ffd038d94"
+  },
+  "registrations": {
+    "panels/reservation.json": "cb7cf5615742343d0ce57d83119c20c3151dc8debf2920a2ebe26e676d206a42",
+    "ko/final-measured-freeze.json": "e73facd1a154b8d0e12546539e6e131781e141c67825d98681c0d3f2342042cf",
+    "ko/rescue-profile.json": "6a337984e39217eae59fb834299c8ff9ac5c6be5f5d01317ec3903d155c36b01",
+    "tydi-ko/reservation.json": "4879a255fb57806aceb6e0a86b8673dd666f584f3a07d9495d039a4cace750f5",
+    "tydi-ko/policy.freeze.json": "97e532432ad1d02e1e3b3ce5d7179ae18a07e9b8a542bfea76dc35bbe4cb615c",
+    "transfer/preregistration.json": "919d3ba59c5de38836a89ac17b2ef4251f9f270d8611ba45809d8a6d9941e9d8",
+    "transfer/selected-for-final.json": "709e26d1640fcf0077fae74d41c6abcbc3b487f5d57247c720499c87b671d684",
+    "transfer/two-reader/preregistration.json": "8efbd3a4baa8bfaa018c17e7959d23e791bbe9de10ba7820179d05dd51b7de55",
+    "transfer/two-reader/frozen-policy.json": "04621bb3ee5da1b9caea9bec2646af8c6d54b2e91f133b668c76cd94ce2ce620",
+    "transfer/independent-arms/preregistration.json": "15123ff11db69db8f47d7c468a87d6112f06c7b41e98bd839be754eb27895a57",
+    "transfer/tydi-preregistration.json": "f9f6d7df3070a7bbd3b3eea29062d73e459f422521e4440393785a3244440a2d",
+    "transfer/minilm/preregistration.json": "3e496af6eff3e6d2e60da9494ed1bb955e2f1fc9d05494460913d96eea41a456",
+    "transfer/minilm/development-report.json": "13769f33256c229fe3a21531756a950bacdd5a52c06acd3c0e815b88803565bf"
+  }
+}

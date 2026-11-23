@@ -294,6 +294,18 @@ uv run python scripts/production_corpus_e2e.py run-production \
 > 예시 코퍼스: `data/sample_corpus/`(언어 중립 무라이선스 문서). 질문 템플릿은
 > `--question-template`, 외부 정답 사실은 `--manual-facts-json`으로 주입할 수 있습니다.
 
+예시 문서 두 건에 대해 파일명 힌트가 없는 한국어 문항 네 개를 사용할 수 있습니다.
+위 명령에서 `--golden data/sample_corpus_golden_ko.json`을 지정하세요.
+표준 검색 결과를 저장한 뒤 같은 문서와 문항에 `--skip-upload --use-agent`를 지정하고
+다른 출력 디렉터리에 저장하면 두 모드를 비교할 수 있습니다. 에이전트 평가는 에이전트가
+활성화된 서버가 필요합니다. 요약에는 답변과 근거를 모두 맞힌 비율, p95 요청 시간,
+전체 사용 토큰을 통과 건수로 나눈 값이 기록됩니다.
+
+문항의 `grading.min_expected_terms`는 필요한 용어 개수, `required_terms`는 반드시
+포함할 값, `required_sources`는 모두 인용해야 하는 문서 목록입니다. 각 출처에
+`page`, `chunk`, `contains`를 지정하면 해당 위치와 출처 미리보기의 내용도 검사합니다.
+같은 `session_group`의 문항은 순서대로 대화 맥락을 공유합니다.
+
 ## 🧪 인프로세스 검증 테스트 (서버 불필요)
 
 운영 도구와 별개로, 외부 서버 없이 동작하는 in-process 테스트 2종을 추가했습니다.

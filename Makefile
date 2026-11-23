@@ -186,6 +186,16 @@ test-eval: install-dev
 eval: install-dev
 	uv run python scripts/run_eval.py
 
+.PHONY: rag-quality-smoke rag-quality-local
+RAG_PYTHON ?= uv run python
+
+rag-quality-smoke:
+	ENVIRONMENT=test $(RAG_PYTHON) -m pytest -q --tb=short tests/unit/scripts tests/unit/agent/test_synthesizer.py
+
+rag-quality-local:
+	@test -n "$(PANELS)" && test -n "$(RUN_DIR)" && test -n "$(MODEL_FILE)" || { echo "Set PANELS, RUN_DIR and MODEL_FILE for the local evaluation." >&2; exit 2; }
+	$(RAG_PYTHON) scripts/rag_growth_round.py --panels "$(PANELS)" --output-dir "$(RUN_DIR)" --model-file "$(MODEL_FILE)" --port "$(or $(PORT),18759)" --propose
+
 # 배치 평가 (Ragas 사용)
 eval-ragas: install-dev
 	uv run python scripts/run_eval.py --provider ragas

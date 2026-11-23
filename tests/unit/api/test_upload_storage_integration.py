@@ -15,6 +15,7 @@ import pytest
 from fastapi import FastAPI
 
 from app.api import upload
+from app.api.services.source_contract import normalize_source_payload
 from app.lib.auth import create_upload_access_token
 
 
@@ -142,6 +143,38 @@ def test_source_detail_returns_full_content(upload_app: FastAPI) -> None:
     assert response.json()["source_id"] == "rag:doc-1:na:0"
     assert response.json()["document_id"] == "doc-1"
     assert response.json()["full_content"] == "재결합"
+
+
+def test_source_detail_resolves_public_citation_and_sanitizes_nested_metadata(
+    upload_app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    metadata = {
+        "document_id": "doc-1", "source_id": "010-1234-6789", "chunk": 0,
+        "nested": {"internal": r"C:\storage\private.pdf", "section": "일정"},
+    }
+    monkeypatch.setattr(
+        upload_app.state.fake_retrieval, "get_document_chunks",
+        AsyncMock(return_value=[{"metadata": metadata, "content": "독서 모임은 수요일입니다."}]),
+    )
+    citation = normalize_source_payload(
+        sequence_id=1, source_type="rag", relevance=0.9, content_preview="독서 모임",
+        metadata=metadata, mask_text=upload._privacy_masker.mask_text if upload._privacy_masker else None,
+    )
+    assert citation["document_id"] == "doc-1"
+    public_id = citation["source_id"]
+    assert public_id.startswith("ref_")
+    client = _client(upload_app)
+    for handle in (public_id, "rag:doc-1:na:0"):
+        response = client.get(f"/api/upload/documents/doc-1/sources/{handle}", params={"chunk": 0})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["source_id"] == handle
+        assert body["metadata"]["source_id"] == public_id
+        assert body["metadata"]["nested"] == {"section": "일정"}
+        assert body["full_content"] == "독서 모임은 수요일입니다."
+        assert metadata["source_id"] not in response.text
 
 
 def test_chunked_upload_flow(upload_app: FastAPI) -> None:

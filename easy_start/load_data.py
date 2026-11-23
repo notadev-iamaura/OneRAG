@@ -51,7 +51,7 @@ def _resolve_sample_data_path() -> Path:
     Returns:
         샘플 데이터 JSON 파일 경로
     """
-    path = get_sample_data_path()
+    path: Path = get_sample_data_path()
     if path.exists():
         return path
 
@@ -288,10 +288,8 @@ def load_bm25_index(path: str = BM25_INDEX_PATH) -> Any:
     저장된 BM25 인덱스 데이터로 BM25Index를 재구축
 
     pickle에서 문서 + 토큰화 결과를 로드한 후
-    BM25Plus 인스턴스만 재생성합니다 (토큰화 과정 생략).
+    검색 점수와 역색인을 복원합니다 (토큰화 과정 생략).
     """
-    from rank_bm25 import BM25Plus
-
     from app.modules.core.retrieval.bm25_engine import BM25Index, KoreanTokenizer
 
     with open(path, "rb") as f:
@@ -301,10 +299,7 @@ def load_bm25_index(path: str = BM25_INDEX_PATH) -> Any:
     tokenizer = KoreanTokenizer()
     index = BM25Index(tokenizer=tokenizer)
 
-    # 저장된 데이터로 내부 상태 복원 (재토큰화 없이)
-    index._documents = data["documents"]
-    index._tokenized_corpus = data["tokenized_corpus"]
-    index._bm25 = BM25Plus(data["tokenized_corpus"])
+    index.restore_tokenized(data["documents"], data["tokenized_corpus"])
 
     return index
 

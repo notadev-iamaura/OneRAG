@@ -18,6 +18,35 @@ from fastapi.testclient import TestClient
 from app.api.routers.chat_router import router, set_chat_service
 
 
+def test_history_redacts_stored_agent_answer_and_both_source_lists() -> None:
+    from app.modules.core.privacy.masker import PrivacyMasker
+
+    phone = "010-1234-6789"
+    source = {"id": 0, "source_id": phone, "document_id": "public-file",
+              "metadata": {"extra": {"file_path": "/internal/demo.pdf"}}}
+    history = {"messages": [{"type": "user", "content": phone},
+                           {"type": "assistant", "content": phone, "sources": [source], "retrieved_sources": [source]}],
+               "message_count": 2}
+    service = MagicMock()
+    service.modules = {"session": AsyncMock()}
+    service.rag_pipeline.privacy_masker = PrivacyMasker()
+    service.modules["session"].get_chat_history.return_value = history
+    app = FastAPI()
+    app.include_router(router)
+    set_chat_service(service)
+    try:
+        response = TestClient(app).get("/chat/history/synthetic")
+    finally:
+        set_chat_service(None)  # type: ignore[arg-type]
+    assert response.status_code == 200
+    user, assistant = response.json()["messages"]
+    assert user["content"] == phone
+    assert phone not in str(assistant) and "/internal/demo.pdf" not in str(assistant)
+    assert assistant["sources"] == assistant["retrieved_sources"]
+    assert assistant["sources"][0]["document_id"] == "public-file"
+    assert history["messages"][1]["content"] == phone
+
+
 def _build_rag_result() -> dict[str, Any]:
     """테스트용 RAG 파이프라인 결과 생성"""
     return {

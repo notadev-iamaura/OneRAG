@@ -19,6 +19,7 @@ import asyncio
 from typing import Any, Protocol, runtime_checkable
 
 from app.lib.logger import get_logger
+from app.modules.core.retrieval.bm25_engine.index import BM25Index
 from app.modules.core.retrieval.interfaces import SearchResult
 
 logger = get_logger(__name__)
@@ -107,6 +108,7 @@ class ChromaRetriever:
         self._bm25_index = bm25_index
         self._hybrid_merger = hybrid_merger
         self._hybrid_enabled = bm25_index is not None and hybrid_merger is not None
+        self._lexical_snapshot: tuple[object, list[dict[str, Any]]] | None = None
 
         # 통계
         self._stats = {
@@ -172,7 +174,7 @@ class ChromaRetriever:
 
             # Phase 1: 하이브리드 검색 (BM25 엔진이 주입된 경우)
             if self._hybrid_enabled and self._bm25_index is not None and self._hybrid_merger is not None:
-                bm25_results = self._bm25_index.search(query, top_k=top_k)
+                bm25_results = await self._lexical_search(query, top_k, filters)
                 merged: list[SearchResult] = self._hybrid_merger.merge(
                     dense_results=dense_results,
                     bm25_results=bm25_results,
@@ -201,6 +203,32 @@ class ChromaRetriever:
                 exc_info=True,
             )
             raise
+
+    async def _lexical_search(
+        self, query: str, top_k: int, filters: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        if isinstance(self._bm25_index, BM25Index) and hasattr(self.store, "fetch_objects"):
+            revision_reader = getattr(self.store, "read_revision", None) if not filters else None
+            revision = await asyncio.to_thread(revision_reader) if revision_reader else None
+            cached = self._lexical_snapshot
+            if revision is not None and cached is not None and revision == cached[0]:
+                return await asyncio.to_thread(self._bm25_index.search_snapshot, cached[1], query, top_k)
+            rows = await self.store.fetch_objects(collection=self.collection_name, filters=filters)
+            documents = [
+                {
+                    "id": row["_id"],
+                    "content": row["content"],
+                    "metadata": {k: v for k, v in row.items() if k not in ("_id", "content")},
+                }
+                for row in rows
+            ]
+            if revision_reader and revision is not None and revision == await asyncio.to_thread(revision_reader):
+                self._lexical_snapshot = (revision, documents)
+            return await asyncio.to_thread(self._bm25_index.search_snapshot, documents, query, top_k)
+        # An externally supplied index cannot attest to collection filters.
+        if filters or self._bm25_index is None:
+            return []
+        return await asyncio.to_thread(self._bm25_index.search, query, top_k=top_k)
 
     async def health_check(self) -> bool:
         """

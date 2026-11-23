@@ -366,6 +366,7 @@ class MemoryService:
                     "tokens_used": metadata.get("tokens_used", 0),
                     "processing_time": metadata.get("processing_time", 0.0),
                     "sources": metadata.get("sources", []),
+                    "retrieved_sources": metadata.get("retrieved_sources"),
                     "topic": metadata.get("topic"),
                     "model_info": metadata.get("model_info"),
                 },
@@ -572,6 +573,8 @@ class MemoryService:
                                 "tokens_used": metadata.get("tokens_used", 0),
                                 "processing_time": metadata.get("processing_time", 0.0),
                                 "model_info": metadata.get("model_info"),
+                                "sources": metadata.get("sources", []),
+                                "retrieved_sources": metadata.get("retrieved_sources"),
                             }
                         )
 
@@ -631,6 +634,7 @@ class MemoryService:
                         "model_info": metadata.get("model_info"),
                         # 복원 시 sources 보존 (인용 근거 유지, 인메모리 경로와 스키마 일치)
                         "sources": metadata.get("sources", []),
+                        "retrieved_sources": metadata.get("retrieved_sources"),
                     }
                 )
 
@@ -870,6 +874,7 @@ class MemoryService:
                     "tokens_used": metadata.get("tokens_used", 0),
                     "processing_time": metadata.get("processing_time", 0.0),
                     "sources": metadata.get("sources", []),
+                    "retrieved_sources": metadata.get("retrieved_sources"),
                     "topic": metadata.get("topic", "general"),
                     "model_info": metadata.get("model_info", {}),
                     "can_evaluate": metadata.get("can_evaluate", False),

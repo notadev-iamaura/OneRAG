@@ -262,6 +262,7 @@ class TestWebSocketEventFormat:
                         {"title": "문서1", "content": "내용1"},
                         {"title": "문서2", "content": "내용2"},
                     ],
+                    "cited_sources": [{"title": "문서2", "content": "내용2"}],
                 },
             }
 
@@ -356,6 +357,9 @@ class TestWebSocketEventFormat:
                 # Then: StreamEndEvent 찾기 및 검증
                 end_events = [e for e in events if e["type"] == "stream_end"]
                 assert len(end_events) == 1, "stream_end 이벤트가 정확히 1개 있어야 합니다"
+                source_event = next(e for e in events if e["type"] == "stream_sources")
+                assert [s["title"] for s in source_event["sources"]] == ["문서2"]
+                assert [s["title"] for s in source_event["retrieved_sources"]] == ["문서1", "문서2"]
 
                 end_event = end_events[0]
                 assert "message_id" in end_event

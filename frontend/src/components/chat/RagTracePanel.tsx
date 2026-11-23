@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { ApiLog, ChatMessage, Source as SourceType } from '../../types';
 import { formatModelDisplayName } from './formatModelDisplayName';
+import { SourceRelevanceBadge } from './SourceRelevanceBadge';
 import { useMenuMessages } from '../../i18n/useMenuLocale';
 import { formatDate } from '../../i18n/format';
 import type { MenuMessages } from '../../i18n/menuMessages';
@@ -49,7 +50,7 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
   const { messages: i18n, locale } = useMenuMessages();
   const assistantMessage = useMemo(() => latestAssistantMessage(messages), [messages]);
   const userMessage = useMemo(() => latestUserMessage(messages), [messages]);
-  const sources = assistantMessage?.sources ?? [];
+  const sources = assistantMessage?.retrieved_sources ?? assistantMessage?.sources ?? [];
   const latestResponseLog = useMemo(
     () => [...apiLogs].reverse().find((log) => log.type === 'response' && log.endpoint === '/api/chat'),
     [apiLogs]
@@ -59,7 +60,8 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
   // 메트릭은 "현재 표시 중인 메시지" 값을 우선하고, 없으면 전역 로그를 보조로 사용한다.
   // 이렇게 하면 방을 전환했을 때 이전 방의 마지막 응답 로그가 새 방 메트릭을 덮어쓰지 않는다.
   const modelInfo = assistantMessage?.model_info ?? responseData.model_info;
-  const processingTime = assistantMessage?.processing_time ?? responseData.processing_time ?? latestResponseLog?.duration;
+  const seconds = assistantMessage?.processing_time ?? responseData.processing_time;
+  const latencyMs = typeof seconds === 'number' ? seconds * 1000 : latestResponseLog?.duration;
   const tokensUsed = assistantMessage?.tokens_used ?? responseData.tokens_used;
 
   return (
@@ -96,7 +98,7 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
 
         <div className="grid grid-cols-2 gap-3">
           <TraceMetric icon={FileSearch} label="Sources" value={sources.length} />
-          <TraceMetric icon={Timer} label="Latency" value={processingTime ? `${processingTime}ms` : 'N/A'} />
+          <TraceMetric icon={Timer} label="Latency" value={typeof latencyMs === 'number' && Number.isFinite(latencyMs) ? `${Math.round(latencyMs)}ms` : 'N/A'} />
           <TraceMetric icon={Gauge} label="Tokens" value={formatValue(tokensUsed, i18n)} />
           <TraceMetric icon={Bot} label="Model" value={formatValue(formatModelDisplayName(modelInfo?.model) ?? modelInfo?.provider, i18n)} />
         </div>
@@ -124,11 +126,7 @@ export function RagTracePanel({ messages, apiLogs, selectedChunk, isStreaming }:
                 >
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-semibold truncate">#{index + 1} {source.document || source.id || 'Unknown'}</p>
-                    {typeof source.relevance === 'number' && (
-                      <Badge variant="secondary" className="text-[10px] rounded-full">
-                        {(source.relevance * 100).toFixed(1)}%
-                      </Badge>
-                    )}
+                    <SourceRelevanceBadge source={source} />
                   </div>
                   <p className="text-muted-foreground line-clamp-2">
                     {source.content_preview || i18n.ragTrace.noContentPreview}

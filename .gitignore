@@ -143,7 +143,15 @@ frontend/node_modules/
 frontend/dist/
 frontend/coverage/
 frontend/.turbo/
-output/playwright/
+# Evaluation runs can contain full corpora, responses and machine-local settings.
+# The shared offline test needs only the original, checksum-pinned suite manifest.
+/output/*
+!/output/rag-growth-03/
+/output/rag-growth-03/*
+!/output/rag-growth-03/public-suite.json
+
+# Runtime uploads and their metadata belong to the local installation.
+/uploads/
 # ===================================
 # Easy Start 데이터 (Docker 불필요 간편 실행)
 # ===================================

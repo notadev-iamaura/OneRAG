@@ -88,6 +88,8 @@ class VerificationStageMixin(PipelineStateBase):
             generation_result,
             answer=self.hallucination_gate_no_answer_message,
             text=self.hallucination_gate_no_answer_message,
+            citations=[],
+            citation_status="insufficient",
         )
 
 
@@ -161,6 +163,8 @@ class VerificationStageMixin(PipelineStateBase):
             # Match the main retrieval path's data_source mapping and score option.
             verify_options["filters"] = self._build_retrieval_filters(options)
             verify_options.setdefault("min_score", self.min_score)
+            if isinstance(generation_result.citations, list):
+                verify_options["_collect_citations"] = True
             self_rag_result = await self_rag_module.verify_existing_answer(
                 query=message,
                 existing_answer=generation_result.answer,  # ✅ 기존 답변 전달
@@ -219,6 +223,8 @@ class VerificationStageMixin(PipelineStateBase):
                         quality_score=final_quality_score,  # ⭐ 신규 필드
                         quality_status=self_rag_result.outcome.value,
                         source_documents=None,
+                        citations=[],
+                        citation_status="insufficient",
                         _model_info_override={
                             **generation_result.model_info,
                             "self_rag_applied": True,
@@ -297,6 +303,8 @@ class VerificationStageMixin(PipelineStateBase):
                     self.performance_metrics.record_error("prompt_leakage_blocked")
 
                 # Self-RAG 답변으로 교체 (재생성됐든 안 됐든)
+                chosen = self_rag_result if self_rag_result.regenerated else generation_result
+                same_answer = answer == chosen.answer
                 return GenerationResult(
                     answer=answer,
                     text=answer,
@@ -308,6 +316,8 @@ class VerificationStageMixin(PipelineStateBase):
                     quality_score=final_quality_score,  # ⭐ 신규 필드
                     quality_status=self_rag_result.outcome.value,
                     source_documents=self_rag_result.selected_documents,
+                    citations=chosen.citations if same_answer else [],
+                    citation_status=chosen.citation_status if same_answer else None,
                     _model_info_override={
                         **generation_result.model_info,
                         "self_rag_applied": True,

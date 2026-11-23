@@ -9,6 +9,8 @@ routing.yaml의 `routing.language`가 실제 규칙 매칭 언어로 전달되�
 
 from unittest.mock import patch
 
+import pytest
+
 from app.modules.core.routing.rule_based_router import RuleBasedRouter
 
 
@@ -89,3 +91,25 @@ class TestRouterLanguageConfig:
         assert result.direct_answer is not None
         # 한국어 응답 세트 사용
         assert "안녕" in result.direct_answer or "도와" in result.direct_answer
+
+    @pytest.mark.parametrize(
+        ("language", "query"),
+        [
+            ("ko", "올해 감사 보고서를 작성한 부서는 어디인가요?"),
+            ("ko", "첫 정기 점검은 언제 시작되나요?"),
+            ("ko", "안녕하세요, 이 장비가 작동하는 온도 범위를 알려 주세요."),
+            ("en", "Which department owns this document?"),
+            ("en", "Hello, where is the maintenance manual?"),
+        ],
+    )
+    async def test_information_request_reaches_search(self, language: str, query: str) -> None:
+        match = await self._make_router(language).check_rules(query)
+        assert match is None or match.route != "direct_answer"
+
+    @pytest.mark.parametrize(
+        ("language", "query", "rule"),
+        [("ko", "  감사합니다! 😊", "thanks"), ("en", "  HI   there!!", "greeting")],
+    )
+    async def test_standalone_social_message(self, language: str, query: str, rule: str) -> None:
+        match = await self._make_router(language).check_rules(query)
+        assert match is not None and match.rule_name == rule and match.route == "direct_answer"

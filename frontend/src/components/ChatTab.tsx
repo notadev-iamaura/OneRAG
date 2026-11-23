@@ -14,6 +14,7 @@ import { useChatInteraction } from '../hooks/chat/useChatInteraction';
 import { useOfflineDetection } from '../hooks/useOfflineDetection';
 import { useEmbedBridge } from '../embed/useEmbedBridge';
 import { useMenuMessages } from '../i18n/useMenuLocale';
+import { formatSourceRelevance } from '../utils/chat/formatters';
 
 // Components
 import { ChatDevTools } from './chat/ChatDevTools';
@@ -130,9 +131,7 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast, embedMode = false }
       return s.trim().length > 0 ? s : t.common.notAvailable;
     };
 
-    const similarity = typeof selectedChunk.relevance === 'number'
-      ? `${(selectedChunk.relevance * 100).toFixed(2)}%`
-      : undefined;
+    const relevance = formatSourceRelevance(selectedChunk);
 
     return [
       { label: t.chatTab.documentId, value: formatPrimitive(selectedChunk.id) },
@@ -141,9 +140,9 @@ export const ChatTab: React.FC<ChatTabProps> = ({ showToast, embedMode = false }
       { label: t.chatTab.priority, value: formatPrimitive(meta.priority_level) },
       { label: t.chatTab.chunkNumber, value: formatPrimitive(selectedChunk.chunk !== null && selectedChunk.chunk !== undefined ? `#${selectedChunk.chunk}` : null) },
       { label: t.chatTab.page, value: formatPrimitive(selectedChunk.page) },
-      { label: t.chatTab.similarity, value: formatPrimitive(similarity) },
+      { label: t.chatTab.similarity, value: formatPrimitive(relevance?.percent == null ? undefined : relevance.text) },
       { label: t.chatTab.totalChunks, value: formatPrimitive(selectedChunk.total_chunks) },
-      { label: t.chatTab.originalScore, value: formatPrimitive(selectedChunk.original_score) },
+      { label: t.chatTab.originalScore, value: formatPrimitive(selectedChunk.original_score ?? (relevance?.percent === null ? relevance.text : null)) },
       { label: t.chatTab.rerankMethod, value: formatPrimitive(selectedChunk.rerank_method) },
       { label: t.chatTab.uploadedAt, value: formatPrimitive(meta.uploaded_at) },
     ];

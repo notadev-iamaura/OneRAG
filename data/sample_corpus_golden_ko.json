@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "strategy": "fixed Korean smoke questions for the two bundled sample documents",
+  "cases": [
+    {
+      "id": "robot-capacity", "doc_id": "doc-001", "session_group": "capacity",
+      "document_filename": "product_spec.md",
+      "question": "AR-200 한 대가 한 번에 들 수 있는 최대 무게를 kg으로 답해 주세요.",
+      "expected_answer": "50 kg", "expected_answer_contains": ["50 kg"],
+      "grading": {"required_sources": [{"filename": "product_spec.md", "contains": ["50 kg"]}]}
+    },
+    {
+      "id": "profit-margin", "doc_id": "doc-002", "session_group": "margin",
+      "document_filename": "quarterly_report.txt",
+      "question": "Acme Robotics가 발표한 2026년 1분기 순이익률을 % 단위로 답해 주세요.",
+      "expected_answer": "18%", "expected_answer_contains": ["18%"]
+    },
+    {
+      "id": "robot-price-and-load", "doc_id": "doc-001", "session_group": "cross-document",
+      "document_filename": "product_spec.md",
+      "question": "AR-200의 최대 적재 중량과 1분기 출하 단가를 각각 kg와 USD로 표시하고 두 수치의 출처를 알려 주세요.",
+      "expected_answer": "50 kg, 980 USD", "expected_answer_contains": ["50 kg", "980"],
+      "grading": {
+        "min_expected_terms": 2, "required_terms": ["USD"],
+        "required_sources": [{"filename": "product_spec.md"}, {"filename": "quarterly_report.txt"}]
+      }
+    },
+    {
+      "id": "followup-quantity", "doc_id": "doc-002", "session_group": "cross-document",
+      "document_filename": "quarterly_report.txt",
+      "question": "그 분기에 그 모델은 몇 대 출하됐나요? 천 단위 구분 기호 없이 숫자로 적어 주세요.",
+      "expected_answer": "3200", "expected_answer_contains": ["3200"]
+    }
+  ]
+}

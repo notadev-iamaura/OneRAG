@@ -227,7 +227,8 @@ export const useChatMessages = ({
                 role: 'assistant',
                 content: response.data.answer,
                 timestamp: new Date().toISOString(),
-                sources: response.data.sources,
+                sources: response.data.cited_sources ?? response.data.sources,
+                retrieved_sources: response.data.sources,
                 // 라이브 REST 응답의 트레이스 메트릭을 메시지에 보존(방 전환 시 메트릭 고정 버그 방지).
                 processing_time: response.data.processing_time,
                 tokens_used: response.data.tokens_used,
@@ -334,6 +335,7 @@ export const useChatMessages = ({
         const accumulated: {
             content: string;
             sources?: Source[] | undefined;
+            retrievedSources?: Source[] | undefined;
             processingTime?: number | undefined;
             tokensUsed?: number | undefined;
         } = { content: '' };
@@ -410,6 +412,7 @@ export const useChatMessages = ({
                     // metadata: 검색 결과 수신 → retrieval_done 단계로 전이
                     if (sseAbortedRef.current) return;
                     if (event.event === 'metadata') {
+                        accumulated.retrievedSources = event.sources;
                         setRagProgress(withProgressLabel({
                             phase: 'retrieval_done',
                             searchResults: event.search_results,
@@ -437,7 +440,8 @@ export const useChatMessages = ({
                 onDone: (event) => {
                     if (sseAbortedRef.current) return;
                     doneReceived = true;
-                    accumulated.sources = event.sources;
+                    accumulated.retrievedSources = event.sources ?? accumulated.retrievedSources;
+                    accumulated.sources = event.cited_sources ?? accumulated.retrievedSources;
                     accumulated.processingTime = event.processing_time;
                     accumulated.tokensUsed = event.tokens_used;
                     // 남은 표시 버퍼가 있으면 타이프라이터가 마저 흘려보내고, 없으면 즉시 해제
@@ -476,6 +480,7 @@ export const useChatMessages = ({
                 ...m,
                 content: accumulated.content,
                 sources: accumulated.sources,
+                retrieved_sources: accumulated.retrievedSources,
                 processing_time: accumulated.processingTime,
                 tokens_used: accumulated.tokensUsed,
             } : m)));

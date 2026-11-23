@@ -47,6 +47,7 @@ import argparse
 import csv
 import html
 import json
+import math
 import os
 import re
 import time
@@ -567,12 +568,14 @@ def _chat_answer(
     session_id: str,
     question: str,
     api_key: str | None,
+    *,
+    use_agent: bool = False,
 ) -> dict[str, Any]:
     """질문 1건을 /chat에 보내고 응답 페이로드를 반환한다."""
     response = client.post(
         f"{_api_root(backend_url)}/chat",
         headers=_headers(api_key),
-        json={"message": question, "session_id": session_id},
+        json={"message": question, "session_id": session_id, "use_agent": use_agent},
         timeout=180.0,
     )
     return _require_success(response, "chat answer")
@@ -581,35 +584,52 @@ def _chat_answer(
 def _source_filename_match(
     sources: list[dict[str, Any]], filename: str, uploaded_id: str | None
 ) -> bool:
-    """응답 출처 중 기대 파일명(또는 업로드 job_id)이 포함된 것이 있는지 확인."""
-    expected_stem = compact(Path(filename).stem)
+    """Match a returned document ID or basename, including staged text surrogates."""
+    expected = Path(filename.replace("\\", "/"))
+    names = {compact(expected.name)}
+    if expected.suffix.lower() in TEXT_SURROGATE_EXTENSIONS:
+        names.add(compact(expected.with_suffix(".txt").name))
     for source in sources:
-        source_values = [
-            source.get("document"),
-            source.get("document_name"),
-            source.get("filename"),
-            source.get("source_file"),
-            source.get("document_id"),
-        ]
-        if uploaded_id:
-            source_values.append(uploaded_id)
-        joined = compact(" ".join(str(value) for value in source_values if value))
-        if expected_stem and expected_stem in joined:
+        if uploaded_id and source.get("document_id") == uploaded_id:
             return True
-        if uploaded_id and uploaded_id in joined:
-            return True
+        for key in ("document", "document_name", "filename", "source_file"):
+            value = str(source.get(key) or "").replace("\\", "/")
+            if value and compact(Path(value).name) in names:
+                return True
     return False
 
 
 def _term_matches(answer: str, term: str) -> bool:
     """기대 용어가 답변에 (정규화 기준) 포함되는지 확인."""
-    answer_compact = compact(answer)
-    term_compact = compact(term)
-    if term_compact and term_compact in answer_compact:
+    number_pattern = r"[+\-−]?\d+(?:[.,]\d+)*"
+    if re.search(number_pattern, normalize_text(term)):
+        # Delimit each number before collapsing whitespace so that the value
+        # and its unit match at the same position, including its sign.
+        marked_answer = re.sub(number_pattern, r"⟪\g<0>⟫", normalize_text(answer))
+        marked_term = re.sub(number_pattern, r"⟪\g<0>⟫", normalize_text(term))
+        return compact(marked_term) in compact(marked_answer)
+    if compact(term) and compact(term) in compact(answer):
         return True
     answer_norm = alnum_cjk(answer)
     term_norm = alnum_cjk(term)
     return bool(term_norm and len(term_norm) >= 4 and term_norm in answer_norm)
+
+
+def _has_evidence(
+    sources: list[dict[str, Any]], evidence: dict[str, Any], uploaded_id: str | None,
+) -> bool:
+    for source in sources:
+        if not _source_filename_match([source], evidence["filename"], uploaded_id):
+            continue
+        if not all(source.get(key) == evidence[key] for key in ("page", "chunk") if key in evidence):
+            continue
+        excerpts = [str(source.get("content_preview") or "")]
+        cited = (source.get("additional_metadata") or {}).get("cited_sentences")
+        if isinstance(cited, list):
+            excerpts.extend(text for text in cited if isinstance(text, str))
+        if all(any(_term_matches(text, term) for text in excerpts) for term in evidence.get("contains", [])):
+            return True
+    return False
 
 
 def _evaluate_case(
@@ -617,13 +637,50 @@ def _evaluate_case(
 ) -> dict[str, Any]:
     """단일 케이스 채점: 기대 용어 포함 + 출처 파일명 일치를 모두 만족하면 PASS."""
     answer = str(payload.get("answer") or "")
-    sources = list(payload.get("sources") or [])
-    terms = [str(term) for term in case.get("expected_answer_contains", []) if str(term).strip()]
+    cited = payload.get("cited_sources")
+    sources = cited if isinstance(cited, list) else list(payload.get("sources") or [])
+    grading = case.get("grading", {})
+    metadata = payload.get("metadata") or {}
+    grounding_status = metadata.get("grounding_status")
+    execution_failed = metadata.get("stop_reason") in {"error", "timeout"} or metadata.get("success") is False
+    if grading.get("expected_outcome") == "abstain":
+        answer_ok = grounding_status == "insufficient" and bool(answer.strip())
+        return {
+            "case_id": case["id"], "doc_id": case["doc_id"], "question": case["question"],
+            "document_filename": case["document_filename"], "answer": answer,
+            "expected_outcome": "abstain", "grounding_status": grounding_status,
+            "answer_ok": answer_ok, "source_ok": not sources,
+            "verdict": "ERROR" if execution_failed else ("PASS" if answer_ok and not sources else "FAIL"),
+            "tokens_used": payload.get("tokens_used"),
+        }
+    terms = list(dict.fromkeys(str(term) for term in case.get("expected_answer_contains", [])
+                               if str(term).strip()))
+    if not terms and case.get("expected_answer"):
+        terms = [str(case["expected_answer"])]
     matched_terms = [term for term in terms if _term_matches(answer, term)]
-    # 최소 일치 용어 수: 보수적으로 1개 이상(생성 답변의 표현 다양성 허용)
-    answer_ok = len(matched_terms) >= 1 if terms else bool(answer.strip())
-    source_ok = _source_filename_match(sources, str(case["document_filename"]), uploaded_id)
-    verdict = "PASS" if answer_ok and source_ok else "FAIL"
+    minimum = int(grading.get("min_expected_terms", 1))
+    if minimum < 1 or minimum > len(terms):
+        raise ValueError("min_expected_terms must be within the number of expected terms")
+    required_terms = grading.get("required_terms", [])
+    numeric_terms = {term for term in terms if re.search(r"\d", term)}
+    answer_ok = (
+        len(matched_terms) >= minimum
+        and (not numeric_terms or not numeric_terms.isdisjoint(matched_terms))
+        and all(_term_matches(answer, t) for t in required_terms)
+    )
+    filename = str(case.get("expected_source_filename") or case["document_filename"])
+    expected_sources = grading.get("required_sources", [{"filename": filename}])
+    if not expected_sources:
+        raise ValueError("at least one evidence source is required")
+    source_ok = all(
+        _has_evidence(sources, evidence, uploaded_id if evidence["filename"] == filename else None)
+        for evidence in expected_sources
+    )
+    verdict = "PASS" if answer_ok and source_ok and grounding_status not in {
+        "invalid_citation", "insufficient", "error"
+    } else "FAIL"
+    if execution_failed:
+        verdict = "ERROR"
     return {
         "case_id": case["id"],
         "doc_id": case["doc_id"],
@@ -635,6 +692,7 @@ def _evaluate_case(
         "answer": answer,
         "source_count": len(sources),
         "source_ok": source_ok,
+        "grounding_status": grounding_status,
         "answer_ok": answer_ok,
         "verdict": verdict,
         "processing_time": payload.get("processing_time"),
@@ -745,22 +803,30 @@ def run_production(args: argparse.Namespace) -> dict[str, Any]:
         # 2) QA 채점
         if not args.skip_qa:
             selected_cases = cases[: args.case_limit] if args.case_limit else cases
-            session_by_doc: dict[str, str] = {}
+            sessions: dict[str, str] = {}
             for case_index, case in enumerate(selected_cases, start=1):
                 doc_id = str(case["doc_id"])
-                if doc_id not in session_by_doc:
-                    session_by_doc[doc_id] = _create_session(client, backend_url, api_key)
+                session_group = str(case.get("session_group", doc_id))
                 uploaded_id = uploaded_by_doc.get(doc_id)
                 started = time.monotonic()
                 try:
+                    if session_group not in sessions:
+                        sessions[session_group] = _create_session(client, backend_url, api_key)
+                        started = time.monotonic()
                     payload = _chat_answer(
                         client,
                         backend_url,
-                        session_by_doc[doc_id],
+                        sessions[session_group],
                         str(case["question"]),
                         api_key,
+                        use_agent=args.use_agent,
                     )
                     result = _evaluate_case(case, payload, uploaded_id)
+                    metadata = payload.get("metadata") or {}
+                    result["actual_mode"] = metadata.get("mode")
+                    result["stop_reason"] = metadata.get("stop_reason")
+                    if args.use_agent and result["actual_mode"] != "agent":
+                        result.update(verdict="ERROR", error="requested agent mode did not run")
                 except Exception as error:  # noqa: BLE001 - 케이스별 오류를 집계
                     result = {
                         "case_id": case["id"],
@@ -773,6 +839,8 @@ def run_production(args: argparse.Namespace) -> dict[str, Any]:
                         "answer": "",
                         "error": f"{type(error).__name__}: {error}",
                     }
+                if case.get("grading", {}).get("expected_outcome") == "abstain":
+                    result["expected_outcome"] = "abstain"
                 result["case_index"] = case_index
                 result["request_seconds"] = round(time.monotonic() - started, 3)
                 eval_rows.append(result)
@@ -789,6 +857,9 @@ def run_production(args: argparse.Namespace) -> dict[str, Any]:
 
     upload_completed = sum(1 for row in upload_rows if row.get("final_status") == "completed")
     qa_pass = sum(1 for row in eval_rows if row.get("verdict") == "PASS")
+    abstention_rows = [row for row in eval_rows if row.get("expected_outcome") == "abstain"]
+    latencies = sorted(row["request_seconds"] for row in eval_rows)
+    measured_tokens = [row["tokens_used"] for row in eval_rows if isinstance(row.get("tokens_used"), int)]
     summary = {
         "generated_at": utc_now(),
         "backend_url": backend_url,
@@ -797,6 +868,14 @@ def run_production(args: argparse.Namespace) -> dict[str, Any]:
         "documents_upload_failed": len(upload_rows) - upload_completed,
         "qa_cases_run": len(eval_rows),
         "qa_pass": qa_pass,
+        "expected_abstentions": len(abstention_rows),
+        "correct_abstentions": sum(row["verdict"] == "PASS" for row in abstention_rows),
+        "invalid_citations": sum(row.get("grounding_status") == "invalid_citation" for row in eval_rows),
+        "requested_agent": args.use_agent,
+        "joint_accuracy": qa_pass / len(eval_rows) if eval_rows else None,
+        "p95_request_seconds": latencies[math.ceil(0.95 * len(latencies)) - 1] if latencies else None,
+        "tokens_per_pass": (sum(measured_tokens) / qa_pass
+                            if qa_pass and len(measured_tokens) == len(eval_rows) else None),
         "qa_fail_or_error": len(eval_rows) - qa_pass,
         "success": bool(eval_rows) and qa_pass == len(eval_rows),
     }
@@ -838,6 +917,7 @@ def main() -> int:
     run.add_argument("--api-key-env", default="FASTAPI_AUTH_KEY")
     run.add_argument("--skip-upload", action="store_true", help="업로드 생략(이미 적재된 경우)")
     run.add_argument("--skip-qa", action="store_true", help="채점 생략(업로드만)")
+    run.add_argument("--use-agent", action="store_true", help="같은 문항을 에이전트 경로로 평가")
     run.add_argument("--upload-limit", type=int, default=0, help="업로드할 최대 문서 수(0=전체)")
     run.add_argument("--case-limit", type=int, default=0, help="채점할 최대 케이스 수(0=전체)")
     run.add_argument("--upload-timeout-seconds", type=float, default=1800.0)

@@ -46,6 +46,9 @@ export const mapHistoryEntryToChatMessage = (entry: ChatHistoryEntry, index: num
     if (sources) {
         message.sources = sources;
     }
+    if (Array.isArray(entry.retrieved_sources)) {
+        message.retrieved_sources = entry.retrieved_sources;
+    }
 
     // 백엔드 히스토리가 메시지별 트레이스 메트릭을 제공하면 메시지에 보존한다.
     // (RAG Trace 패널이 전역 로그가 아닌 메시지 값을 우선 표시하도록 — 방 전환 시 고정 버그 방지)

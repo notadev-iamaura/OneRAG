@@ -57,14 +57,17 @@ describe('mappers', () => {
         });
 
         it('should include sources if present', () => {
-            const sources = [{ id: 1, document: 'doc', relevance: 0.9, content_preview: 'preview' }];
+            const cited = { id: 1, document: 'doc', relevance: 0.9, content_preview: 'preview' };
+            const sources = [cited];
             const entry: ChatHistoryEntry = {
                 role: 'assistant',
                 answer: 'Ans',
-                sources: sources
+                sources: sources,
+                retrieved_sources: [cited, { ...cited, id: 2 }]
             };
             const result = mapHistoryEntryToChatMessage(entry, 1);
             expect(result.sources).toEqual(sources);
+            expect(result.retrieved_sources).toEqual(entry.retrieved_sources);
         });
 
         it('should fallback ID to timestamp or generated string', () => {

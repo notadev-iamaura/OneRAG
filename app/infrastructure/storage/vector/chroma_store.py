@@ -15,7 +15,10 @@ Chroma는 경량 벡터 DB로, 로컬 개발과 테스트에 최적화되어 있
 
 import asyncio
 import json
+import sqlite3
 from collections.abc import Sequence
+from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import chromadb
@@ -25,6 +28,14 @@ from app.core.interfaces.storage import IVectorStore
 from app.lib.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _requested_ids(filters: dict[str, Any]) -> set[str] | None:
+    ids = {str(value) for value in filters["ids"]} if "ids" in filters else None
+    if "id" in filters:
+        single = {str(filters["id"])}
+        return single if ids is None else single & ids
+    return ids
 
 
 def _restore_metadata_json(item: dict[str, Any]) -> None:
@@ -81,6 +92,10 @@ class ChromaVectorStore(IVectorStore):
         self.persist_directory = persist_directory
         self.host = host
         self.port = port
+        self._revision_lock = Lock()
+        self._revision_connection: sqlite3.Connection | None = None
+        self._revision_file: tuple[int, int] | None = None
+        self._revision_epoch = 0
 
         # Chroma 클라이언트 초기화
         if host:
@@ -100,6 +115,33 @@ class ChromaVectorStore(IVectorStore):
                 settings=Settings(anonymized_telemetry=False),
             )
             logger.info("ChromaVectorStore: In-memory 모드")
+
+    def read_revision(self) -> tuple[int, int] | None:
+        """Track commits from all writers to the local Chroma 0.5 SQLite database.
+
+        data_version is comparable only on the same open reader connection.
+        Other storage modes or versions use the normal uncached collection read.
+        """
+        if self.host or not self.persist_directory or not chromadb.__version__.startswith("0.5."):
+            return None
+        path = Path(self.persist_directory).absolute() / "chroma.sqlite3"
+        with self._revision_lock:
+            try:
+                stat = path.stat()
+                identity = (stat.st_dev, stat.st_ino)
+                if self._revision_connection is None or self._revision_file != identity:
+                    if self._revision_connection is not None:
+                        self._revision_connection.close()
+                        self._revision_connection = None
+                    self._revision_connection = sqlite3.connect(
+                        path.as_uri() + "?mode=ro", uri=True, timeout=0, check_same_thread=False,
+                    )
+                    self._revision_file = identity
+                    self._revision_epoch += 1
+                version = self._revision_connection.execute("PRAGMA data_version").fetchone()[0]
+                return self._revision_epoch, version
+            except (OSError, sqlite3.Error):
+                return None
 
     async def add_documents(
         self, collection: str, documents: list[dict[str, Any]]
@@ -231,11 +273,19 @@ class ChromaVectorStore(IVectorStore):
             if filters:
                 where_clause = self._build_where_clause(filters)
 
+            allowed_ids = _requested_ids(filters or {})
+            if top_k <= 0 or (allowed_ids is not None and not allowed_ids):
+                return []
+            # Chroma 0.5 query supports metadata filters but no ID selector.
+            # Rank the filtered collection before selecting the requested IDs.
+            candidate_count = col.count() if allowed_ids is not None else top_k
+            if candidate_count <= 0:
+                return []
             # 검색 실행
             query_embedding: Sequence[float] = query_vector
             results = col.query(
                 query_embeddings=[query_embedding],
-                n_results=top_k,
+                n_results=candidate_count,
                 where=where_clause,
                 include=["metadatas", "documents", "distances"],
             )
@@ -267,6 +317,8 @@ class ChromaVectorStore(IVectorStore):
                 documents = [str(d or "") for d in documents_result[0]]
 
             for i, doc_id in enumerate(ids):
+                if allowed_ids is not None and doc_id not in allowed_ids:
+                    continue
                 item: dict[str, Any] = {}
 
                 # 메타데이터 복사
@@ -281,6 +333,8 @@ class ChromaVectorStore(IVectorStore):
                 item["content"] = documents[i] if i < len(documents) else ""
 
                 output.append(item)
+                if len(output) >= top_k:
+                    break
 
             return output
 
@@ -397,15 +451,13 @@ class ChromaVectorStore(IVectorStore):
                 return []
 
             filters_value = filters or {}
-            ids_filter: list[str] | None = None
-            if "id" in filters_value:
-                ids_filter = [str(filters_value["id"])]
-            elif "ids" in filters_value:
-                ids_filter = [str(value) for value in filters_value["ids"]]
+            requested = _requested_ids(filters_value)
+            if requested is not None and not requested:
+                return []
 
             where_clause = self._build_where_clause(filters_value)
             results = col.get(
-                ids=ids_filter,
+                ids=sorted(requested) if requested is not None else None,
                 where=where_clause,
                 include=["metadatas", "documents"],
             )
@@ -477,6 +529,11 @@ class ChromaVectorStore(IVectorStore):
         """
         # Chroma 클라이언트는 명시적 close가 필요하지 않지만
         # 일관성을 위해 메서드 제공
+        if hasattr(self, "_revision_lock"):
+            with self._revision_lock:
+                if self._revision_connection is not None:
+                    self._revision_connection.close()
+                    self._revision_connection = None
         if hasattr(self, "_client"):
             logger.debug("ChromaVectorStore: 연결 종료")
 

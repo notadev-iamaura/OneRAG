@@ -4,6 +4,7 @@ YAML 파일 기반 동적 라우팅 규칙 관리 시스템
 """
 
 import asyncio
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -143,18 +144,23 @@ class DynamicRuleManager:
         # 대소문자 무시 설정
         case_sensitive = self.settings.get("case_sensitive", False)
         query_normalized = query if case_sensitive else query.lower()
+        utterance = " ".join(re.sub(r"^[^\w]+|[^\w]+$", "", query_normalized).split())
 
         # 우선순위 순으로 정렬
         sorted_rules = sorted(self.rules.items(), key=lambda x: x[1].get("priority", 999))
 
         for rule_name, rule_config in sorted_rules:
             keywords = rule_config.get("keywords", {}).get(language, [])
+            whole_message = rule_config.get("match_mode") == "whole_message"
 
             for keyword in keywords:
                 keyword_normalized = keyword if case_sensitive else keyword.lower()
 
-                # 부분 일치 확인
-                if keyword_normalized in query_normalized:
+                matches = (
+                    utterance == keyword_normalized if whole_message
+                    else keyword_normalized in query_normalized
+                )
+                if matches:
                     logger.info(f"Rule matched: '{rule_name}' (keyword: '{keyword}')")
 
                     return {

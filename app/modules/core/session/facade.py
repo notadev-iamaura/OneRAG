@@ -251,6 +251,7 @@ class EnhancedSessionModule:
                     "tokens_used": metadata.get("tokens_used", 0),
                     "processing_time": metadata.get("processing_time", 0.0),
                     "sources": metadata.get("sources", []),  # 인메모리 경로 sources 노출
+                    "retrieved_sources": metadata.get("retrieved_sources"),
                     "model_info": metadata.get("model_info"),
                     "topic": metadata.get("topic"),
                     "debug_trace": metadata.get("debug_trace"),  # ✅ Task 5: 디버깅 추적 저장

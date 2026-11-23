@@ -50,28 +50,26 @@ async def load_dataset(dataset_path: str) -> list[dict]:
     """
     path = Path(dataset_path)
     if not path.exists():
-        print(f"⚠️  데이터셋 파일이 없습니다: {dataset_path}")
-        print("    기본 테스트 샘플을 사용합니다.")
-        # 기본 테스트 샘플
-        return [
-            {
-                "query": "테스트 질문입니다",
-                "answer": "이것은 테스트 답변입니다.",
-                "context": "테스트 컨텍스트 문서입니다.",
-                "reference": None,
-            }
-        ]
+        raise FileNotFoundError(f"평가 데이터셋이 없습니다: {dataset_path}")
 
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
     # 형식 검증
-    if isinstance(data, list):
-        return data
-    elif isinstance(data, dict) and "samples" in data:
-        return data["samples"]
-    else:
-        raise ValueError(f"잘못된 데이터셋 형식: {dataset_path}")
+    samples = data.get("samples") if isinstance(data, dict) else data
+    if not isinstance(samples, list) or not samples:
+        raise ValueError(f"평가 문항 목록이 비어 있거나 올바르지 않습니다: {dataset_path}")
+    for index, sample in enumerate(samples, 1):
+        if not isinstance(sample, dict) or not all(
+            isinstance(sample.get(key), str) and sample[key].strip() for key in ("query", "answer")
+        ):
+            raise ValueError(f"문항 {index}: query와 answer가 필요합니다")
+        context = sample.get("context")
+        if isinstance(context, str):
+            sample["context"] = [context]
+        elif not isinstance(context, list) or not all(isinstance(s, str) for s in context):
+            raise ValueError(f"문항 {index}: context 문자열 또는 목록이 필요합니다")
+    return samples
 
 
 async def run_evaluation(
@@ -90,16 +88,20 @@ async def run_evaluation(
     Returns:
         평가 결과 딕셔너리
     """
-    from app.modules.core.evaluation import EvaluatorFactory
+    from app.core.di_container import create_evaluator_instance
+    from app.lib.config_loader import load_config
+    from app.lib.llm_client import LLMClientFactory
 
-    config = {
-        "evaluation": {
-            "enabled": True,
-            "provider": provider,
-        }
-    }
-
-    evaluator = EvaluatorFactory.create(config)
+    if not samples:
+        raise ValueError("평가할 문항이 없습니다")
+    config = load_config()
+    config["evaluation"] = {**config.get("evaluation", {}), "enabled": True, "provider": provider}
+    llm_factory = LLMClientFactory(config) if provider == "internal" else None
+    if llm_factory is not None:
+        llm_factory.get_client(provider="openrouter")
+    evaluator = await create_evaluator_instance(config, llm_factory)
+    if evaluator is None or not evaluator.is_available():
+        raise RuntimeError(f"평가기를 사용할 수 없습니다: {provider}")
 
     print(f"\n📊 배치 평가 시작 ({provider} 평가기)")
     print(f"   샘플 수: {len(samples)}")
@@ -108,6 +110,11 @@ async def run_evaluation(
 
     # 평가 실행
     results = await evaluator.batch_evaluate(samples)
+    if len(results) != len(samples):
+        raise RuntimeError("평가 결과와 요청 문항 수가 다릅니다")
+    for index, result in enumerate(results, 1):
+        if not result.raw_scores:
+            raise RuntimeError(f"문항 {index}의 유효한 채점 결과가 없습니다")
 
     # 통계 계산
     if results:
@@ -160,7 +167,7 @@ async def run_evaluation(
     }
 
 
-def main():
+def main() -> None:
     """메인 함수"""
     parser = argparse.ArgumentParser(
         description="RAG 시스템 품질 평가 스크립트",

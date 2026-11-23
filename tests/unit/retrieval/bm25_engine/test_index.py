@@ -136,3 +136,48 @@ class TestBM25IndexResultFormat:
         assert "content" in result
         assert "score" in result
         assert "metadata" in result
+
+
+def test_rank_before_sigmoid_and_exclude_documents_without_query_terms():
+    from app.modules.core.retrieval.bm25_engine.index import BM25Index
+    from app.modules.core.retrieval.bm25_engine.tokenizer import WhitespaceTokenizer
+
+    index = BM25Index(WhitespaceTokenizer())
+    index.build([{"id": "weak", "content": "term padding padding"},
+                 {"id": "strong", "content": "term term term"},
+                 {"id": "noise", "content": "irrelevant"}])
+    hits = index.search("term " * 100)
+    assert [hit["id"] for hit in hits] == ["strong", "weak"]
+    assert [hit["score"] for hit in hits] == [1.0, 1.0]
+
+
+def test_sparse_scores_match_reference_with_repeated_and_unknown_terms():
+    from rank_bm25 import BM25Plus
+
+    from app.modules.core.retrieval.bm25_engine.index import BM25Index
+    from app.modules.core.retrieval.bm25_engine.tokenizer import WhitespaceTokenizer
+
+    tokenizer = WhitespaceTokenizer()
+    docs = [{"id": str(i), "content": text} for i, text in enumerate([
+        "alpha beta", "alpha alpha delta", "gamma epsilon", "beta gamma",
+    ])]
+    reference = BM25Plus(tokenizer.tokenize_batch([doc["content"] for doc in docs]))
+    index = BM25Index(tokenizer)
+    index.build(docs)
+    q = "alpha beta beta missing"
+    scores = reference.get_scores(tokenizer.tokenize(q))
+    hits = index.search(q)
+    assert [int(h["id"]) for h in hits] == sorted((0, 1, 3), key=lambda i: -scores[i])
+    for hit in hits:
+        assert hit["score"] == pytest.approx(index._normalize_score(scores[int(hit["id"])]))
+
+
+def test_linked_titles_require_a_full_word_and_preserve_leading_hits():
+    from app.modules.core.retrieval.bm25_engine.linked_titles import prioritize_linked_titles
+
+    titles = ["First source", "North", "South", "Fourth", "Fifth", "Port", "Harbor"]
+    hits = [{"id": t, "metadata": {"title": t}, "content": t} for t in titles]
+    hits[0]["content"] = "Passengers use the airport or Harbor."
+    order = [d["id"] for d in prioritize_linked_titles(hits)]
+    assert order[:3] == titles[:3]
+    assert order.index("Harbor") < order.index("Fifth") < order.index("Port")

@@ -40,8 +40,10 @@ Plan -> Execute -> Observe -> Synthesize -> Reflect 사이클을 반복하며
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.lib.logger import get_logger
 from app.modules.core.agent.executor import AgentExecutor
@@ -50,6 +52,7 @@ from app.modules.core.agent.interfaces import (
     AgentResult,
     AgentState,
     AgentStep,
+    ToolCall,
 )
 from app.modules.core.agent.planner import AgentPlanner
 from app.modules.core.agent.synthesizer import AgentSynthesizer
@@ -101,6 +104,7 @@ class AgentOrchestrator:
         synthesizer: AgentSynthesizer,
         config: AgentConfig,
         reflector: AgentReflector | None = None,
+        document_search_tool: str | None = None,
     ) -> None:
         """
         AgentOrchestrator 초기화
@@ -129,6 +133,7 @@ class AgentOrchestrator:
         self._synthesizer = synthesizer
         self._config = config
         self._reflector = reflector
+        self._document_search_tool = document_search_tool
         # 사용자 노출 폴백 메시지/내부 컨텍스트 대체어를 config 우선으로 해소.
         # 미설정(None)이면 코드 내장 한국어 기본값을 사용한다 → 회귀 0.
         self._error_message = (
@@ -169,20 +174,110 @@ class AgentOrchestrator:
             - max_iterations에 도달하면 현재까지의 결과로 답변 생성
             - 예외 발생 시 실패 결과 반환
         """
-        start_time = time.time()
+        start_time = time.monotonic()
+        state = AgentState(original_query=query, session_context=session_context or "")
+        try:
+            run = self._run_document_search if self._document_search_tool else self._run_steps
+            return await asyncio.wait_for(run(state, start_time), self._config.timeout_seconds)
+        except TimeoutError:
+            return AgentResult(
+                success=False,
+                answer=self._error_message,
+                error="Agent deadline exceeded",
+                stop_reason="timeout",
+                steps_taken=state.current_iteration,
+                total_time=time.monotonic() - start_time,
+                tools_used=self._collect_tools_used(state),
+            )
 
-        # 상태 초기화
-        state = AgentState(original_query=query)
+    async def _run_document_search(self, state: AgentState, start_time: float) -> AgentResult:
+        """Search once, then spend additional tool calls only on unresolved facts."""
+        assert self._document_search_tool is not None
+        pending = [state.original_query]
+        seen_queries: set[str] = set()
+        seen_chunks: set[tuple[str, str]] = set()
+        remaining_calls = self._config.max_iterations
+        reason: Literal["completed", "max_iterations", "no_new_evidence", "error"] = (
+            "max_iterations"
+        )
+        answer = self._error_message
+        sources: list[dict[str, Any]] = []
+        try:
+            for iteration in range(1, self._config.max_iterations + 1):
+                if remaining_calls == 0:
+                    break
+                calls = []
+                for query in pending[:1]:
+                    key = " ".join(query.casefold().split())
+                    if key and key not in seen_queries:
+                        seen_queries.add(key)
+                        calls.append(
+                            ToolCall(
+                                self._document_search_tool,
+                                {"query": query, "top_k": 8 if iteration == 1 else 3},
+                            )
+                        )
+                if not calls:
+                    reason = "no_new_evidence"
+                    break
+                results = await self._executor.execute(calls)
+                remaining_calls -= len(calls)
+                state.steps.append(AgentStep(iteration, "", calls, results))
+                if not any(r.success for r in results):
+                    reason = "error"
+                    state.grounding_status = "error"
+                    break
+                chunks = {
+                    (
+                        str(d.get("id") or d.get("metadata", {}).get("document_id", "")),
+                        str(d["content"]),
+                    )
+                    for r in results
+                    if r.success
+                    for d in r.documents
+                }
+                if iteration > 1 and not chunks.difference(seen_chunks):
+                    reason = "no_new_evidence"
+                    break
+                seen_chunks.update(chunks)
+                state.followup_queries = []
+                answer, sources = await self._synthesizer.synthesize(state)
+                if state.grounding_status in {"error", "invalid_citation"}:
+                    reason = "error"
+                    break
+                if state.grounding_status != "insufficient":
+                    reason = "completed"
+                    break
+                if iteration >= 2 or not state.followup_queries:
+                    reason = "no_new_evidence"
+                    break
+                pending = state.followup_queries
+        except TimeoutError:
+            raise
+        except Exception:
+            logger.exception("Document search failed")
+            reason = "error"
+            state.grounding_status = "error"
+        return AgentResult(
+            success=reason != "error",
+            answer=answer,
+            sources=sources,
+            steps_taken=state.current_iteration,
+            total_time=time.monotonic() - start_time,
+            tools_used=self._collect_tools_used(state),
+            stop_reason=reason,
+            grounding_status=state.grounding_status,
+        )
+
+    async def _run_steps(self, state: AgentState, start_time: float) -> AgentResult:
         state.status = "running"
 
-        # 세션 컨텍스트가 있으면 로깅 (향후 AgentState 확장 시 활용)
-        if session_context:
-            logger.debug(f"세션 컨텍스트: {session_context[:100]}...")
-
-        logger.info(f"Agent 시작: {query[:50]}...")
+        logger.info(f"Agent 시작: {state.original_query[:50]}...")
 
         try:
             # 메인 ReAct 루프
+            completed_reads: set[str] = set()
+            repeated_reads = False
             while state.current_iteration < self._config.max_iterations:
                 step_start = time.time()
                 iteration = state.current_iteration + 1
@@ -199,7 +294,22 @@ class AgentOrchestrator:
                 # 2. Execute: 도구 실행
                 tool_results = []
                 if tool_calls:
+                    if self._config.require_evidence_quotes:
+                        # A failed or changing external tool may be retried. Deduplicate
+                        # only successful reads from the document retriever.
+                        tool_calls = [
+                            call for call in tool_calls
+                            if json.dumps([call.tool_name, call.arguments], sort_keys=True) not in completed_reads
+                        ]
+                        if not tool_calls:
+                            repeated_reads = True
+                            break
                     tool_results = await self._executor.execute(tool_calls)
+                    if self._config.require_evidence_quotes:
+                        successful = {r.call_id for r in tool_results if r.success}
+                        for call in tool_calls:
+                            if call.call_id in successful and call.tool_name in {"search_weaviate", "get_document_by_id"}:
+                                completed_reads.add(json.dumps([call.tool_name, call.arguments], sort_keys=True))
 
                 # 3. Observe: 스텝 기록
                 step = AgentStep(
@@ -226,7 +336,7 @@ class AgentOrchestrator:
                     break
 
             # 최대 반복 도달 확인
-            if state.current_iteration >= self._config.max_iterations:
+            else:
                 logger.warning(
                     f"최대 반복 횟수 도달 ({self._config.max_iterations})"
                 )
@@ -242,10 +352,11 @@ class AgentOrchestrator:
             # 상태 업데이트
             state.final_answer = answer
             state.sources = sources
-            state.status = "completed"
+            if state.status != "max_iterations":
+                state.status = "completed"
 
             # 결과 생성
-            total_time = time.time() - start_time
+            total_time = time.monotonic() - start_time
             tools_used = self._collect_tools_used(state)
 
             logger.info(
@@ -254,12 +365,15 @@ class AgentOrchestrator:
             )
 
             return AgentResult(
-                success=True,
+                success=state.grounding_status not in {"error", "invalid_citation"},
                 answer=answer,
                 sources=sources,
                 steps_taken=state.current_iteration,
                 total_time=total_time,
                 tools_used=tools_used,
+                stop_reason=("error" if state.grounding_status in {"error", "invalid_citation"} else
+                             "no_new_evidence" if repeated_reads else state.status),
+                grounding_status=state.grounding_status,
             )
 
         except Exception as e:
@@ -273,8 +387,9 @@ class AgentOrchestrator:
                 success=False,
                 answer=self._error_message,
                 error=str(e),
+                stop_reason="error",
                 steps_taken=state.current_iteration,
-                total_time=time.time() - start_time,
+                total_time=time.monotonic() - start_time,
             )
 
     def _collect_tools_used(self, state: AgentState) -> list[str]:

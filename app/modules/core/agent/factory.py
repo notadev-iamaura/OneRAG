@@ -28,6 +28,7 @@ from typing import Any
 
 from ....lib.logger import get_logger
 from .executor import AgentExecutor
+from .extractive_reader import ExtractiveReaderConfig
 from .interfaces import AgentConfig
 from .orchestrator import AgentOrchestrator
 from .planner import AgentPlanner
@@ -122,6 +123,14 @@ class AgentFactory:
             logger.warning("⚠️  MCP 서버가 비활성화 - Agent를 생성할 수 없습니다")
             return None
 
+        # The DI container supplies a factory while standalone callers supply a client.
+        if not callable(getattr(llm_client, "generate_text", None)):
+            try:
+                llm_client = llm_client.get_client()
+            except (AttributeError, ValueError):
+                logger.warning("Agent 비활성화: 생성 모델을 사용할 수 없습니다")
+                return None
+
         # 에이전트 설정 로드
         agent_config = AgentFactory.create_config(config)
 
@@ -158,6 +167,10 @@ class AgentFactory:
             synthesizer=synthesizer,
             config=agent_config,
             reflector=reflector,
+            document_search_tool=(
+                "search_weaviate" if agent_config.require_evidence_quotes
+                and "search_weaviate" in mcp_server.get_enabled_tools() else None
+            ),
         )
 
         logger.info(
@@ -190,8 +203,13 @@ class AgentFactory:
         # 섹션/키가 없으면 빈 dict → .get()이 None 기본값을 반환 →
         # 각 컴포넌트가 코드 내장 한국어 기본 프롬프트를 사용한다 (회귀 0).
         prompts_yaml = agent_yaml.get("prompts", {}) or {}
+        reader = agent_yaml.get("extractive_reader")
 
         return AgentConfig(
+            extractive_reader=ExtractiveReaderConfig(**reader) if reader is not None else None,
+            require_evidence_quotes=agent_yaml.get("require_evidence_quotes", False),
+            verify_question_conditions=agent_yaml.get("verify_question_conditions", False),
+            verify_premise_mismatch=agent_yaml.get("verify_premise_mismatch", False),
             tool_selection=agent_yaml.get(
                 "tool_selection",
                 defaults["tool_selection"],

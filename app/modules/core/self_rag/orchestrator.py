@@ -11,6 +11,7 @@ from typing import Any
 
 from app.lib.logger import get_logger
 
+from ..generation.citations import AnswerCitations, PassageCitation
 from ..routing import ComplexityCalculator, ComplexityResult
 from .evaluator import EvalStatus, LLMQualityEvaluator, QualityScore
 
@@ -48,6 +49,8 @@ class SelfRAGResult:
     retry_quality: QualityScore | None = None
     selected_documents: list[Any] | None = None
     rollback_reason: str | None = None
+    citations: list[PassageCitation] | None = None
+    citation_status: str | None = None
 
 
 class SelfRAGOrchestrator:
@@ -156,6 +159,7 @@ class SelfRAGOrchestrator:
         start_time = time.time()
         # 호출자 dict를 복사해 부수효과를 차단한다(limit 주입 등).
         base_options = dict(options or {})
+        collect_citations = base_options.pop("_collect_citations", False)
 
         # 1. Self-RAG 비활성화 확인
         if not self.enabled:
@@ -293,6 +297,8 @@ class SelfRAGOrchestrator:
                 **base_options,
                 "max_context_documents": min(self.retry_top_k, MAX_REGEN_CONTEXT_DOCS),
             }
+            if collect_citations:
+                regen_options["_answer_citations"] = AnswerCitations(query)
             final_generation_result = await self.generation_module.generate_answer(
                 query=query, context_documents=prompt_docs, options=regen_options
             )
@@ -390,6 +396,8 @@ class SelfRAGOrchestrator:
                 initial_eval_status=EvalStatus.OK,
                 final_eval_status=EvalStatus.OK,
                 selected_documents=prompt_docs,
+                citations=getattr(final_generation_result, "citations", None),
+                citation_status=getattr(final_generation_result, "citation_status", None),
             )
 
         except Exception as e:

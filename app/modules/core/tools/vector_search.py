@@ -16,6 +16,18 @@ from ....lib.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _document_result(doc: Any) -> dict[str, Any]:
+    content = getattr(doc, "page_content", None)
+    if not isinstance(content, str):
+        content = doc.content
+    result = {"content": content, "metadata": doc.metadata}
+    if isinstance(getattr(doc, "id", None), str):
+        result["id"] = doc.id
+    if isinstance(getattr(doc, "score", None), (float, int)):
+        result["score"] = doc.score
+    return result
+
+
 async def search_weaviate(
     arguments: dict[str, Any],
     global_config: dict[str, Any],
@@ -75,18 +87,7 @@ async def search_weaviate(
         )
 
         # 응답 형식으로 변환
-        results = []
-        for doc in search_results:
-            result = {
-                "content": doc.page_content,
-                "metadata": doc.metadata,
-            }
-
-            # score가 있는 경우 포함
-            if hasattr(doc, "score"):
-                result["score"] = doc.score
-
-            results.append(result)
+        results = [_document_result(doc) for doc in search_results]
 
         logger.info(f"✅ search_weaviate: {len(results)}개 결과")
 
@@ -133,6 +134,9 @@ async def get_document_by_id(
     try:
         # get_by_id 메서드 호출
         if not hasattr(retriever, "get_by_id"):
+            if hasattr(retriever, "get_document_chunks"):
+                chunks = await retriever.get_document_chunks(document_id)
+                return {"documents": chunks} if chunks else None
             raise ValueError("retriever가 get_by_id를 지원하지 않습니다")
 
         doc = await retriever.get_by_id(document_id)
@@ -141,10 +145,7 @@ async def get_document_by_id(
             logger.warning(f"문서 없음: {document_id}")
             return None
 
-        result = {
-            "content": doc.page_content,
-            "metadata": doc.metadata,
-        }
+        result = _document_result(doc)
 
         logger.info("✅ get_document_by_id: 조회 성공")
 

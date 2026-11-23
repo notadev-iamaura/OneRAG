@@ -1,7 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { formatSourcePreview, formatFullContent, formatModelConfigValue, formatTimestamp } from '../formatters';
+import { formatSourcePreview, formatSourceRelevance, formatFullContent, formatModelConfigValue, formatTimestamp } from '../formatters';
 
 describe('formatters', () => {
+    it('keeps explicit score units and preserves legacy fractional, percentage and raw displays', () => {
+        const base = { id: 1, document: 'doc', content_preview: 'quote' };
+        expect(formatSourceRelevance({ ...base, relevance: 0.5, relevance_unit: 'percent' })?.text).toBe('0.5%');
+        expect(formatSourceRelevance({ ...base, relevance: 0.8, relevance_unit: 'fraction' })?.text).toBe('80%');
+        expect(formatSourceRelevance({ ...base, relevance: 0.8 })?.text).toBe('80%');
+        expect(formatSourceRelevance({ ...base, relevance: 33.9 })?.text).toBe('33.9%');
+        expect(formatSourceRelevance({ ...base, source_type: 'rag', relevance: 0.5, score: 0.5 })?.text).toBe('0.5%');
+        expect(formatSourceRelevance({ ...base, relevance: 0.016, relevance_unit: 'raw' })).toEqual({ text: '0.016', percent: null });
+        expect(formatSourceRelevance({ ...base, relevance: 0, relevance_unit: 'percent' })?.text).toBe('0%');
+        expect(formatSourceRelevance({ ...base, relevance: 0, relevance_unit: 'unavailable' })).toBeNull();
+        expect(formatSourceRelevance({ ...base, relevance: null })).toBeNull();
+        expect(formatSourceRelevance(base)).toBeNull();
+    });
     describe('formatSourcePreview', () => {
         it('should return default message if text is empty', () => {
             expect(formatSourcePreview(undefined)).toBe('미리보기를 제공하지 않는 문서입니다.');

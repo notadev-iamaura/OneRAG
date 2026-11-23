@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -131,7 +131,7 @@ async def test_ollama_generate_text_records_generation(
     resp = MagicMock()
     resp.choices = [MagicMock(message=MagicMock(content="응답"))]
     resp.usage = MagicMock(prompt_tokens=11, completion_tokens=22, total_tokens=33)
-    mock_openai.chat.completions.create.return_value = resp
+    mock_openai.chat.completions.create = AsyncMock(return_value=resp)
     client._client = mock_openai
 
     result = await client.generate_text("질문")
@@ -159,7 +159,9 @@ async def test_ollama_stream_text_records_usage_chunk(
     usage_chunk.choices = []
 
     mock_openai = MagicMock()
-    mock_openai.chat.completions.create.return_value = [content_chunk, usage_chunk]
+    stream = MagicMock()
+    stream.__aiter__.return_value = [content_chunk, usage_chunk]
+    mock_openai.chat.completions.create = AsyncMock(return_value=stream)
     client._client = mock_openai
 
     out = [chunk async for chunk in client.stream_text("질문")]
