@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -76,41 +76,58 @@ class TestRecordGeneration:
 
 
 @pytest.mark.asyncio
-async def test_self_rag_evaluator_records_generation(
+async def test_self_rag_evaluator_records_generation_via_google_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """self_rag evaluator가 LangChain usage_metadata에서 generation을 기록한다."""
+    """self_rag evaluator 의 Gemini 어댑터 경로에서 토큰 사용량이 Langfuse generation 으로 기록된다.
+
+    예전에는 평가기가 LangChain usage_metadata 를 읽어 record_generation 을 직접 호출했다.
+    이제는 어댑터가 GoogleLLMClient.generate_text 를 거치고, 그 클라이언트가 응답의
+    usage_metadata(prompt/candidates/total_token_count)로 generation 을 기록한다.
+    """
+    from types import SimpleNamespace
+
+    from app.lib import llm_client
     from app.modules.core.self_rag.evaluator import LLMQualityEvaluator
 
     spy = _SpyContext()
     monkeypatch.setattr(lf, "langfuse_context", spy)
+    monkeypatch.setattr(llm_client, "langfuse_context", spy)
 
-    # api_key=None → self.llm=None으로 생성된 뒤 mock LLM을 주입
-    evaluator = LLMQualityEvaluator(api_key=None)
-
-    resp = MagicMock()
-    resp.content = (
-        '{"relevance": 0.9, "grounding": 0.8, "completeness": 0.7, '
-        '"confidence": 0.85, "reasoning": "근거 충분"}'
+    # google-generativeai SDK 를 흉내 낸다: configure 는 no-op, generate_content 는 usage 포함 응답
+    fake_response = SimpleNamespace(
+        text=(
+            '{"relevance": 0.9, "grounding": 0.8, "completeness": 0.7, '
+            '"confidence": 0.85, "reasoning": "근거 충분"}'
+        ),
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=50, candidates_token_count=20, total_token_count=70
+        ),
     )
-    resp.usage_metadata = {"input_tokens": 50, "output_tokens": 20, "total_tokens": 70}
-    mock_llm = MagicMock()
-    mock_llm.ainvoke = AsyncMock(return_value=resp)
-    mock_llm.model = "gemini-2.0-flash"
-    evaluator.llm = mock_llm
+    fake_model = MagicMock()
+    fake_model.generate_content.return_value = fake_response
+    fake_genai = MagicMock()
+    fake_genai.GenerativeModel.return_value = fake_model
+    monkeypatch.setattr(llm_client, "genai", fake_genai)
 
-    await evaluator.evaluate("질문", "답변", ["문서1"])
+    evaluator = LLMQualityEvaluator(
+        llm_provider="google", model_name="gemini-2.0-flash", api_key="test-key"
+    )
+    assert evaluator.is_available
 
-    # record_generation → langfuse_context.update_current_observation이 실제 토큰으로 호출됨
+    result = await evaluator.evaluate("질문", "답변", ["문서1"])
+
+    assert result.score is not None
+    # SDK 요청 상한(request_options.timeout)이 평가 타임아웃으로 전달된다
+    _, kwargs = fake_model.generate_content.call_args
+    assert kwargs["request_options"] == {"timeout": 10.0}
     matching = [
         c
         for c in spy.calls
         if c.get("model") == "gemini-2.0-flash"
         and c.get("usage") == {"input": 50, "output": 20, "total": 70, "unit": "TOKENS"}
     ]
-    assert matching, f"evaluator usage 기록 누락: {spy.calls}"
-
-
+    assert matching, f"generation 이 기록되지 않았다: {spy.calls}"
 @pytest.mark.asyncio
 async def test_sql_generator_records_generation(
     monkeypatch: pytest.MonkeyPatch,

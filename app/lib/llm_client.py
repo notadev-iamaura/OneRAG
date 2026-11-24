@@ -227,10 +227,14 @@ class GoogleLLMClient(BaseLLMClient):
             }
 
             # 동기 함수를 비동기로 실행
+            # request_options.timeout 으로 SDK 호출 자체에 상한을 둔다. 호출부가
+            # asyncio.wait_for 로 기다리다 취소해도 to_thread 안의 요청은 끝나지 않으므로,
+            # 스레드가 무기한 붙잡히지 않게 SDK 레벨에서 끊는다.
             response = await asyncio.to_thread(
                 model.generate_content,
                 prompt,
                 generation_config=gen_config,  # type: ignore[arg-type]
+                request_options={"timeout": float(self.timeout)},
             )
 
             p, c, t = self._usage_google(response)

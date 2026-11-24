@@ -6,6 +6,7 @@ Task 5: 디버깅 API - Admin 엔드포인트 테스트
 
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from httpx import AsyncClient
 
@@ -66,7 +67,7 @@ class TestAdminDebugEndpoint:
         When: GET /api/admin/debug/...
         Then: 404 Not Found
         """
-        async with AsyncClient(app=app, base_url="http://test") as ac:
+        async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
             response = await ac.get(
                 "/api/admin/debug/session/invalid-session/messages/invalid-msg",
                 headers={"X-API-Key": mock_admin_auth},
@@ -90,7 +91,7 @@ class TestAdminDebugEndpoint:
         auth.api_key = "correct-secret-key"
 
         try:
-            async with AsyncClient(app=app, base_url="http://test") as ac:
+            async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
                 response = await ac.get(
                     "/api/admin/debug/session/test-session/messages/msg-123",
                     headers={"X-API-Key": "wrong-key"},
@@ -115,7 +116,7 @@ class TestAdminDebugEndpoint:
         auth.api_key = "some-secret-key"
 
         try:
-            async with AsyncClient(app=app, base_url="http://test") as ac:
+            async with AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
                 response = await ac.get(
                     "/api/admin/debug/session/test-session/messages/msg-123",
                 )
