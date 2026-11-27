@@ -8,6 +8,7 @@ Strategy 패턴과 Factory 패턴을 결합하여 다양한 임베딩 제공자�
 - google: Google Gemini Embedding (직접 API)
 - openai: OpenAI Embedding (직접 API)
 - openrouter: OpenRouter 통합 게이트웨이 (다양한 모델 지원)
+- twelvelabs: TwelveLabs Marengo 멀티모달 임베딩 (텍스트/이미지/오디오/비디오)
 
 OpenRouter 지원 모델:
 - google/gemini-embedding-001 (3072차원, 한국어 최적화)
@@ -40,6 +41,11 @@ from .gemini_embedder import GeminiEmbedder
 from .interfaces import IEmbedder
 from .local_embedder import DEFAULT_LOCAL_MODEL, LocalEmbedder
 from .openai_embedder import OpenAIEmbedder, OpenRouterEmbedder
+from .twelvelabs_embedder import (
+    TWELVELABS_DEFAULT_MODEL,
+    TWELVELABS_EMBEDDING_DIM,
+    TwelveLabsEmbedder,
+)
 from .vertex_embedder import (
     DEFAULT_VERTEX_EMBEDDING_DIMENSIONS,
     DEFAULT_VERTEX_EMBEDDING_LOCATION,
@@ -128,6 +134,13 @@ SUPPORTED_MODELS: dict[str, dict[str, Any]] = {
         "supports_dimensions_param": False,
         "description": "OpenAI Ada 임베딩 (레거시)",
     },
+    # TwelveLabs Marengo (멀티모달: 텍스트/이미지/오디오/비디오 공통 공간)
+    "marengo3.0": {
+        "provider": "twelvelabs",
+        "default_dimensions": TWELVELABS_EMBEDDING_DIM,
+        "supports_dimensions_param": False,
+        "description": "TwelveLabs Marengo 멀티모달 임베딩 (512차원, 비디오/이미지/오디오/텍스트 공통 공간)",
+    },
 }
 
 
@@ -184,10 +197,12 @@ class EmbedderFactory:
             return EmbedderFactory._create_openrouter_embedder(config, embeddings_config)
         elif provider == "local":
             return EmbedderFactory._create_local_embedder(config, embeddings_config)
+        elif provider == "twelvelabs":
+            return EmbedderFactory._create_twelvelabs_embedder(config, embeddings_config)
         else:
             raise ValueError(
                 f"지원하지 않는 임베딩 provider: {provider}. "
-                f"지원 목록: google, vertex, openai, openrouter, local"
+                f"지원 목록: google, vertex, openai, openrouter, local, twelvelabs"
             )
 
     @staticmethod
@@ -493,6 +508,47 @@ class EmbedderFactory:
             batch_size=batch_size,
             normalize=normalize,
             device=device,
+        )
+
+    @staticmethod
+    def _create_twelvelabs_embedder(
+        config: dict[str, Any],
+        embeddings_config: dict[str, Any],
+    ) -> TwelveLabsEmbedder:
+        """
+        TwelveLabs(Marengo) 멀티모달 임베더 생성
+
+        텍스트/이미지/오디오/비디오를 동일한 512차원 공간으로 임베딩하므로,
+        텍스트 쿼리로 영상 콘텐츠를 검색하는 멀티모달 RAG가 가능합니다.
+
+        API 키는 설정(embeddings.twelvelabs.api_key) → 환경변수
+        (TWELVELABS_API_KEY) 순으로 해석합니다.
+
+        Args:
+            config: 전체 설정 딕셔너리.
+            embeddings_config: embeddings 섹션 설정.
+
+        Returns:
+            TwelveLabsEmbedder 인스턴스.
+        """
+        twelvelabs_config = embeddings_config.get("twelvelabs", {})
+
+        model_name = twelvelabs_config.get("model", TWELVELABS_DEFAULT_MODEL)
+        output_dim = EmbedderFactory._as_int(
+            twelvelabs_config.get("output_dimensionality"),
+            TWELVELABS_EMBEDDING_DIM,
+        )
+
+        api_key = twelvelabs_config.get("api_key") or os.getenv("TWELVELABS_API_KEY")
+
+        logger.info(
+            f"✅ TwelveLabs 임베더 생성: model={model_name}, dim={output_dim}"
+        )
+
+        return TwelveLabsEmbedder(
+            api_key=api_key,
+            model_name=model_name,
+            output_dimensionality=output_dim,
         )
 
     @staticmethod

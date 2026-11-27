@@ -178,6 +178,12 @@ reranking:
   approach: "cross-encoder"  # or late-interaction, llm, local
   provider: "jina"           # or cohere, google, openai, openrouter, sentence-transformers
 
+# Embeddings (app/config/features/embeddings.yaml)
+embeddings:
+  provider: "openrouter"     # or local, google, vertex, openai, twelvelabs
+  # twelvelabs (Marengo) embeds text/image/audio/video into one 512-dim space
+  # → text queries can search video content. Install: uv pip install "onerag[twelvelabs]"
+
 # Toggle features On/Off
 cache:     { enabled: true, type: "redis" }    # or memory, semantic
 graph_rag: { enabled: true }                    # Knowledge graph reasoning
@@ -192,6 +198,7 @@ pii:       { enabled: true }                    # PII masking
 |----------|---------|---------------|
 | **Vector DB** | Weaviate, Chroma, Pinecone, Qdrant, pgvector, MongoDB | 1 env var |
 | **LLM** | Google Gemini, OpenAI, Anthropic Claude, OpenRouter, Ollama | 1 env var |
+| **Embeddings** | Local, Google, Vertex, OpenAI, OpenRouter, TwelveLabs (multimodal) | 1 line YAML |
 | **Reranker** | Jina, Cohere, Google, OpenAI, OpenRouter, Local | 2 lines YAML |
 | **Cache** | Memory, Redis, Semantic | 1 line YAML |
 | **Query Routing** | LLM-based, Rule-based | 1 line YAML |
